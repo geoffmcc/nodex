@@ -2,8 +2,8 @@
 .scratch/
 
 # Go binary
-nodex
-nodex.exe
+/nodex
+/nodex.exe
 
 # Go build/test
 *.test

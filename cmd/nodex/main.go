@@ -7,7 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/geoffmcc/nodex/internal/version"
+	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/cli"
 )
 
 func main() {
@@ -16,15 +17,10 @@ func main() {
 
 	if err := run(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		os.Exit(app.ExitCodeFromError(err))
 	}
 }
 
 func run(ctx context.Context) error {
-	_ = ctx
-	fmt.Printf("Nodex %s\n", version.Version)
-	fmt.Printf("Go: %s\n", version.GoVersion)
-	fmt.Printf("Commit: %s\n", version.Commit)
-	fmt.Printf("Built: %s\n", version.BuildDate)
-	return nil
+	return cli.Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 }
