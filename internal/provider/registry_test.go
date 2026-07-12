@@ -11,16 +11,16 @@ type mockProvider struct {
 	name string
 }
 
-func (m *mockProvider) Name() string                                                      { return m.name }
-func (m *mockProvider) Version() string                                                   { return "0.1.0" }
-func (m *mockProvider) Connect(_ context.Context, _ string, _ *domain.Credentials) error  { return nil }
-func (m *mockProvider) Close() error                                                      { return nil }
-func (m *mockProvider) Capabilities() []domain.Capability                                 { return nil }
-func (m *mockProvider) Nodes(_ context.Context) ([]domain.Node, error)                    { return nil, nil }
+func (m *mockProvider) Name() string                                                     { return m.name }
+func (m *mockProvider) Version() string                                                  { return "0.1.0" }
+func (m *mockProvider) Connect(_ context.Context, _ string, _ *domain.Credentials) error { return nil }
+func (m *mockProvider) Close() error                                                     { return nil }
+func (m *mockProvider) Capabilities() []domain.Capability                                { return nil }
+func (m *mockProvider) Nodes(_ context.Context) ([]domain.Node, error)                   { return nil, nil }
 func (m *mockProvider) VMs(_ context.Context) ([]domain.VM, error)                       { return nil, nil }
-func (m *mockProvider) Containers(_ context.Context) ([]domain.Container, error)          { return nil, nil }
-func (m *mockProvider) Storage(_ context.Context) ([]domain.Storage, error)               { return nil, nil }
-func (m *mockProvider) Cluster(_ context.Context) (*domain.Cluster, error)                { return nil, nil }
+func (m *mockProvider) Containers(_ context.Context) ([]domain.Container, error)         { return nil, nil }
+func (m *mockProvider) Storage(_ context.Context) ([]domain.Storage, error)              { return nil, nil }
+func (m *mockProvider) Cluster(_ context.Context) (*domain.Cluster, error)               { return nil, nil }
 
 func TestRegisterAndGet(t *testing.T) {
 	factory := func() domain.Provider { return &mockProvider{name: "test-provider"} }

@@ -247,8 +247,8 @@ func TestStdinBackend_ListEmpty(t *testing.T) {
 
 func TestParseCredentialRef(t *testing.T) {
 	tests := []struct {
-		ref     string
-		wantBE  string
+		ref      string
+		wantBE   string
 		wantProf string
 	}{
 		{"", "", ""},
