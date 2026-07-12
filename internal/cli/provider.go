@@ -8,6 +8,7 @@ import (
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
+	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/provider"
@@ -131,8 +132,11 @@ func connectProfile(ctx context.Context, profileName string) (domain.Provider, f
 		)
 	}
 
-	// TODO: load credentials from credential_ref
-	creds := &domain.Credentials{Type: "token"}
+	resolver := credentials.NewResolver("")
+	creds, err := resolver.Resolve(ctx, name, p.CredentialRef)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	prov, err := provider.Get(p.Provider)
 	if err != nil {

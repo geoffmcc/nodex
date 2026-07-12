@@ -1,0 +1,190 @@
+.TH NEX 1 "2026-07-12" "nodex 0.1.0" "User Commands"
+.SH NAME
+nodex \- open infrastructure management for self\-hosters
+.SH SYNOPSIS
+.B nodex
+[\fIGLOBAL\-FLAGS\fR]
+\fICOMMAND\fR
+[\fICOMMAND\-ARGS\fR]
+.SH DESCRIPTION
+.B nodex
+is a unified command\-line interface for managing self\-hosted infrastructure.
+It supports Proxmox VE with a provider\-based architecture that can be extended
+to other platforms.
+.SH GLOBAL FLAGS
+.TP
+.BI \-\-profile " " \fINAME\fR
+Override the current profile.
+.TP
+.BI \-\-output " " \fIFORMAT\fR
+Output format: \fBtable\fR, \fBjson\fR, or \fByaml\fR.
+Default: table (TTY), json (non\-TTY).
+.TP
+.BI \-\-timeout " " \fIDURATION\fR
+Request timeout (default: 30s).
+.TP
+.B \-\-no\-color
+Disable color output.
+.TP
+.B \-\-non\-interactive
+Disable interactive prompts.
+.TP
+.B \-\-quiet
+Suppress non\-essential output.
+.TP
+.B \-\-verbose
+Info\-level stderr output.
+.TP
+.B \-\-debug
+Debug\-level stderr output (redacted).
+.SH COMMANDS
+.SS nodex init
+Initialize nodex configuration interactively.
+.SS nodex profile add \fINAME\fR
+Add a new connection profile.
+.SS nodex profile list
+List all configured profiles.
+.SS nodex profile show \fINAME\fR
+Show details for a specific profile.
+.SS nodex profile use \fINAME\fR
+Set the current active profile.
+.SS nodex profile current
+Show the current active profile.
+.SS nodex profile test [\fINAME\fR]
+Test connectivity for a profile.
+.SS nodex profile remove \fINAME\fR
+Remove a profile.
+.SS nodex provider list
+List available providers.
+.SS nodex provider capabilities \fINAME\fR
+Show capabilities for a provider.
+.SS nodex node list
+List all nodes.
+.SS nodex vm list
+List all virtual machines.
+.SS nodex container list
+List all containers.
+.SS nodex storage list
+List all storage pools.
+.SS nodex doctor
+Check system health and connectivity.
+.SS nodex version
+Print version information.
+.SS nodex help [\fICOMMAND\fR]
+Show help for a command.
+.SH CREDENTIALS
+Credentials are resolved in the following order:
+.TP 1.
+\fBcredential_ref\fR in profile (e.g., \fBkeyring:myprofile\fR, \fBfile:default\fR)
+.TP 2.
+Environment variables (e.g., \fBNODEX_PROFILE_TOKEN\fR)
+.TP 3.
+Credential files in \fI~/.nodex/credentials/\fR
+.PP
+Supported credential backends:
+.TP
+.B keyring
+OS keyring (macOS Keychain, Linux Secret Service, Windows Credential Manager).
+.TP
+.B file
+JSON files in \fI~/.nodex/credentials/\fR.
+.TP
+.B env
+Environment variables.
+.TP
+.B stdin
+Interactive prompt (read\-only, does not store).
+.SH PROFILES
+Profiles are stored in \fI~/.config/nodex/config.yaml\fR.
+Each profile specifies a provider, endpoint, and optional credential reference.
+.SH EXIT CODES
+.TP
+.B 0
+Success
+.TP
+.B 1
+General error
+.TP
+.B 2
+Usage error
+.TP
+.B 3
+Configuration error
+.TP
+.B 4
+Credential unavailable
+.TP
+.B 5
+Authentication failed
+.TP
+.B 6
+Authorization denied
+.TP
+.B 7
+Network error
+.TP
+.B 8
+TLS error
+.TP
+.B 9
+Incompatibility
+.TP
+.B 10
+Unsupported capability
+.TP
+.B 11
+Partial failure
+.TP
+.B 12
+Provider error
+.SH FILES
+.TP
+.I ~/.config/nodex/config.yaml
+Main configuration file.
+.TP
+.I ~/.nodex/credentials/
+Credential files directory.
+.SH EXAMPLES
+Add a Proxmox profile:
+.PP
+.RS
+nodex profile add myserver
+.RE
+.PP
+Set the endpoint:
+.PP
+.RS
+nodex profile show myserver
+.RE
+.PP
+Test connectivity:
+.PP
+.RS
+nodex profile test myserver
+.RE
+.PP
+List nodes:
+.PP
+.RS
+nodex node list
+.RE
+.PP
+Output as JSON:
+.PP
+.RS
+nodex \-\-output json node list
+.RE
+.SH ENVIRONMENT
+.TP
+.BI NODEX_ " " \fIPROFILE\fR "_TOKEN"
+API token for the given profile.
+.TP
+.BI NODEX_ " " \fIPROFILE\fR "_TOKEN_ID"
+Token ID for the given profile.
+.TP
+.BI NODEX_ " " \fIPROFILE\fR "_TOKEN_SECRET"
+Token secret for the given profile.
+.SH AUTHOR
+Geoff and contributors.
+.SH LICENSE
+GPL v3. See \fI/usr/share/doc/nodex/LICENSE\fR.

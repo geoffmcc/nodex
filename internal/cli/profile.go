@@ -7,7 +7,7 @@ import (
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
-	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/provider"
 	"github.com/geoffmcc/nodex/internal/provider/proxmox"
@@ -281,10 +281,10 @@ func runProfileTest(ctx context.Context, cmdCtx *Context, args []string) error {
 		)
 	}
 
-	// TODO(Phase 3): load credentials from credential_ref and use them here.
-	// For now, test with a minimal token-based connection attempt.
-	creds := &domain.Credentials{
-		Type: "token",
+	resolver := credentials.NewResolver("")
+	creds, err := resolver.Resolve(ctx, name, p.CredentialRef)
+	if err != nil {
+		return err
 	}
 
 	prov, err := provider.Get(p.Provider)
