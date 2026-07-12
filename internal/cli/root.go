@@ -69,6 +69,23 @@ func init() {
 		&command{name: "test", short: "Test profile connectivity", run: runProfileTest},
 		&command{name: "remove", short: "Remove a profile", run: runProfileRemove},
 	)
+	register("provider", "Manage providers", nil,
+		&command{name: "list", short: "List available providers", run: runProviderList},
+		&command{name: "capabilities", short: "Show provider capabilities", run: runProviderCapabilities},
+	)
+	register("node", "Manage nodes", nil,
+		&command{name: "list", short: "List all nodes", run: runNodeList},
+	)
+	register("vm", "Manage virtual machines", nil,
+		&command{name: "list", short: "List all VMs", run: runVMList},
+	)
+	register("container", "Manage containers", nil,
+		&command{name: "list", short: "List all containers", run: runContainerList},
+	)
+	register("storage", "Manage storage", nil,
+		&command{name: "list", short: "List all storage pools", run: runStorageList},
+	)
+	register("doctor", "Check system health", runDoctor)
 }
 
 // Run parses global flags and dispatches to the appropriate command.
