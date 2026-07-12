@@ -1,0 +1,29 @@
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - durationcheck
+    - errorlint
+    - exportloopref
+    - gosec
+    - misspell
+    - nilerr
+    - prealloc
+    - unconvert
+    - unparam
+    - wastedassign
+
+linters-settings:
+  gosec:
+    excludes:
+      - G104  # unhandled errors — we handle these deliberately
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0

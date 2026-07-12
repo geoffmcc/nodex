@@ -1,0 +1,23 @@
+# Personal working files
+.scratch/
+
+# Go binary
+nodex
+nodex.exe
+
+# Go build/test
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
