@@ -107,5 +107,3 @@ func confirm(cmdCtx *Context) bool {
 	line = strings.TrimSpace(strings.ToLower(line))
 	return line == "y" || line == "yes"
 }
-
-
