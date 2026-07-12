@@ -7,7 +7,10 @@ import (
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
+	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
+	"github.com/geoffmcc/nodex/internal/provider"
+	"github.com/geoffmcc/nodex/internal/provider/proxmox"
 )
 
 func runProfileAdd(_ context.Context, cmdCtx *Context, args []string) error {
@@ -241,9 +244,7 @@ func runProfileCurrent(_ context.Context, cmdCtx *Context, _ []string) error {
 	}
 }
 
-func runProfileTest(_ context.Context, cmdCtx *Context, args []string) error {
-	// Phase 3 will implement actual connectivity testing.
-	// For now, validate the profile exists and print status.
+func runProfileTest(ctx context.Context, cmdCtx *Context, args []string) error {
 	name := ""
 	if len(args) > 0 {
 		name = args[0]
@@ -273,8 +274,52 @@ func runProfileTest(_ context.Context, cmdCtx *Context, args []string) error {
 		)
 	}
 
-	fmt.Fprintf(cmdCtx.Writer, "Testing profile %q (%s)...\n", name, p.Endpoint)
-	fmt.Fprintln(cmdCtx.Writer, "Connectivity testing not yet implemented (Phase 3).")
+	if p.Endpoint == "" {
+		return app.NewExitError(
+			fmt.Errorf("profile %q has no endpoint configured", name),
+			app.ExitConfig,
+		)
+	}
+
+	// TODO(Phase 3): load credentials from credential_ref and use them here.
+	// For now, test with a minimal token-based connection attempt.
+	creds := &domain.Credentials{
+		Type: "token",
+	}
+
+	prov, err := provider.Get(p.Provider)
+	if err != nil {
+		return app.NewExitError(err, app.ExitProvider)
+	}
+
+	if err := prov.Connect(ctx, p.Endpoint, creds); err != nil {
+		return app.NewExitError(
+			fmt.Errorf("connect to %s: %w", p.Endpoint, err),
+			app.ExitNetwork,
+		)
+	}
+	defer prov.Close()
+
+	proxmoxProv, ok := prov.(*proxmox.Provider)
+	if !ok {
+		return app.NewExitError(
+			fmt.Errorf("provider %q is not a Proxmox provider", p.Provider),
+			app.ExitProvider,
+		)
+	}
+
+	version, err := proxmoxProv.TestConnectivity(ctx)
+	if err != nil {
+		return app.NewExitError(
+			fmt.Errorf("test connectivity: %w", err),
+			app.ExitNetwork,
+		)
+	}
+
+	fmt.Fprintf(cmdCtx.Writer, "Profile %q (%s): OK\n", name, p.Endpoint)
+	if version != nil {
+		fmt.Fprintf(cmdCtx.Writer, "  Version: %s\n", version.Version)
+	}
 	return nil
 }
 
