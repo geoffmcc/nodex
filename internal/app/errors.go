@@ -16,6 +16,7 @@ const (
 	ExitIncompatibility = 9
 	ExitUnsupportedCap  = 10
 	ExitPartialFailure  = 11
+	ExitProvider        = 12
 	ExitInterrupted     = 130
 	ExitSigterm         = 143
 )
