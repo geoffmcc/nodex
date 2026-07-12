@@ -24,7 +24,12 @@ func SanitizeTerminal(s string) string {
 			continue
 		}
 		if inEscape {
-			// CSI sequences end with a letter in 0x40-0x7E range.
+			// CSI sequences start with [ (0x5B) after ESC.
+			// They end with a letter in 0x40-0x7E range.
+			if c == 0x5b {
+				// CSI introducer found, now look for final byte.
+				continue
+			}
 			if c >= 0x40 && c <= 0x7e {
 				inEscape = false
 			}

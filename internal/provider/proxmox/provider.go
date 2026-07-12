@@ -61,10 +61,12 @@ func (p *Provider) Capabilities() []domain.Capability {
 	}
 }
 
+const errNotConnected = "provider not connected: call Connect() first"
+
 // Nodes returns all Proxmox nodes.
 func (p *Provider) Nodes(ctx context.Context) ([]domain.Node, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf("provider not connected")
+		return nil, fmt.Errorf(errNotConnected)
 	}
 	items, err := p.client.Nodes(ctx)
 	if err != nil {
@@ -76,7 +78,7 @@ func (p *Provider) Nodes(ctx context.Context) ([]domain.Node, error) {
 // VMs returns all VMs across the cluster.
 func (p *Provider) VMs(ctx context.Context) ([]domain.VM, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf("provider not connected")
+		return nil, fmt.Errorf(errNotConnected)
 	}
 	resources, err := p.client.ClusterResources(ctx)
 	if err != nil {
@@ -94,7 +96,7 @@ func (p *Provider) VMs(ctx context.Context) ([]domain.VM, error) {
 // Containers returns all containers across the cluster.
 func (p *Provider) Containers(ctx context.Context) ([]domain.Container, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf("provider not connected")
+		return nil, fmt.Errorf(errNotConnected)
 	}
 	resources, err := p.client.ClusterResources(ctx)
 	if err != nil {
@@ -112,7 +114,7 @@ func (p *Provider) Containers(ctx context.Context) ([]domain.Container, error) {
 // Storage returns all storage pools across the cluster.
 func (p *Provider) Storage(ctx context.Context) ([]domain.Storage, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf("provider not connected")
+		return nil, fmt.Errorf(errNotConnected)
 	}
 	resources, err := p.client.ClusterResources(ctx)
 	if err != nil {
@@ -130,7 +132,7 @@ func (p *Provider) Storage(ctx context.Context) ([]domain.Storage, error) {
 // Cluster returns cluster information.
 func (p *Provider) Cluster(ctx context.Context) (*domain.Cluster, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf("provider not connected")
+		return nil, fmt.Errorf(errNotConnected)
 	}
 	version, err := p.client.Version(ctx)
 	if err != nil {
@@ -146,7 +148,7 @@ func (p *Provider) Cluster(ctx context.Context) (*domain.Cluster, error) {
 // TestConnectivity checks if the provider can connect to the endpoint.
 func (p *Provider) TestConnectivity(ctx context.Context) (*client.VersionData, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf("provider not connected")
+		return nil, fmt.Errorf(errNotConnected)
 	}
 	version, err := p.client.Version(ctx)
 	if err != nil {
