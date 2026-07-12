@@ -1,0 +1,5 @@
+# Force LF line endings for Go source files to ensure gofmt consistency across platforms
+*.go text eol=lf
+
+# Force LF for shell scripts
+*.sh text eol=lf
