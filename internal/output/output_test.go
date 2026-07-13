@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/geoffmcc/nodex/internal/domain"
 )
 
 func TestWriteJSON(t *testing.T) {
@@ -130,5 +132,97 @@ func TestMarshalYAML(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "a: 1") {
 		t.Errorf("unexpected output: %s", b)
+	}
+}
+
+func TestDomainYAMLOmitsEmptyOptionalFields(t *testing.T) {
+	tests := []struct {
+		name string
+		data any
+		want []string
+		omit []string
+	}{
+		{
+			name: "node",
+			data: domain.Node{ID: "node/proxmox", Name: "proxmox", Status: "online", Role: "node", Platform: "proxmox"},
+			want: []string{"id: node/proxmox", "name: proxmox", "status: online", "role: node", "platform: proxmox"},
+			omit: []string{"labels:", "ip:", "version:", "uptime:"},
+		},
+		{
+			name: "vm",
+			data: domain.VM{ID: "proxmox/100", Name: "vm-one", Status: "running", Node: "proxmox", CPU: 2, Memory: 1024, Disk: 2048},
+			want: []string{"id: proxmox/100", "name: vm-one", "status: running", "node: proxmox", "cpu: 2", "memory: 1024", "disk: 2048"},
+			omit: []string{"labels:", "ip:", "os:", "ID:", "Name:"},
+		},
+		{
+			name: "container",
+			data: domain.Container{ID: "proxmox/200", Name: "ct-one", Status: "running", Node: "proxmox", Memory: 1024, Disk: 2048},
+			want: []string{"id: proxmox/200", "name: ct-one", "status: running", "node: proxmox", "memory: 1024", "disk: 2048"},
+			omit: []string{"labels:", "ip:", "os:", "ID:", "Name:"},
+		},
+		{
+			name: "storage",
+			data: domain.Storage{ID: "storage/proxmox/local-lvm", Name: "local-lvm", Type: "storage", Status: "available", Node: "proxmox", Total: 4096, Used: 1024, Avail: 3072},
+			want: []string{"id: storage/proxmox/local-lvm", "name: local-lvm", "type: storage", "status: available", "node: proxmox", "total: 4096", "used: 1024", "avail: 3072"},
+			omit: []string{"labels:", "content:", "ID:", "Name:"},
+		},
+		{
+			name: "cluster",
+			data: domain.Cluster{Name: "home", Version: "9.2.4", Nodes: 1},
+			want: []string{"name: home", "version: 9.2.4", "nodes: 1"},
+			omit: []string{"Name:", "Version:", "Nodes:"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, err := MarshalYAML(tt.data)
+			if err != nil {
+				t.Fatalf("MarshalYAML: %v", err)
+			}
+			out := string(b)
+			for _, want := range tt.want {
+				if !strings.Contains(out, want) {
+					t.Fatalf("YAML output missing %q: %q", want, out)
+				}
+			}
+			for _, omit := range tt.omit {
+				if strings.Contains(out, omit) {
+					t.Fatalf("YAML output included %q: %q", omit, out)
+				}
+			}
+		})
+	}
+}
+
+func TestDomainYAMLIncludesNonEmptyLabels(t *testing.T) {
+	b, err := MarshalYAML(domain.Storage{
+		ID: "storage/proxmox/local-lvm", Name: "local-lvm", Type: "storage", Status: "available",
+		Total: 4096, Used: 1024, Avail: 3072, Labels: map[string]string{"env": "test"},
+	})
+	if err != nil {
+		t.Fatalf("MarshalYAML: %v", err)
+	}
+	out := string(b)
+	if !strings.Contains(out, "labels:") || !strings.Contains(out, "env: test") {
+		t.Fatalf("YAML output missing labels: %q", out)
+	}
+}
+
+func TestDomainJSONOutputUnchanged(t *testing.T) {
+	b, err := MarshalJSON(domain.Storage{
+		ID: "storage/proxmox/local-lvm", Name: "local-lvm", Type: "storage", Status: "available",
+		Total: 4096, Used: 1024, Avail: 3072,
+	})
+	if err != nil {
+		t.Fatalf("MarshalJSON: %v", err)
+	}
+	out := string(b)
+	for _, want := range []string{`"id": "storage/proxmox/local-lvm"`, `"name": "local-lvm"`, `"type": "storage"`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("JSON output missing %q: %q", want, out)
+		}
+	}
+	if strings.Contains(out, "labels") {
+		t.Fatalf("JSON output included empty labels: %q", out)
 	}
 }

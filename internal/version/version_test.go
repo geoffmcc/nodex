@@ -25,7 +25,6 @@ func TestResolveUsesGoInstallStyleModuleVersionFallback(t *testing.T) {
 	got := resolve(defaultInfo(), buildInfo(
 		"v0.0.0-20260713015102-c043e8392bebd",
 		"go1.25.12",
-		setting("vcs.revision", "c043e8392bebdebfa5391a9bf46e29bfad93a98f"),
 		setting("vcs.modified", "false"),
 	))
 
@@ -35,7 +34,7 @@ func TestResolveUsesGoInstallStyleModuleVersionFallback(t *testing.T) {
 	if got.GoVersion != "go1.25.12" {
 		t.Fatalf("GoVersion = %q", got.GoVersion)
 	}
-	if got.Commit != "c043e8392bebdebfa5391a9bf46e29bfad93a98f" {
+	if got.Commit != "c043e8392bebd" {
 		t.Fatalf("Commit = %q", got.Commit)
 	}
 	if got.BuildDate != "unknown" {
@@ -43,6 +42,62 @@ func TestResolveUsesGoInstallStyleModuleVersionFallback(t *testing.T) {
 	}
 	if got.Dirty {
 		t.Fatalf("Dirty = true, want false")
+	}
+}
+
+func TestResolveVCSRevisionOverridesPseudoVersion(t *testing.T) {
+	got := resolve(defaultInfo(), buildInfo(
+		"v0.0.0-20260713015102-c043e8392bebd",
+		"go1.25.12",
+		setting("vcs.revision", "c043e8392bebdebfa5391a9bf46e29bfad93a98f"),
+		setting("vcs.modified", "false"),
+	))
+
+	if got.Commit != "c043e8392bebdebfa5391a9bf46e29bfad93a98f" {
+		t.Fatalf("Commit = %q", got.Commit)
+	}
+}
+
+func TestResolveParsesPseudoVersionCommitFallbacks(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{name: "major zero", version: "v0.0.0-20260713015102-4ca6557098dc", want: "4ca6557098dc"},
+		{name: "release based", version: "v1.2.4-0.20260713015102-abcdef123456", want: "abcdef123456"},
+		{name: "prerelease based", version: "v1.2.3-rc.0.20260713015102-ABCDEF123456", want: "ABCDEF123456"},
+		{name: "incompatible", version: "v2.0.0-20260713015102-deadbeef1234+incompatible", want: "deadbeef1234"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolve(defaultInfo(), buildInfo(tt.version, "go1.25.12"))
+			if got.Version != tt.version {
+				t.Fatalf("Version = %q", got.Version)
+			}
+			if got.Commit != tt.want {
+				t.Fatalf("Commit = %q, want %q", got.Commit, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveDoesNotInferCommitFromNonPseudoVersions(t *testing.T) {
+	tests := []string{
+		"v0.1.0",
+		"(devel)",
+		"v0.0.0-2026071301510-4ca6557098dc",
+		"v0.0.0-20260713015102-nothex",
+		"v1.2.3-20260713015102-4ca6557098dc",
+		"v1.2.3-whatever-4ca6557098dc",
+	}
+	for _, version := range tests {
+		t.Run(version, func(t *testing.T) {
+			got := resolve(defaultInfo(), buildInfo(version, "go1.25.12"))
+			if got.Commit != "unknown" {
+				t.Fatalf("Commit = %q, want unknown", got.Commit)
+			}
+		})
 	}
 }
 
