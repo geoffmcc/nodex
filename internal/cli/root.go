@@ -25,6 +25,9 @@ type Options struct {
 	Verbose        bool
 	Debug          bool
 	Limit          int
+	Yes            bool
+	Force          bool
+	Wait           bool
 }
 
 // Context carries global state through command execution.
@@ -101,6 +104,15 @@ func init() {
 		&command{name: "config", short: "Show VM configuration", run: runVMConfig},
 		&command{name: "snapshots", short: "List VM snapshots", run: runVMSnapshots},
 		&command{name: "snapshot-config", short: "Show VM snapshot config", run: runVMSnapshotConfig},
+		&command{name: "start", short: "Start a VM", run: runVMStart},
+		&command{name: "stop", short: "Stop a VM (force)", run: runVMStop},
+		&command{name: "shutdown", short: "Graceful VM shutdown", run: runVMShutdown},
+		&command{name: "reset", short: "Hard reset a VM", run: runVMReset},
+		&command{name: "reboot", short: "Reboot a VM", run: runVMReboot},
+		&command{name: "suspend", short: "Suspend a VM to disk", run: runVMSuspend},
+		&command{name: "resume", short: "Resume a suspended VM", run: runVMResume},
+		&command{name: "pause", short: "Pause (freeze) a VM", run: runVMPause},
+		&command{name: "unpause", short: "Unpause a frozen VM", run: runVMUnpause},
 	)
 
 	register("task", "Manage tasks", nil,
@@ -113,6 +125,12 @@ func init() {
 		&command{name: "config", short: "Show container configuration", run: runContainerConfig},
 		&command{name: "snapshots", short: "List container snapshots", run: runContainerSnapshots},
 		&command{name: "snapshot-config", short: "Show container snapshot config", run: runContainerSnapshotConfig},
+		&command{name: "start", short: "Start a container", run: runCTStart},
+		&command{name: "stop", short: "Stop a container (force)", run: runCTStop},
+		&command{name: "shutdown", short: "Graceful container shutdown", run: runCTShutdown},
+		&command{name: "reboot", short: "Reboot a container", run: runCTReboot},
+		&command{name: "suspend", short: "Suspend a container", run: runCTSuspend},
+		&command{name: "resume", short: "Resume a suspended container", run: runCTResume},
 	)
 	register("storage", "Manage storage", nil,
 		&command{name: "list", short: "List all storage pools", run: runStorageList},
@@ -251,6 +269,9 @@ func parseGlobal(args []string) (Options, []string, error) {
 	fs.BoolVar(&opts.Verbose, "verbose", false, "")
 	fs.BoolVar(&opts.Debug, "debug", false, "")
 	fs.IntVar(&opts.Limit, "limit", 0, "")
+	fs.BoolVar(&opts.Yes, "yes", false, "")
+	fs.BoolVar(&opts.Force, "force", false, "")
+	fs.BoolVar(&opts.Wait, "wait", false, "")
 
 	if err := fs.Parse(args); err != nil {
 		return opts, nil, err
@@ -315,6 +336,11 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --quiet              Suppress non-essential output")
 	fmt.Fprintln(w, "  --verbose            Info-level stderr output")
 	fmt.Fprintln(w, "  --debug              Debug-level stderr output (redacted)")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Mutation Flags:")
+	fmt.Fprintln(w, "  --yes                Confirm reversible operations (Tier 1)")
+	fmt.Fprintln(w, "  --force              Confirm disruptive operations (Tier 2, requires --yes)")
+	fmt.Fprintln(w, "  --wait               Wait for the task to complete before exiting")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Run 'nodex help <command>' for details on a specific command.")
 }

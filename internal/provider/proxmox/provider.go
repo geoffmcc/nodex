@@ -76,6 +76,7 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilitySnapshotDetail,
 		domain.CapabilityPools,
 		domain.CapabilityClusterLog,
+		domain.CapabilityLifecycle,
 	}
 }
 
@@ -1127,4 +1128,111 @@ func (p *Provider) ClusterStatuses(ctx context.Context) ([]domain.ClusterStatusD
 		})
 	}
 	return result, nil
+}
+
+// --- LifecycleProvider methods ---
+
+func (p *Provider) VMStart(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMStart(ctx, node, vmid)
+}
+
+func (p *Provider) VMStop(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMStop(ctx, node, vmid)
+}
+
+func (p *Provider) VMShutdown(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMShutdown(ctx, node, vmid, 60)
+}
+
+func (p *Provider) VMReset(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMReset(ctx, node, vmid)
+}
+
+func (p *Provider) VMReboot(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMReboot(ctx, node, vmid)
+}
+
+func (p *Provider) VMSuspend(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMSuspend(ctx, node, vmid)
+}
+
+func (p *Provider) VMResume(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMResume(ctx, node, vmid)
+}
+
+func (p *Provider) VMPause(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMPause(ctx, node, vmid)
+}
+
+func (p *Provider) VMUnpause(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMUnpause(ctx, node, vmid)
+}
+
+func (p *Provider) CTStart(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTStart(ctx, node, vmid)
+}
+
+func (p *Provider) CTStop(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTStop(ctx, node, vmid)
+}
+
+func (p *Provider) CTShutdown(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTShutdown(ctx, node, vmid, 60)
+}
+
+func (p *Provider) CTReboot(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTReboot(ctx, node, vmid)
+}
+
+func (p *Provider) CTSuspend(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTSuspend(ctx, node, vmid)
+}
+
+func (p *Provider) CTResume(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTResume(ctx, node, vmid)
 }

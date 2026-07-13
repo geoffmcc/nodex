@@ -366,3 +366,332 @@ func TestPostRejectsTrailingJSON(t *testing.T) {
 		t.Fatalf("post error = %v, want trailing data error", err)
 	}
 }
+
+// --- VM Lifecycle Contract Tests ---
+
+func TestVMStartPathAndMethod(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/nodes/pve1/qemu/100/status/start" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/start", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003039:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.VMStart(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMStart: %v", err)
+	}
+	if upid != "UPID:pve1:00003039:0023A45B:" {
+		t.Errorf("upid = %q, want UPID:pve1:00003039:0023A45B:", upid)
+	}
+}
+
+func TestVMStopPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/qemu/100/status/stop" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/stop", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000303A:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VMStop(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMStop: %v", err)
+	}
+}
+
+func TestVMPausePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/qemu/100/status/pause" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/pause", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000303B:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VMPause(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMPause: %v", err)
+	}
+}
+
+func TestVMResumePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/qemu/100/status/resume" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/resume", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000303C:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VMResume(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMResume: %v", err)
+	}
+}
+
+func TestVMResetPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/qemu/100/status/reset" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/reset", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000303D:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VMReset(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMReset: %v", err)
+	}
+}
+
+func TestVMRebootPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/qemu/100/status/reboot" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/reboot", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000303E:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VMReboot(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMReboot: %v", err)
+	}
+}
+
+func TestVMSuspendPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/qemu/100/status/suspend" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/suspend", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000303F:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VMSuspend(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMSuspend: %v", err)
+	}
+}
+
+func TestVMUnpausePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/qemu/100/status/unpause" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/unpause", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003040:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VMUnpause(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMUnpause: %v", err)
+	}
+}
+
+func TestVMShutdownSendsTimeout(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/qemu/100/status/shutdown" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/shutdown", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		if got := r.FormValue("timeout"); got != "60" {
+			t.Errorf("timeout = %q, want 60", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003041:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VMShutdown(context.Background(), "pve1", 100, 60)
+	if err != nil {
+		t.Fatalf("VMShutdown: %v", err)
+	}
+}
+
+// --- Container Lifecycle Contract Tests ---
+
+func TestCTStartPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/status/start" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/status/start", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003042:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTStart(context.Background(), "pve1", 200)
+	if err != nil {
+		t.Fatalf("CTStart: %v", err)
+	}
+}
+
+func TestCTStopPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/status/stop" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/status/stop", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003043:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTStop(context.Background(), "pve1", 200)
+	if err != nil {
+		t.Fatalf("CTStop: %v", err)
+	}
+}
+
+func TestCTShutdownSendsTimeout(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/status/shutdown" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/status/shutdown", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		if got := r.FormValue("timeout"); got != "60" {
+			t.Errorf("timeout = %q, want 60", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003044:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTShutdown(context.Background(), "pve1", 200, 60)
+	if err != nil {
+		t.Fatalf("CTShutdown: %v", err)
+	}
+}
+
+func TestCTRebootPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/status/reboot" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/status/reboot", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003045:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTReboot(context.Background(), "pve1", 200)
+	if err != nil {
+		t.Fatalf("CTReboot: %v", err)
+	}
+}
+
+func TestCTSuspendPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/status/suspend" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/status/suspend", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003046:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTSuspend(context.Background(), "pve1", 200)
+	if err != nil {
+		t.Fatalf("CTSuspend: %v", err)
+	}
+}
+
+func TestCTResumePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/status/resume" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/status/resume", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003047:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTResume(context.Background(), "pve1", 200)
+	if err != nil {
+		t.Fatalf("CTResume: %v", err)
+	}
+}
+
+// --- Input Validation Tests ---
+
+func TestVMStartRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.VMStart(context.Background(), "", 100)
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("VMStart('') error = %v, want node name required", err)
+	}
+}
+
+func TestVMStartRejectsInvalidVMID(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.VMStart(context.Background(), "pve1", 0)
+	if err == nil || !strings.Contains(err.Error(), "VMID is required") {
+		t.Fatalf("VMStart(0) error = %v, want VMID required", err)
+	}
+}
+
+func TestCTStartRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.CTStart(context.Background(), "", 200)
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("CTStart('') error = %v, want node name required", err)
+	}
+}
+
+func TestCTStartRejectsInvalidVMID(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.CTStart(context.Background(), "pve1", -1)
+	if err == nil || !strings.Contains(err.Error(), "VMID is required") {
+		t.Fatalf("CTStart(-1) error = %v, want VMID required", err)
+	}
+}
+
+func TestVMShutdownSucceedsWithoutTimeout(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.FormValue("timeout") != "" {
+			t.Errorf("timeout present when not set: %q", r.FormValue("timeout"))
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003041:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VMShutdown(context.Background(), "pve1", 100, 0)
+	if err != nil {
+		t.Fatalf("VMShutdown(timeout=0): %v", err)
+	}
+}
