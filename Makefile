@@ -12,7 +12,7 @@ LDFLAGS  := -X '$(MODULE)/internal/version.Version=$(VERSION)' \
             -X '$(MODULE)/internal/version.BuildDate=$(BUILT)' \
             -X '$(MODULE)/internal/version.GoVersion=$(GOVERSION)'
 
-.PHONY: build test vet fmt lint clean
+.PHONY: build test vet fmt lint staticcheck clean
 
 build:
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/nodex/
@@ -39,6 +39,9 @@ fmt-check:
 
 lint: fmt-check vet
 	@echo "All lint checks passed."
+
+staticcheck:
+	staticcheck ./...
 
 clean:
 	rm -f $(BIN)
