@@ -429,3 +429,46 @@ func (p *Provider) ContainerSnapshots(ctx context.Context, node string, vmid int
 	}
 	return result, nil
 }
+
+// Events returns cluster events.
+func (p *Provider) Events(ctx context.Context) ([]domain.Event, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetEvents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get events: %w", err)
+	}
+	result := make([]domain.Event, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.Event{
+			Type:    item.Type,
+			Time:    item.Time,
+			Node:    item.Node,
+			ID:      item.ID,
+			Message: item.Message,
+		})
+	}
+	return result, nil
+}
+
+// Syslog returns syslog entries for a specific node.
+func (p *Provider) Syslog(ctx context.Context, node string) ([]domain.SyslogEntry, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetSyslog(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get syslog: %w", err)
+	}
+	result := make([]domain.SyslogEntry, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.SyslogEntry{
+			Time:    item.Time,
+			Node:    item.Node,
+			Level:   item.SyslogLevel,
+			Message: item.Message,
+		})
+	}
+	return result, nil
+}

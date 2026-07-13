@@ -528,3 +528,59 @@ func TestGetContainerSnapshotsRejectsZeroVMID(t *testing.T) {
 		t.Fatalf("GetContainerSnapshots(0) error = %v, want VMID required", err)
 	}
 }
+
+func TestGetEventsDecodesEventList(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cluster/events" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"node","time":1700000000,"node":"proxmox","id":"node/proxmox","message":"node online"},{"type":"vm","time":1700000001,"node":"proxm","id":"vm/100","message":"VM started"}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	events, err := c.GetEvents(context.Background())
+	if err != nil {
+		t.Fatalf("GetEvents: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Type != "node" || events[0].Message != "node online" {
+		t.Fatalf("first event = %+v", events[0])
+	}
+	if events[1].Type != "vm" || events[1].ID != "vm/100" {
+		t.Fatalf("second event = %+v", events[1])
+	}
+}
+
+func TestGetSyslogDecodesEntries(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/syslog" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"time":1700000000,"node":"proxmox","sysloglevel":"info","message":"system startup"},{"time":1700000001,"node":"proxm01","sysloglevel":"err","message":"disk failure"}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	entries, err := c.GetSyslog(context.Background(), "proxmox")
+	if err != nil {
+		t.Fatalf("GetSyslog: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("len(entries) = %d, want 2", len(entries))
+	}
+	if entries[0].SyslogLevel != "info" || entries[0].Message != "system startup" {
+		t.Fatalf("first entry = %+v", entries[0])
+	}
+	if entries[1].SyslogLevel != "err" || entries[1].Message != "disk failure" {
+		t.Fatalf("second entry = %+v", entries[1])
+	}
+}
+
+func TestGetSyslogRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetSyslog(context.Background(), "")
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("GetSyslog('') error = %v, want node name required", err)
+	}
+}

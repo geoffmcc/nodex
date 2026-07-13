@@ -263,3 +263,30 @@ type SnapshotListItem struct {
 	Ctime  int    `json:"ctime,omitempty"`
 	Parent string `json:"parent,omitempty"`
 }
+
+// EventListResponse is the response from /cluster/events.
+type EventListResponse struct {
+	Data []EventItem `json:"data"`
+}
+
+// EventItem represents a single cluster event.
+type EventItem struct {
+	Type    string `json:"type"`
+	Time    int64  `json:"time"`
+	Node    string `json:"node,omitempty"`
+	ID      string `json:"id,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// SyslogResponse is the response from /nodes/{node}/syslog.
+type SyslogResponse struct {
+	Data []SyslogItem `json:"data"`
+}
+
+// SyslogItem represents a single syslog entry.
+type SyslogItem struct {
+	Time        int64  `json:"time"`
+	Node        string `json:"node,omitempty"`
+	SyslogLevel string `json:"sysloglevel,omitempty"`
+	Message     string `json:"message,omitempty"`
+}

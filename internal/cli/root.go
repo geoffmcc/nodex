@@ -108,6 +108,10 @@ func init() {
 	register("cluster", "Manage cluster", nil,
 		&command{name: "status", short: "Show cluster status", run: runClusterStatus},
 	)
+	register("event", "Manage events", nil,
+		&command{name: "list", short: "List cluster events", run: runEventList},
+	)
+	register("log", "Show node syslog", runLog)
 	register("doctor", "Check system health", runDoctor)
 }
 

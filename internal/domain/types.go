@@ -94,3 +94,20 @@ type Snapshot struct {
 	Node   string `json:"node,omitempty" yaml:"node,omitempty"`
 	Target string `json:"target,omitempty" yaml:"target,omitempty"` // vm or container ID
 }
+
+// Event represents a cluster event.
+type Event struct {
+	Type    string `json:"type" yaml:"type"`
+	Time    int64  `json:"time" yaml:"time"`
+	Node    string `json:"node,omitempty" yaml:"node,omitempty"`
+	ID      string `json:"id,omitempty" yaml:"id,omitempty"`
+	Message string `json:"message,omitempty" yaml:"message,omitempty"`
+}
+
+// SyslogEntry represents a syslog line.
+type SyslogEntry struct {
+	Time    int64  `json:"time" yaml:"time"`
+	Node    string `json:"node,omitempty" yaml:"node,omitempty"`
+	Level   string `json:"level,omitempty" yaml:"level,omitempty"`
+	Message string `json:"message,omitempty" yaml:"message,omitempty"`
+}

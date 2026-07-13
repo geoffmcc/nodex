@@ -278,6 +278,28 @@ func (c *Client) GetContainerSnapshots(ctx context.Context, node string, vmid in
 	return resp.Data, nil
 }
 
+// GetEvents returns cluster events.
+func (c *Client) GetEvents(ctx context.Context) ([]EventItem, error) {
+	var resp EventListResponse
+	if err := c.get(ctx, "/cluster/events", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetSyslog returns syslog entries for a specific node.
+func (c *Client) GetSyslog(ctx context.Context, node string) ([]SyslogItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp SyslogResponse
+	path := "/nodes/" + url.PathEscape(node) + "/syslog"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil
