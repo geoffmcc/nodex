@@ -9,11 +9,49 @@ import (
 	"github.com/geoffmcc/nodex/internal/domain"
 )
 
-type mockNoDetail struct{ e2eMockProvider }
+// bareProvider implements only the base domain.Provider interface with no
+// optional capabilities, suitable for embedding in mockNoDetail.
+type bareProvider struct{}
 
-func (m *mockNoDetail) Capabilities() []domain.Capability {
-	return []domain.Capability{domain.CapabilityNodes, domain.CapabilityVMs, domain.CapabilityContainers, domain.CapabilityStorage, domain.CapabilityCluster}
+func (b *bareProvider) Name() string                                                     { return "bare" }
+func (b *bareProvider) Version() string                                                  { return "0" }
+func (b *bareProvider) Connect(_ context.Context, _ string, _ *domain.Credentials) error { return nil }
+func (b *bareProvider) Close() error                                                     { return nil }
+func (b *bareProvider) Capabilities() []domain.Capability                                { return nil }
+func (b *bareProvider) Nodes(_ context.Context) ([]domain.Node, error)                   { return nil, nil }
+func (b *bareProvider) VMs(_ context.Context) ([]domain.VM, error)                       { return nil, nil }
+func (b *bareProvider) Containers(_ context.Context) ([]domain.Container, error)         { return nil, nil }
+func (b *bareProvider) Storage(_ context.Context) ([]domain.Storage, error)              { return nil, nil }
+func (b *bareProvider) Cluster(_ context.Context) (*domain.Cluster, error)               { return nil, nil }
+func (b *bareProvider) VMConfig(_ context.Context, _ string, _ int) (map[string]interface{}, error) {
+	return nil, nil
 }
+func (b *bareProvider) ContainerConfig(_ context.Context, _ string, _ int) (map[string]interface{}, error) {
+	return nil, nil
+}
+func (b *bareProvider) StorageContent(_ context.Context, _, _ string) ([]domain.StorageContentItem, error) {
+	return nil, nil
+}
+func (b *bareProvider) Tasks(_ context.Context, _ string) ([]domain.Task, error)  { return nil, nil }
+func (b *bareProvider) Task(_ context.Context, _, _ string) (*domain.Task, error) { return nil, nil }
+func (b *bareProvider) VMSnapshots(_ context.Context, _ string, _ int) ([]domain.Snapshot, error) {
+	return nil, nil
+}
+func (b *bareProvider) ContainerSnapshots(_ context.Context, _ string, _ int) ([]domain.Snapshot, error) {
+	return nil, nil
+}
+func (b *bareProvider) Events(_ context.Context) ([]domain.Event, error) { return nil, nil }
+func (b *bareProvider) Syslog(_ context.Context, _ string) ([]domain.SyslogEntry, error) {
+	return nil, nil
+}
+func (b *bareProvider) Backups(_ context.Context, _ string) ([]domain.Backup, error) { return nil, nil }
+func (b *bareProvider) FirewallRules(_ context.Context) ([]domain.FirewallRule, error) {
+	return nil, nil
+}
+func (b *bareProvider) HAResources(_ context.Context) ([]domain.HAResource, error) { return nil, nil }
+func (b *bareProvider) HAGroups(_ context.Context) ([]domain.HAGroup, error)       { return nil, nil }
+
+type mockNoDetail struct{ bareProvider }
 
 func TestRequireNodeDetailReturnsError(t *testing.T) {
 	_, err := requireNodeDetail(&mockNoDetail{})
