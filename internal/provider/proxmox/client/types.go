@@ -359,3 +359,246 @@ type HAGroupItem struct {
 	Comment    string `json:"comment,omitempty"`
 	NoFailback int    `json:"nofailback,omitempty"`
 }
+
+// NodeServicesResponse is the response from /nodes/{node}/services.
+type NodeServicesResponse struct {
+	Data []NodeServiceItem `json:"data"`
+}
+
+// NodeServiceItem represents a system service on a node.
+type NodeServiceItem struct {
+	Name   string `json:"name"`
+	State  string `json:"state"`
+	Active bool   `json:"active"`
+}
+
+// NodeNetworkResponse is the response from /nodes/{node}/network.
+type NodeNetworkResponse struct {
+	Data []NodeNetworkItem `json:"data"`
+}
+
+// NodeNetworkItem represents a network interface on a node.
+type NodeNetworkItem struct {
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
+	IP     string `json:"ip,omitempty"`
+	MAC    string `json:"mac,omitempty"`
+}
+
+// NodeDNSResponse is the response from /nodes/{node}/dns.
+type NodeDNSResponse struct {
+	Data NodeDNSData `json:"data"`
+}
+
+// NodeDNSData holds DNS configuration for a node.
+type NodeDNSData struct {
+	DNS1         string `json:"dns1,omitempty"`
+	DNS2         string `json:"dns2,omitempty"`
+	SearchDomain string `json:"searchdomain,omitempty"`
+}
+
+// NodeTimeResponse is the response from /nodes/{node}/time.
+type NodeTimeResponse struct {
+	Data NodeTimeData `json:"data"`
+}
+
+// NodeTimeData holds time configuration for a node.
+type NodeTimeData struct {
+	TimeZone string `json:"timezone"`
+	Epoch    int64  `json:"epoch"`
+	Local    string `json:"localtime,omitempty"`
+}
+
+// NodeDisksResponse is the response from /nodes/{node}/disks/list.
+type NodeDisksResponse struct {
+	Data []NodeDiskItem `json:"data"`
+}
+
+// NodeDiskItem represents a physical disk on a node.
+type NodeDiskItem struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Size   int64  `json:"size"`
+	Type   string `json:"type,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Health string `json:"health,omitempty"`
+}
+
+// NodeCertificatesResponse is the response from /nodes/{node}/certificates.
+type NodeCertificatesResponse struct {
+	Data []NodeCertificateItem `json:"data"`
+}
+
+// NodeCertificateItem represents a TLS certificate on a node.
+type NodeCertificateItem struct {
+	Fingerprint string `json:"fingerprint"`
+	Subject     string `json:"subject"`
+	Issuer      string `json:"issuer,omitempty"`
+	NotBefore   string `json:"notbefore,omitempty"`
+	NotAfter    string `json:"notafter,omitempty"`
+}
+
+// NodeSubscriptionResponse is the response from /nodes/{node}/subscription.
+type NodeSubscriptionResponse struct {
+	Data NodeSubscriptionData `json:"data"`
+}
+
+// NodeSubscriptionData holds subscription status for a node.
+type NodeSubscriptionData struct {
+	Status  string `json:"status"`
+	Key     string `json:"key,omitempty"`
+	Expires string `json:"enddate,omitempty"`
+}
+
+// NodeUpdatesResponse is the response from /nodes/{node}/updates.
+type NodeUpdatesResponse struct {
+	Data []NodeUpdateItem `json:"data"`
+}
+
+// NodeUpdateItem represents an available update for a node.
+type NodeUpdateItem struct {
+	Package string `json:"package"`
+	Version string `json:"version"`
+}
+
+// FirewallAliasesResponse is the response from /cluster/firewall/aliases.
+type FirewallAliasesResponse struct {
+	Data []FirewallAliasItem `json:"data"`
+}
+
+// FirewallAliasItem represents a named address group.
+type FirewallAliasItem struct {
+	Name    string `json:"name"`
+	CIDR    string `json:"cidr"`
+	Comment string `json:"comment,omitempty"`
+}
+
+// FirewallIPSetsResponse is the response from /cluster/firewall/ipset.
+type FirewallIPSetsResponse struct {
+	Data []FirewallIPSetItem `json:"data"`
+}
+
+// FirewallIPSetItem represents an IP set.
+type FirewallIPSetItem struct {
+	Name    string `json:"name"`
+	Comment string `json:"comment,omitempty"`
+}
+
+// FirewallIPSetEntriesResponse is the response from /cluster/firewall/ipset/{name}.
+type FirewallIPSetEntriesResponse struct {
+	Data []FirewallIPSetEntryItem `json:"data"`
+}
+
+// FirewallIPSetEntryItem represents a single entry in an IP set.
+type FirewallIPSetEntryItem struct {
+	CIDR    string `json:"cidr"`
+	Comment string `json:"comment,omitempty"`
+}
+
+// FirewallSecurityGroupsResponse is the response from /cluster/firewall/groups.
+type FirewallSecurityGroupsResponse struct {
+	Data []FirewallSecurityGroupItem `json:"data"`
+}
+
+// FirewallSecurityGroupItem represents a firewall security group.
+type FirewallSecurityGroupItem struct {
+	Name    string `json:"name"`
+	Comment string `json:"comment,omitempty"`
+	Rules   []struct {
+		Type     string `json:"type"`
+		Action   string `json:"action"`
+		Enable   int    `json:"enable,omitempty"`
+		Pos      int    `json:"pos,omitempty"`
+		Proto    string `json:"proto,omitempty"`
+		Dest     string `json:"dest,omitempty"`
+		Dport    string `json:"dport,omitempty"`
+		Source   string `json:"source,omitempty"`
+		Sport    string `json:"sport,omitempty"`
+		ICMPType string `json:"icmp_type,omitempty"`
+		Log      string `json:"log,omitempty"`
+		Comment  string `json:"comment,omitempty"`
+	} `json:"rules"`
+}
+
+// FirewallOptionsResponse is the response from /cluster/firewall/options.
+type FirewallOptionsResponse struct {
+	Data FirewallOptionsData `json:"data"`
+}
+
+// FirewallOptionsData holds cluster-level firewall options.
+type FirewallOptionsData struct {
+	Enable int `json:"enable"`
+	Log    int `json:"log_in_drop"`
+}
+
+// NodeFirewallRulesResponse is the response from /nodes/{node}/firewall/rules.
+type NodeFirewallRulesResponse struct {
+	Data []FirewallRuleItem `json:"data"`
+}
+
+// VMFirewallRulesResponse is the response from /nodes/{node}/qemu/{vmid}/firewall/rules.
+type VMFirewallRulesResponse struct {
+	Data []FirewallRuleItem `json:"data"`
+}
+
+// HAStatusResponse is the response from /cluster/ha/status.
+type HAStatusResponse struct {
+	Data HAStatusData `json:"data"`
+}
+
+// HAStatusData holds cluster HA status.
+type HAStatusData struct {
+	Quorum int    `json:"quorum"`
+	Status string `json:"status"`
+}
+
+// HACurrentResponse is the response from /cluster/ha/current.
+type HACurrentResponse struct {
+	Data []HACurrentItem `json:"data"`
+}
+
+// HACurrentItem represents the current state of an HA resource.
+type HACurrentItem struct {
+	ID     string `json:"id"`
+	Type   string `json:"type"`
+	State  string `json:"state"`
+	Node   string `json:"node,omitempty"`
+	Status string `json:"status,omitempty"`
+}
+
+// SDNZonesResponse is the response from /cluster/sdn/zones.
+type SDNZonesResponse struct {
+	Data []SDNZoneItem `json:"data"`
+}
+
+// SDNZoneItem represents an SDN zone.
+type SDNZoneItem struct {
+	Name   string `json:"zone"`
+	Type   string `json:"type"`
+	Status string `json:"status,omitempty"`
+	VNets  int    `json:"vnet-count,omitempty"`
+}
+
+// SDNVNetsResponse is the response from /cluster/sdn/vnets.
+type SDNVNetsResponse struct {
+	Data []SDNVNetItem `json:"data"`
+}
+
+// SDNVNetItem represents an SDN virtual network.
+type SDNVNetItem struct {
+	Name  string `json:"vnet"`
+	Zone  string `json:"zone"`
+	VLAN  int    `json:"vlan,omitempty"`
+	Alias string `json:"alias,omitempty"`
+}
+
+// VMSnapshotConfigResponse is the response from /nodes/{node}/qemu/{vmid}/snapshot/{name}/config.
+type VMSnapshotConfigResponse struct {
+	Data map[string]interface{} `json:"data"`
+}
+
+// ContainerSnapshotConfigResponse is the response from /nodes/{node}/lxc/{vmid}/snapshot/{name}/config.
+type ContainerSnapshotConfigResponse struct {
+	Data map[string]interface{} `json:"data"`
+}
