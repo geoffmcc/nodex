@@ -113,6 +113,16 @@ func init() {
 	)
 	register("log", "Show node syslog", runLog)
 	register("doctor", "Check system health", runDoctor)
+	register("backup", "Manage backups", nil,
+		&command{name: "list", short: "List backup tasks", run: runBackupList},
+	)
+	register("firewall", "Manage firewall", nil,
+		&command{name: "list", short: "List firewall rules", run: runFirewallList},
+	)
+	register("ha", "Manage high availability", nil,
+		&command{name: "list", short: "List HA resources", run: runHAList},
+		&command{name: "groups", short: "List HA groups", run: runHAGroups},
+	)
 }
 
 // Run parses global flags and dispatches to the appropriate command.

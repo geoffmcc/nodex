@@ -472,3 +472,102 @@ func (p *Provider) Syslog(ctx context.Context, node string) ([]domain.SyslogEntr
 	}
 	return result, nil
 }
+
+// Backups returns backup tasks for a specific node.
+func (p *Provider) Backups(ctx context.Context, node string) ([]domain.Backup, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetBackupStatus(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get backup status: %w", err)
+	}
+	result := make([]domain.Backup, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.Backup{
+			UPID:      item.UPID,
+			Type:      item.Type,
+			State:     item.State,
+			StartTime: item.StartTime,
+			EndTime:   item.EndTime,
+			Status:    item.Status,
+			Node:      item.Node,
+			Storage:   item.Storage,
+		})
+	}
+	return result, nil
+}
+
+// FirewallRules returns cluster firewall rules.
+func (p *Provider) FirewallRules(ctx context.Context) ([]domain.FirewallRule, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetFirewallRules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get firewall rules: %w", err)
+	}
+	result := make([]domain.FirewallRule, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.FirewallRule{
+			Type:     item.Type,
+			Action:   item.Action,
+			Enable:   item.Enable,
+			Pos:      item.Pos,
+			Proto:    item.Proto,
+			Dest:     item.Dest,
+			Dport:    item.Dport,
+			Source:   item.Source,
+			Sport:    item.Sport,
+			ICMPType: item.ICMPType,
+			Log:      item.Log,
+			Comment:  item.Comment,
+		})
+	}
+	return result, nil
+}
+
+// HAResources returns HA resources.
+func (p *Provider) HAResources(ctx context.Context) ([]domain.HAResource, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetHAResources(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get HA resources: %w", err)
+	}
+	result := make([]domain.HAResource, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.HAResource{
+			ID:       item.ID,
+			Type:     item.Type,
+			State:    item.State,
+			Node:     item.Node,
+			Group:    item.Group,
+			MaxRelay: item.MaxRelay,
+		})
+	}
+	return result, nil
+}
+
+// HAGroups returns HA groups.
+func (p *Provider) HAGroups(ctx context.Context) ([]domain.HAGroup, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetHAGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get HA groups: %w", err)
+	}
+	result := make([]domain.HAGroup, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.HAGroup{
+			ID:         item.ID,
+			Type:       item.Type,
+			Nodes:      item.Nodes,
+			Comment:    item.Comment,
+			NoFailback: item.NoFailback,
+		})
+	}
+	return result, nil
+}

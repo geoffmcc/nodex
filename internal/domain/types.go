@@ -111,3 +111,50 @@ type SyslogEntry struct {
 	Level   string `json:"level,omitempty" yaml:"level,omitempty"`
 	Message string `json:"message,omitempty" yaml:"message,omitempty"`
 }
+
+// Backup represents a backup task.
+type Backup struct {
+	UPID      string `json:"upid" yaml:"upid"`
+	Type      string `json:"type" yaml:"type"`
+	State     string `json:"state" yaml:"state"`
+	StartTime int    `json:"starttime" yaml:"starttime"`
+	EndTime   int    `json:"endtime,omitempty" yaml:"endtime,omitempty"`
+	Status    string `json:"status,omitempty" yaml:"status,omitempty"`
+	Node      string `json:"node,omitempty" yaml:"node,omitempty"`
+	Storage   string `json:"storage,omitempty" yaml:"storage,omitempty"`
+}
+
+// FirewallRule represents a firewall rule.
+type FirewallRule struct {
+	Type     string `json:"type" yaml:"type"`
+	Action   string `json:"action" yaml:"action"`
+	Enable   int    `json:"enable,omitempty" yaml:"enable,omitempty"`
+	Pos      int    `json:"pos,omitempty" yaml:"pos,omitempty"`
+	Proto    string `json:"proto,omitempty" yaml:"proto,omitempty"`
+	Dest     string `json:"dest,omitempty" yaml:"dest,omitempty"`
+	Dport    string `json:"dport,omitempty" yaml:"dport,omitempty"`
+	Source   string `json:"source,omitempty" yaml:"source,omitempty"`
+	Sport    string `json:"sport,omitempty" yaml:"sport,omitempty"`
+	ICMPType string `json:"icmp_type,omitempty" yaml:"icmp_type,omitempty"`
+	Log      string `json:"log,omitempty" yaml:"log,omitempty"`
+	Comment  string `json:"comment,omitempty" yaml:"comment,omitempty"`
+}
+
+// HAResource represents an HA resource.
+type HAResource struct {
+	ID       string `json:"id" yaml:"id"`
+	Type     string `json:"type" yaml:"type"`
+	State    string `json:"state" yaml:"state"`
+	Node     string `json:"node,omitempty" yaml:"node,omitempty"`
+	Group    string `json:"group,omitempty" yaml:"group,omitempty"`
+	MaxRelay int    `json:"max_relocate,omitempty" yaml:"max_relocate,omitempty"`
+}
+
+// HAGroup represents an HA group.
+type HAGroup struct {
+	ID         string `json:"id" yaml:"id"`
+	Type       string `json:"type" yaml:"type"`
+	Nodes      string `json:"nodes" yaml:"nodes"`
+	Comment    string `json:"comment,omitempty" yaml:"comment,omitempty"`
+	NoFailback int    `json:"nofailback,omitempty" yaml:"nofailback,omitempty"`
+}

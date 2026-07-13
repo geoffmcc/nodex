@@ -60,6 +60,18 @@ type Provider interface {
 
 	// Syslog returns syslog entries for a specific node.
 	Syslog(ctx context.Context, node string) ([]SyslogEntry, error)
+
+	// Backups returns backup tasks for a specific node.
+	Backups(ctx context.Context, node string) ([]Backup, error)
+
+	// FirewallRules returns cluster firewall rules.
+	FirewallRules(ctx context.Context) ([]FirewallRule, error)
+
+	// HAResources returns HA resources.
+	HAResources(ctx context.Context) ([]HAResource, error)
+
+	// HAGroups returns HA groups.
+	HAGroups(ctx context.Context) ([]HAGroup, error)
 }
 
 // Credentials holds authentication information for a provider.

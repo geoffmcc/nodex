@@ -115,6 +115,26 @@ func (p *e2eMockProvider) Syslog(_ context.Context, node string) ([]domain.Syslo
 		{Time: 1700000001, Node: node, Level: "err", Message: "disk failure"},
 	}, nil
 }
+func (p *e2eMockProvider) Backups(_ context.Context, node string) ([]domain.Backup, error) {
+	return []domain.Backup{
+		{UPID: "UPID:e2e-node/00012345/0", Type: "vzdump", State: "stopped", Status: "OK", Node: node, StartTime: 1700000000, EndTime: 1700000010},
+	}, nil
+}
+func (p *e2eMockProvider) FirewallRules(_ context.Context) ([]domain.FirewallRule, error) {
+	return []domain.FirewallRule{
+		{Type: "in", Action: "ACCEPT", Enable: 1, Pos: 1, Proto: "tcp", Dport: "22", Comment: "SSH"},
+	}, nil
+}
+func (p *e2eMockProvider) HAResources(_ context.Context) ([]domain.HAResource, error) {
+	return []domain.HAResource{
+		{ID: "ha:vm/100", Type: "vm", State: "started", Node: "e2e-node", Group: "default"},
+	}, nil
+}
+func (p *e2eMockProvider) HAGroups(_ context.Context) ([]domain.HAGroup, error) {
+	return []domain.HAGroup{
+		{ID: "default", Type: "group", Nodes: "e2e-node", Comment: "Default HA group"},
+	}, nil
+}
 
 func TestRunE2EWithMockProvider(t *testing.T) {
 	isolateConfigAndHome(t)
@@ -155,6 +175,10 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "status", args: []string{"--output", "json", "status"}, want: []string{`"cluster": "e2e"`, `"nodes": 1`, `"vms_running": 1`}},
 		{name: "event list", args: []string{"--output", "json", "event", "list"}, want: []string{`"type": "node"`, `"message": "node online"`, `"id": "node/e2e-node"`}},
 		{name: "log", args: []string{"--output", "json", "log", "e2e-node"}, want: []string{`"level": "info"`, `"message": "system startup"`, `"node": "e2e-node"`}},
+		{name: "backup list", args: []string{"--output", "json", "backup", "list", "e2e-node"}, want: []string{`"type": "vzdump"`, `"state": "stopped"`, `"node": "e2e-node"`}},
+		{name: "firewall list", args: []string{"--output", "json", "firewall", "list"}, want: []string{`"action": "ACCEPT"`, `"dport": "22"`, `"comment": "SSH"`}},
+		{name: "ha list", args: []string{"--output", "json", "ha", "list"}, want: []string{`"type": "vm"`, `"state": "started"`, `"group": "default"`}},
+		{name: "ha groups", args: []string{"--output", "json", "ha", "groups"}, want: []string{`"id": "default"`, `"nodes": "e2e-node"`, `"comment": "Default HA group"`}},
 	}
 
 	for _, tt := range tests {

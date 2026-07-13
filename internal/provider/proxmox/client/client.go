@@ -300,6 +300,54 @@ func (c *Client) GetSyslog(ctx context.Context, node string) ([]SyslogItem, erro
 	return resp.Data, nil
 }
 
+// GetBackupStatus returns backup tasks for a specific node.
+func (c *Client) GetBackupStatus(ctx context.Context, node string) ([]BackupStatusItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp BackupStatusResponse
+	path := "/nodes/" + url.PathEscape(node) + "/tasks"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	// Filter for backup tasks (vzdump)
+	result := make([]BackupStatusItem, 0)
+	for _, item := range resp.Data {
+		if item.Type == "vzdump" {
+			item.Node = node
+			result = append(result, item)
+		}
+	}
+	return result, nil
+}
+
+// GetFirewallRules returns cluster firewall rules.
+func (c *Client) GetFirewallRules(ctx context.Context) ([]FirewallRuleItem, error) {
+	var resp FirewallRuleResponse
+	if err := c.get(ctx, "/cluster/firewall/rules", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetHAResources returns HA resources.
+func (c *Client) GetHAResources(ctx context.Context) ([]HAResourceItem, error) {
+	var resp HAResourceResponse
+	if err := c.get(ctx, "/cluster/ha/resources", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetHAGroups returns HA groups.
+func (c *Client) GetHAGroups(ctx context.Context) ([]HAGroupItem, error) {
+	var resp HAGroupResponse
+	if err := c.get(ctx, "/cluster/ha/groups", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil
