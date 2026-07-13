@@ -513,6 +513,145 @@ func TestRun_VersionUnknownSubcommand(t *testing.T) {
 	}
 }
 
+func TestNodeDetailSubcommandsRegistered(t *testing.T) {
+	cmd, ok := GetCommand("node")
+	if !ok {
+		t.Fatal("node command not registered")
+	}
+	subs := []string{"services", "network", "dns", "time", "disks", "certificates", "subscription", "updates"}
+	for _, subName := range subs {
+		if _, ok := cmd.sub[subName]; !ok {
+			t.Fatalf("node command missing %s subcommand", subName)
+		}
+	}
+}
+
+func TestNodeDetailSubcommandsRejectWrongArgCount(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "services", args: []string{"node", "services"}},
+		{name: "services-extra", args: []string{"node", "services", "node1", "extra"}},
+		{name: "network", args: []string{"node", "network"}},
+		{name: "network-extra", args: []string{"node", "network", "node1", "extra"}},
+		{name: "dns", args: []string{"node", "dns"}},
+		{name: "dns-extra", args: []string{"node", "dns", "node1", "extra"}},
+		{name: "time", args: []string{"node", "time"}},
+		{name: "time-extra", args: []string{"node", "time", "node1", "extra"}},
+		{name: "disks", args: []string{"node", "disks"}},
+		{name: "disks-extra", args: []string{"node", "disks", "node1", "extra"}},
+		{name: "certificates", args: []string{"node", "certificates"}},
+		{name: "certificates-extra", args: []string{"node", "certificates", "node1", "extra"}},
+		{name: "subscription", args: []string{"node", "subscription"}},
+		{name: "subscription-extra", args: []string{"node", "subscription", "node1", "extra"}},
+		{name: "updates", args: []string{"node", "updates"}},
+		{name: "updates-extra", args: []string{"node", "updates", "node1", "extra"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfigAndHome(t)
+			setupE2EConfig(t)
+
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err == nil {
+				t.Fatal("expected usage error")
+			}
+			var exitCode *app.ExitCoder
+			if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+				t.Fatalf("error = %v, want ExitUsage", err)
+			}
+		})
+	}
+}
+
+func setupE2EConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("NODEX_E2E_TOKEN", "e2e-token")
+	cfg := config.DefaultConfig()
+	cfg.CurrentProfile = "e2e"
+	cfg.Profiles["e2e"] = config.Profile{Provider: e2eMockProviderName, Endpoint: "https://e2e.example.invalid", CredentialRef: "env:e2e"}
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := config.WriteTo(cfg, path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+}
+
+func TestRun_NodeServices(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"node", "services", "e2e-node"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+func TestRun_NodeDNS(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"node", "dns", "e2e-node"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "8.8.8.8") {
+		t.Errorf("expected DNS1 in output, got: %s", stdout.String())
+	}
+}
+
+func TestRun_NodeSubscription(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"node", "subscription", "e2e-node"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "valid") {
+		t.Errorf("expected subscription status in output, got: %s", stdout.String())
+	}
+}
+
+func TestWriteNodeDetailNilHandling(t *testing.T) {
+	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+		t.Run(string(format), func(t *testing.T) {
+			ctx := &Context{Writer: &bytes.Buffer{}, Opts: Options{Output: format}}
+			if err := writeNodeServices(ctx, nil); err != nil {
+				t.Fatalf("writeNodeServices nil: %v", err)
+			}
+			if err := writeNodeNetwork(ctx, nil); err != nil {
+				t.Fatalf("writeNodeNetwork nil: %v", err)
+			}
+			if err := writeNodeDNS(ctx, nil); err != nil {
+				t.Fatalf("writeNodeDNS nil: %v", err)
+			}
+			if err := writeNodeTime(ctx, nil); err != nil {
+				t.Fatalf("writeNodeTime nil: %v", err)
+			}
+			if err := writeNodeDisks(ctx, nil); err != nil {
+				t.Fatalf("writeNodeDisks nil: %v", err)
+			}
+			if err := writeNodeCertificates(ctx, nil); err != nil {
+				t.Fatalf("writeNodeCertificates nil: %v", err)
+			}
+			if err := writeNodeSubscription(ctx, nil); err != nil {
+				t.Fatalf("writeNodeSubscription nil: %v", err)
+			}
+			if err := writeNodeUpdates(ctx, nil); err != nil {
+				t.Fatalf("writeNodeUpdates nil: %v", err)
+			}
+		})
+	}
+}
+
 func TestWriteEmptyResourceListsAsStructuredArrays(t *testing.T) {
 	tests := []struct {
 		name  string
