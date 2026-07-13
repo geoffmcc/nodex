@@ -82,6 +82,8 @@ func TestGoldenJSON(t *testing.T) {
 		{name: "sdn_vnets", args: []string{"--output", "json", "sdn", "vnets"}},
 		{name: "vm_snapshot_config", args: []string{"--output", "json", "vm", "snapshot-config", "e2e-node/100", "snap1"}},
 		{name: "container_snapshot_config", args: []string{"--output", "json", "container", "snapshot-config", "e2e-node/200", "snap2"}},
+		{name: "pools_list", args: []string{"--output", "json", "pools", "list"}},
+		{name: "cluster_log", args: []string{"--output", "json", "cluster", "log"}},
 	}
 
 	goldenDir := filepath.Join("testdata", "golden")
@@ -214,6 +216,8 @@ func TestGoldenTable(t *testing.T) {
 		{name: "firewall_list", args: []string{"--output", "table", "firewall", "list"}},
 		{name: "backup_list", args: []string{"--output", "table", "backup", "list", "e2e-node"}},
 		{name: "cluster_status", args: []string{"--output", "table", "cluster", "status"}},
+		{name: "pools_list", args: []string{"--output", "table", "pools", "list"}},
+		{name: "cluster_log", args: []string{"--output", "table", "cluster", "log"}},
 	}
 
 	goldenDir := filepath.Join("testdata", "golden", "table")

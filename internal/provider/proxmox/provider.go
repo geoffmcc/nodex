@@ -74,6 +74,8 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilityBackupContent,
 		domain.CapabilitySDN,
 		domain.CapabilitySnapshotDetail,
+		domain.CapabilityPools,
+		domain.CapabilityClusterLog,
 	}
 }
 
@@ -1057,4 +1059,72 @@ func (p *Provider) ContainerSnapshotConfig(ctx context.Context, node string, vmi
 		return nil, fmt.Errorf("get container snapshot config: %w", err)
 	}
 	return config, nil
+}
+
+// Pools returns all resource pools.
+func (p *Provider) Pools(ctx context.Context) ([]domain.Pool, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetPools(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get pools: %w", err)
+	}
+	result := make([]domain.Pool, 0, len(items))
+	for _, item := range items {
+		pool := domain.Pool{
+			PoolID:  item.PoolID,
+			Comment: item.Comment,
+			Members: make([]string, 0, len(item.Members)),
+		}
+		for _, m := range item.Members {
+			pool.Members = append(pool.Members, m.ID)
+		}
+		result = append(result, pool)
+	}
+	return result, nil
+}
+
+// ClusterLog returns cluster-wide log entries.
+func (p *Provider) ClusterLog(ctx context.Context) ([]domain.ClusterLogEntry, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetClusterLog(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get cluster log: %w", err)
+	}
+	result := make([]domain.ClusterLogEntry, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.ClusterLogEntry{
+			N:       item.N,
+			Message: item.T,
+		})
+	}
+	return result, nil
+}
+
+// ClusterStatuses returns detailed cluster status including quorum info.
+func (p *Provider) ClusterStatuses(ctx context.Context) ([]domain.ClusterStatusDetail, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetClusterStatus(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get cluster status: %w", err)
+	}
+	result := make([]domain.ClusterStatusDetail, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.ClusterStatusDetail{
+			Type:    item.Type,
+			ID:      item.ID,
+			Name:    item.Name,
+			Status:  item.Status,
+			Level:   item.Level,
+			IP:      item.IP,
+			Quorate: item.Quorate,
+			Version: item.Version,
+		})
+	}
+	return result, nil
 }

@@ -121,6 +121,7 @@ func init() {
 	)
 	register("cluster", "Manage cluster", nil,
 		&command{name: "status", short: "Show cluster status", run: runClusterStatus},
+		&command{name: "log", short: "Show cluster log entries", run: runClusterLog},
 	)
 	register("event", "Manage events", nil,
 		&command{name: "list", short: "List cluster events", run: runEventList},
@@ -150,6 +151,9 @@ func init() {
 	register("sdn", "Manage SDN", nil,
 		&command{name: "zones", short: "List SDN zones", run: runSDNZones},
 		&command{name: "vnets", short: "List SDN VNets", run: runSDNVNets},
+	)
+	register("pools", "Manage resource pools", nil,
+		&command{name: "list", short: "List all resource pools", run: runPoolsList},
 	)
 }
 

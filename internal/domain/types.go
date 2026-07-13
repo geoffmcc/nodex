@@ -158,3 +158,28 @@ type HAGroup struct {
 	Comment    string `json:"comment,omitempty" yaml:"comment,omitempty"`
 	NoFailback int    `json:"nofailback,omitempty" yaml:"nofailback,omitempty"`
 }
+
+// Pool represents a resource pool.
+type Pool struct {
+	PoolID  string   `json:"poolid" yaml:"poolid"`
+	Comment string   `json:"comment,omitempty" yaml:"comment,omitempty"`
+	Members []string `json:"members,omitempty" yaml:"members,omitempty"`
+}
+
+// ClusterLogEntry represents a cluster log entry from /cluster/log.
+type ClusterLogEntry struct {
+	N       int64  `json:"n" yaml:"n"`
+	Message string `json:"t" yaml:"t"`
+}
+
+// ClusterStatusDetail represents an item from /cluster/status.
+type ClusterStatusDetail struct {
+	Type    string `json:"type" yaml:"type"`
+	ID      string `json:"id" yaml:"id"`
+	Name    string `json:"name" yaml:"name"`
+	Status  string `json:"status" yaml:"status"`
+	Level   string `json:"level,omitempty" yaml:"level,omitempty"`
+	IP      string `json:"ip,omitempty" yaml:"ip,omitempty"`
+	Quorate int    `json:"quorate,omitempty" yaml:"quorate,omitempty"`
+	Version int    `json:"version,omitempty" yaml:"version,omitempty"`
+}

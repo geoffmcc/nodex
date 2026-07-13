@@ -1,0 +1,10 @@
+[
+  {
+    "n": 1,
+    "t": "starting cluster services"
+  },
+  {
+    "n": 2,
+    "t": "node e2e-node joined quorum"
+  }
+]

@@ -802,6 +802,7 @@ type statusOverview struct {
 	Cluster     string          `json:"cluster" yaml:"cluster"`
 	Version     string          `json:"version" yaml:"version"`
 	Nodes       int             `json:"nodes" yaml:"nodes"`
+	Quorum      int             `json:"quorum" yaml:"quorum"`
 	NodesDetail []statusNode    `json:"nodes_detail" yaml:"nodes_detail"`
 	VMs         int             `json:"vms" yaml:"vms"`
 	VMsRunning  int             `json:"vms_running" yaml:"vms_running"`
@@ -810,6 +811,12 @@ type statusOverview struct {
 	CTsRunning  int             `json:"cts_running" yaml:"cts_running"`
 	CTsStopped  int             `json:"cts_stopped" yaml:"cts_stopped"`
 	Storage     []statusStorage `json:"storage" yaml:"storage"`
+	HA          *statusHA       `json:"ha,omitempty" yaml:"ha,omitempty"`
+}
+
+type statusHA struct {
+	Status string `json:"status" yaml:"status"`
+	Quorum int    `json:"quorum" yaml:"quorum"`
 }
 
 type statusNode struct {
@@ -893,6 +900,27 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 		overview.Version = cluster.Version
 	}
 
+	// Query cluster status for quorum information.
+	if cp, ok := prov.(domain.ClusterStatusProvider); ok {
+		if cs, err := cp.ClusterStatuses(ctx); err == nil {
+			for _, item := range cs {
+				if item.Type == "cluster" {
+					overview.Quorum = item.Quorate
+				}
+			}
+		}
+	}
+
+	// Query HA status if available.
+	if hp, ok := prov.(domain.HAProvider); ok {
+		if ha, err := hp.HAStatus(ctx); err == nil && ha != nil {
+			overview.HA = &statusHA{
+				Status: ha.Status,
+				Quorum: ha.Quorum,
+			}
+		}
+	}
+
 	return writeStatus(cmdCtx, &overview)
 }
 
@@ -904,13 +932,30 @@ func writeStatus(cmdCtx *Context, overview *statusOverview) error {
 		return output.WriteYAML(cmdCtx.Writer, overview)
 	default:
 		w := cmdCtx.Writer
-		fmt.Fprintf(w, "Cluster: %s  Version: %s  Nodes: %d\n", overview.Cluster, overview.Version, overview.Nodes)
+		fmt.Fprintf(w, "Cluster: %s  Version: %s  Nodes: %d", overview.Cluster, overview.Version, overview.Nodes)
+		if overview.Quorum > 0 {
+			fmt.Fprintf(w, "  Quorum: %d", overview.Quorum)
+		}
+		fmt.Fprintln(w)
 		fmt.Fprintf(w, "VMs: %d running, %d stopped\n", overview.VMsRunning, overview.VMsStopped)
 		fmt.Fprintf(w, "Containers: %d running, %d stopped\n", overview.CTsRunning, overview.CTsStopped)
+		if overview.HA != nil {
+			fmt.Fprintf(w, "HA: %s (quorum: %d)\n", overview.HA.Status, overview.HA.Quorum)
+		}
 		if len(overview.Storage) > 0 {
 			fmt.Fprintln(w, "\nStorage:")
 			for _, s := range overview.Storage {
-				fmt.Fprintf(w, "  %-20s %-8s %s / %s\n", s.Name, s.Type, formatBytes(s.Used), formatBytes(s.Total))
+				health := ""
+				pct := 0.0
+				if s.Total > 0 {
+					pct = float64(s.Used) / float64(s.Total) * 100
+				}
+				if pct > 90 {
+					health = " [WARN]"
+				} else if pct > 75 {
+					health = " [HIGH]"
+				}
+				fmt.Fprintf(w, "  %-20s %-8s %s / %s (%.1f%%)%s\n", s.Name, s.Type, formatBytes(s.Used), formatBytes(s.Total), pct, health)
 			}
 		}
 		return nil

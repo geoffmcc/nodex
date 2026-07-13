@@ -602,3 +602,32 @@ type VMSnapshotConfigResponse struct {
 type ContainerSnapshotConfigResponse struct {
 	Data map[string]interface{} `json:"data"`
 }
+
+// PoolsResponse is the response from /pools.
+type PoolsResponse struct {
+	Data []PoolItem `json:"data"`
+}
+
+// PoolItem represents a single resource pool.
+type PoolItem struct {
+	PoolID  string `json:"poolid"`
+	Comment string `json:"comment,omitempty"`
+	Members []struct {
+		ID     string `json:"id"`
+		Type   string `json:"type"`
+		Node   string `json:"node,omitempty"`
+		VMID   int    `json:"vmid,omitempty"`
+		PoolID string `json:"poolid"`
+	} `json:"members,omitempty"`
+}
+
+// ClusterLogResponse is the response from /cluster/log.
+type ClusterLogResponse struct {
+	Data []ClusterLogItem `json:"data"`
+}
+
+// ClusterLogItem represents a single cluster log entry.
+type ClusterLogItem struct {
+	N int64  `json:"n"`
+	T string `json:"t"`
+}

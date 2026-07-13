@@ -611,6 +611,24 @@ func (c *Client) GetContainerSnapshotConfig(ctx context.Context, node string, vm
 	return resp.Data, nil
 }
 
+// GetPools returns all resource pools.
+func (c *Client) GetPools(ctx context.Context) ([]PoolItem, error) {
+	var resp PoolsResponse
+	if err := c.get(ctx, "/pools", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetClusterLog returns cluster-wide log entries.
+func (c *Client) GetClusterLog(ctx context.Context) ([]ClusterLogItem, error) {
+	var resp ClusterLogResponse
+	if err := c.get(ctx, "/cluster/log", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil

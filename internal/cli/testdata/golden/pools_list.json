@@ -1,0 +1,17 @@
+[
+  {
+    "poolid": "admins",
+    "comment": "Admin resources",
+    "members": [
+      "qemu/100",
+      "qemu/101"
+    ]
+  },
+  {
+    "poolid": "devs",
+    "comment": "Dev resources",
+    "members": [
+      "qemu/200"
+    ]
+  }
+]
