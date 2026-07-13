@@ -33,6 +33,9 @@ func (b *FileBackend) Get(_ context.Context, profile string) (*domain.Credential
 	if err != nil {
 		return nil, fmt.Errorf("read credential file: %w", err)
 	}
+	if err := CheckCredentialFilePermissions(path); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	}
 	var creds domain.Credentials
 	if err := json.Unmarshal(data, &creds); err != nil {
 		return nil, fmt.Errorf("parse credential file: %w", err)
@@ -121,4 +124,17 @@ func (b *FileBackend) List(_ context.Context) ([]string, error) {
 
 func (b *FileBackend) path(profile string) string {
 	return filepath.Join(b.dir, profile+".json")
+}
+
+// CheckCredentialFilePermissions checks if a credential file has overly broad permissions.
+func CheckCredentialFilePermissions(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat credential file: %w", err)
+	}
+	mode := info.Mode().Perm()
+	if mode&0o077 != 0 {
+		return fmt.Errorf("credential file %s has permissions %o; recommended: 0600", path, mode)
+	}
+	return nil
 }

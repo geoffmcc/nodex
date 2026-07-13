@@ -332,3 +332,39 @@ func TestFileBackendInvalidStoreLeavesExistingCredential(t *testing.T) {
 		t.Fatalf("existing credential changed: %+v", got)
 	}
 }
+
+func TestCheckCredentialFilePermissionsSecure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.json")
+	data := []byte(`{"type":"token","token_id":"id","token_secret":"secret"}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := CheckCredentialFilePermissions(path); err != nil {
+		t.Fatalf("CheckCredentialFilePermissions: %v", err)
+	}
+}
+
+func TestCheckCredentialFilePermissionsInsecure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.json")
+	data := []byte(`{"type":"token","token_id":"id","token_secret":"secret"}`)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := CheckCredentialFilePermissions(path); err == nil {
+		t.Fatal("expected permission error for 0644 file")
+	}
+}
+
+func TestCheckCredentialFilePermissionsGroupReadable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.json")
+	data := []byte(`{"type":"token","token_id":"id","token_secret":"secret"}`)
+	if err := os.WriteFile(path, data, 0o640); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := CheckCredentialFilePermissions(path); err == nil {
+		t.Fatal("expected permission error for 0640 file")
+	}
+}
