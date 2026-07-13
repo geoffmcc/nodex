@@ -1,0 +1,9 @@
+{
+  "upid": "UPID:e2e-node/00012345/0",
+  "type": "vzdump",
+  "state": "stopped",
+  "starttime": 1700000000,
+  "endtime": 1700000010,
+  "status": "OK",
+  "node": "e2e-node"
+}

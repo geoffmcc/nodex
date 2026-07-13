@@ -29,7 +29,7 @@ func runNodeList(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("list nodes: %w", err)
 	}
 
-	return writeNodes(cmdCtx, nodes)
+	return writeNodes(cmdCtx, applyLimit(nodes, cmdCtx.Opts.Limit))
 }
 
 func runNodeShow(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -222,7 +222,7 @@ func runVMList(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list VMs: %w", err)
 	}
-	return writeVMs(cmdCtx, vms)
+	return writeVMs(cmdCtx, applyLimit(vms, cmdCtx.Opts.Limit))
 }
 
 func runVMShow(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -320,7 +320,7 @@ func runContainerList(ctx context.Context, cmdCtx *Context, args []string) error
 	if err != nil {
 		return fmt.Errorf("list containers: %w", err)
 	}
-	return writeContainers(cmdCtx, containers)
+	return writeContainers(cmdCtx, applyLimit(containers, cmdCtx.Opts.Limit))
 }
 
 func runContainerShow(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -417,7 +417,7 @@ func runStorageList(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list storage: %w", err)
 	}
-	return writeStorages(cmdCtx, storages)
+	return writeStorages(cmdCtx, applyLimit(storages, cmdCtx.Opts.Limit))
 }
 
 func runStorageShow(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -675,7 +675,7 @@ func runTaskList(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list tasks: %w", err)
 	}
-	return writeTaskList(cmdCtx, tasks)
+	return writeTaskList(cmdCtx, applyLimit(tasks, cmdCtx.Opts.Limit))
 }
 
 func writeTaskList(cmdCtx *Context, tasks []domain.Task) error {
@@ -768,7 +768,7 @@ func runVMSnapshots(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("get vm snapshots: %w", err)
 	}
-	return writeSnapshotList(cmdCtx, snaps)
+	return writeSnapshotList(cmdCtx, applyLimit(snaps, cmdCtx.Opts.Limit))
 }
 
 func runContainerSnapshots(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -794,7 +794,7 @@ func runContainerSnapshots(ctx context.Context, cmdCtx *Context, args []string) 
 	if err != nil {
 		return fmt.Errorf("get container snapshots: %w", err)
 	}
-	return writeSnapshotList(cmdCtx, snaps)
+	return writeSnapshotList(cmdCtx, applyLimit(snaps, cmdCtx.Opts.Limit))
 }
 
 func writeSnapshotList(cmdCtx *Context, snaps []domain.Snapshot) error {
@@ -953,7 +953,7 @@ func runEventList(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list events: %w", err)
 	}
-	return writeEventList(cmdCtx, events)
+	return writeEventList(cmdCtx, applyLimit(events, cmdCtx.Opts.Limit))
 }
 
 func writeEventList(cmdCtx *Context, events []domain.Event) error {
@@ -999,7 +999,7 @@ func runLog(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("get syslog: %w", err)
 	}
-	return writeSyslog(cmdCtx, entries)
+	return writeSyslog(cmdCtx, applyLimit(entries, cmdCtx.Opts.Limit))
 }
 
 func writeSyslog(cmdCtx *Context, entries []domain.SyslogEntry) error {

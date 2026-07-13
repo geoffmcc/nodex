@@ -1,0 +1,14 @@
+{
+  "cpu": 0,
+  "maxcpu": 0,
+  "mem": 0,
+  "maxmem": 0,
+  "disk": 0,
+  "maxdisk": 0,
+  "uptime": 0,
+  "level": "",
+  "id": "node/e2e-node",
+  "node": "e2e-node",
+  "type": "node",
+  "status": "online"
+}

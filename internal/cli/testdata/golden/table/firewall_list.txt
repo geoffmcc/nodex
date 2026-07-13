@@ -1,0 +1,2 @@
+POS  TYPE  ACTION  PROTO  SOURCE  DEST  COMMENT
+1    in    ACCEPT  tcp            :22   SSH

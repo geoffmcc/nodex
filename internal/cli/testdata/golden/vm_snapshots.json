@@ -1,0 +1,17 @@
+[
+  {
+    "name": "before-upgrade",
+    "vmid": 100,
+    "ctime": 1700000000,
+    "parent": "current",
+    "node": "e2e-node",
+    "target": "e2e-node/100"
+  },
+  {
+    "name": "current",
+    "vmid": 100,
+    "ctime": 1700000010,
+    "node": "e2e-node",
+    "target": "e2e-node/100"
+  }
+]

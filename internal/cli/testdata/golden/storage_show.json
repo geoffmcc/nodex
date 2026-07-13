@@ -1,0 +1,10 @@
+{
+  "id": "storage/e2e-node/local",
+  "name": "local",
+  "type": "dir",
+  "status": "available",
+  "node": "e2e-node",
+  "total": 4096,
+  "used": 1024,
+  "avail": 3072
+}

@@ -1,0 +1,11 @@
+[
+  {
+    "type": "in",
+    "action": "ACCEPT",
+    "enable": 1,
+    "pos": 1,
+    "proto": "tcp",
+    "dport": "22",
+    "comment": "SSH"
+  }
+]

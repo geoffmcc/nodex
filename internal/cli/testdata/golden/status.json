@@ -1,0 +1,26 @@
+{
+  "cluster": "e2e",
+  "version": "test",
+  "nodes": 1,
+  "nodes_detail": [
+    {
+      "name": "e2e-node",
+      "status": "online"
+    }
+  ],
+  "vms": 1,
+  "vms_running": 1,
+  "vms_stopped": 0,
+  "containers": 1,
+  "cts_running": 1,
+  "cts_stopped": 0,
+  "storage": [
+    {
+      "name": "local",
+      "type": "dir",
+      "total": 4096,
+      "used": 1024,
+      "avail": 3072
+    }
+  ]
+}
