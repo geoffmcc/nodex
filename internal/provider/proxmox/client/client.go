@@ -246,6 +246,38 @@ func (c *Client) GetTask(ctx context.Context, node, upid string) (*TaskListItem,
 	return &resp.Data, nil
 }
 
+// GetVMSnapshots returns snapshots for a VM.
+func (c *Client) GetVMSnapshots(ctx context.Context, node string, vmid int) ([]SnapshotListItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return nil, fmt.Errorf("VMID is required")
+	}
+	var resp SnapshotListResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/snapshot"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetContainerSnapshots returns snapshots for a container.
+func (c *Client) GetContainerSnapshots(ctx context.Context, node string, vmid int) ([]SnapshotListItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return nil, fmt.Errorf("VMID is required")
+	}
+	var resp SnapshotListResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/snapshot"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil

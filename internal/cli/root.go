@@ -85,6 +85,7 @@ func init() {
 		&command{name: "list", short: "List all virtual machines", run: runVMList},
 		&command{name: "show", short: "Show VM details", run: runVMShow},
 		&command{name: "config", short: "Show VM configuration", run: runVMConfig},
+		&command{name: "snapshots", short: "List VM snapshots", run: runVMSnapshots},
 	)
 
 	register("task", "Manage tasks", nil,
@@ -95,6 +96,7 @@ func init() {
 		&command{name: "list", short: "List all containers", run: runContainerList},
 		&command{name: "show", short: "Show container details", run: runContainerShow},
 		&command{name: "config", short: "Show container configuration", run: runContainerConfig},
+		&command{name: "snapshots", short: "List container snapshots", run: runContainerSnapshots},
 	)
 	register("storage", "Manage storage", nil,
 		&command{name: "list", short: "List all storage pools", run: runStorageList},

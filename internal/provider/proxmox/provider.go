@@ -383,3 +383,49 @@ func (p *Provider) Task(ctx context.Context, node, upid string) (*domain.Task, e
 		Node:      node,
 	}, nil
 }
+
+// VMSnapshots returns snapshots for a VM.
+func (p *Provider) VMSnapshots(ctx context.Context, node string, vmid int) ([]domain.Snapshot, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetVMSnapshots(ctx, node, vmid)
+	if err != nil {
+		return nil, fmt.Errorf("get vm snapshots: %w", err)
+	}
+	result := make([]domain.Snapshot, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.Snapshot{
+			Name:   item.Name,
+			VMID:   item.VMID,
+			Ctime:  item.Ctime,
+			Parent: item.Parent,
+			Node:   node,
+			Target: fmt.Sprintf("%s/%d", node, vmid),
+		})
+	}
+	return result, nil
+}
+
+// ContainerSnapshots returns snapshots for a container.
+func (p *Provider) ContainerSnapshots(ctx context.Context, node string, vmid int) ([]domain.Snapshot, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetContainerSnapshots(ctx, node, vmid)
+	if err != nil {
+		return nil, fmt.Errorf("get container snapshots: %w", err)
+	}
+	result := make([]domain.Snapshot, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.Snapshot{
+			Name:   item.Name,
+			VMID:   item.VMID,
+			Ctime:  item.Ctime,
+			Parent: item.Parent,
+			Node:   node,
+			Target: fmt.Sprintf("%s/%d", node, vmid),
+		})
+	}
+	return result, nil
+}

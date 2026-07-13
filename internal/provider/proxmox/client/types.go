@@ -250,3 +250,16 @@ type TaskListItem struct {
 type TaskDetailResponse struct {
 	Data TaskListItem `json:"data"`
 }
+
+// SnapshotListResponse is the response from /nodes/{node}/qemu/{vmid}/snapshot.
+type SnapshotListResponse struct {
+	Data []SnapshotListItem `json:"data"`
+}
+
+// SnapshotListItem represents a single snapshot.
+type SnapshotListItem struct {
+	Name   string `json:"name"`
+	VMID   int    `json:"vmid,omitempty"`
+	Ctime  int    `json:"ctime,omitempty"`
+	Parent string `json:"parent,omitempty"`
+}

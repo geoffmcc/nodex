@@ -744,3 +744,78 @@ func writeTaskDetail(cmdCtx *Context, task *domain.Task) error {
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
 }
+
+func runVMSnapshots(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex vm snapshots <node/vmid>"), app.ExitUsage)
+	}
+	parts := strings.SplitN(args[0], "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex vm snapshots <node/vmid>"), app.ExitUsage)
+	}
+	node := parts[0]
+	vmid, err := strconv.Atoi(parts[1])
+	if err != nil || vmid <= 0 {
+		return app.NewExitError(fmt.Errorf("invalid VMID: %s", parts[1]), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	snaps, err := prov.VMSnapshots(ctx, node, vmid)
+	if err != nil {
+		return fmt.Errorf("get vm snapshots: %w", err)
+	}
+	return writeSnapshotList(cmdCtx, snaps)
+}
+
+func runContainerSnapshots(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex container snapshots <node/vmid>"), app.ExitUsage)
+	}
+	parts := strings.SplitN(args[0], "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex container snapshots <node/vmid>"), app.ExitUsage)
+	}
+	node := parts[0]
+	vmid, err := strconv.Atoi(parts[1])
+	if err != nil || vmid <= 0 {
+		return app.NewExitError(fmt.Errorf("invalid VMID: %s", parts[1]), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	snaps, err := prov.ContainerSnapshots(ctx, node, vmid)
+	if err != nil {
+		return fmt.Errorf("get container snapshots: %w", err)
+	}
+	return writeSnapshotList(cmdCtx, snaps)
+}
+
+func writeSnapshotList(cmdCtx *Context, snaps []domain.Snapshot) error {
+	if snaps == nil {
+		snaps = []domain.Snapshot{}
+	}
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, snaps)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, snaps)
+	default:
+		headers := []string{"NAME", "PARENT", "CREATED"}
+		rows := make([][]string, 0, len(snaps))
+		for _, s := range snaps {
+			rows = append(rows, []string{
+				s.Name,
+				s.Parent,
+				fmt.Sprintf("%d", s.Ctime),
+			})
+		}
+		return output.WriteTable(cmdCtx.Writer, headers, rows)
+	}
+}

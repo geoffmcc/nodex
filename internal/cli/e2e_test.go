@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -91,6 +92,17 @@ func (p *e2eMockProvider) Task(_ context.Context, node, upid string) (*domain.Ta
 		EndTime:   1700000010,
 	}, nil
 }
+func (p *e2eMockProvider) VMSnapshots(_ context.Context, node string, vmid int) ([]domain.Snapshot, error) {
+	return []domain.Snapshot{
+		{Name: "before-upgrade", VMID: vmid, Ctime: 1700000000, Parent: "current", Node: node, Target: fmt.Sprintf("%s/%d", node, vmid)},
+		{Name: "current", VMID: vmid, Ctime: 1700000010, Node: node, Target: fmt.Sprintf("%s/%d", node, vmid)},
+	}, nil
+}
+func (p *e2eMockProvider) ContainerSnapshots(_ context.Context, node string, vmid int) ([]domain.Snapshot, error) {
+	return []domain.Snapshot{
+		{Name: "clean", VMID: vmid, Ctime: 1700000000, Node: node, Target: fmt.Sprintf("%s/%d", node, vmid)},
+	}, nil
+}
 
 func TestRunE2EWithMockProvider(t *testing.T) {
 	isolateConfigAndHome(t)
@@ -126,6 +138,8 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "storage content", args: []string{"--output", "json", "storage", "content", "e2e-node", "local"}, want: []string{`"content": "iso"`, `"volid": "local:iso/debian-12.iso"`, `"size": 5368709120`}},
 		{name: "task list", args: []string{"--output", "json", "task", "list", "e2e-node"}, want: []string{`"upid": "UPID:e2e-node/00012345/0"`, `"type": "vzdump"`, `"state": "stopped"`}},
 		{name: "task show", args: []string{"--output", "json", "task", "show", "e2e-node", "UPID:e2e-node/00012345/0"}, want: []string{`"upid": "UPID:e2e-node/00012345/0"`, `"status": "OK"`, `"node": "e2e-node"`}},
+		{name: "vm snapshots", args: []string{"--output", "json", "vm", "snapshots", "e2e-node/100"}, want: []string{`"name": "before-upgrade"`, `"parent": "current"`, `"vmid": 100`}},
+		{name: "container snapshots", args: []string{"--output", "json", "container", "snapshots", "e2e-node/200"}, want: []string{`"name": "clean"`, `"vmid": 200`}},
 	}
 
 	for _, tt := range tests {

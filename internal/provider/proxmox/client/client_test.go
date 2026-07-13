@@ -454,3 +454,77 @@ func TestGetTaskRejectsEmptyUPID(t *testing.T) {
 		t.Fatalf("GetTask('') error = %v, want UPID required", err)
 	}
 }
+
+func TestGetVMSnapshotsDecodesList(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/qemu/100/snapshot" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"name":"before-upgrade","vmid":100,"ctime":1700000000,"parent":"current"},{"name":"current","vmid":100,"ctime":1700000010}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	snaps, err := c.GetVMSnapshots(context.Background(), "proxmox", 100)
+	if err != nil {
+		t.Fatalf("GetVMSnapshots: %v", err)
+	}
+	if len(snaps) != 2 {
+		t.Fatalf("len(snaps) = %d, want 2", len(snaps))
+	}
+	if snaps[0].Name != "before-upgrade" || snaps[0].Parent != "current" {
+		t.Fatalf("first snapshot = %+v", snaps[0])
+	}
+	if snaps[1].Name != "current" {
+		t.Fatalf("second snapshot = %+v", snaps[1])
+	}
+}
+
+func TestGetVMSnapshotsRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetVMSnapshots(context.Background(), "", 100)
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("GetVMSnapshots('') error = %v, want node name required", err)
+	}
+}
+
+func TestGetVMSnapshotsRejectsZeroVMID(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetVMSnapshots(context.Background(), "proxmox", 0)
+	if err == nil || !strings.Contains(err.Error(), "VMID is required") {
+		t.Fatalf("GetVMSnapshots(0) error = %v, want VMID required", err)
+	}
+}
+
+func TestGetContainerSnapshotsDecodesList(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/lxc/200/snapshot" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"name":"clean","vmid":200,"ctime":1700000000}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	snaps, err := c.GetContainerSnapshots(context.Background(), "proxmox", 200)
+	if err != nil {
+		t.Fatalf("GetContainerSnapshots: %v", err)
+	}
+	if len(snaps) != 1 || snaps[0].Name != "clean" {
+		t.Fatalf("snapshots = %+v", snaps)
+	}
+}
+
+func TestGetContainerSnapshotsRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetContainerSnapshots(context.Background(), "", 200)
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("GetContainerSnapshots('') error = %v, want node name required", err)
+	}
+}
+
+func TestGetContainerSnapshotsRejectsZeroVMID(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetContainerSnapshots(context.Background(), "proxmox", 0)
+	if err == nil || !strings.Contains(err.Error(), "VMID is required") {
+		t.Fatalf("GetContainerSnapshots(0) error = %v, want VMID required", err)
+	}
+}
