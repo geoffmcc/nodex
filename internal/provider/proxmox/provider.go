@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 
 	"github.com/geoffmcc/nodex/internal/credentials"
@@ -83,6 +84,11 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilityDelete,
 		domain.CapabilityTemplate,
 		domain.CapabilityCloudInit,
+		domain.CapabilityBackupMutation,
+		domain.CapabilityStorageMutation,
+		domain.CapabilityMigration,
+		domain.CapabilityClone,
+		domain.CapabilityDisk,
 	}
 }
 
@@ -1342,6 +1348,206 @@ func (p *Provider) VMCloudInit(ctx context.Context, node string, vmid int) (stri
 		return "", errors.New(errNotConnected)
 	}
 	return p.client.VMCloudInit(ctx, node, vmid)
+}
+
+// --- BackupMutationProvider methods ---
+
+func (p *Provider) CreateBackup(ctx context.Context, node string, vmid int, storage, mode string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CreateBackup(ctx, node, vmid, storage, mode)
+}
+
+func (p *Provider) RestoreVM(ctx context.Context, node string, vmid int, archive, storage string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.RestoreVM(ctx, node, vmid, archive, storage)
+}
+
+func (p *Provider) GetBackupSchedules(ctx context.Context) ([]domain.BackupSchedule, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetBackupSchedules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.BackupSchedule, 0, len(items))
+	for _, item := range items {
+		result = append(result, backupScheduleToDomain(item))
+	}
+	return result, nil
+}
+
+func (p *Provider) GetBackupSchedule(ctx context.Context, id string) (*domain.BackupSchedule, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	item, err := p.client.GetBackupSchedule(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	s := backupScheduleToDomain(*item)
+	return &s, nil
+}
+
+func (p *Provider) CreateBackupSchedule(ctx context.Context, params domain.BackupScheduleCreateParams) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	req := client.BackupScheduleCreateRequest{
+		Node:             params.Node,
+		Storage:          params.Storage,
+		VMID:             params.VMID,
+		All:              params.All,
+		Dow:              params.Dow,
+		Starttime:        params.Starttime,
+		Mode:             params.Mode,
+		Enabled:          params.Enabled,
+		Compress:         params.Compress,
+		Comment:          params.Comment,
+		Bwlimit:          params.Bwlimit,
+		Ionice:           params.Ionice,
+		MailNotification: params.MailNotification,
+		Mailto:           params.Mailto,
+		Maxfiles:         params.Maxfiles,
+		PruneBackups:     params.PruneBackups,
+		Quiet:            params.Quiet,
+		Remove:           params.Remove,
+		Pool:             params.Pool,
+		Tmpdir:           params.Tmpdir,
+	}
+	return p.client.CreateBackupSchedule(ctx, req)
+}
+
+func (p *Provider) UpdateBackupSchedule(ctx context.Context, id string, params domain.BackupScheduleCreateParams) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	req := client.BackupScheduleCreateRequest{
+		Node:             params.Node,
+		Storage:          params.Storage,
+		VMID:             params.VMID,
+		All:              params.All,
+		Dow:              params.Dow,
+		Starttime:        params.Starttime,
+		Mode:             params.Mode,
+		Enabled:          params.Enabled,
+		Compress:         params.Compress,
+		Comment:          params.Comment,
+		Bwlimit:          params.Bwlimit,
+		Ionice:           params.Ionice,
+		MailNotification: params.MailNotification,
+		Mailto:           params.Mailto,
+		Maxfiles:         params.Maxfiles,
+		PruneBackups:     params.PruneBackups,
+		Quiet:            params.Quiet,
+		Remove:           params.Remove,
+		Pool:             params.Pool,
+		Tmpdir:           params.Tmpdir,
+	}
+	return p.client.UpdateBackupSchedule(ctx, id, req)
+}
+
+func (p *Provider) DeleteBackupSchedule(ctx context.Context, id string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteBackupSchedule(ctx, id)
+}
+
+func backupScheduleToDomain(item client.BackupScheduleItem) domain.BackupSchedule {
+	return domain.BackupSchedule{
+		ID:               item.ID,
+		Node:             item.Node,
+		Storage:          item.Storage,
+		VMID:             item.VMID,
+		All:              item.All,
+		Dow:              item.Dow,
+		Starttime:        item.Starttime,
+		Mode:             item.Mode,
+		Enabled:          item.Enabled,
+		Compress:         item.Compress,
+		Comment:          item.Comment,
+		MailNotification: item.MailNotification,
+		Mailto:           item.Mailto,
+		Maxfiles:         item.Maxfiles,
+		PruneBackups:     item.PruneBackups,
+		Pool:             item.Pool,
+	}
+}
+
+// --- StorageMutationProvider methods ---
+
+func (p *Provider) UploadContent(ctx context.Context, node, storage, localPath string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.UploadContent(ctx, node, storage, localPath)
+}
+
+func (p *Provider) DownloadContentBody(ctx context.Context, node, storage, volumeID string, w io.Writer) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DownloadContentBody(ctx, node, storage, volumeID, w)
+}
+
+func (p *Provider) DeleteContent(ctx context.Context, node, storage, volumeID string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.DeleteContent(ctx, node, storage, volumeID)
+}
+
+// --- MigrationProvider methods ---
+
+func (p *Provider) VMMigrate(ctx context.Context, node string, vmid int, target string, online bool) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMMigrate(ctx, node, vmid, target, online)
+}
+
+func (p *Provider) CTMigrate(ctx context.Context, node string, vmid int, target string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTMigrate(ctx, node, vmid, target)
+}
+
+// --- CloneProvider methods ---
+
+func (p *Provider) VMClone(ctx context.Context, node string, vmid, newVmid int, name, storage string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMClone(ctx, node, vmid, newVmid, name, storage)
+}
+
+func (p *Provider) CTClone(ctx context.Context, node string, vmid, newVmid int, hostname, storage string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTClone(ctx, node, vmid, newVmid, hostname, storage)
+}
+
+// --- DiskProvider methods ---
+
+func (p *Provider) VMDiskResize(ctx context.Context, node string, vmid int, disk, size string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMDiskResize(ctx, node, vmid, disk, size)
+}
+
+func (p *Provider) VMDiskMove(ctx context.Context, node string, vmid int, disk, storage string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMDiskMove(ctx, node, vmid, disk, storage)
 }
 
 // mapToValues converts a map[string]string to url.Values.

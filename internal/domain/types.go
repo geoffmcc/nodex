@@ -183,3 +183,47 @@ type ClusterStatusDetail struct {
 	Quorate int    `json:"quorate,omitempty" yaml:"quorate,omitempty"`
 	Version int    `json:"version,omitempty" yaml:"version,omitempty"`
 }
+
+// BackupSchedule represents a backup job schedule.
+type BackupSchedule struct {
+	ID               string `json:"id" yaml:"id"`
+	Node             string `json:"node,omitempty" yaml:"node,omitempty"`
+	Storage          string `json:"storage" yaml:"storage"`
+	VMID             string `json:"vmid,omitempty" yaml:"vmid,omitempty"`
+	All              int    `json:"all,omitempty" yaml:"all,omitempty"`
+	Dow              string `json:"dow,omitempty" yaml:"dow,omitempty"`
+	Starttime        string `json:"starttime" yaml:"starttime"`
+	Mode             string `json:"mode" yaml:"mode"`
+	Enabled          int    `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Compress         string `json:"compress,omitempty" yaml:"compress,omitempty"`
+	Comment          string `json:"comment,omitempty" yaml:"comment,omitempty"`
+	MailNotification string `json:"mailnotification,omitempty" yaml:"mailnotification,omitempty"`
+	Mailto           string `json:"mailto,omitempty" yaml:"mailto,omitempty"`
+	Maxfiles         int    `json:"maxfiles,omitempty" yaml:"maxfiles,omitempty"`
+	PruneBackups     string `json:"prune-backups,omitempty" yaml:"prune-backups,omitempty"`
+	Pool             string `json:"pool,omitempty" yaml:"pool,omitempty"`
+}
+
+// BackupScheduleCreateParams holds the parameters for creating or updating a backup job schedule.
+type BackupScheduleCreateParams struct {
+	Node             string
+	Storage          string
+	VMID             string
+	All              int
+	Dow              string
+	Starttime        string
+	Mode             string
+	Enabled          int
+	Compress         string
+	Comment          string
+	Bwlimit          int
+	Ionice           int
+	MailNotification string
+	Mailto           string
+	Maxfiles         int
+	PruneBackups     string
+	Quiet            int
+	Remove           int
+	Pool             string
+	Tmpdir           string
+}

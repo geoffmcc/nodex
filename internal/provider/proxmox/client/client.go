@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -961,6 +964,527 @@ func (c *Client) CTTemplate(ctx context.Context, node string, vmid int) (string,
 	var resp TaskResponse
 	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/template"
 	if err := c.post(ctx, path, nil, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// --- Phase 4: Backup, Storage, Migration, Clone, Disk mutations ---
+
+// CreateBackup creates a manual backup task via POST /nodes/{node}/vzdump.
+func (c *Client) CreateBackup(ctx context.Context, node string, vmid int, storage, mode string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if storage == "" {
+		return "", fmt.Errorf("storage name is required")
+	}
+	if mode == "" {
+		mode = "snapshot"
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/vzdump"
+	body := url.Values{}
+	body.Set("vmid", strconv.Itoa(vmid))
+	body.Set("storage", storage)
+	body.Set("mode", mode)
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// RestoreVM creates a new VM from a backup archive via POST /nodes/{node}/qemu.
+func (c *Client) RestoreVM(ctx context.Context, node string, vmid int, archive, storage string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("new VMID is required")
+	}
+	if archive == "" {
+		return "", fmt.Errorf("archive volume ID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu"
+	body := url.Values{}
+	body.Set("vmid", strconv.Itoa(vmid))
+	body.Set("archive", archive)
+	if storage != "" {
+		body.Set("storage", storage)
+	}
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// GetBackupSchedules returns all backup job schedules from GET /cluster/backup.
+func (c *Client) GetBackupSchedules(ctx context.Context) ([]BackupScheduleItem, error) {
+	var resp BackupScheduleListResponse
+	if err := c.get(ctx, "/cluster/backup", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetBackupSchedule returns a single backup job schedule from GET /cluster/backup/{id}.
+func (c *Client) GetBackupSchedule(ctx context.Context, id string) (*BackupScheduleItem, error) {
+	if id == "" {
+		return nil, fmt.Errorf("backup schedule ID is required")
+	}
+	var resp BackupScheduleDetailResponse
+	path := "/cluster/backup/" + url.PathEscape(id)
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// CreateBackupSchedule creates a backup job schedule via POST /cluster/backup.
+func (c *Client) CreateBackupSchedule(ctx context.Context, schedule BackupScheduleCreateRequest) (string, error) {
+	if schedule.Storage == "" {
+		return "", fmt.Errorf("storage name is required")
+	}
+	if schedule.Mode == "" {
+		return "", fmt.Errorf("backup mode is required")
+	}
+	if schedule.Starttime == "" {
+		return "", fmt.Errorf("start time is required")
+	}
+	var resp TaskResponse
+	body := url.Values{}
+	body.Set("storage", schedule.Storage)
+	body.Set("mode", schedule.Mode)
+	body.Set("starttime", schedule.Starttime)
+	if schedule.Node != "" {
+		body.Set("node", schedule.Node)
+	}
+	if schedule.VMID != "" {
+		body.Set("vmid", schedule.VMID)
+	}
+	if schedule.Dow != "" {
+		body.Set("dow", schedule.Dow)
+	}
+	if schedule.Compress != "" {
+		body.Set("compress", schedule.Compress)
+	}
+	if schedule.Comment != "" {
+		body.Set("comment", schedule.Comment)
+	}
+	if schedule.MailNotification != "" {
+		body.Set("mailnotification", schedule.MailNotification)
+	}
+	if schedule.Mailto != "" {
+		body.Set("mailto", schedule.Mailto)
+	}
+	if schedule.PruneBackups != "" {
+		body.Set("prune-backups", schedule.PruneBackups)
+	}
+	if schedule.Pool != "" {
+		body.Set("pool", schedule.Pool)
+	}
+	if schedule.Tmpdir != "" {
+		body.Set("tmpdir", schedule.Tmpdir)
+	}
+	if schedule.Bwlimit > 0 {
+		body.Set("bwlimit", strconv.Itoa(schedule.Bwlimit))
+	}
+	if schedule.Ionice > 0 {
+		body.Set("ionice", strconv.Itoa(schedule.Ionice))
+	}
+	if schedule.Maxfiles > 0 {
+		body.Set("maxfiles", strconv.Itoa(schedule.Maxfiles))
+	}
+	if schedule.All != 0 {
+		body.Set("all", strconv.Itoa(schedule.All))
+	}
+	if schedule.Enabled != 0 {
+		body.Set("enabled", strconv.Itoa(schedule.Enabled))
+	}
+	if schedule.Quiet != 0 {
+		body.Set("quiet", strconv.Itoa(schedule.Quiet))
+	}
+	if schedule.Remove != 0 {
+		body.Set("remove", strconv.Itoa(schedule.Remove))
+	}
+	if err := c.post(ctx, "/cluster/backup", body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// UpdateBackupSchedule updates a backup job schedule via PUT /cluster/backup/{id}.
+func (c *Client) UpdateBackupSchedule(ctx context.Context, id string, schedule BackupScheduleCreateRequest) error {
+	if id == "" {
+		return fmt.Errorf("backup schedule ID is required")
+	}
+	path := "/cluster/backup/" + url.PathEscape(id)
+	body := url.Values{}
+	if schedule.Storage != "" {
+		body.Set("storage", schedule.Storage)
+	}
+	if schedule.Mode != "" {
+		body.Set("mode", schedule.Mode)
+	}
+	if schedule.Starttime != "" {
+		body.Set("starttime", schedule.Starttime)
+	}
+	if schedule.Node != "" {
+		body.Set("node", schedule.Node)
+	}
+	if schedule.VMID != "" {
+		body.Set("vmid", schedule.VMID)
+	}
+	if schedule.Dow != "" {
+		body.Set("dow", schedule.Dow)
+	}
+	if schedule.Compress != "" {
+		body.Set("compress", schedule.Compress)
+	}
+	if schedule.Comment != "" {
+		body.Set("comment", schedule.Comment)
+	}
+	if schedule.MailNotification != "" {
+		body.Set("mailnotification", schedule.MailNotification)
+	}
+	if schedule.Mailto != "" {
+		body.Set("mailto", schedule.Mailto)
+	}
+	if schedule.PruneBackups != "" {
+		body.Set("prune-backups", schedule.PruneBackups)
+	}
+	if schedule.Pool != "" {
+		body.Set("pool", schedule.Pool)
+	}
+	if schedule.Tmpdir != "" {
+		body.Set("tmpdir", schedule.Tmpdir)
+	}
+	if schedule.Bwlimit > 0 {
+		body.Set("bwlimit", strconv.Itoa(schedule.Bwlimit))
+	}
+	if schedule.Ionice > 0 {
+		body.Set("ionice", strconv.Itoa(schedule.Ionice))
+	}
+	if schedule.Maxfiles > 0 {
+		body.Set("maxfiles", strconv.Itoa(schedule.Maxfiles))
+	}
+	if schedule.All != 0 {
+		body.Set("all", strconv.Itoa(schedule.All))
+	}
+	if schedule.Enabled != 0 {
+		body.Set("enabled", strconv.Itoa(schedule.Enabled))
+	}
+	if schedule.Quiet != 0 {
+		body.Set("quiet", strconv.Itoa(schedule.Quiet))
+	}
+	if schedule.Remove != 0 {
+		body.Set("remove", strconv.Itoa(schedule.Remove))
+	}
+	var resp TaskResponse
+	if err := c.put(ctx, path, body, &resp); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DeleteBackupSchedule deletes a backup job schedule via DELETE /cluster/backup/{id}.
+func (c *Client) DeleteBackupSchedule(ctx context.Context, id string) error {
+	if id == "" {
+		return fmt.Errorf("backup schedule ID is required")
+	}
+	path := "/cluster/backup/" + url.PathEscape(id)
+	return c.del(ctx, path, nil)
+}
+
+// UploadContent uploads a file to storage via POST /nodes/{node}/storage/{storage}/upload.
+func (c *Client) UploadContent(ctx context.Context, node, storage, localPath string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if storage == "" {
+		return "", fmt.Errorf("storage name is required")
+	}
+	if localPath == "" {
+		return "", fmt.Errorf("local file path is required")
+	}
+
+	filename := filepath.Base(localPath)
+	file, err := os.Open(localPath)
+	if err != nil {
+		return "", fmt.Errorf("open local file: %w", err)
+	}
+	defer file.Close()
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("content", filename)
+	if err != nil {
+		return "", fmt.Errorf("create multipart form: %w", err)
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return "", fmt.Errorf("read local file: %w", err)
+	}
+	if err := writer.WriteField("filename", filename); err != nil {
+		return "", fmt.Errorf("write filename field: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("close multipart writer: %w", err)
+	}
+
+	u := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/upload"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, &buf)
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if c.token != "" {
+		req.Header.Set("Authorization", "PVEAPIToken="+c.token)
+	}
+
+	resp, err := c.client.DoMutation(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("execute request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var taskResp TaskResponse
+	if err := c.decodeResponse(resp, &taskResp); err != nil {
+		return "", err
+	}
+	return taskResp.Data, nil
+}
+
+// DownloadContent returns the raw bytes of a storage volume via GET /nodes/{node}/storage/{storage}/download.
+func (c *Client) DownloadContent(ctx context.Context, node, storage, volumeID string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if storage == "" {
+		return "", fmt.Errorf("storage name is required")
+	}
+	if volumeID == "" {
+		return "", fmt.Errorf("volume ID is required")
+	}
+	// Return the download URL so the caller can stream the content directly.
+	// Proxmox returns raw content, not JSON, for this endpoint.
+	downloadURL := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download/" + url.PathEscape(volumeID)
+	return downloadURL, nil
+}
+
+// DownloadContentBody downloads storage content and writes the raw body to the provided writer.
+func (c *Client) DownloadContentBody(ctx context.Context, node, storage, volumeID string, w io.Writer) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	if storage == "" {
+		return fmt.Errorf("storage name is required")
+	}
+	if volumeID == "" {
+		return fmt.Errorf("volume ID is required")
+	}
+
+	u := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download/" + url.PathEscape(volumeID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "PVEAPIToken="+c.token)
+	}
+
+	resp, err := c.client.Do(ctx, req)
+	if err != nil {
+		return fmt.Errorf("execute request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, truncated := readLimited(resp.Body, c.client.MaxErrorBodySize())
+		msg := redact.String(output.SanitizeTerminal(string(body)))
+		if truncated {
+			msg += "... [truncated]"
+		}
+		return fmt.Errorf("API error %d: %s", resp.StatusCode, msg)
+	}
+
+	limited := io.LimitReader(resp.Body, c.client.MaxBodySize()+1)
+	n, err := io.Copy(w, limited)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	if n > c.client.MaxBodySize() {
+		return fmt.Errorf("download exceeds %d bytes", c.client.MaxBodySize())
+	}
+	return nil
+}
+
+// DeleteContent deletes a storage volume via DELETE /nodes/{node}/storage/{storage}/content/{volume}.
+func (c *Client) DeleteContent(ctx context.Context, node, storage, volumeID string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if storage == "" {
+		return "", fmt.Errorf("storage name is required")
+	}
+	if volumeID == "" {
+		return "", fmt.Errorf("volume ID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/content/" + url.PathEscape(volumeID)
+	if err := c.del(ctx, path, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMMigrate migrates a VM to a target node via POST /nodes/{node}/qemu/{vmid}/migrate.
+func (c *Client) VMMigrate(ctx context.Context, node string, vmid int, target string, online bool) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if target == "" {
+		return "", fmt.Errorf("target node is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/migrate"
+	body := url.Values{}
+	body.Set("target", target)
+	if online {
+		body.Set("online", "1")
+	}
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CTMigrate migrates a container to a target node via POST /nodes/{node}/lxc/{vmid}/migrate.
+func (c *Client) CTMigrate(ctx context.Context, node string, vmid int, target string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if target == "" {
+		return "", fmt.Errorf("target node is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/migrate"
+	body := url.Values{}
+	body.Set("target", target)
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMClone clones a VM via POST /nodes/{node}/qemu/{vmid}/clone.
+func (c *Client) VMClone(ctx context.Context, node string, vmid, newVmid int, name, storage string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("source VMID is required")
+	}
+	if newVmid <= 0 {
+		return "", fmt.Errorf("new VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/clone"
+	body := url.Values{}
+	body.Set("newid", strconv.Itoa(newVmid))
+	if name != "" {
+		body.Set("name", name)
+	}
+	if storage != "" {
+		body.Set("storage", storage)
+	}
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CTClone clones a container via POST /nodes/{node}/lxc/{vmid}/clone.
+func (c *Client) CTClone(ctx context.Context, node string, vmid, newVmid int, hostname, storage string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("source VMID is required")
+	}
+	if newVmid <= 0 {
+		return "", fmt.Errorf("new VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/clone"
+	body := url.Values{}
+	body.Set("newid", strconv.Itoa(newVmid))
+	if hostname != "" {
+		body.Set("hostname", hostname)
+	}
+	if storage != "" {
+		body.Set("storage", storage)
+	}
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMDiskResize resizes a VM disk via PUT /nodes/{node}/qemu/{vmid}/resize.
+func (c *Client) VMDiskResize(ctx context.Context, node string, vmid int, disk, size string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if disk == "" {
+		return "", fmt.Errorf("disk identifier is required")
+	}
+	if size == "" {
+		return "", fmt.Errorf("size is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/resize"
+	body := url.Values{}
+	body.Set("disk", disk)
+	body.Set("size", size)
+	if err := c.put(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMDiskMove moves a VM disk to a different storage via POST /nodes/{node}/qemu/{vmid}/move_disk.
+func (c *Client) VMDiskMove(ctx context.Context, node string, vmid int, disk, storage string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if disk == "" {
+		return "", fmt.Errorf("disk identifier is required")
+	}
+	if storage == "" {
+		return "", fmt.Errorf("target storage is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/move_disk"
+	body := url.Values{}
+	body.Set("disk", disk)
+	body.Set("storage", storage)
+	if err := c.post(ctx, path, body, &resp); err != nil {
 		return "", err
 	}
 	return resp.Data, nil

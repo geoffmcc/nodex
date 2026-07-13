@@ -118,6 +118,9 @@ func init() {
 		&command{name: "cloud-init", short: "Regenerate cloud-init config", run: runVMCloudInit},
 		&command{name: "template", short: "Convert VM to template", run: runVMTemplate},
 		&command{name: "snapshot", short: "Manage VM snapshots", run: runVMSnapshotDispatch},
+		&command{name: "migrate", short: "Migrate VM to another node", run: runVMMigrate},
+		&command{name: "clone", short: "Clone a VM", run: runVMClone},
+		&command{name: "disk", short: "Manage VM disks", run: runVMDiskDispatch},
 	)
 
 	register("task", "Manage tasks", nil,
@@ -140,11 +143,16 @@ func init() {
 		&command{name: "delete", short: "Delete a container (destructive)", run: runCTDelete},
 		&command{name: "template", short: "Convert container to template", run: runCTTemplate},
 		&command{name: "snapshot", short: "Manage container snapshots", run: runCTSnapshotDispatch},
+		&command{name: "migrate", short: "Migrate container to another node", run: runCTMigrate},
+		&command{name: "clone", short: "Clone a container", run: runCTClone},
 	)
 	register("storage", "Manage storage", nil,
 		&command{name: "list", short: "List all storage pools", run: runStorageList},
 		&command{name: "show", short: "Show storage details", run: runStorageShow},
 		&command{name: "content", short: "List storage content", run: runStorageContent},
+		&command{name: "upload", short: "Upload a file to storage", run: runStorageUpload},
+		&command{name: "download", short: "Download a volume from storage", run: runStorageDownload},
+		&command{name: "delete", short: "Delete a storage volume (destructive)", run: runStorageDelete},
 	)
 	register("cluster", "Manage cluster", nil,
 		&command{name: "status", short: "Show cluster status", run: runClusterStatus},
@@ -158,6 +166,9 @@ func init() {
 	register("backup", "Manage backups", nil,
 		&command{name: "list", short: "List backup tasks", run: runBackupList},
 		&command{name: "content", short: "List backup content", run: runBackupContent},
+		&command{name: "create", short: "Create a manual backup", run: runBackupCreate},
+		&command{name: "restore", short: "Restore VM from backup archive", run: runBackupRestore},
+		&command{name: "job", short: "Manage backup job schedules", run: runBackupJobDispatch},
 	)
 	register("firewall", "Manage firewall", nil,
 		&command{name: "list", short: "List firewall rules", run: runFirewallList},
