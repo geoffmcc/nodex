@@ -110,3 +110,30 @@ func splitContent(content string) []string {
 	}
 	return strings.Split(content, ",")
 }
+
+// MapNodeStatus converts a client.NodeStatusData to a domain.Node with extended status.
+func MapNodeStatus(status *client.NodeStatusData) domain.Node {
+	name := status.Node
+	if name == "" {
+		name = status.ID
+	}
+	id := status.ID
+	if id == "" {
+		id = name
+	}
+	var uptime *time.Duration
+	if status.Uptime > 0 {
+		d := time.Duration(status.Uptime) * time.Second
+		uptime = &d
+	}
+	return domain.Node{
+		ID:       id,
+		Name:     name,
+		Status:   status.Status,
+		Role:     status.Type,
+		IP:       "",
+		Platform: "proxmox",
+		Version:  status.PVEVersion,
+		Uptime:   uptime,
+	}
+}
