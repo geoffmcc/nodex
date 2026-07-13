@@ -499,3 +499,36 @@ func writeStorages(cmdCtx *Context, storages []domain.Storage) error {
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
 }
+
+func runClusterStatus(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex cluster status"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	cluster, err := prov.Cluster(ctx)
+	if err != nil {
+		return fmt.Errorf("get cluster status: %w", err)
+	}
+	return writeClusterStatus(cmdCtx, cluster)
+}
+
+func writeClusterStatus(cmdCtx *Context, cluster *domain.Cluster) error {
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, cluster)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, cluster)
+	default:
+		rows := [][]string{
+			{"NAME", cluster.Name},
+			{"VERSION", cluster.Version},
+			{"NODES", fmt.Sprintf("%d", cluster.Nodes)},
+		}
+		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
+	}
+}

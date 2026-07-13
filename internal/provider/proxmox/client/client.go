@@ -160,6 +160,15 @@ func (c *Client) ClusterResources(ctx context.Context) ([]ClusterResource, error
 	return resp.Data, nil
 }
 
+// GetClusterStatus returns the cluster status including quorum and node info.
+func (c *Client) GetClusterStatus(ctx context.Context) ([]ClusterStatusItem, error) {
+	var resp ClusterStatusResponse
+	if err := c.get(ctx, "/cluster/status", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil
