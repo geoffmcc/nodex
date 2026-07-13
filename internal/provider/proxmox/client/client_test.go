@@ -149,3 +149,86 @@ func TestClusterResourcesDecodesProxmoxGuestAndStorageFields(t *testing.T) {
 		t.Fatalf("third resource = %+v", resources[2])
 	}
 }
+
+func TestGetNodeStatusDecodesProxmoxNodeStatusFields(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/status" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":{"cpu":0.1234,"maxcpu":4,"mem":1073741824,"maxmem":4294967296,"disk":536870912,"maxdisk":107374182400,"uptime":12345,"level":"","id":"node/proxmox","node":"proxmox","type":"node","status":"online","kversion":"6.8.12-1-pve","pveversion":"pve-manager/8.2.4","loadavg":[0.12,0.34,0.56]}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	status, err := c.GetNodeStatus(context.Background(), "proxmox")
+	if err != nil {
+		t.Fatalf("GetNodeStatus: %v", err)
+	}
+	if status.Node != "proxmox" || status.Status != "online" {
+		t.Fatalf("node/status = %q/%q", status.Node, status.Status)
+	}
+	if status.CPU != 0.1234 || status.MaxCPU != 4 {
+		t.Fatalf("cpu/maxcpu = %v/%d", status.CPU, status.MaxCPU)
+	}
+	if status.Mem != 1073741824 || status.MaxMem != 4294967296 {
+		t.Fatalf("mem/maxmem = %d/%d", status.Mem, status.MaxMem)
+	}
+	if status.Disk != 536870912 || status.MaxDisk != 107374182400 {
+		t.Fatalf("disk/maxdisk = %d/%d", status.Disk, status.MaxDisk)
+	}
+	if status.Uptime != 12345 {
+		t.Fatalf("uptime = %d", status.Uptime)
+	}
+	if status.KVersion != "6.8.12-1-pve" || status.PVEVersion != "pve-manager/8.2.4" {
+		t.Fatalf("kversion/pveversion = %q/%q", status.KVersion, status.PVEVersion)
+	}
+	if len(status.LoadAvg) != 3 || status.LoadAvg[0] != 0.12 || status.LoadAvg[1] != 0.34 || status.LoadAvg[2] != 0.56 {
+		t.Fatalf("loadavg = %v", status.LoadAvg)
+	}
+}
+
+func TestGetNodeStatusRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetNodeStatus(context.Background(), "")
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("GetNodeStatus('') error = %v, want node name required", err)
+	}
+}
+
+func TestVersionAtLeastComparesVersions(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		major   int
+		minor   int
+		want    bool
+	}{
+		{"8.1.4 >= 8.1", "8.1.4", 8, 1, true},
+		{"8.1.4 >= 8.2", "8.1.4", 8, 2, false},
+		{"8.1.4 >= 9.0", "8.1.4", 9, 0, false},
+		{"9.0.0 >= 8.1", "9.0.0", 8, 1, true},
+		{"empty version", "", 8, 1, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Client{version: &VersionData{Version: tt.version}}
+			got := c.VersionAtLeast(tt.major, tt.minor)
+			if got != tt.want {
+				t.Errorf("VersionAtLeast(%d, %d) = %v, want %v", tt.major, tt.minor, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReleaseReturnsVersionRelease(t *testing.T) {
+	c := &Client{version: &VersionData{Release: "pve-manager/8.2.4", Version: "8.2.4"}}
+	if got := c.Release(); got != "pve-manager/8.2.4" {
+		t.Errorf("Release() = %q, want %q", got, "pve-manager/8.2.4")
+	}
+}
+
+func TestReleaseReturnsEmptyWhenNoVersion(t *testing.T) {
+	c := &Client{}
+	if got := c.Release(); got != "" {
+		t.Errorf("Release() = %q, want empty", got)
+	}
+}

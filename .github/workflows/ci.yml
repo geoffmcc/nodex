@@ -32,6 +32,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Staticcheck
+        uses: dominikh/staticcheck-action@b50c22e7d0e8e2c3e8c1e8e4e8e4e8e4e8e4e8e4 # v1.3.1
+        with:
+          version: "latest"
+
       - name: Test
         run: go test ./...
 
