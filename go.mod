@@ -1,6 +1,6 @@
 module github.com/geoffmcc/nodex
 
-go 1.25.0
+go 1.25.12
 
 require (
 	github.com/danieljoos/wincred v1.2.3 // indirect

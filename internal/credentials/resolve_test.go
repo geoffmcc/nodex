@@ -32,9 +32,11 @@ func TestResolver_Resolve_FileFallback(t *testing.T) {
 	ctx := context.Background()
 
 	// Write a credential file in the resolver's directory.
-	creds := &domain.Credentials{Type: "token", TokenID: "file-id"}
-	data, _ := json.Marshal(creds)
-	os.WriteFile(filepath.Join(dir, "myprofile.json"), data, 0o600)
+	creds := &domain.Credentials{Type: "token", TokenID: "file-id", TokenSecret: "file-secret"}
+	data, _ := json.Marshal(creds) // #nosec G117 -- fixture intentionally matches credential schema.
+	if err := os.WriteFile(filepath.Join(dir, "myprofile.json"), data, 0o600); err != nil {
+		t.Fatalf("write credential fixture: %v", err)
+	}
 
 	got, err := r.Resolve(ctx, "myprofile", "")
 	if err != nil {
@@ -53,7 +55,9 @@ func TestResolver_Resolve_FromRef(t *testing.T) {
 	// Store in file backend.
 	fb := NewFileBackend(dir)
 	creds := &domain.Credentials{Type: "token", TokenID: "ref-id", TokenSecret: "ref-secret"}
-	fb.Store(ctx, "ref-profile", creds)
+	if err := fb.Store(ctx, "ref-profile", creds); err != nil {
+		t.Fatalf("store credential fixture: %v", err)
+	}
 
 	// Resolve using credential_ref.
 	got, err := r.Resolve(ctx, "anything", "file:ref-profile")

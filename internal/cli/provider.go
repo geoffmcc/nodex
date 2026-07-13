@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
@@ -13,9 +12,13 @@ import (
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/provider"
 	_ "github.com/geoffmcc/nodex/internal/provider/proxmox" // register provider
+	"github.com/geoffmcc/nodex/internal/transport/httpclient"
 )
 
-func runProviderList(_ context.Context, cmdCtx *Context, _ []string) error {
+func runProviderList(_ context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex provider list"), app.ExitUsage)
+	}
 	names := provider.List()
 	sort.Strings(names)
 
@@ -57,8 +60,11 @@ func runProviderCapabilities(_ context.Context, cmdCtx *Context, args []string) 
 			app.ExitUsage,
 		)
 	}
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex provider capabilities <name>"), app.ExitUsage)
+	}
 
-	name := args[0]
+	name := config.NormalizeProvider(args[0])
 	prov, err := provider.Get(name)
 	if err != nil {
 		return app.NewExitError(err, app.ExitProvider)
@@ -100,7 +106,7 @@ func runProviderCapabilities(_ context.Context, cmdCtx *Context, args []string) 
 
 // connectProfile loads a profile and connects a provider.
 // Returns the connected provider and a cleanup function.
-func connectProfile(ctx context.Context, profileName string) (domain.Provider, func(), error) {
+func connectProfile(ctx context.Context, cmdCtx *Context, profileName string) (domain.Provider, func(), error) {
 	cfg, err := config.Read()
 	if err != nil {
 		return nil, nil, err
@@ -143,14 +149,29 @@ func connectProfile(ctx context.Context, profileName string) (domain.Provider, f
 		return nil, nil, app.NewExitError(err, app.ExitProvider)
 	}
 
-	if err := prov.Connect(ctx, p.Endpoint, creds); err != nil {
+	opts := []httpclient.Option{httpclient.WithTimeout(cmdCtx.Opts.Timeout)}
+	if p.CAFile != "" {
+		caOpt, err := httpclient.WithCACert(p.CAFile)
+		if err != nil {
+			return nil, nil, app.NewExitError(fmt.Errorf("profile %q ca_file: %w", name, err), app.ExitTLS)
+		}
+		opts = append(opts, caOpt)
+	}
+	if configurable, ok := prov.(interface {
+		ConnectWithOptions(string, *domain.Credentials, ...httpclient.Option) error
+	}); ok {
+		err = configurable.ConnectWithOptions(p.Endpoint, creds, opts...)
+	} else {
+		err = prov.Connect(ctx, p.Endpoint, creds)
+	}
+	if err != nil {
 		return nil, nil, app.NewExitError(
 			fmt.Errorf("connect to %s: %w", p.Endpoint, err),
 			app.ExitNetwork,
 		)
 	}
 
-	cleanup := func() { prov.Close() }
+	cleanup := func() { _ = prov.Close() }
 	return prov, cleanup, nil
 }
 
@@ -166,26 +187,4 @@ func formatBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
-}
-
-// truncate truncates a string to maxLen, adding "..." if needed.
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen < 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
-}
-
-// join joins non-empty strings with a separator.
-func join(ss []string, sep string) string {
-	var filtered []string
-	for _, s := range ss {
-		if s != "" {
-			filtered = append(filtered, s)
-		}
-	}
-	return strings.Join(filtered, sep)
 }

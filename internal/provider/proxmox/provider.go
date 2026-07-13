@@ -2,8 +2,10 @@ package proxmox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/provider"
 	"github.com/geoffmcc/nodex/internal/provider/proxmox/client"
@@ -34,11 +36,19 @@ func (p *Provider) Version() string { return ProviderVersion }
 
 // Connect initializes the provider with the given endpoint and credentials.
 func (p *Provider) Connect(_ context.Context, endpoint string, creds *domain.Credentials) error {
-	opts := []httpclient.Option{}
-	if creds.Type == "insecure" {
-		opts = append(opts, httpclient.WithInsecureTLS())
+	return p.ConnectWithOptions(endpoint, creds)
+}
+
+// ConnectWithOptions initializes the provider with explicit transport options.
+func (p *Provider) ConnectWithOptions(endpoint string, creds *domain.Credentials, opts ...httpclient.Option) error {
+	if err := credentials.ValidateCredentials("profile", creds); err != nil {
+		return err
 	}
-	p.client = client.New(endpoint, creds, opts...)
+	c, err := client.New(endpoint, creds, opts...)
+	if err != nil {
+		return err
+	}
+	p.client = c
 	return nil
 }
 
@@ -66,7 +76,7 @@ const errNotConnected = "provider not connected: call Connect() first"
 // Nodes returns all Proxmox nodes.
 func (p *Provider) Nodes(ctx context.Context) ([]domain.Node, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf(errNotConnected)
+		return nil, errors.New(errNotConnected)
 	}
 	items, err := p.client.Nodes(ctx)
 	if err != nil {
@@ -78,13 +88,13 @@ func (p *Provider) Nodes(ctx context.Context) ([]domain.Node, error) {
 // VMs returns all VMs across the cluster.
 func (p *Provider) VMs(ctx context.Context) ([]domain.VM, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf(errNotConnected)
+		return nil, errors.New(errNotConnected)
 	}
 	resources, err := p.client.ClusterResources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list cluster resources: %w", err)
 	}
-	var vms []domain.VM
+	vms := make([]domain.VM, 0)
 	for _, r := range resources {
 		if r.Type == "qemu" {
 			vms = append(vms, MapVM(r))
@@ -96,13 +106,13 @@ func (p *Provider) VMs(ctx context.Context) ([]domain.VM, error) {
 // Containers returns all containers across the cluster.
 func (p *Provider) Containers(ctx context.Context) ([]domain.Container, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf(errNotConnected)
+		return nil, errors.New(errNotConnected)
 	}
 	resources, err := p.client.ClusterResources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list cluster resources: %w", err)
 	}
-	var containers []domain.Container
+	containers := make([]domain.Container, 0)
 	for _, r := range resources {
 		if r.Type == "lxc" {
 			containers = append(containers, MapContainer(r))
@@ -114,13 +124,13 @@ func (p *Provider) Containers(ctx context.Context) ([]domain.Container, error) {
 // Storage returns all storage pools across the cluster.
 func (p *Provider) Storage(ctx context.Context) ([]domain.Storage, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf(errNotConnected)
+		return nil, errors.New(errNotConnected)
 	}
 	resources, err := p.client.ClusterResources(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list cluster resources: %w", err)
 	}
-	var storages []domain.Storage
+	storages := make([]domain.Storage, 0)
 	for _, r := range resources {
 		if r.Type == "storage" {
 			storages = append(storages, MapStorage(r))
@@ -132,7 +142,7 @@ func (p *Provider) Storage(ctx context.Context) ([]domain.Storage, error) {
 // Cluster returns cluster information.
 func (p *Provider) Cluster(ctx context.Context) (*domain.Cluster, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf(errNotConnected)
+		return nil, errors.New(errNotConnected)
 	}
 	version, err := p.client.Version(ctx)
 	if err != nil {
@@ -148,7 +158,7 @@ func (p *Provider) Cluster(ctx context.Context) (*domain.Cluster, error) {
 // TestConnectivity checks if the provider can connect to the endpoint.
 func (p *Provider) TestConnectivity(ctx context.Context) (*client.VersionData, error) {
 	if p.client == nil {
-		return nil, fmt.Errorf(errNotConnected)
+		return nil, errors.New(errNotConnected)
 	}
 	version, err := p.client.Version(ctx)
 	if err != nil {

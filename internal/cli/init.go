@@ -9,9 +9,13 @@ import (
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
+	"github.com/geoffmcc/nodex/internal/credentials"
 )
 
 func runInit(_ context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex init"), app.ExitUsage)
+	}
 	// Check if config already exists.
 	path, err := config.ConfigPath()
 	if err != nil {
@@ -27,7 +31,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "Config already exists at %s\n", path)
 		fmt.Fprint(cmdCtx.ErrW, "Overwrite? [y/N] ")
-		if !confirm(cmdCtx) {
+		if !confirm() {
 			fmt.Fprintln(cmdCtx.ErrW, "Aborted.")
 			return nil
 		}
@@ -37,13 +41,13 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 
 	if !cmdCtx.Opts.NonInteractive {
 		fmt.Fprint(cmdCtx.ErrW, "Provider (e.g. proxmox): ")
-		provider := prompt(cmdCtx)
+		provider := prompt()
 		if provider == "" {
 			provider = "proxmox"
 		}
 
 		fmt.Fprint(cmdCtx.ErrW, "Endpoint URL: ")
-		endpoint := prompt(cmdCtx)
+		endpoint := prompt()
 		if endpoint == "" {
 			return app.NewExitError(
 				fmt.Errorf("endpoint is required"),
@@ -52,10 +56,15 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 
 		fmt.Fprint(cmdCtx.ErrW, "Credential reference (e.g. file:default): ")
-		credRef := prompt(cmdCtx)
+		credRef := prompt()
+		if credRef != "" {
+			if _, _, err := credentials.ParseCredentialRefStrict(credRef); err != nil {
+				return app.NewExitError(fmt.Errorf("invalid credential reference: %w", err), app.ExitUsage)
+			}
+		}
 
 		fmt.Fprint(cmdCtx.ErrW, "Profile name [default]: ")
-		name := prompt(cmdCtx)
+		name := prompt()
 		if name == "" {
 			name = "default"
 		}
@@ -71,6 +80,9 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 			Provider:      config.NormalizeProvider(provider),
 			Endpoint:      endpoint,
 			CredentialRef: credRef,
+		}
+		if err := config.ValidateEndpoint(profile.Endpoint); err != nil {
+			return app.NewExitError(fmt.Errorf("invalid endpoint: %w", err), app.ExitUsage)
 		}
 
 		cfg.CurrentProfile = name
@@ -95,13 +107,13 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 	return nil
 }
 
-func prompt(cmdCtx *Context) string {
+func prompt() string {
 	reader := bufio.NewReader(os.Stdin)
 	line, _ := reader.ReadString('\n')
 	return strings.TrimSpace(line)
 }
 
-func confirm(cmdCtx *Context) bool {
+func confirm() bool {
 	reader := bufio.NewReader(os.Stdin)
 	line, _ := reader.ReadString('\n')
 	line = strings.TrimSpace(strings.ToLower(line))

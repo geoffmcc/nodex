@@ -18,7 +18,8 @@ type NodeItem struct {
 	Maxmem  int64   `json:"maxmem"`
 	CPU     float64 `json:"cpu"`
 	Maxcpu  int     `json:"maxcpu"`
-	Uptime  int     `json:"uptime"`
+	Uptime  *int    `json:"uptime,omitempty"`
+	Node    string  `json:"node"`
 	Name    string  `json:"name"`
 	ID      string  `json:"id"`
 	Level   string  `json:"level"`

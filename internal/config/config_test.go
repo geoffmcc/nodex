@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -122,7 +123,7 @@ func TestWriteAndRead(t *testing.T) {
 	}
 
 	// Verify file exists and has content.
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is a test-owned temp file.
 	if err != nil {
 		t.Fatalf("read back failed: %v", err)
 	}
@@ -184,5 +185,65 @@ func TestProfileNames(t *testing.T) {
 func TestNormalizeProvider(t *testing.T) {
 	if got := NormalizeProvider("Proxmox"); got != "proxmox" {
 		t.Errorf("expected proxmox, got %s", got)
+	}
+}
+
+func TestValidateEndpointPolicy(t *testing.T) {
+	if err := ValidateEndpoint("https://pve.example.com:8006"); err != nil {
+		t.Fatalf("expected valid endpoint: %v", err)
+	}
+	for _, endpoint := range []string{
+		"http://pve.example.com:8006",
+		"https://user:pass@pve.example.com:8006",
+		"https://pve.example.com:8006/path",
+		"https://pve.example.com:8006?token=secret",
+	} {
+		if err := ValidateEndpoint(endpoint); err == nil {
+			t.Fatalf("ValidateEndpoint(%q) succeeded, want error", endpoint)
+		}
+	}
+}
+
+func TestProfileNamesSorted(t *testing.T) {
+	cfg := &Config{Profiles: map[string]Profile{"b": {}, "a": {}}}
+	names := ProfileNames(cfg)
+	if len(names) != 2 || names[0] != "a" || names[1] != "b" {
+		t.Fatalf("ProfileNames = %v, want sorted", names)
+	}
+}
+
+func TestUpdateConcurrentMutations(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path, err := ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := WriteTo(DefaultConfig(), path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for _, name := range []string{"a", "b", "c", "d"} {
+		name := name
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = Update(func(cfg *Config) error {
+				cfg.Profiles[name] = Profile{Provider: "proxmox"}
+				if cfg.CurrentProfile == "" {
+					cfg.CurrentProfile = name
+				}
+				return nil
+			})
+		}()
+	}
+	wg.Wait()
+	cfg, err := ReadFrom(path)
+	if err != nil {
+		t.Fatalf("read updated config: %v", err)
+	}
+	if len(cfg.Profiles) != 4 {
+		t.Fatalf("profiles = %v, want 4", cfg.Profiles)
 	}
 }

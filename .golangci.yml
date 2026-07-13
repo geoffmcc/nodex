@@ -1,15 +1,9 @@
+version: "2"
 linters:
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
     - bodyclose
     - durationcheck
     - errorlint
-    - exportloopref
     - gosec
     - misspell
     - nilerr
@@ -17,13 +11,28 @@ linters:
     - unconvert
     - unparam
     - wastedassign
-
-linters-settings:
-  gosec:
-    excludes:
-      - G104  # unhandled errors — we handle these deliberately
-
+  settings:
+    gosec:
+      excludes:
+        - G104
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

@@ -4,15 +4,15 @@ import "time"
 
 // Node represents a physical or virtual machine host.
 type Node struct {
-	ID       string            `json:"id"`
-	Name     string            `json:"name"`
-	Status   string            `json:"status"` // online, offline, unknown
-	Role     string            `json:"role"`   // node, storage
-	IP       string            `json:"ip"`
-	Platform string            `json:"platform"` // proxxmox, vmware, etc.
-	Version  string            `json:"version"`
-	Uptime   time.Duration     `json:"uptime"`
-	Labels   map[string]string `json:"labels,omitempty"`
+	ID       string            `json:"id" yaml:"id"`
+	Name     string            `json:"name" yaml:"name"`
+	Status   string            `json:"status" yaml:"status"` // online, offline, unknown
+	Role     string            `json:"role" yaml:"role"`     // node, storage
+	IP       string            `json:"ip,omitempty" yaml:"ip,omitempty"`
+	Platform string            `json:"platform" yaml:"platform"` // proxxmox, vmware, etc.
+	Version  string            `json:"version,omitempty" yaml:"version,omitempty"`
+	Uptime   *time.Duration    `json:"uptime,omitempty" yaml:"uptime,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 }
 
 // VM represents a virtual machine.

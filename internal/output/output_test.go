@@ -83,6 +83,18 @@ func TestSanitizeTerminal(t *testing.T) {
 	}
 }
 
+func TestWriteTableRedactsAndSanitizesCells(t *testing.T) {
+	var b strings.Builder
+	err := WriteTable(&b, []string{"NAME"}, [][]string{{"bad\x1b[31m PVEAPIToken=user@pam!id=secret\rforge"}})
+	if err != nil {
+		t.Fatalf("WriteTable: %v", err)
+	}
+	out := b.String()
+	if strings.Contains(out, "\x1b") || strings.Contains(out, "secret") || strings.Contains(out, "\r") {
+		t.Fatalf("unsafe table output: %q", out)
+	}
+}
+
 func TestDefaultFormat(t *testing.T) {
 	// DefaultFormat should return either table or json (depends on terminal).
 	f := DefaultFormat()

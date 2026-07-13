@@ -22,6 +22,12 @@ func (b *StdinBackend) Name() string { return "stdin" }
 
 // Get prompts the user for credentials interactively.
 func (b *StdinBackend) Get(_ context.Context, profile string) (*domain.Credentials, error) {
+	if err := ValidateName(profile); err != nil {
+		return nil, err
+	}
+	if b.reader == nil {
+		return nil, fmt.Errorf("stdin credential reader is unavailable")
+	}
 	tokenID, err := b.reader("Token ID: ")
 	if err != nil {
 		return nil, fmt.Errorf("read token ID: %w", err)
@@ -30,11 +36,15 @@ func (b *StdinBackend) Get(_ context.Context, profile string) (*domain.Credentia
 	if err != nil {
 		return nil, fmt.Errorf("read token secret: %w", err)
 	}
-	return &domain.Credentials{
+	creds := &domain.Credentials{
 		Type:        "token",
 		TokenID:     tokenID,
 		TokenSecret: tokenSecret,
-	}, nil
+	}
+	if err := ValidateCredentials(profile, creds); err != nil {
+		return nil, err
+	}
+	return creds, nil
 }
 
 // Store is not supported for stdin backend.
