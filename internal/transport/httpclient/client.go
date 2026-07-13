@@ -189,6 +189,13 @@ func (c *Client) jitteredDelay(attempt int) time.Duration {
 	return delay
 }
 
+// DoMutation executes a single HTTP request without retry.
+// State-changing operations (POST, PUT, DELETE) must use this method
+// to prevent unsafe automatic retries.
+func (c *Client) DoMutation(ctx context.Context, req *http.Request) (*http.Response, error) {
+	return c.httpClient.Do(req.WithContext(ctx)) // #nosec G704 -- callers validate configured endpoints before constructing requests.
+}
+
 // MaxBodySize returns the configured maximum body size.
 func (c *Client) MaxBodySize() int64 {
 	return c.maxBodySize

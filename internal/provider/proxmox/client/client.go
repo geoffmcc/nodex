@@ -17,6 +17,13 @@ import (
 	"github.com/geoffmcc/nodex/internal/transport/httpclient"
 )
 
+// Success status codes for API operations.
+var successCodes = map[int]bool{
+	http.StatusOK:       true, // 200
+	http.StatusCreated:  true, // 201
+	http.StatusAccepted: true, // 202
+}
+
 const (
 	// DefaultAPIPath is the Proxmox API base path.
 	DefaultAPIPath = "/api2/json"
@@ -625,7 +632,58 @@ func (c *Client) get(ctx context.Context, path string, result any) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
+	return c.decodeResponse(resp, result)
+}
+
+// post executes a POST request to the Proxmox API with form-encoded body.
+// POST requests are never retried to prevent duplicate state changes.
+func (c *Client) post(ctx context.Context, path string, body url.Values, result any) error {
+	return c.sendMutation(ctx, http.MethodPost, path, body, result)
+}
+
+// put executes a PUT request to the Proxmox API with form-encoded body.
+// PUT requests are never retried to prevent duplicate state changes.
+func (c *Client) put(ctx context.Context, path string, body url.Values, result any) error {
+	return c.sendMutation(ctx, http.MethodPut, path, body, result)
+}
+
+// del executes a DELETE request to the Proxmox API.
+// DELETE requests are never retried to prevent duplicate state changes.
+func (c *Client) del(ctx context.Context, path string, result any) error {
+	return c.sendMutation(ctx, http.MethodDelete, path, nil, result)
+}
+
+// sendMutation builds and executes a mutation request (POST, PUT, DELETE).
+// Mutations use DoMutation to prevent automatic retries.
+func (c *Client) sendMutation(ctx context.Context, method, path string, body url.Values, result any) error {
+	u := c.baseURL + path
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = strings.NewReader(body.Encode())
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, bodyReader)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "PVEAPIToken="+c.token)
+	}
+
+	resp, err := c.client.DoMutation(ctx, req)
+	if err != nil {
+		return fmt.Errorf("execute request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	return c.decodeResponse(resp, result)
+}
+
+// decodeResponse reads, validates, and decodes a Proxmox API response.
+func (c *Client) decodeResponse(resp *http.Response, result any) error {
+	if !successCodes[resp.StatusCode] {
 		body, truncated := readLimited(resp.Body, c.client.MaxErrorBodySize())
 		msg := redact.String(output.SanitizeTerminal(string(body)))
 		if truncated {
