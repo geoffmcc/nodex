@@ -744,6 +744,147 @@ func TestWriteFirewallAdvancedNilHandling(t *testing.T) {
 	}
 }
 
+func TestPhase13SubcommandsRegistered(t *testing.T) {
+	ha, ok := GetCommand("ha")
+	if !ok {
+		t.Fatal("ha command not registered")
+	}
+	for _, subName := range []string{"status", "current"} {
+		if _, ok := ha.sub[subName]; !ok {
+			t.Fatalf("ha command missing %s subcommand", subName)
+		}
+	}
+
+	backup, ok := GetCommand("backup")
+	if !ok {
+		t.Fatal("backup command not registered")
+	}
+	if _, ok := backup.sub["content"]; !ok {
+		t.Fatal("backup command missing content subcommand")
+	}
+
+	sdn, ok := GetCommand("sdn")
+	if !ok {
+		t.Fatal("sdn command not registered")
+	}
+	for _, subName := range []string{"zones", "vnets"} {
+		if _, ok := sdn.sub[subName]; !ok {
+			t.Fatalf("sdn command missing %s subcommand", subName)
+		}
+	}
+
+	vm, ok := GetCommand("vm")
+	if !ok {
+		t.Fatal("vm command not registered")
+	}
+	if _, ok := vm.sub["snapshot-config"]; !ok {
+		t.Fatal("vm command missing snapshot-config subcommand")
+	}
+
+	container, ok := GetCommand("container")
+	if !ok {
+		t.Fatal("container command not registered")
+	}
+	if _, ok := container.sub["snapshot-config"]; !ok {
+		t.Fatal("container command missing snapshot-config subcommand")
+	}
+}
+
+func TestPhase13SubcommandsRejectWrongArgCount(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "ha-status-extra", args: []string{"ha", "status", "extra"}},
+		{name: "ha-current-extra", args: []string{"ha", "current", "extra"}},
+		{name: "backup-content-no-args", args: []string{"backup", "content"}},
+		{name: "backup-content-one-arg", args: []string{"backup", "content", "node1"}},
+		{name: "sdn-zones-extra", args: []string{"sdn", "zones", "extra"}},
+		{name: "sdn-vnets-extra", args: []string{"sdn", "vnets", "extra"}},
+		{name: "vm-snapshot-config-no-args", args: []string{"vm", "snapshot-config"}},
+		{name: "vm-snapshot-config-bad-id", args: []string{"vm", "snapshot-config", "not-node/vmid-format", "snap1"}},
+		{name: "container-snapshot-config-no-args", args: []string{"container", "snapshot-config"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfigAndHome(t)
+			setupE2EConfig(t)
+
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err == nil {
+				t.Fatal("expected usage error")
+			}
+			var exitCode *app.ExitCoder
+			if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+				t.Fatalf("error = %v, want ExitUsage", err)
+			}
+		})
+	}
+}
+
+func TestRun_HAStatus(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"ha", "status"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "online") {
+		t.Errorf("expected status in output, got: %s", stdout.String())
+	}
+}
+
+func TestRun_BackupContent(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"backup", "content", "e2e-node", "local"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "vzdump") {
+		t.Errorf("expected backup content in output, got: %s", stdout.String())
+	}
+}
+
+func TestRun_VMSnapshotConfig(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"vm", "snapshot-config", "e2e-node/100", "snap1"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+func TestWritePhase13NilHandling(t *testing.T) {
+	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+		t.Run(string(format), func(t *testing.T) {
+			ctx := &Context{Writer: &bytes.Buffer{}, Opts: Options{Output: format}}
+			if err := writeHAStatusTable(ctx, nil); err != nil {
+				t.Fatalf("writeHAStatusTable nil: %v", err)
+			}
+			if err := writeHACurrentTable(ctx, nil); err != nil {
+				t.Fatalf("writeHACurrentTable nil: %v", err)
+			}
+			if err := writeBackupContentTable(ctx, nil); err != nil {
+				t.Fatalf("writeBackupContentTable nil: %v", err)
+			}
+			if err := writeSDNZonesTable(ctx, nil); err != nil {
+				t.Fatalf("writeSDNZonesTable nil: %v", err)
+			}
+			if err := writeSDNVNetsTable(ctx, nil); err != nil {
+				t.Fatalf("writeSDNVNetsTable nil: %v", err)
+			}
+		})
+	}
+}
+
 func TestWriteEmptyResourceListsAsStructuredArrays(t *testing.T) {
 	tests := []struct {
 		name  string

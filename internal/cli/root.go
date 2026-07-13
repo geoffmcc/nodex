@@ -100,6 +100,7 @@ func init() {
 		&command{name: "show", short: "Show VM details", run: runVMShow},
 		&command{name: "config", short: "Show VM configuration", run: runVMConfig},
 		&command{name: "snapshots", short: "List VM snapshots", run: runVMSnapshots},
+		&command{name: "snapshot-config", short: "Show VM snapshot config", run: runVMSnapshotConfig},
 	)
 
 	register("task", "Manage tasks", nil,
@@ -111,6 +112,7 @@ func init() {
 		&command{name: "show", short: "Show container details", run: runContainerShow},
 		&command{name: "config", short: "Show container configuration", run: runContainerConfig},
 		&command{name: "snapshots", short: "List container snapshots", run: runContainerSnapshots},
+		&command{name: "snapshot-config", short: "Show container snapshot config", run: runContainerSnapshotConfig},
 	)
 	register("storage", "Manage storage", nil,
 		&command{name: "list", short: "List all storage pools", run: runStorageList},
@@ -127,6 +129,7 @@ func init() {
 	register("doctor", "Check system health", runDoctor)
 	register("backup", "Manage backups", nil,
 		&command{name: "list", short: "List backup tasks", run: runBackupList},
+		&command{name: "content", short: "List backup content", run: runBackupContent},
 	)
 	register("firewall", "Manage firewall", nil,
 		&command{name: "list", short: "List firewall rules", run: runFirewallList},
@@ -141,6 +144,12 @@ func init() {
 	register("ha", "Manage high availability", nil,
 		&command{name: "list", short: "List HA resources", run: runHAList},
 		&command{name: "groups", short: "List HA groups", run: runHAGroups},
+		&command{name: "status", short: "Show HA status", run: runHAStatus},
+		&command{name: "current", short: "Show current HA resource state", run: runHACurrent},
+	)
+	register("sdn", "Manage SDN", nil,
+		&command{name: "zones", short: "List SDN zones", run: runSDNZones},
+		&command{name: "vnets", short: "List SDN VNets", run: runSDNVNets},
 	)
 }
 

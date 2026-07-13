@@ -1,0 +1,8 @@
+[
+  {
+    "id": "vm/100",
+    "type": "vm",
+    "state": "started",
+    "node": "e2e-node"
+  }
+]

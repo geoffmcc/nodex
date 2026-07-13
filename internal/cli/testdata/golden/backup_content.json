@@ -1,0 +1,8 @@
+[
+  {
+    "content": "backup",
+    "volid": "backup:vzdump-qemu-100-2024_01_01-12_00_00.vma.zst",
+    "size": 1073741824,
+    "format": "vma.zst"
+  }
+]
