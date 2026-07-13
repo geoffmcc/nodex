@@ -78,5 +78,37 @@ type NodeList = NodeListResponse
 // ClusterResources is a convenience alias.
 type ClusterResources = ClusterResourcesResponse
 
+// NodeStatusResponse is the response from /nodes/{node}/status.
+type NodeStatusResponse struct {
+	Data NodeStatusData `json:"data"`
+}
+
+// NodeStatusData holds detailed node status information.
+type NodeStatusData struct {
+	CPU            float64   `json:"cpu"`
+	MaxCPU         int       `json:"maxcpu"`
+	Mem            int64     `json:"mem"`
+	MaxMem         int64     `json:"maxmem"`
+	Disk           int64     `json:"disk"`
+	MaxDisk        int64     `json:"maxdisk"`
+	Uptime         int       `json:"uptime"`
+	Level          string    `json:"level"`
+	SSLFingerprint string    `json:"ssl_fingerprint,omitempty"`
+	ID             string    `json:"id"`
+	Node           string    `json:"node"`
+	Type           string    `json:"type"`
+	Status         string    `json:"status"`
+	KVersion       string    `json:"kversion,omitempty"`
+	PVEVersion     string    `json:"pveversion,omitempty"`
+	LoadAvg        []float64 `json:"loadavg,omitempty"`
+	Wait           float64   `json:"wait,omitempty"`
+	Ksm            int       `json:"ksm,omitempty"`
+	Numa           int       `json:"numa,omitempty"`
+	IOMax          float64   `json:"io,omitempty"`
+}
+
+// NodeStatus is a convenience alias.
+type NodeStatus = NodeStatusResponse
+
 // Version is a convenience alias.
 type Version = VersionResponse

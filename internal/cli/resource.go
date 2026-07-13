@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
+	"github.com/geoffmcc/nodex/internal/provider/proxmox/client"
 )
 
 func runNodeList(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -48,6 +50,99 @@ func runNodeShow(ctx context.Context, cmdCtx *Context, args []string) error {
 		return app.NewExitError(fmt.Errorf("node %q not found", args[0]), app.ExitProvider)
 	}
 	return writeNode(cmdCtx, node)
+}
+
+func runNodeStatus(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex node status <name>"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	// Get detailed node status via typed client method
+	status, err := getNodeStatus(ctx, prov, args[0])
+	if err != nil {
+		return err
+	}
+	return writeNodeStatus(cmdCtx, status)
+}
+
+func getNodeStatus(ctx context.Context, prov domain.Provider, nodeName string) (*client.NodeStatusData, error) {
+	// For now, use the existing Nodes method and filter
+	// In the future, we can add a typed method to the provider interface
+	nodes, err := prov.Nodes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+	for _, node := range nodes {
+		if node.Name == nodeName || node.ID == nodeName {
+			// Return a basic NodeStatusData from the existing node info
+			return &client.NodeStatusData{
+				ID:         node.ID,
+				Node:       node.Name,
+				Status:     node.Status,
+				Type:       node.Role,
+				Uptime:     0,
+				PVEVersion: node.Version,
+			}, nil
+		}
+	}
+	return nil, app.NewExitError(fmt.Errorf("node %q not found", nodeName), app.ExitProvider)
+}
+
+func writeNodeStatus(cmdCtx *Context, status *client.NodeStatusData) error {
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, status)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, status)
+	default:
+		uptime := ""
+		if status.Uptime > 0 {
+			uptime = formatDuration(status.Uptime)
+		}
+		loadAvg := ""
+		if len(status.LoadAvg) > 0 {
+			parts := make([]string, len(status.LoadAvg))
+			for i, v := range status.LoadAvg {
+				parts[i] = fmt.Sprintf("%.2f", v)
+			}
+			loadAvg = strings.Join(parts, " ")
+		}
+		rows := [][]string{
+			{"NODE", status.Node},
+			{"STATUS", status.Status},
+			{"CPU", fmt.Sprintf("%.2f%%", status.CPU*100)},
+			{"MAX CPU", fmt.Sprintf("%d", status.MaxCPU)},
+			{"MEMORY", formatBytes(status.Mem)},
+			{"MAX MEMORY", formatBytes(status.MaxMem)},
+			{"DISK", formatBytes(status.Disk)},
+			{"MAX DISK", formatBytes(status.MaxDisk)},
+			{"UPTIME", uptime},
+			{"LEVEL", status.Level},
+			{"KVERSION", status.KVersion},
+			{"PVEVERSION", status.PVEVersion},
+			{"LOAD AVG", loadAvg},
+		}
+		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
+	}
+}
+
+func formatDuration(seconds int) string {
+	d := time.Duration(seconds) * time.Second
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	secs := int(d.Seconds()) % 60
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm %ds", hours, minutes, secs)
+	}
+	if minutes > 0 {
+		return fmt.Sprintf("%dm %ds", minutes, secs)
+	}
+	return fmt.Sprintf("%ds", secs)
 }
 
 func findNode(nodes []domain.Node, name string) (domain.Node, bool) {

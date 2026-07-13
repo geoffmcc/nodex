@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/geoffmcc/nodex/internal/domain"
@@ -27,6 +28,7 @@ type Client struct {
 	baseURL  string
 	client   *httpclient.Client
 	token    string
+	version  *VersionData
 }
 
 // New creates a new Proxmox API client.
@@ -77,6 +79,64 @@ func NormalizeEndpoint(endpoint string) (string, error) {
 func (c *Client) Version(ctx context.Context) (*VersionData, error) {
 	var resp VersionResponse
 	if err := c.get(ctx, "/version", &resp); err != nil {
+		return nil, err
+	}
+	c.version = &resp.Data
+	return &resp.Data, nil
+}
+
+// VersionData returns the stored version data, if any.
+func (c *Client) VersionData() *VersionData {
+	return c.version
+}
+
+// Release returns the release string from the stored version data.
+func (c *Client) Release() string {
+	if c.version == nil {
+		return ""
+	}
+	return c.version.Release
+}
+
+// VersionAtLeast checks if the stored version is at least the specified major.minor.
+func (c *Client) VersionAtLeast(major, minor int) bool {
+	if c.version == nil {
+		return false
+	}
+	v := c.version.Version
+	if v == "" {
+		return false
+	}
+	// Parse version string like "8.1.4" or "9.2.1"
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return false
+	}
+	maj, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+	min, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false
+	}
+	if maj > major {
+		return true
+	}
+	if maj == major {
+		return min >= minor
+	}
+	return false
+}
+
+// GetNodeStatus returns detailed status for a specific node.
+func (c *Client) GetNodeStatus(ctx context.Context, node string) (*NodeStatusData, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp NodeStatusResponse
+	path := "/nodes/" + url.PathEscape(node) + "/status"
+	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
 	}
 	return &resp.Data, nil

@@ -79,6 +79,7 @@ func init() {
 	register("node", "Manage nodes", nil,
 		&command{name: "list", short: "List all nodes", run: runNodeList},
 		&command{name: "show", short: "Show node details", run: runNodeShow},
+		&command{name: "status", short: "Show detailed node status", run: runNodeStatus},
 	)
 	register("vm", "Manage virtual machines", nil,
 		&command{name: "list", short: "List all VMs", run: runVMList},
