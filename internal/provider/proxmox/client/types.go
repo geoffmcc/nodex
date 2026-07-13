@@ -290,3 +290,72 @@ type SyslogItem struct {
 	SyslogLevel string `json:"sysloglevel,omitempty"`
 	Message     string `json:"message,omitempty"`
 }
+
+// BackupStatusResponse is the response from /nodes/{node}/storage/{storage}/content for backup tasks.
+type BackupStatusResponse struct {
+	Data []BackupStatusItem `json:"data"`
+}
+
+// BackupStatusItem represents a backup task.
+type BackupStatusItem struct {
+	UPID      string `json:"upid"`
+	Type      string `json:"type"`
+	State     string `json:"state"`
+	StartTime int    `json:"starttime"`
+	EndTime   int    `json:"endtime,omitempty"`
+	Status    string `json:"status,omitempty"`
+	PID       int    `json:"pid,omitempty"`
+	Worker    string `json:"worker,omitempty"`
+	Node      string `json:"node,omitempty"`
+	Storage   string `json:"storage,omitempty"`
+}
+
+// FirewallRuleResponse is the response from /cluster/firewall/rules.
+type FirewallRuleResponse struct {
+	Data []FirewallRuleItem `json:"data"`
+}
+
+// FirewallRuleItem represents a single firewall rule.
+type FirewallRuleItem struct {
+	Type     string `json:"type"`
+	Action   string `json:"action"`
+	Enable   int    `json:"enable,omitempty"`
+	Pos      int    `json:"pos,omitempty"`
+	Proto    string `json:"proto,omitempty"`
+	Dest     string `json:"dest,omitempty"`
+	Dport    string `json:"dport,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Sport    string `json:"sport,omitempty"`
+	ICMPType string `json:"icmp_type,omitempty"`
+	Log      string `json:"log,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+}
+
+// HAResourceResponse is the response from /cluster/ha/resources.
+type HAResourceResponse struct {
+	Data []HAResourceItem `json:"data"`
+}
+
+// HAResourceItem represents a single HA resource.
+type HAResourceItem struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	State    string `json:"state"`
+	Node     string `json:"node,omitempty"`
+	Group    string `json:"group,omitempty"`
+	MaxRelay int    `json:"max_relocate,omitempty"`
+}
+
+// HAGroupResponse is the response from /cluster/ha/groups.
+type HAGroupResponse struct {
+	Data []HAGroupItem `json:"data"`
+}
+
+// HAGroupItem represents a single HA group.
+type HAGroupItem struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Nodes    string `json:"nodes"`
+	Comment  string `json:"comment,omitempty"`
+	NoFailback int `json:"nofailback,omitempty"`
+}

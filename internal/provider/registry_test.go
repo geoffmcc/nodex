@@ -48,6 +48,18 @@ func (m *mockProvider) Events(_ context.Context) ([]domain.Event, error) {
 func (m *mockProvider) Syslog(_ context.Context, _ string) ([]domain.SyslogEntry, error) {
 	return nil, nil
 }
+func (m *mockProvider) Backups(_ context.Context, _ string) ([]domain.Backup, error) {
+	return nil, nil
+}
+func (m *mockProvider) FirewallRules(_ context.Context) ([]domain.FirewallRule, error) {
+	return nil, nil
+}
+func (m *mockProvider) HAResources(_ context.Context) ([]domain.HAResource, error) {
+	return nil, nil
+}
+func (m *mockProvider) HAGroups(_ context.Context) ([]domain.HAGroup, error) {
+	return nil, nil
+}
 
 func TestRegisterAndGet(t *testing.T) {
 	factory := func() domain.Provider { return &mockProvider{name: "test-provider"} }
