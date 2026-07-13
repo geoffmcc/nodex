@@ -8,7 +8,7 @@
 
 ## Version 0.1 Scope
 
-Local, single-user, read-only CLI for Proxmox VE. No daemon, no plugins, no mutations, no telemetry.
+Local, single-user CLI for Proxmox VE. The built-in Proxmox provider is read-only and issues only reviewed `GET` requests. No daemon, no plugins, no telemetry.
 
 ## Supported Platforms
 
@@ -22,8 +22,8 @@ Local, single-user, read-only CLI for Proxmox VE. No daemon, no plugins, no muta
 
 ## Toolchain
 
-- Minimum Go: 1.25
-- CI toolchain: 1.26
+- Minimum Go: 1.25.12
+- CI toolchain: 1.25.12
 
 ## Commands
 
@@ -67,7 +67,7 @@ nodex storage list
 | macOS | `~/Library/Application Support/Nodex/config.yaml` |
 | Windows | `%AppData%\Nodex\config.yaml` |
 
-Credentials stored in sibling `credentials` file.
+File-backed credentials are stored as JSON files under `~/.nodex/credentials/`.
 
 ## Config Schema (v1)
 
@@ -84,9 +84,9 @@ profiles:
 
 ## Credential Reference Format
 
-`backend:name` — prefixes: `keyring:`, `file:`, `env:`
+`backend:name` — prefixes: `keyring:`, `file:`, `env:`, `stdin:`. A bare name uses the `file` backend.
 
-Backend priority: OS keyring > headless file > env vars > stdin.
+Resolution uses the explicit `credential_ref` when configured; otherwise environment credentials are tried first, then a same-name file credential. Credential names are validated and incomplete token or password pairs are rejected.
 
 ## Exit Codes
 
@@ -133,11 +133,11 @@ Code: NODEX_<CATEGORY>_<DETAIL>
 - Certificate validation: enabled
 - Hostname verification: enabled
 - Custom CA: supported, preserves hostname checks
-- Insecure override: `--insecure` flag, warns to stderr, never persisted
+- Insecure TLS: no CLI or credential-driven insecure mode is exposed
 
 ## Retry Policy
 
 - Max 2 retries, base delays 200ms/500ms, jitter ±25%
-- Retry on: temp network failures, HTTP 502/503/504
+- Retry on: temporary network failures and HTTP 5xx responses
 - No retry on: TLS, auth, authorization failures
-- Max response body: 50 MiB
+- Max successful API response body: 50 MiB after decompression; max API error body: 256 KiB

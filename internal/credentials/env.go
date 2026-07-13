@@ -31,6 +31,9 @@ func (b *EnvBackend) Name() string { return "env" }
 //	{PREFIX}_{PROFILE}_USERNAME
 //	{PREFIX}_{PROFILE}_PASSWORD
 func (b *EnvBackend) Get(_ context.Context, profile string) (*domain.Credentials, error) {
+	if err := ValidateName(profile); err != nil {
+		return nil, err
+	}
 	upper := strings.ToUpper(strings.ReplaceAll(profile, "-", "_"))
 	prefix := fmt.Sprintf("%s_%s", b.upperPrefix(), upper)
 
@@ -44,14 +47,18 @@ func (b *EnvBackend) Get(_ context.Context, profile string) (*domain.Credentials
 		return nil, fmt.Errorf("no credentials found for profile %q in environment", profile)
 	}
 
-	return &domain.Credentials{
+	creds := &domain.Credentials{
 		Type:        credentialType(token, tokenID, username),
 		Token:       token,
 		TokenID:     tokenID,
 		TokenSecret: tokenSecret,
 		Username:    username,
 		Password:    password,
-	}, nil
+	}
+	if err := ValidateCredentials(profile, creds); err != nil {
+		return nil, err
+	}
+	return creds, nil
 }
 
 // Store is not supported for env backend.

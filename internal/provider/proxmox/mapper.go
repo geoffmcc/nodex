@@ -11,15 +11,28 @@ import (
 
 // MapNode converts a client.NodeItem to a domain.Node.
 func MapNode(item client.NodeItem) domain.Node {
+	name := item.Node
+	if name == "" {
+		name = item.Name
+	}
+	id := item.ID
+	if id == "" {
+		id = name
+	}
+	var uptime *time.Duration
+	if item.Uptime != nil {
+		d := time.Duration(*item.Uptime) * time.Second
+		uptime = &d
+	}
 	return domain.Node{
-		ID:       item.Name,
-		Name:     item.Name,
+		ID:       id,
+		Name:     name,
 		Status:   item.Status,
 		Role:     item.Type,
 		IP:       item.IP,
 		Platform: "proxmox",
 		Version:  "",
-		Uptime:   time.Duration(item.Uptime) * time.Second,
+		Uptime:   uptime,
 	}
 }
 
@@ -61,9 +74,13 @@ func MapContainer(res client.ClusterResource) domain.Container {
 
 // MapStorage converts a client.ClusterResource to a domain.Storage.
 func MapStorage(res client.ClusterResource) domain.Storage {
+	name := res.Name
+	if name == "" {
+		name = res.Storage
+	}
 	return domain.Storage{
 		ID:      res.ID,
-		Name:    res.Name,
+		Name:    name,
 		Type:    res.Type,
 		Status:  res.Status,
 		Node:    res.Node,

@@ -8,7 +8,7 @@ Nodex connects to your Proxmox VE environment and gives you a clean CLI to inspe
 
 ## Status
 
-Early development (v0.1). Read-only CLI for Proxmox. No mutations, no daemon, no telemetry — ever.
+Early development (v0.1). The current built-in Proxmox provider issues only read-only `GET` requests for version, nodes, and cluster resources. Nodex has no daemon and no telemetry.
 
 ## Install
 
@@ -46,6 +46,10 @@ Config is stored at:
 | macOS | `~/Library/Application Support/Nodex/config.yaml` |
 | Windows | `%AppData%\Nodex\config.yaml` |
 
+Profiles must use `https://` Proxmox endpoints without URL user info, query strings, fragments, or extra path components. Custom CAs can be configured with `ca_file`; certificate and hostname verification remain enabled. The global `--timeout` flag controls provider request timeouts.
+
+File-backed credentials are stored under `~/.nodex/credentials` using validated credential names. Credential references use `backend:name` (`file`, `keyring`, `env`, or `stdin`) or a bare name for the file backend. Incomplete token or username/password credential pairs are rejected.
+
 ## Commands
 
 ```
@@ -69,9 +73,11 @@ nodex vm list --output json
 nodex node list --output yaml
 ```
 
+Human-readable table and error output is redacted and terminal-sanitized. JSON and YAML are emitted through structured encoders and redaction while preserving valid syntax.
+
 ## Development
 
-Requires Go 1.25+.
+Requires Go 1.25.12 or newer within the Go 1.25 release family.
 
 ```bash
 make build    # build binary

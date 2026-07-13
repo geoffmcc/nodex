@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/output"
+	proxclient "github.com/geoffmcc/nodex/internal/provider/proxmox/client"
 )
 
 // checkResult holds the result of a single doctor check.
@@ -16,7 +18,10 @@ type checkResult struct {
 	Message string `json:"message,omitempty" yaml:"message,omitempty"`
 }
 
-func runDoctor(ctx context.Context, cmdCtx *Context, _ []string) error {
+func runDoctor(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex doctor"), app.ExitUsage)
+	}
 	var results []checkResult
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -39,7 +44,7 @@ func runDoctor(ctx context.Context, cmdCtx *Context, _ []string) error {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				r := checkProfile(ctx, name, p)
+				r := checkProfile(ctx, cmdCtx, name, p)
 				mu.Lock()
 				results = append(results, r)
 				mu.Unlock()
@@ -131,7 +136,7 @@ func checkConfig() checkResult {
 	return checkResult{Name: "config", Status: "pass", Message: fmt.Sprintf("schema v%d", cfg.Version)}
 }
 
-func checkProfile(ctx context.Context, name string, p config.Profile) checkResult {
+func checkProfile(ctx context.Context, cmdCtx *Context, name string, p config.Profile) checkResult {
 	if p.Endpoint == "" {
 		return checkResult{
 			Name:    fmt.Sprintf("profile/%s", name),
@@ -140,7 +145,7 @@ func checkProfile(ctx context.Context, name string, p config.Profile) checkResul
 		}
 	}
 
-	prov, cleanup, err := connectProfile(ctx, name)
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, name)
 	if err != nil {
 		return checkResult{
 			Name:    fmt.Sprintf("profile/%s", name),
@@ -151,13 +156,17 @@ func checkProfile(ctx context.Context, name string, p config.Profile) checkResul
 	defer cleanup()
 
 	// Try to get the version as a connectivity check.
-	if pc, ok := prov.(interface{ TestConnectivity(context.Context) error }); ok {
-		if err := pc.TestConnectivity(ctx); err != nil {
-			return checkResult{
-				Name:    fmt.Sprintf("profile/%s", name),
-				Status:  "fail",
-				Message: err.Error(),
-			}
+	pc, ok := prov.(interface {
+		TestConnectivity(context.Context) (*proxclient.VersionData, error)
+	})
+	if !ok {
+		return checkResult{Name: fmt.Sprintf("profile/%s", name), Status: "fail", Message: "provider has no connectivity check"}
+	}
+	if _, err := pc.TestConnectivity(ctx); err != nil {
+		return checkResult{
+			Name:    fmt.Sprintf("profile/%s", name),
+			Status:  "fail",
+			Message: err.Error(),
 		}
 	}
 

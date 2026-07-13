@@ -2,6 +2,8 @@ package output
 
 import (
 	"os"
+	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -37,5 +39,18 @@ func SanitizeTerminal(s string) string {
 		}
 		result = append(result, c)
 	}
-	return string(result)
+	clean := strings.ToValidUTF8(string(result), "�")
+	out := make([]rune, 0, len(clean))
+	for _, r := range clean {
+		if (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
+			continue
+		}
+		if r == '\n' || r == '\t' || (r >= 0x20 && r != 0x7f && (r < 0x80 || r >= 0xa0)) {
+			out = append(out, r)
+		}
+	}
+	if !utf8.ValidString(string(out)) {
+		return strings.ToValidUTF8(string(out), "�")
+	}
+	return string(out)
 }

@@ -14,7 +14,9 @@ var patterns = []*regexp.Regexp{
 	// Bare token-like values (long hex/base64 strings after common markers)
 	regexp.MustCompile(`(?i)(token|secret|password|passwd|pwd|credential)\s*[:=]\s*\S+`),
 	// PVE API token format: user@realm!tokenid=uuid
-	regexp.MustCompile(`\w+@\w+![\w-]+=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`),
+	regexp.MustCompile(`(?i)PVEAPIToken=\S+`),
+	regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=\S+`),
+	regexp.MustCompile(`(?i)(token[_-]?id|token[_-]?secret|username|password)"?\s*[:=]\s*"?[^"\s,}]+`),
 	// Bearer tokens
 	regexp.MustCompile(`(?i)bearer\s+\S+`),
 	// Basic auth

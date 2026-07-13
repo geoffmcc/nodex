@@ -3,13 +3,12 @@ package cli
 import (
 	"context"
 	"fmt"
-	"strings"
+	"sort"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/output"
-	"github.com/geoffmcc/nodex/internal/provider"
 	"github.com/geoffmcc/nodex/internal/provider/proxmox"
 )
 
@@ -20,6 +19,9 @@ func runProfileAdd(_ context.Context, cmdCtx *Context, args []string) error {
 			app.ExitUsage,
 		)
 	}
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex profile add <name>"), app.ExitUsage)
+	}
 
 	name := args[0]
 	if !config.ProfileRegex.MatchString(name) {
@@ -29,28 +31,16 @@ func runProfileAdd(_ context.Context, cmdCtx *Context, args []string) error {
 		)
 	}
 
-	cfg, err := config.Read()
-	if err != nil {
-		return err
-	}
-
-	if _, exists := cfg.Profiles[name]; exists {
-		return app.NewExitError(
-			fmt.Errorf("%w: profile %q already exists", app.ErrProfileExists, name),
-			app.ExitUsage,
-		)
-	}
-
-	// If this is the first profile, set it as current.
-	if len(cfg.Profiles) == 0 {
-		cfg.CurrentProfile = name
-	}
-
-	cfg.Profiles[name] = config.Profile{
-		Provider: "proxmox",
-	}
-
-	if err := config.Write(cfg); err != nil {
+	if err := config.Update(func(cfg *config.Config) error {
+		if _, exists := cfg.Profiles[name]; exists {
+			return app.NewExitError(fmt.Errorf("%w: profile %q already exists", app.ErrProfileExists, name), app.ExitUsage)
+		}
+		if len(cfg.Profiles) == 0 {
+			cfg.CurrentProfile = name
+		}
+		cfg.Profiles[name] = config.Profile{Provider: "proxmox"}
+		return nil
+	}); err != nil {
 		return err
 	}
 
@@ -60,7 +50,10 @@ func runProfileAdd(_ context.Context, cmdCtx *Context, args []string) error {
 	return nil
 }
 
-func runProfileList(_ context.Context, cmdCtx *Context, _ []string) error {
+func runProfileList(_ context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex profile list"), app.ExitUsage)
+	}
 	cfg, err := config.Read()
 	if err != nil {
 		return err
@@ -129,6 +122,9 @@ func runProfileShow(_ context.Context, cmdCtx *Context, args []string) error {
 			app.ExitUsage,
 		)
 	}
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex profile show <name>"), app.ExitUsage)
+	}
 
 	name := args[0]
 	cfg, err := config.Read()
@@ -191,22 +187,18 @@ func runProfileUse(_ context.Context, cmdCtx *Context, args []string) error {
 			app.ExitUsage,
 		)
 	}
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex profile use <name>"), app.ExitUsage)
+	}
 
 	name := args[0]
-	cfg, err := config.Read()
-	if err != nil {
-		return err
-	}
-
-	if _, ok := cfg.Profiles[name]; !ok {
-		return app.NewExitError(
-			fmt.Errorf("%w: profile %q not found", app.ErrProfileNotFound, name),
-			app.ExitConfig,
-		)
-	}
-
-	cfg.CurrentProfile = name
-	if err := config.Write(cfg); err != nil {
+	if err := config.Update(func(cfg *config.Config) error {
+		if _, ok := cfg.Profiles[name]; !ok {
+			return app.NewExitError(fmt.Errorf("%w: profile %q not found", app.ErrProfileNotFound, name), app.ExitConfig)
+		}
+		cfg.CurrentProfile = name
+		return nil
+	}); err != nil {
 		return err
 	}
 
@@ -216,7 +208,10 @@ func runProfileUse(_ context.Context, cmdCtx *Context, args []string) error {
 	return nil
 }
 
-func runProfileCurrent(_ context.Context, cmdCtx *Context, _ []string) error {
+func runProfileCurrent(_ context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex profile current"), app.ExitUsage)
+	}
 	cfg, err := config.Read()
 	if err != nil {
 		return err
@@ -248,6 +243,9 @@ func runProfileTest(ctx context.Context, cmdCtx *Context, args []string) error {
 	name := ""
 	if len(args) > 0 {
 		name = args[0]
+	}
+	if len(args) > 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex profile test [name]"), app.ExitUsage)
 	}
 
 	cfg, err := config.Read()
@@ -281,24 +279,11 @@ func runProfileTest(ctx context.Context, cmdCtx *Context, args []string) error {
 		)
 	}
 
-	resolver := credentials.NewResolver("")
-	creds, err := resolver.Resolve(ctx, name, p.CredentialRef)
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, name)
 	if err != nil {
 		return err
 	}
-
-	prov, err := provider.Get(p.Provider)
-	if err != nil {
-		return app.NewExitError(err, app.ExitProvider)
-	}
-
-	if err := prov.Connect(ctx, p.Endpoint, creds); err != nil {
-		return app.NewExitError(
-			fmt.Errorf("connect to %s: %w", p.Endpoint, err),
-			app.ExitNetwork,
-		)
-	}
-	defer prov.Close()
+	defer cleanup()
 
 	proxmoxProv, ok := prov.(*proxmox.Provider)
 	if !ok {
@@ -330,50 +315,63 @@ func runProfileRemove(_ context.Context, cmdCtx *Context, args []string) error {
 			app.ExitUsage,
 		)
 	}
+	if len(args) > 2 || (len(args) == 2 && args[1] != "--remove-credential") {
+		return app.NewExitError(fmt.Errorf("usage: nodex profile remove <name> [--remove-credential]"), app.ExitUsage)
+	}
 
 	name := args[0]
-	cfg, err := config.Read()
-	if err != nil {
+	removeCred := len(args) == 2 && args[1] == "--remove-credential"
+	credentialRef := ""
+	if err := config.Update(func(cfg *config.Config) error {
+		p, ok := cfg.Profiles[name]
+		if !ok {
+			return app.NewExitError(fmt.Errorf("%w: profile %q not found", app.ErrProfileNotFound, name), app.ExitConfig)
+		}
+		credentialRef = p.CredentialRef
+		delete(cfg.Profiles, name)
+		if cfg.CurrentProfile == name {
+			cfg.CurrentProfile = ""
+			names := config.ProfileNames(cfg)
+			sort.Strings(names)
+			if len(names) > 0 {
+				cfg.CurrentProfile = names[0]
+			}
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 
-	if _, ok := cfg.Profiles[name]; !ok {
-		return app.NewExitError(
-			fmt.Errorf("%w: profile %q not found", app.ErrProfileNotFound, name),
-			app.ExitConfig,
-		)
-	}
-
-	// Check for --remove-credential flag.
-	removeCred := false
-	for _, a := range args[1:] {
-		if strings.HasPrefix(a, "-") && strings.Contains(a, "remove-credential") {
-			removeCred = true
-			break
+	if removeCred {
+		if err := removeCredentialForProfile(name, credentialRef); err != nil {
+			return err
 		}
 	}
-
-	delete(cfg.Profiles, name)
-
-	// If removing the current profile, clear it.
-	if cfg.CurrentProfile == name {
-		cfg.CurrentProfile = ""
-		// Auto-select another profile if available.
-		for otherName := range cfg.Profiles {
-			cfg.CurrentProfile = otherName
-			break
-		}
-	}
-
-	if err := config.Write(cfg); err != nil {
-		return err
-	}
-
 	if !cmdCtx.Opts.Quiet {
 		fmt.Fprintf(cmdCtx.Writer, "Profile %q removed.\n", name)
 		if removeCred {
-			fmt.Fprintln(cmdCtx.Writer, "Credential removal not yet implemented (Phase 2).")
+			fmt.Fprintf(cmdCtx.Writer, "Credential for profile %q removed.\n", name)
 		}
+	}
+	return nil
+}
+
+func removeCredentialForProfile(profileName, credentialRef string) error {
+	backendName, credName := "file", profileName
+	if credentialRef != "" {
+		var err error
+		backendName, credName, err = credentials.ParseCredentialRefStrict(credentialRef)
+		if err != nil {
+			return app.NewExitError(fmt.Errorf("credential_ref for profile %q: %w", profileName, err), app.ExitCredential)
+		}
+	}
+	resolver := credentials.NewResolver("")
+	backend, ok := resolver.GetBackend(backendName)
+	if !ok {
+		return app.NewExitError(fmt.Errorf("unknown credential backend %q", backendName), app.ExitCredential)
+	}
+	if err := backend.Delete(context.Background(), credName); err != nil {
+		return app.NewExitError(fmt.Errorf("remove credential for profile %q: %w", profileName, err), app.ExitCredential)
 	}
 	return nil
 }

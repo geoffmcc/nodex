@@ -103,6 +103,8 @@ Credentials are resolved in this order:
 2. **Environment variables** (`NODEX_PROFILE_TOKEN`)
 3. **Credential files** in `~/.nodex/credentials/`
 
+Credential references must be either `backend:name` (`keyring`, `file`, `env`, or `stdin`) or a bare file-backend name. Names are validated and cannot contain paths, separators, traversal components, drive-letter paths, UNC paths, or Unicode characters outside the supported profile-name set. Incomplete token or username/password credential pairs are rejected.
+
 ### Keyring Backend
 
 Uses the OS keyring (macOS Keychain, Linux Secret Service, Windows Credential Manager).
@@ -148,6 +150,8 @@ profiles:
     endpoint: https://pve.example.com:8006
     credential_ref: keyring:default
 ```
+
+Endpoints must use HTTPS and must not contain URL user info, query strings, fragments, or extra path components. `ca_file` may be used for an additional trusted CA while preserving hostname verification. There is no exposed insecure TLS mode.
 
 ## Exit Codes
 

@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
-	"github.com/geoffmcc/nodex/internal/provider"
 )
 
-func runNodeList(ctx context.Context, cmdCtx *Context, _ []string) error {
-	prov, cleanup, err := connectProfile(ctx, cmdCtx.Opts.Profile)
+func runNodeList(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex node list"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
 	}
@@ -21,6 +25,10 @@ func runNodeList(ctx context.Context, cmdCtx *Context, _ []string) error {
 		return fmt.Errorf("list nodes: %w", err)
 	}
 
+	return writeNodes(cmdCtx, nodes)
+}
+
+func writeNodes(cmdCtx *Context, nodes []domain.Node) error {
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
 
 	switch cmdCtx.Opts.Output {
@@ -32,20 +40,27 @@ func runNodeList(ctx context.Context, cmdCtx *Context, _ []string) error {
 		headers := []string{"NAME", "STATUS", "IP", "ROLE", "UPTIME"}
 		rows := make([][]string, 0, len(nodes))
 		for _, n := range nodes {
+			uptime := ""
+			if n.Uptime != nil {
+				uptime = n.Uptime.String()
+			}
 			rows = append(rows, []string{
 				n.Name,
 				n.Status,
 				n.IP,
 				n.Role,
-				n.Uptime.String(),
+				uptime,
 			})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
 }
 
-func runVMList(ctx context.Context, cmdCtx *Context, _ []string) error {
-	prov, cleanup, err := connectProfile(ctx, cmdCtx.Opts.Profile)
+func runVMList(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex vm list"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
 	}
@@ -55,7 +70,13 @@ func runVMList(ctx context.Context, cmdCtx *Context, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("list VMs: %w", err)
 	}
+	return writeVMs(cmdCtx, vms)
+}
 
+func writeVMs(cmdCtx *Context, vms []domain.VM) error {
+	if vms == nil {
+		vms = []domain.VM{}
+	}
 	sort.Slice(vms, func(i, j int) bool { return vms[i].Name < vms[j].Name })
 
 	switch cmdCtx.Opts.Output {
@@ -81,8 +102,11 @@ func runVMList(ctx context.Context, cmdCtx *Context, _ []string) error {
 	}
 }
 
-func runContainerList(ctx context.Context, cmdCtx *Context, _ []string) error {
-	prov, cleanup, err := connectProfile(ctx, cmdCtx.Opts.Profile)
+func runContainerList(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex container list"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
 	}
@@ -92,7 +116,13 @@ func runContainerList(ctx context.Context, cmdCtx *Context, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("list containers: %w", err)
 	}
+	return writeContainers(cmdCtx, containers)
+}
 
+func writeContainers(cmdCtx *Context, containers []domain.Container) error {
+	if containers == nil {
+		containers = []domain.Container{}
+	}
 	sort.Slice(containers, func(i, j int) bool { return containers[i].Name < containers[j].Name })
 
 	switch cmdCtx.Opts.Output {
@@ -118,8 +148,11 @@ func runContainerList(ctx context.Context, cmdCtx *Context, _ []string) error {
 	}
 }
 
-func runStorageList(ctx context.Context, cmdCtx *Context, _ []string) error {
-	prov, cleanup, err := connectProfile(ctx, cmdCtx.Opts.Profile)
+func runStorageList(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex storage list"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
 	}
@@ -129,7 +162,13 @@ func runStorageList(ctx context.Context, cmdCtx *Context, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("list storage: %w", err)
 	}
+	return writeStorages(cmdCtx, storages)
+}
 
+func writeStorages(cmdCtx *Context, storages []domain.Storage) error {
+	if storages == nil {
+		storages = []domain.Storage{}
+	}
 	sort.Slice(storages, func(i, j int) bool { return storages[i].Name < storages[j].Name })
 
 	switch cmdCtx.Opts.Output {
@@ -153,9 +192,4 @@ func runStorageList(ctx context.Context, cmdCtx *Context, _ []string) error {
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
-}
-
-func runProvider(_ context.Context, cmdCtx *Context, _ []string) error {
-	_ = provider.IsRegistered // ensure import
-	return nil
 }

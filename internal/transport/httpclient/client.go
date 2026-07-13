@@ -2,18 +2,23 @@ package httpclient
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"math/rand/v2"
+	"math/big"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
 const (
 	// DefaultMaxBodySize is the maximum response body size (50 MiB).
 	DefaultMaxBodySize int64 = 50 * 1024 * 1024
+
+	// DefaultMaxErrorBodySize is the maximum non-success response body size.
+	DefaultMaxErrorBodySize int64 = 256 * 1024
 
 	// DefaultTimeout is the default request timeout.
 	DefaultTimeout = 30 * time.Second
@@ -33,11 +38,12 @@ const (
 
 // Client is a minimal HTTP client with TLS, timeout, retry, and jitter.
 type Client struct {
-	httpClient  *http.Client
-	maxBodySize int64
-	maxRetries  int
-	baseDelay   time.Duration
-	maxDelay    time.Duration
+	httpClient       *http.Client
+	maxBodySize      int64
+	maxErrorBodySize int64
+	maxRetries       int
+	baseDelay        time.Duration
+	maxDelay         time.Duration
 }
 
 // Option configures the Client.
@@ -53,11 +59,14 @@ func WithTimeout(d time.Duration) Option {
 // WithCACert sets a custom CA certificate for TLS.
 // Returns (Option, error) because it may fail to read/parse the cert.
 func WithCACert(path string) (Option, error) {
-	ca, err := os.ReadFile(path)
+	ca, err := os.ReadFile(path) // #nosec G304 -- ca_file is an explicit user-configured trust anchor path.
 	if err != nil {
 		return nil, fmt.Errorf("read CA cert: %w", err)
 	}
-	pool := x509.NewCertPool()
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
 	if !pool.AppendCertsFromPEM(ca) {
 		return nil, fmt.Errorf("parse CA cert")
 	}
@@ -67,26 +76,29 @@ func WithCACert(path string) (Option, error) {
 			t = &http.Transport{}
 			c.httpClient.Transport = t
 		}
-		t.TLSClientConfig.RootCAs = pool
-	}, nil
-}
-
-// WithInsecureTLS disables TLS certificate verification.
-func WithInsecureTLS() Option {
-	return func(c *Client) {
-		t, ok := c.httpClient.Transport.(*http.Transport)
-		if !ok {
-			t = &http.Transport{}
-			c.httpClient.Transport = t
+		var cfg *tls.Config
+		if t.TLSClientConfig != nil {
+			cfg = t.TLSClientConfig.Clone()
 		}
-		t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
-	}
+		if cfg == nil {
+			cfg = &tls.Config{MinVersion: tls.VersionTLS12}
+		}
+		cfg.RootCAs = pool
+		t.TLSClientConfig = cfg
+	}, nil
 }
 
 // WithMaxBodySize sets the maximum response body size.
 func WithMaxBodySize(n int64) Option {
 	return func(c *Client) {
 		c.maxBodySize = n
+	}
+}
+
+// WithMaxErrorBodySize sets the maximum error response body size.
+func WithMaxErrorBodySize(n int64) Option {
+	return func(c *Client) {
+		c.maxErrorBodySize = n
 	}
 }
 
@@ -116,10 +128,11 @@ func New(opts ...Option) *Client {
 				},
 			},
 		},
-		maxBodySize: DefaultMaxBodySize,
-		maxRetries:  DefaultMaxRetries,
-		baseDelay:   DefaultBaseDelay,
-		maxDelay:    DefaultMaxDelay,
+		maxBodySize:      DefaultMaxBodySize,
+		maxErrorBodySize: DefaultMaxErrorBodySize,
+		maxRetries:       DefaultMaxRetries,
+		baseDelay:        DefaultBaseDelay,
+		maxDelay:         DefaultMaxDelay,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -140,14 +153,17 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 			}
 		}
 
-		resp, err := c.httpClient.Do(req.WithContext(ctx))
+		resp, err := c.httpClient.Do(req.WithContext(ctx)) // #nosec G704 -- callers validate configured endpoints before constructing requests.
 		if err != nil {
+			if strings.Contains(err.Error(), "certificate") || strings.Contains(err.Error(), "tls:") {
+				return nil, err
+			}
 			lastErr = err
 			continue
 		}
 
 		if resp.StatusCode >= 500 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			lastErr = fmt.Errorf("server error: %d", resp.StatusCode)
 			continue
 		}
@@ -164,11 +180,21 @@ func (c *Client) jitteredDelay(attempt int) time.Duration {
 		delay = c.maxDelay
 	}
 	jitter := float64(delay) * JitterFraction
-	delay += time.Duration(rand.Int64N(int64(2*jitter+1))) - time.Duration(jitter)
+	span := int64(2*jitter + 1)
+	n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(span))
+	if err != nil {
+		return delay
+	}
+	delay += time.Duration(n.Int64()) - time.Duration(jitter)
 	return delay
 }
 
 // MaxBodySize returns the configured maximum body size.
 func (c *Client) MaxBodySize() int64 {
 	return c.maxBodySize
+}
+
+// MaxErrorBodySize returns the configured maximum error body size.
+func (c *Client) MaxErrorBodySize() int64 {
+	return c.maxErrorBodySize
 }

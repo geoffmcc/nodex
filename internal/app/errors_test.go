@@ -35,8 +35,8 @@ func TestExitCoder(t *testing.T) {
 		t.Errorf("Error() = %q, want %q", err.Error(), "test error")
 	}
 
-	if !errors.Is(err, errors.Unwrap(err)) {
-		// Verify Unwrap works.
+	if errors.Unwrap(err) == nil {
+		t.Fatal("expected wrapped error")
 	}
 }
 

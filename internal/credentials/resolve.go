@@ -50,6 +50,9 @@ func (r *Resolver) Resolve(ctx context.Context, profile, credentialRef string) (
 	// Try file backend.
 	credPath := filepath.Join(r.credDir, profile+".json")
 	if _, err := os.Stat(credPath); err == nil {
+		if err := ValidateName(profile); err != nil {
+			return nil, app.NewExitError(fmt.Errorf("%w: %w", app.ErrCredential, err), app.ExitCredential)
+		}
 		if creds, err := r.backends["file"].Get(ctx, profile); err == nil {
 			return creds, nil
 		}
@@ -64,9 +67,12 @@ func (r *Resolver) Resolve(ctx context.Context, profile, credentialRef string) (
 
 // resolveFromRef resolves credentials from an explicit credential_ref.
 func (r *Resolver) resolveFromRef(ctx context.Context, profile, ref string) (*domain.Credentials, error) {
-	backendName, refProfile := ParseCredentialRef(ref)
-	if refProfile == "" {
-		refProfile = profile
+	backendName, refProfile, err := ParseCredentialRefStrict(ref)
+	if err != nil {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: profile %q credential_ref: %w", app.ErrCredential, profile, err),
+			app.ExitCredential,
+		)
 	}
 
 	backend, ok := r.backends[backendName]
@@ -81,7 +87,7 @@ func (r *Resolver) resolveFromRef(ctx context.Context, profile, ref string) (*do
 	creds, err := backend.Get(ctx, refProfile)
 	if err != nil {
 		return nil, app.NewExitError(
-			fmt.Errorf("%w: backend %q: %v",
+			fmt.Errorf("%w: backend %q: %w",
 				app.ErrCredential, backendName, err),
 			app.ExitCredential,
 		)

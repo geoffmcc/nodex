@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -120,7 +121,10 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	args = remaining[1:]
 
 	if name == "help" {
-		if len(args) > 0 {
+		if len(args) > 1 {
+			return app.NewExitError(fmt.Errorf("usage: nodex help [command]"), app.ExitUsage)
+		}
+		if len(args) == 1 {
 			printCommandHelp(stdout, args[0])
 		} else {
 			printUsage(stdout)
@@ -171,22 +175,11 @@ func parseGlobal(args []string) (Options, []string, error) {
 	fs.BoolVar(&opts.Verbose, "verbose", false, "")
 	fs.BoolVar(&opts.Debug, "debug", false, "")
 
-	// Find the end of global flags (first non-flag arg that isn't a flag value).
-	end := len(args)
-	for i, a := range args {
-		if !strings.HasPrefix(a, "-") {
-			end = i
-			break
-		}
-		// -- means end of flags.
-		if a == "--" {
-			end = i
-			break
-		}
-	}
-
-	if err := fs.Parse(args[:end]); err != nil {
+	if err := fs.Parse(args); err != nil {
 		return opts, nil, err
+	}
+	if opts.Timeout <= 0 {
+		return opts, nil, fmt.Errorf("timeout must be greater than zero")
 	}
 
 	// Resolve output format.
@@ -205,7 +198,7 @@ func parseGlobal(args []string) (Options, []string, error) {
 		opts.Output = output.DefaultFormat()
 	}
 
-	remaining := args[end:]
+	remaining := fs.Args()
 	// Skip "--" separator if present.
 	if len(remaining) > 0 && remaining[0] == "--" {
 		remaining = remaining[1:]
@@ -221,7 +214,13 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  nodex [global-flags] <command> [command-flags] [args]")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Commands:")
-	for name, cmd := range commands {
+	names := make([]string, 0, len(commands))
+	for name := range commands {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		cmd := commands[name]
 		fmt.Fprintf(w, "  %-14s %s\n", name, cmd.short)
 	}
 	fmt.Fprintf(w, "  %-14s %s\n", "help", "Show help for a command")
@@ -249,7 +248,13 @@ func printCommandHelp(w io.Writer, name string) {
 	fmt.Fprintln(w)
 	if cmd.sub != nil {
 		fmt.Fprintln(w, "Subcommands:")
-		for subName, sub := range cmd.sub {
+		names := make([]string, 0, len(cmd.sub))
+		for subName := range cmd.sub {
+			names = append(names, subName)
+		}
+		sort.Strings(names)
+		for _, subName := range names {
+			sub := cmd.sub[subName]
 			fmt.Fprintf(w, "  %-14s %s\n", subName, sub.short)
 		}
 	}
@@ -259,7 +264,13 @@ func printSubcommandUsage(w io.Writer, cmd *command) {
 	fmt.Fprintf(w, "Usage: nodex %s <subcommand> [args]\n", cmd.name)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Subcommands:")
-	for name, sub := range cmd.sub {
+	names := make([]string, 0, len(cmd.sub))
+	for name := range cmd.sub {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		sub := cmd.sub[name]
 		fmt.Fprintf(w, "  %-14s %s\n", name, sub.short)
 	}
 }

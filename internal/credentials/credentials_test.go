@@ -57,7 +57,7 @@ func TestFileBackend_Delete(t *testing.T) {
 	b := NewFileBackend(dir)
 	ctx := context.Background()
 
-	creds := &domain.Credentials{Type: "token", TokenID: "id"}
+	creds := &domain.Credentials{Type: "token", TokenID: "id", TokenSecret: "secret"}
 	if err := b.Store(ctx, "test", creds); err != nil {
 		t.Fatalf("Store: %v", err)
 	}
@@ -90,11 +90,15 @@ func TestFileBackend_List(t *testing.T) {
 
 	// Write some credential files directly.
 	for _, name := range []string{"alpha", "beta", "gamma"} {
-		data, _ := json.Marshal(&domain.Credentials{Type: "token"})
-		os.WriteFile(filepath.Join(dir, name+".json"), data, 0o600)
+		data, _ := json.Marshal(&domain.Credentials{Type: "token"}) // #nosec G117 -- fixture intentionally matches credential schema.
+		if err := os.WriteFile(filepath.Join(dir, name+".json"), data, 0o600); err != nil {
+			t.Fatalf("write credential fixture: %v", err)
+		}
 	}
 	// Write a non-json file (should be ignored).
-	os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hi"), 0o600)
+	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hi"), 0o600); err != nil {
+		t.Fatalf("write text fixture: %v", err)
+	}
 
 	profiles, err := b.List(ctx)
 	if err != nil {
@@ -256,7 +260,6 @@ func TestParseCredentialRef(t *testing.T) {
 		{"keyring:myprofile", "keyring", "myprofile"},
 		{"env:prod", "env", "prod"},
 		{"file:staging", "file", "staging"},
-		{"keyring:some:complex:name", "keyring", "some:complex:name"},
 	}
 
 	for _, tt := range tests {
@@ -265,5 +268,67 @@ func TestParseCredentialRef(t *testing.T) {
 			t.Errorf("ParseCredentialRef(%q) = (%q, %q), want (%q, %q)",
 				tt.ref, be, prof, tt.wantBE, tt.wantProf)
 		}
+	}
+}
+
+func TestParseCredentialRefStrictRejectsPathEscapes(t *testing.T) {
+	tests := []string{
+		"",
+		":name",
+		"file:",
+		"file:../secret",
+		"file:..\\secret",
+		"file:/tmp/secret",
+		"file:C:\\secret",
+		`file:\\server\\share`,
+		"file:café",
+		"keyring:some:complex:name",
+	}
+	for _, ref := range tests {
+		if _, _, err := ParseCredentialRefStrict(ref); err == nil {
+			t.Fatalf("ParseCredentialRefStrict(%q) succeeded, want error", ref)
+		}
+	}
+}
+
+func TestValidateCredentialsRejectsIncompleteCombinations(t *testing.T) {
+	tests := []*domain.Credentials{
+		{Type: "token", TokenID: "id"},
+		{Type: "token", TokenSecret: "secret"},
+		{Type: "password", Username: "user"},
+		{Type: "password", Password: "pass"},
+		{Type: "insecure", TokenID: "id", TokenSecret: "secret"},
+	}
+	for _, creds := range tests {
+		if err := ValidateCredentials("prof", creds); err == nil {
+			t.Fatalf("ValidateCredentials(%+v) succeeded, want error", creds)
+		}
+	}
+}
+
+func TestStdinBackendNilReaderDoesNotPanic(t *testing.T) {
+	b := NewStdinBackend(nil)
+	if _, err := b.Get(context.Background(), "profile"); err == nil {
+		t.Fatal("expected nil reader error")
+	}
+}
+
+func TestFileBackendInvalidStoreLeavesExistingCredential(t *testing.T) {
+	dir := t.TempDir()
+	b := NewFileBackend(dir)
+	ctx := context.Background()
+	good := &domain.Credentials{Type: "token", TokenID: "id", TokenSecret: "secret"}
+	if err := b.Store(ctx, "profile", good); err != nil {
+		t.Fatalf("Store good: %v", err)
+	}
+	if err := b.Store(ctx, "profile", &domain.Credentials{Type: "token", TokenID: "new"}); err == nil {
+		t.Fatal("expected incomplete credential error")
+	}
+	got, err := b.Get(ctx, "profile")
+	if err != nil {
+		t.Fatalf("Get existing: %v", err)
+	}
+	if got.TokenSecret != "secret" {
+		t.Fatalf("existing credential changed: %+v", got)
 	}
 }
