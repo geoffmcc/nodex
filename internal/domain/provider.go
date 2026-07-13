@@ -42,6 +42,12 @@ type Provider interface {
 
 	// StorageContent returns content items for a specific storage.
 	StorageContent(ctx context.Context, node, storage string) ([]StorageContentItem, error)
+
+	// Tasks returns all tasks for a specific node.
+	Tasks(ctx context.Context, node string) ([]Task, error)
+
+	// Task returns details for a specific task by UPID.
+	Task(ctx context.Context, node, upid string) (*Task, error)
 }
 
 // Credentials holds authentication information for a provider.

@@ -339,3 +339,47 @@ func (p *Provider) StorageContent(ctx context.Context, node, storage string) ([]
 	}
 	return result, nil
 }
+
+// Tasks returns all tasks for a specific node.
+func (p *Provider) Tasks(ctx context.Context, node string) ([]domain.Task, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetTasks(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get tasks: %w", err)
+	}
+	result := make([]domain.Task, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.Task{
+			UPID:      item.UPID,
+			Type:      item.Type,
+			State:     item.State,
+			StartTime: item.StartTime,
+			EndTime:   item.EndTime,
+			Status:    item.Status,
+			Node:      node,
+		})
+	}
+	return result, nil
+}
+
+// Task returns details for a specific task by UPID.
+func (p *Provider) Task(ctx context.Context, node, upid string) (*domain.Task, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	item, err := p.client.GetTask(ctx, node, upid)
+	if err != nil {
+		return nil, fmt.Errorf("get task: %w", err)
+	}
+	return &domain.Task{
+		UPID:      item.UPID,
+		Type:      item.Type,
+		State:     item.State,
+		StartTime: item.StartTime,
+		EndTime:   item.EndTime,
+		Status:    item.Status,
+		Node:      node,
+	}, nil
+}

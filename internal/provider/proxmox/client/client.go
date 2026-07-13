@@ -217,6 +217,35 @@ func (c *Client) GetStorageContent(ctx context.Context, node, storage string) ([
 	return resp.Data, nil
 }
 
+// GetTasks returns all tasks for a specific node.
+func (c *Client) GetTasks(ctx context.Context, node string) ([]TaskListItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp TaskListResponse
+	path := "/nodes/" + url.PathEscape(node) + "/tasks"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetTask returns details for a specific task by UPID.
+func (c *Client) GetTask(ctx context.Context, node, upid string) (*TaskListItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if upid == "" {
+		return nil, fmt.Errorf("task UPID is required")
+	}
+	var resp TaskDetailResponse
+	path := "/nodes/" + url.PathEscape(node) + "/tasks/" + url.PathEscape(upid)
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil

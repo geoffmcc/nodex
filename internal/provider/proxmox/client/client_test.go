@@ -388,3 +388,69 @@ func TestGetStorageContentRejectsEmptyStorage(t *testing.T) {
 		t.Fatalf("GetStorageContent('') error = %v, want storage name required", err)
 	}
 }
+
+func TestGetTasksDecodesTaskList(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/tasks" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"upid":"UPID:proxmox/00012345/0","type":"vzdump","state":"running","starttime":1700000000,"pid":1234},{"upid":"UPID:proxmox/00012346/0","type":"qmshutdown","state":"stopped","starttime":1700000001,"endtime":1700000002,"status":"OK","pid":1235}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	tasks, err := c.GetTasks(context.Background(), "proxmox")
+	if err != nil {
+		t.Fatalf("GetTasks: %v", err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("len(tasks) = %d, want 2", len(tasks))
+	}
+	if tasks[0].UPID != "UPID:proxmox/00012345/0" || tasks[0].State != "running" || tasks[0].Type != "vzdump" {
+		t.Fatalf("first task = %+v", tasks[0])
+	}
+	if tasks[1].State != "stopped" || tasks[1].Status != "OK" {
+		t.Fatalf("second task = %+v", tasks[1])
+	}
+}
+
+func TestGetTasksRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetTasks(context.Background(), "")
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("GetTasks('') error = %v, want node name required", err)
+	}
+}
+
+func TestGetTaskDecodesTaskDetail(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/tasks/UPID:proxmox/00012345/0" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":{"upid":"UPID:proxmox/00012345/0","type":"vzdump","state":"stopped","starttime":1700000000,"endtime":1700000010,"status":"OK","pid":1234}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	task, err := c.GetTask(context.Background(), "proxmox", "UPID:proxmox/00012345/0")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if task.UPID != "UPID:proxmox/00012345/0" || task.State != "stopped" || task.Status != "OK" {
+		t.Fatalf("task = %+v", task)
+	}
+}
+
+func TestGetTaskRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetTask(context.Background(), "", "UPID:test/1/0")
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("GetTask('') error = %v, want node name required", err)
+	}
+}
+
+func TestGetTaskRejectsEmptyUPID(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetTask(context.Background(), "proxmox", "")
+	if err == nil || !strings.Contains(err.Error(), "task UPID is required") {
+		t.Fatalf("GetTask('') error = %v, want UPID required", err)
+	}
+}

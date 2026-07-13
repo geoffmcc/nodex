@@ -82,9 +82,14 @@ func init() {
 		&command{name: "status", short: "Show detailed node status", run: runNodeStatus},
 	)
 	register("vm", "Manage virtual machines", nil,
-		&command{name: "list", short: "List all VMs", run: runVMList},
+		&command{name: "list", short: "List all virtual machines", run: runVMList},
 		&command{name: "show", short: "Show VM details", run: runVMShow},
 		&command{name: "config", short: "Show VM configuration", run: runVMConfig},
+	)
+
+	register("task", "Manage tasks", nil,
+		&command{name: "list", short: "List all tasks for a node", run: runTaskList},
+		&command{name: "show", short: "Show task details", run: runTaskShow},
 	)
 	register("container", "Manage containers", nil,
 		&command{name: "list", short: "List all containers", run: runContainerList},
