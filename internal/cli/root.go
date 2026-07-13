@@ -113,6 +113,11 @@ func init() {
 		&command{name: "resume", short: "Resume a suspended VM", run: runVMResume},
 		&command{name: "pause", short: "Pause (freeze) a VM", run: runVMPause},
 		&command{name: "unpause", short: "Unpause a frozen VM", run: runVMUnpause},
+		&command{name: "update", short: "Update VM configuration", run: runVMUpdate},
+		&command{name: "delete", short: "Delete a VM (destructive)", run: runVMDelete},
+		&command{name: "cloud-init", short: "Regenerate cloud-init config", run: runVMCloudInit},
+		&command{name: "template", short: "Convert VM to template", run: runVMTemplate},
+		&command{name: "snapshot", short: "Manage VM snapshots", run: runVMSnapshotDispatch},
 	)
 
 	register("task", "Manage tasks", nil,
@@ -131,6 +136,10 @@ func init() {
 		&command{name: "reboot", short: "Reboot a container", run: runCTReboot},
 		&command{name: "suspend", short: "Suspend a container", run: runCTSuspend},
 		&command{name: "resume", short: "Resume a suspended container", run: runCTResume},
+		&command{name: "update", short: "Update container configuration", run: runCTUpdate},
+		&command{name: "delete", short: "Delete a container (destructive)", run: runCTDelete},
+		&command{name: "template", short: "Convert container to template", run: runCTTemplate},
+		&command{name: "snapshot", short: "Manage container snapshots", run: runCTSnapshotDispatch},
 	)
 	register("storage", "Manage storage", nil,
 		&command{name: "list", short: "List all storage pools", run: runStorageList},

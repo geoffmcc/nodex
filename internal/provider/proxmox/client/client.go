@@ -726,6 +726,246 @@ func (c *Client) ctMutation(ctx context.Context, node string, vmid int, action s
 	return resp.Data, nil
 }
 
+// --- Phase 3: Config, Snapshot, Delete, Template mutations ---
+
+// VMConfigUpdate updates a VM configuration and returns the task UPID.
+func (c *Client) VMConfigUpdate(ctx context.Context, node string, vmid int, params url.Values) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/config"
+	if err := c.post(ctx, path, params, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CTConfigUpdate updates a container configuration and returns the task UPID.
+func (c *Client) CTConfigUpdate(ctx context.Context, node string, vmid int, params url.Values) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/config"
+	if err := c.post(ctx, path, params, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMDelete deletes a VM and returns the task UPID.
+func (c *Client) VMDelete(ctx context.Context, node string, vmid int) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid)
+	body := url.Values{}
+	body.Set("purge", "1")
+	if err := c.del(ctx, path, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CTDelete deletes a container and returns the task UPID.
+func (c *Client) CTDelete(ctx context.Context, node string, vmid int) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid)
+	if err := c.del(ctx, path, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMSnapshotCreate creates a VM snapshot and returns the task UPID.
+func (c *Client) VMSnapshotCreate(ctx context.Context, node string, vmid int, name, description string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if name == "" {
+		return "", fmt.Errorf("snapshot name is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/snapshot"
+	body := url.Values{}
+	body.Set("snapname", name)
+	if description != "" {
+		body.Set("description", description)
+	}
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMSnapshotDelete deletes a VM snapshot and returns the task UPID.
+func (c *Client) VMSnapshotDelete(ctx context.Context, node string, vmid int, name string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if name == "" {
+		return "", fmt.Errorf("snapshot name is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/snapshot/" + url.PathEscape(name)
+	if err := c.del(ctx, path, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMSnapshotRollback rolls back a VM to a snapshot and returns the task UPID.
+func (c *Client) VMSnapshotRollback(ctx context.Context, node string, vmid int, name string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if name == "" {
+		return "", fmt.Errorf("snapshot name is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/snapshot/" + url.PathEscape(name) + "/rollback"
+	if err := c.post(ctx, path, nil, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CTSnapshotCreate creates a container snapshot and returns the task UPID.
+func (c *Client) CTSnapshotCreate(ctx context.Context, node string, vmid int, name, description string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if name == "" {
+		return "", fmt.Errorf("snapshot name is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/snapshot"
+	body := url.Values{}
+	body.Set("snapname", name)
+	if description != "" {
+		body.Set("description", description)
+	}
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CTSnapshotDelete deletes a container snapshot and returns the task UPID.
+func (c *Client) CTSnapshotDelete(ctx context.Context, node string, vmid int, name string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if name == "" {
+		return "", fmt.Errorf("snapshot name is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/snapshot/" + url.PathEscape(name)
+	if err := c.del(ctx, path, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CTSnapshotRollback rolls back a container to a snapshot and returns the task UPID.
+func (c *Client) CTSnapshotRollback(ctx context.Context, node string, vmid int, name string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if name == "" {
+		return "", fmt.Errorf("snapshot name is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/snapshot/" + url.PathEscape(name) + "/rollback"
+	if err := c.post(ctx, path, nil, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMCloudInit regenerates the cloud-init configuration for a VM and returns the task UPID.
+func (c *Client) VMCloudInit(ctx context.Context, node string, vmid int) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/cloudinit"
+	if err := c.post(ctx, path, nil, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMTemplate converts a VM to a template and returns the task UPID.
+func (c *Client) VMTemplate(ctx context.Context, node string, vmid int) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/template"
+	if err := c.post(ctx, path, nil, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CTTemplate converts a container to a template and returns the task UPID.
+func (c *Client) CTTemplate(ctx context.Context, node string, vmid int) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/template"
+	if err := c.post(ctx, path, nil, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
 // GetPools returns all resource pools.
 func (c *Client) GetPools(ctx context.Context) ([]PoolItem, error) {
 	var resp PoolsResponse

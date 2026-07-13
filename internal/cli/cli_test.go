@@ -885,6 +885,152 @@ func TestWritePhase13NilHandling(t *testing.T) {
 	}
 }
 
+func TestPhase3SubcommandsRegistered(t *testing.T) {
+	vm, ok := GetCommand("vm")
+	if !ok {
+		t.Fatal("vm command not registered")
+	}
+	for _, subName := range []string{"update", "delete", "cloud-init", "template", "snapshot"} {
+		if _, ok := vm.sub[subName]; !ok {
+			t.Fatalf("vm command missing %s subcommand", subName)
+		}
+	}
+
+	container, ok := GetCommand("container")
+	if !ok {
+		t.Fatal("container command not registered")
+	}
+	for _, subName := range []string{"update", "delete", "template", "snapshot"} {
+		if _, ok := container.sub[subName]; !ok {
+			t.Fatalf("container command missing %s subcommand", subName)
+		}
+	}
+}
+
+func TestPhase3SubcommandsRejectWrongArgCount(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "vm-update-no-args", args: []string{"vm", "update"}},
+		{name: "vm-update-no-params", args: []string{"vm", "update", "e2e-node/100"}},
+		{name: "vm-delete-no-arg", args: []string{"vm", "delete"}},
+		{name: "vm-delete-extra", args: []string{"vm", "delete", "e2e-node/100", "extra"}},
+		{name: "vm-cloud-init-no-arg", args: []string{"vm", "cloud-init"}},
+		{name: "vm-cloud-init-extra", args: []string{"vm", "cloud-init", "e2e-node/100", "extra"}},
+		{name: "vm-template-no-arg", args: []string{"vm", "template"}},
+		{name: "vm-template-extra", args: []string{"vm", "template", "e2e-node/100", "extra"}},
+		{name: "vm-snapshot-create-no-args", args: []string{"vm", "snapshot", "create"}},
+		{name: "vm-snapshot-create-no-name", args: []string{"vm", "snapshot", "create", "e2e-node/100"}},
+		{name: "vm-snapshot-delete-no-args", args: []string{"vm", "snapshot", "delete"}},
+		{name: "vm-snapshot-delete-no-name", args: []string{"vm", "snapshot", "delete", "e2e-node/100"}},
+		{name: "vm-snapshot-rollback-no-args", args: []string{"vm", "snapshot", "rollback"}},
+		{name: "container-update-no-args", args: []string{"container", "update"}},
+		{name: "container-delete-no-arg", args: []string{"container", "delete"}},
+		{name: "container-template-no-arg", args: []string{"container", "template"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfigAndHome(t)
+			setupE2EConfig(t)
+
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err == nil {
+				t.Fatal("expected usage error")
+			}
+			var exitCode *app.ExitCoder
+			if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+				t.Fatalf("error = %v, want ExitUsage", err)
+			}
+		})
+	}
+}
+
+func TestPhase3SafetyTiers(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		// Tier 1: should require --yes
+		{name: "vm-update-needs-yes", args: []string{"vm", "update", "e2e-node/100", "memory=4096"}},
+		{name: "vm-cloud-init-needs-yes", args: []string{"vm", "cloud-init", "e2e-node/100"}},
+		{name: "vm-snapshot-create-needs-yes", args: []string{"vm", "snapshot", "create", "e2e-node/100", "snap1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err != nil {
+				t.Fatalf("Run(%v): %v", tt.args, err)
+			}
+			// Should print confirmation message, not execute
+			out := stderr.String()
+			if !strings.Contains(out, "--yes") && !strings.Contains(out, "confirm") && !strings.Contains(out, "Operation") {
+				t.Fatalf("expected confirmation prompt, got: %q", out)
+			}
+		})
+	}
+
+	// Tier 2: should require --yes --force
+	t.Run("vm-template-needs-force", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--yes", "vm", "template", "e2e-node/100"}, &stdout, &stderr)
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		out := stderr.String()
+		if !strings.Contains(out, "--force") {
+			t.Fatalf("expected double confirmation prompt, got: %q", out)
+		}
+	})
+}
+
+func TestRun_VMUpdate(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--yes", "vm", "update", "e2e-node/100", "memory=4096"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "UPID:e2e-node") {
+		t.Errorf("expected UPID in output, got: %s", stdout.String())
+	}
+}
+
+func TestRun_VMSnapshotCreate(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--yes", "vm", "snapshot", "create", "e2e-node/100", "snap1"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "UPID:e2e-node") {
+		t.Errorf("expected UPID in output, got: %s", stdout.String())
+	}
+}
+
+func TestRun_VMCloudInit(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--yes", "vm", "cloud-init", "e2e-node/100"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "UPID:e2e-node") {
+		t.Errorf("expected UPID in output, got: %s", stdout.String())
+	}
+}
+
 func TestWriteEmptyResourceListsAsStructuredArrays(t *testing.T) {
 	tests := []struct {
 		name  string

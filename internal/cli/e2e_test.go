@@ -34,6 +34,9 @@ func (p *e2eMockProvider) Capabilities() []domain.Capability {
 		domain.CapabilitySDN, domain.CapabilitySnapshotDetail,
 		domain.CapabilityPools, domain.CapabilityClusterLog,
 		domain.CapabilityLifecycle,
+		domain.CapabilityConfig, domain.CapabilitySnapshotMutation,
+		domain.CapabilityDelete, domain.CapabilityTemplate,
+		domain.CapabilityCloudInit,
 	}
 }
 func (p *e2eMockProvider) Connect(_ context.Context, endpoint string, creds *domain.Credentials) error {
@@ -293,6 +296,60 @@ func (p *e2eMockProvider) CTResume(_ context.Context, node string, vmid int) (st
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12359, 1700000000), nil
 }
 
+// Phase 3: ConfigProvider, SnapshotMutationProvider, DeleteProvider, TemplateProvider, CloudInitProvider
+
+func (p *e2eMockProvider) VMConfigUpdate(_ context.Context, node string, vmid int, params map[string]string) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12360, 1700000000), nil
+}
+
+func (p *e2eMockProvider) CTConfigUpdate(_ context.Context, node string, vmid int, params map[string]string) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12361, 1700000000), nil
+}
+
+func (p *e2eMockProvider) VMSnapshotCreate(_ context.Context, node string, vmid int, name, description string) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12362, 1700000000), nil
+}
+
+func (p *e2eMockProvider) VMSnapshotDelete(_ context.Context, node string, vmid int, name string) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12363, 1700000000), nil
+}
+
+func (p *e2eMockProvider) VMSnapshotRollback(_ context.Context, node string, vmid int, name string) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12364, 1700000000), nil
+}
+
+func (p *e2eMockProvider) CTSnapshotCreate(_ context.Context, node string, vmid int, name, description string) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12365, 1700000000), nil
+}
+
+func (p *e2eMockProvider) CTSnapshotDelete(_ context.Context, node string, vmid int, name string) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12366, 1700000000), nil
+}
+
+func (p *e2eMockProvider) CTSnapshotRollback(_ context.Context, node string, vmid int, name string) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12367, 1700000000), nil
+}
+
+func (p *e2eMockProvider) VMDelete(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12368, 1700000000), nil
+}
+
+func (p *e2eMockProvider) CTDelete(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12369, 1700000000), nil
+}
+
+func (p *e2eMockProvider) VMTemplate(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12370, 1700000000), nil
+}
+
+func (p *e2eMockProvider) CTTemplate(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12371, 1700000000), nil
+}
+
+func (p *e2eMockProvider) VMCloudInit(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12372, 1700000000), nil
+}
+
 func (p *e2eMockProvider) ClusterStatuses(_ context.Context) ([]domain.ClusterStatusDetail, error) {
 	return []domain.ClusterStatusDetail{
 		{Type: "cluster", ID: "cluster/e2e", Name: "e2e", Status: "online", Quorate: 3, Version: 1},
@@ -363,6 +420,15 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "container reboot", args: []string{"--yes", "--force", "container", "reboot", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
 		{name: "container suspend", args: []string{"--yes", "container", "suspend", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
 		{name: "container resume", args: []string{"--yes", "container", "resume", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
+		// Phase 3: Config updates
+		{name: "vm update", args: []string{"--yes", "vm", "update", "e2e-node/100", "memory=4096", "cores=4"}, want: []string{"UPID:e2e-node"}},
+		{name: "container update", args: []string{"--yes", "container", "update", "e2e-node/200", "memory=2048", "cores=2"}, want: []string{"UPID:e2e-node"}},
+		// Phase 3: Snapshot mutations
+		{name: "vm snapshot create", args: []string{"--yes", "vm", "snapshot", "create", "e2e-node/100", "snap1"}, want: []string{"UPID:e2e-node"}},
+		{name: "vm snapshot create with desc", args: []string{"--yes", "vm", "snapshot", "create", "e2e-node/100", "snap2", "before-change"}, want: []string{"UPID:e2e-node"}},
+		{name: "ct snapshot create", args: []string{"--yes", "container", "snapshot", "create", "e2e-node/200", "snap1"}, want: []string{"UPID:e2e-node"}},
+		// Phase 3: Template and cloud-init
+		{name: "vm cloud-init", args: []string{"--yes", "vm", "cloud-init", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
 	}
 
 	for _, tt := range tests {

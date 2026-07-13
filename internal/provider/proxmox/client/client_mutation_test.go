@@ -695,3 +695,341 @@ func TestVMShutdownSucceedsWithoutTimeout(t *testing.T) {
 		t.Fatalf("VMShutdown(timeout=0): %v", err)
 	}
 }
+
+// --- Phase 3: Config, Snapshot, Delete, Template Contract Tests ---
+
+func TestVMConfigUpdatePathAndBody(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/nodes/pve1/qemu/100/config" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/config", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		if got := r.FormValue("memory"); got != "4096" {
+			t.Errorf("memory = %q, want 4096", got)
+		}
+		if got := r.FormValue("cores"); got != "4" {
+			t.Errorf("cores = %q, want 4", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003048:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	params := url.Values{}
+	params.Set("memory", "4096")
+	params.Set("cores", "4")
+	upid, err := c.VMConfigUpdate(context.Background(), "pve1", 100, params)
+	if err != nil {
+		t.Fatalf("VMConfigUpdate: %v", err)
+	}
+	if upid != "UPID:pve1:00003048:0023A45B:" {
+		t.Errorf("upid = %q, want UPID:pve1:00003048:0023A45B:", upid)
+	}
+}
+
+func TestCTConfigUpdatePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/config" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/config", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003049:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTConfigUpdate(context.Background(), "pve1", 200, url.Values{})
+	if err != nil {
+		t.Fatalf("CTConfigUpdate: %v", err)
+	}
+}
+
+func TestVMDeletePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", r.Method)
+		}
+		if r.URL.Path != "/nodes/pve1/qemu/100" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000304A:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.VMDelete(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMDelete: %v", err)
+	}
+	if upid != "UPID:pve1:0000304A:0023A45B:" {
+		t.Errorf("upid = %q, want UPID:pve1:0000304A:0023A45B:", upid)
+	}
+}
+
+func TestCTDeletePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000304B:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTDelete(context.Background(), "pve1", 200)
+	if err != nil {
+		t.Fatalf("CTDelete: %v", err)
+	}
+}
+
+func TestVMSnapshotCreatePathAndBody(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/nodes/pve1/qemu/100/snapshot" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/snapshot", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		if got := r.FormValue("snapname"); got != "pre-upgrade" {
+			t.Errorf("snapname = %q, want pre-upgrade", got)
+		}
+		if got := r.FormValue("description"); got != "Before upgrade" {
+			t.Errorf("description = %q, want 'Before upgrade'", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000304C:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.VMSnapshotCreate(context.Background(), "pve1", 100, "pre-upgrade", "Before upgrade")
+	if err != nil {
+		t.Fatalf("VMSnapshotCreate: %v", err)
+	}
+	if upid != "UPID:pve1:0000304C:0023A45B:" {
+		t.Errorf("upid = %q, want UPID:pve1:0000304C:0023A45B:", upid)
+	}
+}
+
+func TestVMSnapshotCreateWithoutDescription(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if got := r.FormValue("description"); got != "" {
+			t.Errorf("description = %q, want empty", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000304D:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VMSnapshotCreate(context.Background(), "pve1", 100, "snap1", "")
+	if err != nil {
+		t.Fatalf("VMSnapshotCreate: %v", err)
+	}
+}
+
+func TestVMSnapshotDeletePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", r.Method)
+		}
+		if r.URL.Path != "/nodes/pve1/qemu/100/snapshot/pre-upgrade" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/snapshot/pre-upgrade", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000304E:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.VMSnapshotDelete(context.Background(), "pve1", 100, "pre-upgrade")
+	if err != nil {
+		t.Fatalf("VMSnapshotDelete: %v", err)
+	}
+	if upid != "UPID:pve1:0000304E:0023A45B:" {
+		t.Errorf("upid = %q, want UPID:pve1:0000304E:0023A45B:", upid)
+	}
+}
+
+func TestVMSnapshotRollbackPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/nodes/pve1/qemu/100/snapshot/pre-upgrade/rollback" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/snapshot/pre-upgrade/rollback", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000304F:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.VMSnapshotRollback(context.Background(), "pve1", 100, "pre-upgrade")
+	if err != nil {
+		t.Fatalf("VMSnapshotRollback: %v", err)
+	}
+	if upid != "UPID:pve1:0000304F:0023A45B:" {
+		t.Errorf("upid = %q, want UPID:pve1:0000304F:0023A45B:", upid)
+	}
+}
+
+func TestCTSnapshotCreatePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/snapshot" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/snapshot", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003050:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTSnapshotCreate(context.Background(), "pve1", 200, "clean", "")
+	if err != nil {
+		t.Fatalf("CTSnapshotCreate: %v", err)
+	}
+}
+
+func TestCTSnapshotDeletePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/snapshot/clean" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/snapshot/clean", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003051:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTSnapshotDelete(context.Background(), "pve1", 200, "clean")
+	if err != nil {
+		t.Fatalf("CTSnapshotDelete: %v", err)
+	}
+}
+
+func TestCTSnapshotRollbackPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/snapshot/clean/rollback" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/snapshot/clean/rollback", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003052:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTSnapshotRollback(context.Background(), "pve1", 200, "clean")
+	if err != nil {
+		t.Fatalf("CTSnapshotRollback: %v", err)
+	}
+}
+
+func TestVMCloudInitPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/nodes/pve1/qemu/100/cloudinit" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/cloudinit", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003053:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.VMCloudInit(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMCloudInit: %v", err)
+	}
+	if upid != "UPID:pve1:00003053:0023A45B:" {
+		t.Errorf("upid = %q, want UPID:pve1:00003053:0023A45B:", upid)
+	}
+}
+
+func TestVMTemplatePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/nodes/pve1/qemu/100/template" {
+			t.Errorf("path = %s, want /nodes/pve1/qemu/100/template", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003054:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.VMTemplate(context.Background(), "pve1", 100)
+	if err != nil {
+		t.Fatalf("VMTemplate: %v", err)
+	}
+	if upid != "UPID:pve1:00003054:0023A45B:" {
+		t.Errorf("upid = %q, want UPID:pve1:00003054:0023A45B:", upid)
+	}
+}
+
+func TestCTTemplatePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/lxc/200/template" {
+			t.Errorf("path = %s, want /nodes/pve1/lxc/200/template", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003055:0023A45B:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTTemplate(context.Background(), "pve1", 200)
+	if err != nil {
+		t.Fatalf("CTTemplate: %v", err)
+	}
+}
+
+// --- Phase 3: Input Validation Tests ---
+
+func TestVMConfigUpdateRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.VMConfigUpdate(context.Background(), "", 100, url.Values{})
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("VMConfigUpdate('') error = %v, want node name required", err)
+	}
+}
+
+func TestVMConfigUpdateRejectsInvalidVMID(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.VMConfigUpdate(context.Background(), "pve1", 0, url.Values{})
+	if err == nil || !strings.Contains(err.Error(), "VMID is required") {
+		t.Fatalf("VMConfigUpdate(0) error = %v, want VMID required", err)
+	}
+}
+
+func TestVMSnapshotCreateRejectsEmptyName(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.VMSnapshotCreate(context.Background(), "pve1", 100, "", "")
+	if err == nil || !strings.Contains(err.Error(), "snapshot name is required") {
+		t.Fatalf("VMSnapshotCreate('') error = %v, want snapshot name required", err)
+	}
+}
+
+func TestVMSnapshotDeleteRejectsEmptyName(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.VMSnapshotDelete(context.Background(), "pve1", 100, "")
+	if err == nil || !strings.Contains(err.Error(), "snapshot name is required") {
+		t.Fatalf("VMSnapshotDelete('') error = %v, want snapshot name required", err)
+	}
+}

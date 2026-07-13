@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 
 	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/domain"
@@ -77,6 +78,11 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilityPools,
 		domain.CapabilityClusterLog,
 		domain.CapabilityLifecycle,
+		domain.CapabilityConfig,
+		domain.CapabilitySnapshotMutation,
+		domain.CapabilityDelete,
+		domain.CapabilityTemplate,
+		domain.CapabilityCloudInit,
 	}
 }
 
@@ -1235,4 +1241,114 @@ func (p *Provider) CTResume(ctx context.Context, node string, vmid int) (string,
 		return "", errors.New(errNotConnected)
 	}
 	return p.client.CTResume(ctx, node, vmid)
+}
+
+// --- ConfigProvider methods ---
+
+func (p *Provider) VMConfigUpdate(ctx context.Context, node string, vmid int, params map[string]string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMConfigUpdate(ctx, node, vmid, mapToValues(params))
+}
+
+func (p *Provider) CTConfigUpdate(ctx context.Context, node string, vmid int, params map[string]string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTConfigUpdate(ctx, node, vmid, mapToValues(params))
+}
+
+// --- SnapshotMutationProvider methods ---
+
+func (p *Provider) VMSnapshotCreate(ctx context.Context, node string, vmid int, name, description string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMSnapshotCreate(ctx, node, vmid, name, description)
+}
+
+func (p *Provider) VMSnapshotDelete(ctx context.Context, node string, vmid int, name string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMSnapshotDelete(ctx, node, vmid, name)
+}
+
+func (p *Provider) VMSnapshotRollback(ctx context.Context, node string, vmid int, name string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMSnapshotRollback(ctx, node, vmid, name)
+}
+
+func (p *Provider) CTSnapshotCreate(ctx context.Context, node string, vmid int, name, description string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTSnapshotCreate(ctx, node, vmid, name, description)
+}
+
+func (p *Provider) CTSnapshotDelete(ctx context.Context, node string, vmid int, name string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTSnapshotDelete(ctx, node, vmid, name)
+}
+
+func (p *Provider) CTSnapshotRollback(ctx context.Context, node string, vmid int, name string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTSnapshotRollback(ctx, node, vmid, name)
+}
+
+// --- DeleteProvider methods ---
+
+func (p *Provider) VMDelete(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMDelete(ctx, node, vmid)
+}
+
+func (p *Provider) CTDelete(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTDelete(ctx, node, vmid)
+}
+
+// --- TemplateProvider methods ---
+
+func (p *Provider) VMTemplate(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMTemplate(ctx, node, vmid)
+}
+
+func (p *Provider) CTTemplate(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTTemplate(ctx, node, vmid)
+}
+
+// --- CloudInitProvider methods ---
+
+func (p *Provider) VMCloudInit(ctx context.Context, node string, vmid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMCloudInit(ctx, node, vmid)
+}
+
+// mapToValues converts a map[string]string to url.Values.
+func mapToValues(m map[string]string) url.Values {
+	v := url.Values{}
+	for key, val := range m {
+		v.Set(key, val)
+	}
+	return v
 }

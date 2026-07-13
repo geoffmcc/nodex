@@ -64,6 +64,39 @@ type SnapshotDetailProvider interface {
 	ContainerSnapshotConfig(ctx context.Context, node string, vmid int, name string) (map[string]interface{}, error)
 }
 
+// ConfigProvider exposes VM and container config update operations.
+type ConfigProvider interface {
+	VMConfigUpdate(ctx context.Context, node string, vmid int, params map[string]string) (string, error)
+	CTConfigUpdate(ctx context.Context, node string, vmid int, params map[string]string) (string, error)
+}
+
+// SnapshotMutationProvider exposes snapshot create, delete, and rollback operations.
+type SnapshotMutationProvider interface {
+	VMSnapshotCreate(ctx context.Context, node string, vmid int, name, description string) (string, error)
+	VMSnapshotDelete(ctx context.Context, node string, vmid int, name string) (string, error)
+	VMSnapshotRollback(ctx context.Context, node string, vmid int, name string) (string, error)
+	CTSnapshotCreate(ctx context.Context, node string, vmid int, name, description string) (string, error)
+	CTSnapshotDelete(ctx context.Context, node string, vmid int, name string) (string, error)
+	CTSnapshotRollback(ctx context.Context, node string, vmid int, name string) (string, error)
+}
+
+// DeleteProvider exposes VM and container deletion operations.
+type DeleteProvider interface {
+	VMDelete(ctx context.Context, node string, vmid int) (string, error)
+	CTDelete(ctx context.Context, node string, vmid int) (string, error)
+}
+
+// TemplateProvider exposes VM and container template conversion operations.
+type TemplateProvider interface {
+	VMTemplate(ctx context.Context, node string, vmid int) (string, error)
+	CTTemplate(ctx context.Context, node string, vmid int) (string, error)
+}
+
+// CloudInitProvider exposes cloud-init regeneration operations.
+type CloudInitProvider interface {
+	VMCloudInit(ctx context.Context, node string, vmid int) (string, error)
+}
+
 // LifecycleProvider exposes VM and container lifecycle mutation operations.
 // All methods return a UPID string that can be followed with task polling.
 type LifecycleProvider interface {
@@ -233,4 +266,9 @@ const (
 	CapabilityPools            Capability = "pools"
 	CapabilityClusterLog       Capability = "cluster_log"
 	CapabilityLifecycle        Capability = "lifecycle"
+	CapabilityConfig           Capability = "config"
+	CapabilitySnapshotMutation Capability = "snapshot_mutation"
+	CapabilityDelete           Capability = "delete"
+	CapabilityTemplate         Capability = "template"
+	CapabilityCloudInit        Capability = "cloud_init"
 )
