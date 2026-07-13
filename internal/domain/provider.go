@@ -54,6 +54,12 @@ type Provider interface {
 
 	// ContainerSnapshots returns snapshots for a container.
 	ContainerSnapshots(ctx context.Context, node string, vmid int) ([]Snapshot, error)
+
+	// Events returns cluster events.
+	Events(ctx context.Context) ([]Event, error)
+
+	// Syslog returns syslog entries for a specific node.
+	Syslog(ctx context.Context, node string) ([]SyslogEntry, error)
 }
 
 // Credentials holds authentication information for a provider.

@@ -938,3 +938,90 @@ func writeStatus(cmdCtx *Context, overview *statusOverview) error {
 		return nil
 	}
 }
+
+func runEventList(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex event list"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	events, err := prov.Events(ctx)
+	if err != nil {
+		return fmt.Errorf("list events: %w", err)
+	}
+	return writeEventList(cmdCtx, events)
+}
+
+func writeEventList(cmdCtx *Context, events []domain.Event) error {
+	if events == nil {
+		events = []domain.Event{}
+	}
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, events)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, events)
+	default:
+		headers := []string{"TIME", "TYPE", "NODE", "ID", "MESSAGE"}
+		rows := make([][]string, 0, len(events))
+		for _, e := range events {
+			rows = append(rows, []string{
+				fmt.Sprintf("%d", e.Time),
+				e.Type,
+				e.Node,
+				e.ID,
+				e.Message,
+			})
+		}
+		return output.WriteTable(cmdCtx.Writer, headers, rows)
+	}
+}
+
+func runLog(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex log <node>"), app.ExitUsage)
+	}
+	node := args[0]
+	if node == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex log <node>"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	entries, err := prov.Syslog(ctx, node)
+	if err != nil {
+		return fmt.Errorf("get syslog: %w", err)
+	}
+	return writeSyslog(cmdCtx, entries)
+}
+
+func writeSyslog(cmdCtx *Context, entries []domain.SyslogEntry) error {
+	if entries == nil {
+		entries = []domain.SyslogEntry{}
+	}
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, entries)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, entries)
+	default:
+		headers := []string{"TIME", "LEVEL", "NODE", "MESSAGE"}
+		rows := make([][]string, 0, len(entries))
+		for _, e := range entries {
+			rows = append(rows, []string{
+				fmt.Sprintf("%d", e.Time),
+				e.Level,
+				e.Node,
+				e.Message,
+			})
+		}
+		return output.WriteTable(cmdCtx.Writer, headers, rows)
+	}
+}

@@ -103,6 +103,18 @@ func (p *e2eMockProvider) ContainerSnapshots(_ context.Context, node string, vmi
 		{Name: "clean", VMID: vmid, Ctime: 1700000000, Node: node, Target: fmt.Sprintf("%s/%d", node, vmid)},
 	}, nil
 }
+func (p *e2eMockProvider) Events(_ context.Context) ([]domain.Event, error) {
+	return []domain.Event{
+		{Type: "node", Time: 1700000000, Node: "e2e-node", ID: "node/e2e-node", Message: "node online"},
+		{Type: "vm", Time: 1700000001, Node: "e2e-node", ID: "vm/100", Message: "VM started"},
+	}, nil
+}
+func (p *e2eMockProvider) Syslog(_ context.Context, node string) ([]domain.SyslogEntry, error) {
+	return []domain.SyslogEntry{
+		{Time: 1700000000, Node: node, Level: "info", Message: "system startup"},
+		{Time: 1700000001, Node: node, Level: "err", Message: "disk failure"},
+	}, nil
+}
 
 func TestRunE2EWithMockProvider(t *testing.T) {
 	isolateConfigAndHome(t)
@@ -141,6 +153,8 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "vm snapshots", args: []string{"--output", "json", "vm", "snapshots", "e2e-node/100"}, want: []string{`"name": "before-upgrade"`, `"parent": "current"`, `"vmid": 100`}},
 		{name: "container snapshots", args: []string{"--output", "json", "container", "snapshots", "e2e-node/200"}, want: []string{`"name": "clean"`, `"vmid": 200`}},
 		{name: "status", args: []string{"--output", "json", "status"}, want: []string{`"cluster": "e2e"`, `"nodes": 1`, `"vms_running": 1`}},
+		{name: "event list", args: []string{"--output", "json", "event", "list"}, want: []string{`"type": "node"`, `"message": "node online"`, `"id": "node/e2e-node"`}},
+		{name: "log", args: []string{"--output", "json", "log", "e2e-node"}, want: []string{`"level": "info"`, `"message": "system startup"`, `"node": "e2e-node"`}},
 	}
 
 	for _, tt := range tests {

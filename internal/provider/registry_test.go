@@ -42,6 +42,12 @@ func (m *mockProvider) VMSnapshots(_ context.Context, _ string, _ int) ([]domain
 func (m *mockProvider) ContainerSnapshots(_ context.Context, _ string, _ int) ([]domain.Snapshot, error) {
 	return nil, nil
 }
+func (m *mockProvider) Events(_ context.Context) ([]domain.Event, error) {
+	return nil, nil
+}
+func (m *mockProvider) Syslog(_ context.Context, _ string) ([]domain.SyslogEntry, error) {
+	return nil, nil
+}
 
 func TestRegisterAndGet(t *testing.T) {
 	factory := func() domain.Provider { return &mockProvider{name: "test-provider"} }
