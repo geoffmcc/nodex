@@ -416,6 +416,103 @@ func TestWriteResourceShowOutput(t *testing.T) {
 	})
 }
 
+func TestRun_VersionCompare(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"version", "compare", "1.0.0", "2.0.0"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "1.0.0 < 2.0.0") {
+		t.Errorf("expected comparison output, got: %s", stdout.String())
+	}
+}
+
+func TestRun_VersionCompareEqual(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"version", "compare", "1.0.0", "1.0.0"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "1.0.0 == 1.0.0") {
+		t.Errorf("expected equal output, got: %s", stdout.String())
+	}
+}
+
+func TestRun_VersionCompareGreater(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"version", "compare", "2.0.0", "1.0.0"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "2.0.0 > 1.0.0") {
+		t.Errorf("expected greater output, got: %s", stdout.String())
+	}
+}
+
+func TestRun_VersionCompareWrongArgCount(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"version", "compare", "1.0.0"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing arg")
+	}
+}
+
+func TestRun_VersionCompareInvalidVersion(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"version", "compare", "invalid", "1.0.0"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for invalid version")
+	}
+}
+
+func TestRun_VersionParse(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"version", "parse", "1.2.3-alpha.1+build.456"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "Major:      1") || !strings.Contains(out, "Prerelease: alpha.1") || !strings.Contains(out, "Build meta: build.456") {
+		t.Errorf("expected parse output, got: %s", out)
+	}
+}
+
+func TestRun_VersionParseWrongArgCount(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"version", "parse"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing arg")
+	}
+}
+
+func TestRun_VersionParseInvalid(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"version", "parse", "not-a-version"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for invalid version")
+	}
+}
+
+func TestRun_VersionSubcommandsRegistered(t *testing.T) {
+	cmd, ok := GetCommand("version")
+	if !ok {
+		t.Fatal("version command not registered")
+	}
+	for _, subName := range []string{"compare", "parse"} {
+		if _, ok := cmd.sub[subName]; !ok {
+			t.Fatalf("version command missing %s subcommand", subName)
+		}
+	}
+}
+
+func TestRun_VersionUnknownSubcommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"version", "bogus"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for unknown version subcommand")
+	}
+}
+
 func TestWriteEmptyResourceListsAsStructuredArrays(t *testing.T) {
 	tests := []struct {
 		name  string

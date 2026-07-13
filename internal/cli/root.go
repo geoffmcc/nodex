@@ -60,7 +60,10 @@ func register(name, short string, run CommandFunc, subs ...*command) {
 }
 
 func init() {
-	register("version", "Print version information", runVersion)
+	register("version", "Show version information", runVersion,
+		&command{name: "compare", short: "Compare two semver versions", run: runVersionCompare},
+		&command{name: "parse", short: "Parse a semver version", run: runVersionParse},
+	)
 	register("init", "Initialize nodex configuration", runInit)
 	register("completion", "Generate shell completion scripts", runCompletion)
 	register("profile", "Manage connection profiles", nil,
@@ -178,24 +181,32 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 
 	// Handle subcommands.
-	if cmd.run == nil && cmd.sub != nil {
-		if len(args) == 0 {
-			printSubcommandUsage(stdout, cmd)
-			return nil
-		}
-		subName := args[0]
-		args = args[1:]
-		sub, ok := cmd.sub[subName]
-		if !ok {
+	if cmd.sub != nil {
+		if len(args) > 0 {
+			subName := args[0]
+			if sub, ok := cmd.sub[subName]; ok {
+				return sub.run(ctx, cmdCtx, args[1:])
+			}
+			if cmd.run != nil {
+				return cmd.run(ctx, cmdCtx, args)
+			}
 			return app.NewExitError(
 				fmt.Errorf("unknown %s subcommand: %s", name, subName),
 				app.ExitUsage,
 			)
 		}
-		return sub.run(ctx, cmdCtx, args)
+		if cmd.run != nil {
+			return cmd.run(ctx, cmdCtx, args)
+		}
+		printSubcommandUsage(stdout, cmd)
+		return nil
 	}
 
-	return cmd.run(ctx, cmdCtx, args)
+	if cmd.run != nil {
+		return cmd.run(ctx, cmdCtx, args)
+	}
+
+	return nil
 }
 
 func parseGlobal(args []string) (Options, []string, error) {
