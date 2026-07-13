@@ -168,9 +168,7 @@ func TestRun_ProfileSetCredentialsNoName(t *testing.T) {
 }
 
 func TestRunProfileSetCredentialsStoresFileCredential(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
-	t.Setenv("HOME", filepath.Join(dir, "home"))
+	_, home := isolateConfigAndHome(t)
 	seed := config.DefaultConfig()
 	seed.CurrentProfile = "lab"
 	seed.Profiles["lab"] = config.Profile{Provider: "proxmox", Endpoint: "https://pve.example.invalid:8006"}
@@ -203,7 +201,7 @@ func TestRunProfileSetCredentialsStoresFileCredential(t *testing.T) {
 	if got := cfg.Profiles["lab"].CredentialRef; got != "file:lab" {
 		t.Fatalf("credential_ref = %q, want file:lab", got)
 	}
-	resolver := credentials.NewResolver(filepath.Join(dir, "home", ".nodex", "credentials"))
+	resolver := credentials.NewResolver(filepath.Join(home, ".nodex", "credentials"))
 	creds, err := resolver.Resolve(context.Background(), "lab", "file:lab")
 	if err != nil {
 		t.Fatalf("resolve stored credentials: %v", err)
@@ -214,8 +212,7 @@ func TestRunProfileSetCredentialsStoresFileCredential(t *testing.T) {
 }
 
 func TestRunProfileSetCredentialsRejectsUnsupportedBackend(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	isolateConfigAndHome(t)
 	path, err := config.ConfigPath()
 	if err != nil {
 		t.Fatalf("ConfigPath: %v", err)
@@ -232,6 +229,17 @@ func TestRunProfileSetCredentialsRejectsUnsupportedBackend(t *testing.T) {
 	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
 		t.Fatalf("error = %v, want ExitUsage", err)
 	}
+}
+
+func isolateConfigAndHome(t *testing.T) (dir, home string) {
+	t.Helper()
+	dir = t.TempDir()
+	home = filepath.Join(dir, "home")
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("AppData", filepath.Join(dir, "appdata"))
+	return dir, home
 }
 
 func TestRun_GlobalFlags(t *testing.T) {
