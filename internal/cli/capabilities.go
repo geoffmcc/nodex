@@ -79,3 +79,27 @@ func requireSnapshotDetail(prov domain.Provider) (domain.SnapshotDetailProvider,
 	}
 	return p, nil
 }
+
+// requirePools checks if the provider supports PoolProvider.
+func requirePools(prov domain.Provider) (domain.PoolProvider, error) {
+	p, ok := prov.(domain.PoolProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pool commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireClusterLog checks if the provider supports ClusterLogProvider.
+func requireClusterLog(prov domain.Provider) (domain.ClusterLogProvider, error) {
+	p, ok := prov.(domain.ClusterLogProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: cluster log commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}

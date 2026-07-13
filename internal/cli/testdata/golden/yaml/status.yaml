@@ -1,6 +1,7 @@
 cluster: e2e
 version: test
 nodes: 1
+quorum: 3
 nodes_detail:
     - name: e2e-node
       status: online
@@ -16,3 +17,6 @@ storage:
       total: 4096
       used: 1024
       avail: 3072
+ha:
+    status: online
+    quorum: 1

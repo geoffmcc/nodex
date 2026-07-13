@@ -43,6 +43,21 @@ type SDNProvider interface {
 	SDNVNets(ctx context.Context) ([]SDNVNet, error)
 }
 
+// PoolProvider exposes resource pool management.
+type PoolProvider interface {
+	Pools(ctx context.Context) ([]Pool, error)
+}
+
+// ClusterLogProvider exposes cluster-wide log entries.
+type ClusterLogProvider interface {
+	ClusterLog(ctx context.Context) ([]ClusterLogEntry, error)
+}
+
+// ClusterStatusProvider exposes cluster status for quorum and node health.
+type ClusterStatusProvider interface {
+	ClusterStatuses(ctx context.Context) ([]ClusterStatusDetail, error)
+}
+
 // SnapshotDetailProvider exposes snapshot config information.
 type SnapshotDetailProvider interface {
 	VMSnapshotConfig(ctx context.Context, node string, vmid int, name string) (map[string]interface{}, error)
@@ -192,4 +207,6 @@ const (
 	CapabilityBackupContent    Capability = "backup_content"
 	CapabilitySDN              Capability = "sdn"
 	CapabilitySnapshotDetail   Capability = "snapshot_detail"
+	CapabilityPools            Capability = "pools"
+	CapabilityClusterLog       Capability = "cluster_log"
 )

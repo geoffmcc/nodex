@@ -32,6 +32,7 @@ func (p *e2eMockProvider) Capabilities() []domain.Capability {
 		domain.CapabilityNodeDetail, domain.CapabilityFirewallAdvanced,
 		domain.CapabilityHAStatus, domain.CapabilityBackupContent,
 		domain.CapabilitySDN, domain.CapabilitySnapshotDetail,
+		domain.CapabilityPools, domain.CapabilityClusterLog,
 	}
 }
 func (p *e2eMockProvider) Connect(_ context.Context, endpoint string, creds *domain.Credentials) error {
@@ -230,6 +231,27 @@ func (p *e2eMockProvider) ContainerSnapshotConfig(_ context.Context, node string
 	return map[string]interface{}{"name": name, "vmid": vmid}, nil
 }
 
+func (p *e2eMockProvider) Pools(_ context.Context) ([]domain.Pool, error) {
+	return []domain.Pool{
+		{PoolID: "admins", Comment: "Admin resources", Members: []string{"qemu/100", "qemu/101"}},
+		{PoolID: "devs", Comment: "Dev resources", Members: []string{"qemu/200"}},
+	}, nil
+}
+
+func (p *e2eMockProvider) ClusterLog(_ context.Context) ([]domain.ClusterLogEntry, error) {
+	return []domain.ClusterLogEntry{
+		{N: 1, Message: "starting cluster services"},
+		{N: 2, Message: "node e2e-node joined quorum"},
+	}, nil
+}
+
+func (p *e2eMockProvider) ClusterStatuses(_ context.Context) ([]domain.ClusterStatusDetail, error) {
+	return []domain.ClusterStatusDetail{
+		{Type: "cluster", ID: "cluster/e2e", Name: "e2e", Status: "online", Quorate: 3, Version: 1},
+		{Type: "node", ID: "node/e2e-node", Name: "e2e-node", Status: "online", IP: "10.0.0.1"},
+	}, nil
+}
+
 func TestRunE2EWithMockProvider(t *testing.T) {
 	isolateConfigAndHome(t)
 	t.Setenv("NODEX_E2E_TOKEN", "e2e-token")
@@ -273,6 +295,9 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "firewall list", args: []string{"--output", "json", "firewall", "list"}, want: []string{`"action": "ACCEPT"`, `"dport": "22"`, `"comment": "SSH"`}},
 		{name: "ha list", args: []string{"--output", "json", "ha", "list"}, want: []string{`"type": "vm"`, `"state": "started"`, `"group": "default"`}},
 		{name: "ha groups", args: []string{"--output", "json", "ha", "groups"}, want: []string{`"id": "default"`, `"nodes": "e2e-node"`, `"comment": "Default HA group"`}},
+		{name: "pools list", args: []string{"--output", "json", "pools", "list"}, want: []string{`"poolid": "admins"`, `"comment": "Admin resources"`, `"qemu/100"`}},
+		{name: "cluster log", args: []string{"--output", "json", "cluster", "log"}, want: []string{`"n": 1`, `"t": "starting cluster services"`, `"n": 2`}},
+		{name: "status with ha", args: []string{"--output", "json", "status"}, want: []string{`"quorum": 3`, `"ha":`, `"status": "online"`}},
 	}
 
 	for _, tt := range tests {
