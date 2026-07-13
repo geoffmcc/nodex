@@ -33,6 +33,7 @@ nodex init
 nodex profile add <name>
 nodex profile list
 nodex profile show <name>
+nodex profile set-credentials <name> [--backend file|keyring] [--credential-name name]
 nodex profile use <name>
 nodex profile current
 nodex profile test [name]
@@ -67,7 +68,7 @@ nodex storage list
 | macOS | `~/Library/Application Support/Nodex/config.yaml` |
 | Windows | `%AppData%\Nodex\config.yaml` |
 
-File-backed credentials are stored as JSON files under `~/.nodex/credentials/`.
+`nodex profile set-credentials` stores Proxmox API token credentials in the file backend by default, or in the OS keyring with `--backend keyring`, and updates the profile's `credential_ref`. File-backed credentials are stored as JSON files under `~/.nodex/credentials/`.
 
 ## Config Schema (v1)
 

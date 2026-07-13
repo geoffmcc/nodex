@@ -32,6 +32,7 @@ Manage connection profiles.
 nodex profile add <name>
 nodex profile list
 nodex profile show <name>
+nodex profile set-credentials <name> [--backend file|keyring] [--credential-name name]
 nodex profile use <name>
 nodex profile current
 nodex profile test [name]
@@ -109,13 +110,15 @@ Credentials are resolved in this order:
 
 Credential references must be either `backend:name` (`keyring`, `file`, `env`, or `stdin`) or a bare file-backend name. Names are validated and cannot contain paths, separators, traversal components, drive-letter paths, UNC paths, or Unicode characters outside the supported profile-name set. Incomplete token or username/password credential pairs are rejected.
 
+Use `nodex profile set-credentials <name>` to prompt for a Proxmox API token ID and secret, store the credentials, and update the profile's `credential_ref`. The command stores file-backed credentials by default; pass `--backend keyring` to use the OS keyring or `--credential-name <name>` to store under a credential name different from the profile name.
+
 ### Keyring Backend
 
 Uses the OS keyring (macOS Keychain, Linux Secret Service, Windows Credential Manager).
 
 ```
 nodex profile add myserver
-# Then set credential_ref to "keyring:myserver" in config.yaml
+nodex profile set-credentials myserver --backend keyring
 ```
 
 ### File Backend
@@ -123,6 +126,8 @@ nodex profile add myserver
 Stores credentials as JSON files in `~/.nodex/credentials/`.
 
 ```
+nodex profile set-credentials myserver
+
 # ~/.nodex/credentials/myserver.json
 {
   "type": "token",

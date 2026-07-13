@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	stderrors "errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/config"
+	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
 )
@@ -143,6 +146,91 @@ func TestRun_ProfileRemoveNoName(t *testing.T) {
 	err := Run(context.Background(), []string{"profile", "remove"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("expected error for missing name")
+	}
+}
+
+func TestProfileSetCredentialsRegistered(t *testing.T) {
+	cmd, ok := GetCommand("profile")
+	if !ok {
+		t.Fatal("profile command not registered")
+	}
+	if _, ok := cmd.sub["set-credentials"]; !ok {
+		t.Fatal("profile command missing set-credentials subcommand")
+	}
+}
+
+func TestRun_ProfileSetCredentialsNoName(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"profile", "set-credentials"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing name")
+	}
+}
+
+func TestRunProfileSetCredentialsStoresFileCredential(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	t.Setenv("HOME", filepath.Join(dir, "home"))
+	seed := config.DefaultConfig()
+	seed.CurrentProfile = "lab"
+	seed.Profiles["lab"] = config.Profile{Provider: "proxmox", Endpoint: "https://pve.example.invalid:8006"}
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := config.WriteTo(seed, path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	oldPrompter := credentialPrompter
+	credentialPrompter = func(*Context) (*domain.Credentials, error) {
+		return &domain.Credentials{Type: "token", TokenID: "user@pam!nodex", TokenSecret: "super-secret"}, nil
+	}
+	t.Cleanup(func() { credentialPrompter = oldPrompter })
+
+	var stdout, stderr bytes.Buffer
+	err = runProfileSetCredentials(context.Background(), &Context{Writer: &stdout, ErrW: &stderr}, []string{"lab"})
+	if err != nil {
+		t.Fatalf("runProfileSetCredentials: %v", err)
+	}
+	if strings.Contains(stdout.String(), "super-secret") || strings.Contains(stderr.String(), "super-secret") {
+		t.Fatalf("command output leaked credential secret: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	cfg, err := config.Read()
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if got := cfg.Profiles["lab"].CredentialRef; got != "file:lab" {
+		t.Fatalf("credential_ref = %q, want file:lab", got)
+	}
+	resolver := credentials.NewResolver(filepath.Join(dir, "home", ".nodex", "credentials"))
+	creds, err := resolver.Resolve(context.Background(), "lab", "file:lab")
+	if err != nil {
+		t.Fatalf("resolve stored credentials: %v", err)
+	}
+	if creds.TokenID != "user@pam!nodex" || creds.TokenSecret != "super-secret" {
+		t.Fatalf("stored credentials mismatch: %#v", creds)
+	}
+}
+
+func TestRunProfileSetCredentialsRejectsUnsupportedBackend(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := config.WriteTo(config.DefaultConfig(), path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	var stdout, stderr bytes.Buffer
+	err = runProfileSetCredentials(context.Background(), &Context{Writer: &stdout, ErrW: &stderr}, []string{"lab", "--backend", "env"})
+	if err == nil {
+		t.Fatal("expected unsupported backend error")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+		t.Fatalf("error = %v, want ExitUsage", err)
 	}
 }
 
