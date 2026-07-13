@@ -65,6 +65,7 @@ func init() {
 		&command{name: "add", short: "Add a new profile", run: runProfileAdd},
 		&command{name: "list", short: "List all profiles", run: runProfileList},
 		&command{name: "show", short: "Show profile details", run: runProfileShow},
+		&command{name: "set-credentials", short: "Set profile credentials", run: runProfileSetCredentials},
 		&command{name: "use", short: "Set the current profile", run: runProfileUse},
 		&command{name: "current", short: "Show the current profile", run: runProfileCurrent},
 		&command{name: "test", short: "Test profile connectivity", run: runProfileTest},

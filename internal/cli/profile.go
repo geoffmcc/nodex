@@ -1,16 +1,25 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"sort"
+	"strings"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/credentials"
+	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/provider/proxmox"
+	"golang.org/x/term"
 )
+
+var credentialPrompter = promptCredentials
 
 func runProfileAdd(_ context.Context, cmdCtx *Context, args []string) error {
 	if len(args) < 1 {
@@ -178,6 +187,164 @@ func runProfileShow(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 		return nil
 	}
+}
+
+func runProfileSetCredentials(ctx context.Context, cmdCtx *Context, args []string) error {
+	name, backendName, storeName, err := parseSetCredentialArgs(args)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
+	if cmdCtx.Opts.NonInteractive {
+		return app.NewExitError(fmt.Errorf("profile set-credentials requires an interactive terminal"), app.ExitUsage)
+	}
+
+	if !config.ProfileRegex.MatchString(name) {
+		return app.NewExitError(
+			fmt.Errorf("invalid profile name %q (must match %s)", name, config.ProfileRegex),
+			app.ExitUsage,
+		)
+	}
+
+	backendNameNormalized := strings.ToLower(strings.TrimSpace(backendName))
+	if backendNameNormalized != "file" && backendNameNormalized != "keyring" {
+		return app.NewExitError(fmt.Errorf("unsupported credential backend %q (supported: file, keyring)", backendName), app.ExitUsage)
+	}
+
+	storeName = strings.TrimSpace(storeName)
+	if storeName == "" {
+		storeName = name
+	}
+	if err := credentials.ValidateName(storeName); err != nil {
+		return app.NewExitError(fmt.Errorf("credential name: %w", err), app.ExitUsage)
+	}
+
+	cfg, err := config.Read()
+	if err != nil {
+		return err
+	}
+	if _, ok := cfg.Profiles[name]; !ok {
+		return app.NewExitError(fmt.Errorf("%w: profile %q not found", app.ErrProfileNotFound, name), app.ExitConfig)
+	}
+
+	creds, err := credentialPrompter(cmdCtx)
+	if err != nil {
+		return app.NewExitError(fmt.Errorf("read credentials: %w", err), app.ExitCredential)
+	}
+	if err := credentials.ValidateCredentials(name, creds); err != nil {
+		return app.NewExitError(err, app.ExitCredential)
+	}
+
+	resolver := credentials.NewResolver("")
+	backend, ok := resolver.GetBackend(backendNameNormalized)
+	if !ok {
+		return app.NewExitError(fmt.Errorf("unknown credential backend %q", backendNameNormalized), app.ExitCredential)
+	}
+	if err := backend.Store(ctx, storeName, creds); err != nil {
+		return app.NewExitError(fmt.Errorf("store credentials in %s backend: %w", backendNameNormalized, err), app.ExitCredential)
+	}
+
+	credentialRef := backendNameNormalized + ":" + storeName
+	if err := config.Update(func(cfg *config.Config) error {
+		p, ok := cfg.Profiles[name]
+		if !ok {
+			return app.NewExitError(fmt.Errorf("%w: profile %q not found", app.ErrProfileNotFound, name), app.ExitConfig)
+		}
+		p.CredentialRef = credentialRef
+		cfg.Profiles[name] = p
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if !cmdCtx.Opts.Quiet {
+		fmt.Fprintf(cmdCtx.Writer, "Credentials for profile %q stored in %s:%s.\n", name, backendNameNormalized, storeName)
+	}
+	return nil
+}
+
+func parseSetCredentialArgs(args []string) (name, backendName, credentialName string, err error) {
+	backendName = "file"
+	usage := fmt.Errorf("usage: nodex profile set-credentials <name> [--backend file|keyring] [--credential-name name]")
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--backend" || arg == "--credential-name":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return "", "", "", usage
+			}
+			if arg == "--backend" {
+				backendName = args[i+1]
+			} else {
+				credentialName = args[i+1]
+			}
+			i++
+		case strings.HasPrefix(arg, "--backend="):
+			backendName = strings.TrimPrefix(arg, "--backend=")
+			if backendName == "" {
+				return "", "", "", usage
+			}
+		case strings.HasPrefix(arg, "--credential-name="):
+			credentialName = strings.TrimPrefix(arg, "--credential-name=")
+			if credentialName == "" {
+				return "", "", "", usage
+			}
+		case strings.HasPrefix(arg, "--"):
+			return "", "", "", usage
+		default:
+			if name != "" {
+				return "", "", "", usage
+			}
+			name = arg
+		}
+	}
+	if name == "" {
+		return "", "", "", usage
+	}
+	return name, backendName, credentialName, nil
+}
+
+func promptCredentials(cmdCtx *Context) (*domain.Credentials, error) {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Fprint(cmdCtx.ErrW, "Token ID: ")
+	tokenID, err := readPromptLine(reader)
+	if err != nil {
+		return nil, err
+	}
+	tokenSecret, err := promptSecret(cmdCtx, reader, "Token Secret: ")
+	if err != nil {
+		return nil, err
+	}
+	return &domain.Credentials{Type: "token", TokenID: tokenID, TokenSecret: tokenSecret}, nil
+}
+
+func promptSecret(cmdCtx *Context, reader *bufio.Reader, promptText string) (string, error) {
+	fmt.Fprint(cmdCtx.ErrW, promptText)
+	fd := int(os.Stdin.Fd())
+	info, statErr := os.Stdin.Stat()
+	if statErr == nil && info.Mode()&os.ModeCharDevice != 0 && term.IsTerminal(fd) {
+		secret, err := term.ReadPassword(fd)
+		fmt.Fprintln(cmdCtx.ErrW)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(secret)), nil
+	}
+	secret, err := readPromptLine(reader)
+	if err != nil {
+		return "", err
+	}
+	if secret == "" {
+		return "", errors.New("token secret is empty")
+	}
+	return secret, nil
+}
+
+func readPromptLine(reader *bufio.Reader) (string, error) {
+	line, err := reader.ReadString('\n')
+	if err != nil && !(errors.Is(err, io.EOF) && line != "") {
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
 }
 
 func runProfileUse(_ context.Context, cmdCtx *Context, args []string) error {

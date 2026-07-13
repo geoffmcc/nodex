@@ -29,6 +29,7 @@ make build
 ```bash
 nodex init                    # create config
 nodex profile add home        # add a Proxmox endpoint
+nodex profile set-credentials home
 nodex profile test            # verify connectivity
 nodex node list               # list nodes
 nodex node show proxmox       # show node details
@@ -52,14 +53,14 @@ Config is stored at:
 
 Profiles must use `https://` Proxmox endpoints without URL user info, query strings, fragments, or extra path components. Custom CAs can be configured with `ca_file`; certificate and hostname verification remain enabled. The global `--timeout` flag controls provider request timeouts.
 
-File-backed credentials are stored under `~/.nodex/credentials` using validated credential names. Credential references use `backend:name` (`file`, `keyring`, `env`, or `stdin`) or a bare name for the file backend. Incomplete token or username/password credential pairs are rejected.
+`nodex profile set-credentials <name>` stores Proxmox API token credentials in the file backend by default, or in the OS keyring with `--backend keyring`, and updates the profile's `credential_ref`. File-backed credentials are stored under `~/.nodex/credentials` using validated credential names. Credential references use `backend:name` (`file`, `keyring`, `env`, or `stdin`) or a bare name for the file backend. Incomplete token or username/password credential pairs are rejected.
 
 ## Commands
 
 ```
 nodex version
 nodex init
-nodex profile add|list|show|use|current|test|remove
+nodex profile add|list|show|set-credentials|use|current|test|remove
 nodex provider list|capabilities
 nodex doctor
 nodex node list|show
