@@ -12,9 +12,13 @@ func runVersion(_ context.Context, cmdCtx *Context, args []string) error {
 	if len(args) != 0 {
 		return app.NewExitError(fmt.Errorf("usage: nodex version"), app.ExitUsage)
 	}
-	fmt.Fprintf(cmdCtx.Writer, "Nodex %s\n", version.Version)
-	fmt.Fprintf(cmdCtx.Writer, "Go: %s\n", version.GoVersion)
-	fmt.Fprintf(cmdCtx.Writer, "Commit: %s\n", version.Commit)
-	fmt.Fprintf(cmdCtx.Writer, "Built: %s\n", version.BuildDate)
+	info := version.Current()
+	fmt.Fprintf(cmdCtx.Writer, "Nodex %s\n", info.Version)
+	fmt.Fprintf(cmdCtx.Writer, "Go: %s\n", info.GoVersion)
+	fmt.Fprintf(cmdCtx.Writer, "Commit: %s\n", info.Commit)
+	fmt.Fprintf(cmdCtx.Writer, "Built: %s\n", info.BuildDate)
+	if info.Dirty {
+		fmt.Fprintln(cmdCtx.Writer, "Dirty: true")
+	}
 	return nil
 }
