@@ -130,6 +130,13 @@ func init() {
 	)
 	register("firewall", "Manage firewall", nil,
 		&command{name: "list", short: "List firewall rules", run: runFirewallList},
+		&command{name: "aliases", short: "List firewall aliases", run: runFirewallAliases},
+		&command{name: "ipsets", short: "List firewall IP sets", run: runFirewallIPSets},
+		&command{name: "ipset", short: "Show IP set entries", run: runFirewallIPSet},
+		&command{name: "security-groups", short: "List firewall security groups", run: runFirewallSecurityGroups},
+		&command{name: "options", short: "Show firewall options", run: runFirewallOptions},
+		&command{name: "node-rules", short: "List node-level firewall rules", run: runFirewallNodeRules},
+		&command{name: "vm-rules", short: "List VM-level firewall rules", run: runFirewallVMRules},
 	)
 	register("ha", "Manage high availability", nil,
 		&command{name: "list", short: "List HA resources", run: runHAList},

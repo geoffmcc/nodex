@@ -68,6 +68,13 @@ func TestGoldenJSON(t *testing.T) {
 		{name: "node_certificates", args: []string{"--output", "json", "node", "certificates", "e2e-node"}},
 		{name: "node_subscription", args: []string{"--output", "json", "node", "subscription", "e2e-node"}},
 		{name: "node_updates", args: []string{"--output", "json", "node", "updates", "e2e-node"}},
+		{name: "firewall_aliases", args: []string{"--output", "json", "firewall", "aliases"}},
+		{name: "firewall_ipsets", args: []string{"--output", "json", "firewall", "ipsets"}},
+		{name: "firewall_ipset", args: []string{"--output", "json", "firewall", "ipset", "test-set"}},
+		{name: "firewall_security_groups", args: []string{"--output", "json", "firewall", "security-groups"}},
+		{name: "firewall_options", args: []string{"--output", "json", "firewall", "options"}},
+		{name: "firewall_node_rules", args: []string{"--output", "json", "firewall", "node-rules", "e2e-node"}},
+		{name: "firewall_vm_rules", args: []string{"--output", "json", "firewall", "vm-rules", "e2e-node/100"}},
 	}
 
 	goldenDir := filepath.Join("testdata", "golden")
