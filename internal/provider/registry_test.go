@@ -27,6 +27,9 @@ func (m *mockProvider) VMConfig(_ context.Context, _ string, _ int) (map[string]
 func (m *mockProvider) ContainerConfig(_ context.Context, _ string, _ int) (map[string]interface{}, error) {
 	return nil, nil
 }
+func (m *mockProvider) StorageContent(_ context.Context, _, _ string) ([]domain.StorageContentItem, error) {
+	return nil, nil
+}
 
 func TestRegisterAndGet(t *testing.T) {
 	factory := func() domain.Provider { return &mockProvider{name: "test-provider"} }

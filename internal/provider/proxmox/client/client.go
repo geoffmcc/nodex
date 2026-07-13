@@ -201,6 +201,22 @@ func (c *Client) GetContainerConfig(ctx context.Context, node string, vmid int) 
 	return &resp.Data, nil
 }
 
+// GetStorageContent returns the content of a specific storage.
+func (c *Client) GetStorageContent(ctx context.Context, node, storage string) ([]StorageContentItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if storage == "" {
+		return nil, fmt.Errorf("storage name is required")
+	}
+	var resp StorageContentResponse
+	path := "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/content"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil

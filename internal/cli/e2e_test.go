@@ -68,6 +68,12 @@ func (p *e2eMockProvider) ContainerConfig(_ context.Context, node string, vmid i
 		"swap":     256,
 	}, nil
 }
+func (p *e2eMockProvider) StorageContent(_ context.Context, node, storage string) ([]domain.StorageContentItem, error) {
+	return []domain.StorageContentItem{
+		{Content: "iso", Volid: "local:iso/debian-12.iso", Size: 5368709120, Format: "iso"},
+		{Content: "images", Volid: "local-lvm:vm-100-disk-0", Size: 34359738368, Format: "raw", VMID: 100},
+	}, nil
+}
 
 func TestRunE2EWithMockProvider(t *testing.T) {
 	isolateConfigAndHome(t)
@@ -100,6 +106,7 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "cluster status", args: []string{"--output", "json", "cluster", "status"}, want: []string{`"name": "e2e"`, `"version": "test"`, `"nodes": 1`}},
 		{name: "vm config", args: []string{"--output", "json", "vm", "config", "e2e-node/100"}, want: []string{`"vmid": 100`, `"name": "e2e-vm"`, `"cores": 2`}},
 		{name: "container config", args: []string{"--output", "json", "container", "config", "e2e-node/200"}, want: []string{`"vmid": 200`, `"hostname": "e2e-ct"`, `"cores": 1`}},
+		{name: "storage content", args: []string{"--output", "json", "storage", "content", "e2e-node", "local"}, want: []string{`"content": "iso"`, `"volid": "local:iso/debian-12.iso"`, `"size": 5368709120`}},
 	}
 
 	for _, tt := range tests {

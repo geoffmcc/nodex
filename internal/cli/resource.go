@@ -605,3 +605,54 @@ func writeConfig(cmdCtx *Context, config map[string]interface{}) error {
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
 }
+
+func runStorageContent(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 2 {
+		return app.NewExitError(fmt.Errorf("usage: nodex storage content <node> <storage>"), app.ExitUsage)
+	}
+	node := args[0]
+	storage := args[1]
+	if node == "" || storage == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex storage content <node> <storage>"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	items, err := prov.StorageContent(ctx, node, storage)
+	if err != nil {
+		return fmt.Errorf("get storage content: %w", err)
+	}
+	return writeStorageContent(cmdCtx, items)
+}
+
+func writeStorageContent(cmdCtx *Context, items []domain.StorageContentItem) error {
+	if items == nil {
+		items = []domain.StorageContentItem{}
+	}
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, items)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, items)
+	default:
+		headers := []string{"VOLID", "CONTENT", "FORMAT", "SIZE", "VMID"}
+		rows := make([][]string, 0, len(items))
+		for _, item := range items {
+			vmid := ""
+			if item.VMID > 0 {
+				vmid = fmt.Sprintf("%d", item.VMID)
+			}
+			rows = append(rows, []string{
+				item.Volid,
+				item.Content,
+				item.Format,
+				formatBytes(item.Size),
+				vmid,
+			})
+		}
+		return output.WriteTable(cmdCtx.Writer, headers, rows)
+	}
+}

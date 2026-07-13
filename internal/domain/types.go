@@ -62,3 +62,14 @@ type Cluster struct {
 	Version string `json:"version" yaml:"version"`
 	Nodes   int    `json:"nodes" yaml:"nodes"`
 }
+
+// StorageContentItem represents a single content item in storage.
+type StorageContentItem struct {
+	Content string `json:"content" yaml:"content"`
+	Ctime   int    `json:"ctime,omitempty" yaml:"ctime,omitempty"`
+	Format  string `json:"format,omitempty" yaml:"format,omitempty"`
+	Volid   string `json:"volid,omitempty" yaml:"volid,omitempty"`
+	Size    int64  `json:"size,omitempty" yaml:"size,omitempty"`
+	Subtype string `json:"subtype,omitempty" yaml:"subtype,omitempty"`
+	VMID    int    `json:"vmid,omitempty" yaml:"vmid,omitempty"`
+}

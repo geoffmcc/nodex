@@ -39,6 +39,9 @@ type Provider interface {
 
 	// ContainerConfig returns configuration for a specific container.
 	ContainerConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error)
+
+	// StorageContent returns content items for a specific storage.
+	StorageContent(ctx context.Context, node, storage string) ([]StorageContentItem, error)
 }
 
 // Credentials holds authentication information for a provider.
