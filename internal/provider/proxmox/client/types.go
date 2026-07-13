@@ -353,9 +353,9 @@ type HAGroupResponse struct {
 
 // HAGroupItem represents a single HA group.
 type HAGroupItem struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Nodes    string `json:"nodes"`
-	Comment  string `json:"comment,omitempty"`
-	NoFailback int `json:"nofailback,omitempty"`
+	ID         string `json:"id"`
+	Type       string `json:"type"`
+	Nodes      string `json:"nodes"`
+	Comment    string `json:"comment,omitempty"`
+	NoFailback int    `json:"nofailback,omitempty"`
 }
