@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/geoffmcc/nodex/internal/domain"
 )
@@ -128,6 +129,9 @@ func (b *FileBackend) path(profile string) string {
 
 // CheckCredentialFilePermissions checks if a credential file has overly broad permissions.
 func CheckCredentialFilePermissions(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("stat credential file: %w", err)

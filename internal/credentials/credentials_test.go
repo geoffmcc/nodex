@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/domain"
@@ -346,6 +347,9 @@ func TestCheckCredentialFilePermissionsSecure(t *testing.T) {
 }
 
 func TestCheckCredentialFilePermissionsInsecure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits not enforced on Windows")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.json")
 	data := []byte(`{"type":"token","token_id":"id","token_secret":"secret"}`)
@@ -358,6 +362,9 @@ func TestCheckCredentialFilePermissionsInsecure(t *testing.T) {
 }
 
 func TestCheckCredentialFilePermissionsGroupReadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits not enforced on Windows")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.json")
 	data := []byte(`{"type":"token","token_id":"id","token_secret":"secret"}`)
