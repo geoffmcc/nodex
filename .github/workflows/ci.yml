@@ -41,6 +41,9 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Test (race detector)
+        run: go test -race ./...
+
       - name: Fmt check
         run: |
           diff=$(gofmt -s -d .)
@@ -49,3 +52,9 @@ jobs:
             exit 1
           fi
         shell: bash
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Govulncheck
+        run: govulncheck ./...
