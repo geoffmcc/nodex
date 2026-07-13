@@ -1508,6 +1508,516 @@ func (c *Client) GetClusterLog(ctx context.Context) ([]ClusterLogItem, error) {
 	return resp.Data, nil
 }
 
+// --- Phase 5: Network mutations ---
+
+// ApplyNodeNetwork applies network configuration on a node via PUT /nodes/{node}/network.
+// The Proxmox API returns {"data": null} on success (no task UPID).
+func (c *Client) ApplyNodeNetwork(ctx context.Context, node string, config map[string]interface{}) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/network"
+	body := url.Values{}
+	for key, val := range config {
+		body.Set(key, fmt.Sprintf("%v", val))
+	}
+	return c.put(ctx, path, body, nil)
+}
+
+// RevertNodeNetwork reverts pending network changes on a node via POST /nodes/{node}/network.
+// The Proxmox API returns {"data": null} on success (no task UPID).
+func (c *Client) RevertNodeNetwork(ctx context.Context, node string) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/network"
+	return c.post(ctx, path, nil, nil)
+}
+
+// --- Phase 5: Firewall mutations ---
+
+// CreateFirewallRule creates a firewall rule at the cluster level via POST /cluster/firewall/rules.
+func (c *Client) CreateFirewallRule(ctx context.Context, rule FirewallRuleCreateRequest) (*FirewallRuleItem, error) {
+	if rule.Type == "" {
+		return nil, fmt.Errorf("rule type is required (in, out, or group)")
+	}
+	if rule.Action == "" {
+		return nil, fmt.Errorf("rule action is required (accept, deny, reject)")
+	}
+	var resp FirewallRuleCreateResponse
+	body := firewallRuleToValues(rule)
+	if err := c.post(ctx, "/cluster/firewall/rules", body, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// UpdateFirewallRule updates a firewall rule at the cluster level via PUT /cluster/firewall/rules/{pos}.
+func (c *Client) UpdateFirewallRule(ctx context.Context, pos int, rule FirewallRuleCreateRequest) error {
+	if pos < 0 {
+		return fmt.Errorf("rule position is required")
+	}
+	path := "/cluster/firewall/rules/" + strconv.Itoa(pos)
+	body := firewallRuleToValues(rule)
+	return c.put(ctx, path, body, nil)
+}
+
+// DeleteFirewallRule deletes a firewall rule at the cluster level via DELETE /cluster/firewall/rules/{pos}.
+func (c *Client) DeleteFirewallRule(ctx context.Context, pos int) error {
+	if pos < 0 {
+		return fmt.Errorf("rule position is required")
+	}
+	path := "/cluster/firewall/rules/" + strconv.Itoa(pos)
+	return c.del(ctx, path, nil)
+}
+
+// CreateNodeFirewallRule creates a firewall rule on a node via POST /nodes/{node}/firewall/rules.
+func (c *Client) CreateNodeFirewallRule(ctx context.Context, node string, rule FirewallRuleCreateRequest) (*FirewallRuleItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if rule.Type == "" {
+		return nil, fmt.Errorf("rule type is required (in, out, or group)")
+	}
+	if rule.Action == "" {
+		return nil, fmt.Errorf("rule action is required (accept, deny, reject)")
+	}
+	var resp FirewallRuleCreateResponse
+	path := "/nodes/" + url.PathEscape(node) + "/firewall/rules"
+	body := firewallRuleToValues(rule)
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// UpdateNodeFirewallRule updates a firewall rule on a node via PUT /nodes/{node}/firewall/rules/{pos}.
+func (c *Client) UpdateNodeFirewallRule(ctx context.Context, node string, pos int, rule FirewallRuleCreateRequest) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	if pos < 0 {
+		return fmt.Errorf("rule position is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/firewall/rules/" + strconv.Itoa(pos)
+	body := firewallRuleToValues(rule)
+	return c.put(ctx, path, body, nil)
+}
+
+// DeleteNodeFirewallRule deletes a firewall rule on a node via DELETE /nodes/{node}/firewall/rules/{pos}.
+func (c *Client) DeleteNodeFirewallRule(ctx context.Context, node string, pos int) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	if pos < 0 {
+		return fmt.Errorf("rule position is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/firewall/rules/" + strconv.Itoa(pos)
+	return c.del(ctx, path, nil)
+}
+
+// CreateVMFirewallRule creates a firewall rule on a VM via POST /nodes/{node}/qemu/{vmid}/firewall/rules.
+func (c *Client) CreateVMFirewallRule(ctx context.Context, node string, vmid int, rule FirewallRuleCreateRequest) (*FirewallRuleItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return nil, fmt.Errorf("VMID is required")
+	}
+	if rule.Type == "" {
+		return nil, fmt.Errorf("rule type is required (in, out, or group)")
+	}
+	if rule.Action == "" {
+		return nil, fmt.Errorf("rule action is required (accept, deny, reject)")
+	}
+	var resp FirewallRuleCreateResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/firewall/rules"
+	body := firewallRuleToValues(rule)
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// UpdateVMFirewallRule updates a firewall rule on a VM via PUT /nodes/{node}/qemu/{vmid}/firewall/rules/{pos}.
+func (c *Client) UpdateVMFirewallRule(ctx context.Context, node string, vmid int, pos int, rule FirewallRuleCreateRequest) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return fmt.Errorf("VMID is required")
+	}
+	if pos < 0 {
+		return fmt.Errorf("rule position is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/firewall/rules/" + strconv.Itoa(pos)
+	body := firewallRuleToValues(rule)
+	return c.put(ctx, path, body, nil)
+}
+
+// DeleteVMFirewallRule deletes a firewall rule on a VM via DELETE /nodes/{node}/qemu/{vmid}/firewall/rules/{pos}.
+func (c *Client) DeleteVMFirewallRule(ctx context.Context, node string, vmid int, pos int) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return fmt.Errorf("VMID is required")
+	}
+	if pos < 0 {
+		return fmt.Errorf("rule position is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/firewall/rules/" + strconv.Itoa(pos)
+	return c.del(ctx, path, nil)
+}
+
+// CreateCTFirewallRule creates a firewall rule on a container via POST /nodes/{node}/lxc/{vmid}/firewall/rules.
+func (c *Client) CreateCTFirewallRule(ctx context.Context, node string, vmid int, rule FirewallRuleCreateRequest) (*FirewallRuleItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return nil, fmt.Errorf("VMID is required")
+	}
+	if rule.Type == "" {
+		return nil, fmt.Errorf("rule type is required (in, out, or group)")
+	}
+	if rule.Action == "" {
+		return nil, fmt.Errorf("rule action is required (accept, deny, reject)")
+	}
+	var resp FirewallRuleCreateResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/firewall/rules"
+	body := firewallRuleToValues(rule)
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// UpdateCTFirewallRule updates a firewall rule on a container via PUT /nodes/{node}/lxc/{vmid}/firewall/rules/{pos}.
+func (c *Client) UpdateCTFirewallRule(ctx context.Context, node string, vmid int, pos int, rule FirewallRuleCreateRequest) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return fmt.Errorf("VMID is required")
+	}
+	if pos < 0 {
+		return fmt.Errorf("rule position is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/firewall/rules/" + strconv.Itoa(pos)
+	body := firewallRuleToValues(rule)
+	return c.put(ctx, path, body, nil)
+}
+
+// DeleteCTFirewallRule deletes a firewall rule on a container via DELETE /nodes/{node}/lxc/{vmid}/firewall/rules/{pos}.
+func (c *Client) DeleteCTFirewallRule(ctx context.Context, node string, vmid int, pos int) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return fmt.Errorf("VMID is required")
+	}
+	if pos < 0 {
+		return fmt.Errorf("rule position is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/firewall/rules/" + strconv.Itoa(pos)
+	return c.del(ctx, path, nil)
+}
+
+// CreateFirewallAlias creates a firewall alias via POST /cluster/firewall/aliases.
+func (c *Client) CreateFirewallAlias(ctx context.Context, name, cidr, comment string) error {
+	if name == "" {
+		return fmt.Errorf("alias name is required")
+	}
+	if cidr == "" {
+		return fmt.Errorf("CIDR is required")
+	}
+	body := url.Values{}
+	body.Set("name", name)
+	body.Set("cidr", cidr)
+	if comment != "" {
+		body.Set("comment", comment)
+	}
+	return c.post(ctx, "/cluster/firewall/aliases", body, nil)
+}
+
+// DeleteFirewallAlias deletes a firewall alias via DELETE /cluster/firewall/aliases/{name}.
+func (c *Client) DeleteFirewallAlias(ctx context.Context, name string) error {
+	if name == "" {
+		return fmt.Errorf("alias name is required")
+	}
+	path := "/cluster/firewall/aliases/" + url.PathEscape(name)
+	return c.del(ctx, path, nil)
+}
+
+// CreateFirewallIPSet creates a firewall IP set via POST /cluster/firewall/ipset.
+func (c *Client) CreateFirewallIPSet(ctx context.Context, name, comment string) error {
+	if name == "" {
+		return fmt.Errorf("IP set name is required")
+	}
+	body := url.Values{}
+	body.Set("name", name)
+	if comment != "" {
+		body.Set("comment", comment)
+	}
+	return c.post(ctx, "/cluster/firewall/ipset", body, nil)
+}
+
+// AddFirewallIPSetEntry adds an entry to an IP set via POST /cluster/firewall/ipset/{name}.
+func (c *Client) AddFirewallIPSetEntry(ctx context.Context, name, cidr, comment string) error {
+	if name == "" {
+		return fmt.Errorf("IP set name is required")
+	}
+	if cidr == "" {
+		return fmt.Errorf("CIDR is required")
+	}
+	body := url.Values{}
+	body.Set("cidr", cidr)
+	if comment != "" {
+		body.Set("comment", comment)
+	}
+	path := "/cluster/firewall/ipset/" + url.PathEscape(name)
+	return c.post(ctx, path, body, nil)
+}
+
+// RemoveFirewallIPSetEntry removes an entry from an IP set via DELETE /cluster/firewall/ipset/{name}/{cidr}.
+func (c *Client) RemoveFirewallIPSetEntry(ctx context.Context, name, cidr string) error {
+	if name == "" {
+		return fmt.Errorf("IP set name is required")
+	}
+	if cidr == "" {
+		return fmt.Errorf("CIDR is required")
+	}
+	path := "/cluster/firewall/ipset/" + url.PathEscape(name) + "/" + url.PathEscape(cidr)
+	return c.del(ctx, path, nil)
+}
+
+// DeleteFirewallIPSet deletes a firewall IP set via DELETE /cluster/firewall/ipset/{name}.
+func (c *Client) DeleteFirewallIPSet(ctx context.Context, name string) error {
+	if name == "" {
+		return fmt.Errorf("IP set name is required")
+	}
+	path := "/cluster/firewall/ipset/" + url.PathEscape(name)
+	return c.del(ctx, path, nil)
+}
+
+// CreateFirewallGroup creates a firewall security group via POST /cluster/firewall/groups.
+func (c *Client) CreateFirewallGroup(ctx context.Context, name, comment string) error {
+	if name == "" {
+		return fmt.Errorf("group name is required")
+	}
+	body := url.Values{}
+	body.Set("name", name)
+	if comment != "" {
+		body.Set("comment", comment)
+	}
+	return c.post(ctx, "/cluster/firewall/groups", body, nil)
+}
+
+// DeleteFirewallGroup deletes a firewall security group via DELETE /cluster/firewall/groups/{name}.
+func (c *Client) DeleteFirewallGroup(ctx context.Context, name string) error {
+	if name == "" {
+		return fmt.Errorf("group name is required")
+	}
+	path := "/cluster/firewall/groups/" + url.PathEscape(name)
+	return c.del(ctx, path, nil)
+}
+
+// UpdateFirewallOptions updates firewall options via PUT /cluster/firewall/options.
+func (c *Client) UpdateFirewallOptions(ctx context.Context, opts FirewallOptionsUpdateRequest) error {
+	body := url.Values{}
+	if opts.Enable != 0 {
+		body.Set("enable", strconv.Itoa(opts.Enable))
+	}
+	if opts.PolicyIn != "" {
+		body.Set("policy_in", opts.PolicyIn)
+	}
+	if opts.PolicyOut != "" {
+		body.Set("policy_out", opts.PolicyOut)
+	}
+	if opts.LogInDrop != 0 {
+		body.Set("log_in_drop", strconv.Itoa(opts.LogInDrop))
+	}
+	if opts.LogRateLimit != "" {
+		body.Set("log_ratelimit", opts.LogRateLimit)
+	}
+	if opts.NFConntrack != 0 {
+		body.Set("nf_conntrack_max", strconv.Itoa(opts.NFConntrack))
+	}
+	if opts.Digest != "" {
+		body.Set("digest", opts.Digest)
+	}
+	return c.put(ctx, "/cluster/firewall/options", body, nil)
+}
+
+// --- Phase 5: Identity ---
+
+// GetUsers returns all users from GET /access/users.
+func (c *Client) GetUsers(ctx context.Context) ([]AccessUserItem, error) {
+	var resp AccessUsersResponse
+	if err := c.get(ctx, "/access/users", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetGroups returns all groups from GET /access/groups.
+func (c *Client) GetGroups(ctx context.Context) ([]AccessGroupItem, error) {
+	var resp AccessGroupsResponse
+	if err := c.get(ctx, "/access/groups", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetRoles returns all roles from GET /access/roles.
+func (c *Client) GetRoles(ctx context.Context) ([]AccessRoleItem, error) {
+	var resp AccessRolesResponse
+	if err := c.get(ctx, "/access/roles", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetACL returns ACL entries from GET /access/acl.
+func (c *Client) GetACL(ctx context.Context) ([]AccessACLItem, error) {
+	var resp AccessACLResponse
+	if err := c.get(ctx, "/access/acl", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetDomains returns authentication domains from GET /access/domains.
+func (c *Client) GetDomains(ctx context.Context) ([]AccessDomainItem, error) {
+	var resp AccessDomainsResponse
+	if err := c.get(ctx, "/access/domains", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetTokens returns API tokens for a user from GET /access/users/{user}/token.
+func (c *Client) GetTokens(ctx context.Context, user string) ([]AccessTokenItem, error) {
+	if user == "" {
+		return nil, fmt.Errorf("user ID is required")
+	}
+	var resp AccessTokensResponse
+	path := "/access/users/" + url.PathEscape(user) + "/token"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// CreateUser creates a new user via POST /access/users.
+func (c *Client) CreateUser(ctx context.Context, userid, password, email, firstname, lastname, comment string) error {
+	if userid == "" {
+		return fmt.Errorf("user ID is required")
+	}
+	body := url.Values{}
+	body.Set("userid", userid)
+	if password != "" {
+		body.Set("password", password)
+	}
+	if email != "" {
+		body.Set("email", email)
+	}
+	if firstname != "" {
+		body.Set("firstname", firstname)
+	}
+	if lastname != "" {
+		body.Set("lastname", lastname)
+	}
+	if comment != "" {
+		body.Set("comment", comment)
+	}
+	return c.post(ctx, "/access/users", body, nil)
+}
+
+// DeleteUser deletes a user via DELETE /access/users/{userid}.
+func (c *Client) DeleteUser(ctx context.Context, userid string) error {
+	if userid == "" {
+		return fmt.Errorf("user ID is required")
+	}
+	path := "/access/users/" + url.PathEscape(userid)
+	return c.del(ctx, path, nil)
+}
+
+// AddACL adds an ACL entry via PUT /access/acl.
+func (c *Client) AddACL(ctx context.Context, path, role, user, group string, propagate int) error {
+	if path == "" {
+		return fmt.Errorf("ACL path is required")
+	}
+	if role == "" {
+		return fmt.Errorf("role ID is required")
+	}
+	body := url.Values{}
+	body.Set("path", path)
+	body.Set("roles", role)
+	if user != "" {
+		body.Set("users", user)
+	}
+	if group != "" {
+		body.Set("groups", group)
+	}
+	if propagate != 0 {
+		body.Set("propagate", strconv.Itoa(propagate))
+	}
+	return c.put(ctx, "/access/acl", body, nil)
+}
+
+// --- Phase 5: Firewall helper ---
+
+// FirewallRuleCreateResponse is the response from POST firewall rule creation.
+type FirewallRuleCreateResponse struct {
+	Data FirewallRuleItem `json:"data"`
+}
+
+// firewallRuleToValues converts a FirewallRuleCreateRequest to url.Values.
+func firewallRuleToValues(rule FirewallRuleCreateRequest) url.Values {
+	v := url.Values{}
+	v.Set("type", rule.Type)
+	v.Set("action", rule.Action)
+	if rule.Enable != 0 {
+		v.Set("enable", strconv.Itoa(rule.Enable))
+	}
+	if rule.Pos > 0 {
+		v.Set("pos", strconv.Itoa(rule.Pos))
+	}
+	if rule.Proto != "" {
+		v.Set("proto", rule.Proto)
+	}
+	if rule.Dest != "" {
+		v.Set("dest", rule.Dest)
+	}
+	if rule.Dport != "" {
+		v.Set("dport", rule.Dport)
+	}
+	if rule.Source != "" {
+		v.Set("source", rule.Source)
+	}
+	if rule.Sport != "" {
+		v.Set("sport", rule.Sport)
+	}
+	if rule.ICMPType != "" {
+		v.Set("icmp_type", rule.ICMPType)
+	}
+	if rule.Log != "" {
+		v.Set("log", rule.Log)
+	}
+	if rule.Comment != "" {
+		v.Set("comment", rule.Comment)
+	}
+	if rule.IFace != "" {
+		v.Set("iface", rule.IFace)
+	}
+	if rule.Macro != "" {
+		v.Set("macro", rule.Macro)
+	}
+	return v
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil

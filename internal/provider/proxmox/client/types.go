@@ -740,3 +740,172 @@ type VzdumpCreateRequest struct {
 	Storage string `json:"storage"`
 	Mode    string `json:"mode"`
 }
+
+// --- Access/Identity types ---
+
+// AccessUsersResponse is the response from GET /access/users.
+type AccessUsersResponse struct {
+	Data []AccessUserItem `json:"data"`
+}
+
+// AccessUserItem represents a single user.
+type AccessUserItem struct {
+	UserID    string `json:"userid"`
+	Comment   string `json:"comment,omitempty"`
+	Email     string `json:"email,omitempty"`
+	Enable    int    `json:"enable,omitempty"`
+	Expire    int64  `json:"expire,omitempty"`
+	FirstName string `json:"firstname,omitempty"`
+	LastName  string `json:"lastname,omitempty"`
+	Tokens    *int   `json:"tokens,omitempty"`
+}
+
+// AccessGroupsResponse is the response from GET /access/groups.
+type AccessGroupsResponse struct {
+	Data []AccessGroupItem `json:"data"`
+}
+
+// AccessGroupItem represents a single group.
+type AccessGroupItem struct {
+	GroupID string   `json:"groupid"`
+	Comment string   `json:"comment,omitempty"`
+	Members []string `json:"members,omitempty"`
+}
+
+// AccessRolesResponse is the response from GET /access/roles.
+type AccessRolesResponse struct {
+	Data []AccessRoleItem `json:"data"`
+}
+
+// AccessRoleItem represents a single role.
+type AccessRoleItem struct {
+	RoleID  string `json:"roleid"`
+	Privs   string `json:"privs,omitempty"`
+	Special int    `json:"special,omitempty"`
+}
+
+// AccessACLResponse is the response from GET /access/acl.
+type AccessACLResponse struct {
+	Data []AccessACLItem `json:"data"`
+}
+
+// AccessACLItem represents a single ACL entry.
+type AccessACLItem struct {
+	Path      string `json:"path"`
+	Type      string `json:"type"`
+	RoleID    string `json:"roleid"`
+	Propagate int    `json:"propagate,omitempty"`
+	UserID    string `json:"ugid,omitempty"`
+	GroupID   string `json:"groupid,omitempty"`
+	Realm     string `json:"realm,omitempty"`
+}
+
+// AccessDomainsResponse is the response from GET /access/domains.
+type AccessDomainsResponse struct {
+	Data []AccessDomainItem `json:"data"`
+}
+
+// AccessDomainItem represents a single authentication realm.
+type AccessDomainItem struct {
+	Realm   string `json:"realm"`
+	Type    string `json:"type"`
+	Comment string `json:"comment,omitempty"`
+	Default int    `json:"default,omitempty"`
+	TFA     string `json:"tfa,omitempty"`
+}
+
+// AccessTokensResponse is the response from GET /access/users/{user}/token.
+type AccessTokensResponse struct {
+	Data []AccessTokenItem `json:"data"`
+}
+
+// AccessTokenItem represents a single API token (metadata only, no secret).
+type AccessTokenItem struct {
+	TokenID  string `json:"tokenid"`
+	Comment  string `json:"comment,omitempty"`
+	Expire   int64  `json:"expire,omitempty"`
+	Privsep  int    `json:"privsep,omitempty"`
+	Created  int64  `json:"created,omitempty"`
+	UserID   string `json:"userid,omitempty"`
+	Disabled int    `json:"disabled,omitempty"`
+}
+
+// --- Firewall mutation request types ---
+
+// FirewallRuleCreateRequest is the body for POST firewall rule creation.
+type FirewallRuleCreateRequest struct {
+	Type     string `json:"type"`
+	Action   string `json:"action"`
+	Enable   int    `json:"enable,omitempty"`
+	Pos      int    `json:"pos,omitempty"`
+	Proto    string `json:"proto,omitempty"`
+	Dest     string `json:"dest,omitempty"`
+	Dport    string `json:"dport,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Sport    string `json:"sport,omitempty"`
+	ICMPType string `json:"icmp_type,omitempty"`
+	Log      string `json:"log,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+	IFace    string `json:"iface,omitempty"`
+	Macro    string `json:"macro,omitempty"`
+}
+
+// FirewallAliasCreateRequest is the body for POST /cluster/firewall/aliases.
+type FirewallAliasCreateRequest struct {
+	Name    string `json:"name"`
+	CIDR    string `json:"cidr"`
+	Comment string `json:"comment,omitempty"`
+}
+
+// FirewallIPSetCreateRequest is the body for POST /cluster/firewall/ipset.
+type FirewallIPSetCreateRequest struct {
+	Name    string `json:"name"`
+	Comment string `json:"comment,omitempty"`
+}
+
+// FirewallIPSetEntryRequest is the body for POST /cluster/firewall/ipset/{name}.
+type FirewallIPSetEntryRequest struct {
+	CIDR    string `json:"cidr"`
+	Comment string `json:"comment,omitempty"`
+}
+
+// FirewallGroupCreateRequest is the body for POST /cluster/firewall/groups.
+type FirewallGroupCreateRequest struct {
+	Name    string `json:"name"`
+	Comment string `json:"comment,omitempty"`
+}
+
+// FirewallOptionsUpdateRequest is the body for PUT /cluster/firewall/options.
+type FirewallOptionsUpdateRequest struct {
+	Enable       int    `json:"enable,omitempty"`
+	PolicyIn     string `json:"policy_in,omitempty"`
+	PolicyOut    string `json:"policy_out,omitempty"`
+	LogInDrop    int    `json:"log_in_drop,omitempty"`
+	LogRateLimit string `json:"log_ratelimit,omitempty"`
+	NFConntrack  int    `json:"nf_conntrack_max,omitempty"`
+	Digest       string `json:"digest,omitempty"`
+}
+
+// --- Network mutation request type ---
+
+// NodeNetworkApplyRequest holds the network configuration to apply.
+// The Proxmox API accepts the full network config as the body.
+type NodeNetworkApplyRequest struct {
+	Interfaces []NodeNetworkApplyItem `json:"interfaces"`
+}
+
+// NodeNetworkApplyItem represents a single network interface configuration.
+type NodeNetworkApplyItem struct {
+	Name            string `json:"name"`
+	Type            string `json:"type"`
+	Autostart       int    `json:"autostart,omitempty"`
+	Method          string `json:"method,omitempty"`
+	Method6         string `json:"method6,omitempty"`
+	Address         string `json:"address,omitempty"`
+	Netmask         string `json:"netmask,omitempty"`
+	Gateway         string `json:"gateway,omitempty"`
+	BridgePorts     string `json:"bridge_ports,omitempty"`
+	BridgeVLANAware int    `json:"bridge_vlan_aware,omitempty"`
+	Comments        string `json:"comments,omitempty"`
+	MTU             int    `json:"mtu,omitempty"`
+}

@@ -89,6 +89,9 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilityMigration,
 		domain.CapabilityClone,
 		domain.CapabilityDisk,
+		domain.CapabilityNetworkMutation,
+		domain.CapabilityFirewallMutation,
+		domain.CapabilityAccess,
 	}
 }
 
@@ -1548,6 +1551,433 @@ func (p *Provider) VMDiskMove(ctx context.Context, node string, vmid int, disk, 
 		return "", errors.New(errNotConnected)
 	}
 	return p.client.VMDiskMove(ctx, node, vmid, disk, storage)
+}
+
+// --- NetworkMutationProvider methods ---
+
+func (p *Provider) ApplyNodeNetwork(ctx context.Context, node string, config map[string]string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	cfg := make(map[string]interface{})
+	for k, v := range config {
+		cfg[k] = v
+	}
+	return p.client.ApplyNodeNetwork(ctx, node, cfg)
+}
+
+func (p *Provider) RevertNodeNetwork(ctx context.Context, node string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.RevertNodeNetwork(ctx, node)
+}
+
+// --- FirewallMutationProvider methods ---
+
+func (p *Provider) CreateFirewallRule(ctx context.Context, rule domain.FirewallRuleCreateInput) (*domain.FirewallRule, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	item, err := p.client.CreateFirewallRule(ctx, firewallRuleInputToRequest(rule))
+	if err != nil {
+		return nil, err
+	}
+	return &domain.FirewallRule{
+		Type:     item.Type,
+		Action:   item.Action,
+		Enable:   item.Enable,
+		Pos:      item.Pos,
+		Proto:    item.Proto,
+		Dest:     item.Dest,
+		Dport:    item.Dport,
+		Source:   item.Source,
+		Sport:    item.Sport,
+		ICMPType: item.ICMPType,
+		Log:      item.Log,
+		Comment:  item.Comment,
+	}, nil
+}
+
+func (p *Provider) UpdateFirewallRule(ctx context.Context, pos int, rule domain.FirewallRuleCreateInput) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.UpdateFirewallRule(ctx, pos, firewallRuleInputToRequest(rule))
+}
+
+func (p *Provider) DeleteFirewallRule(ctx context.Context, pos int) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteFirewallRule(ctx, pos)
+}
+
+func (p *Provider) CreateNodeFirewallRule(ctx context.Context, node string, rule domain.FirewallRuleCreateInput) (*domain.FirewallRule, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	item, err := p.client.CreateNodeFirewallRule(ctx, node, firewallRuleInputToRequest(rule))
+	if err != nil {
+		return nil, err
+	}
+	return &domain.FirewallRule{
+		Type:     item.Type,
+		Action:   item.Action,
+		Enable:   item.Enable,
+		Pos:      item.Pos,
+		Proto:    item.Proto,
+		Dest:     item.Dest,
+		Dport:    item.Dport,
+		Source:   item.Source,
+		Sport:    item.Sport,
+		ICMPType: item.ICMPType,
+		Log:      item.Log,
+		Comment:  item.Comment,
+	}, nil
+}
+
+func (p *Provider) UpdateNodeFirewallRule(ctx context.Context, node string, pos int, rule domain.FirewallRuleCreateInput) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.UpdateNodeFirewallRule(ctx, node, pos, firewallRuleInputToRequest(rule))
+}
+
+func (p *Provider) DeleteNodeFirewallRule(ctx context.Context, node string, pos int) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteNodeFirewallRule(ctx, node, pos)
+}
+
+func (p *Provider) CreateVMFirewallRule(ctx context.Context, node string, vmid int, rule domain.FirewallRuleCreateInput) (*domain.FirewallRule, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	item, err := p.client.CreateVMFirewallRule(ctx, node, vmid, firewallRuleInputToRequest(rule))
+	if err != nil {
+		return nil, err
+	}
+	return &domain.FirewallRule{
+		Type:     item.Type,
+		Action:   item.Action,
+		Enable:   item.Enable,
+		Pos:      item.Pos,
+		Proto:    item.Proto,
+		Dest:     item.Dest,
+		Dport:    item.Dport,
+		Source:   item.Source,
+		Sport:    item.Sport,
+		ICMPType: item.ICMPType,
+		Log:      item.Log,
+		Comment:  item.Comment,
+	}, nil
+}
+
+func (p *Provider) UpdateVMFirewallRule(ctx context.Context, node string, vmid int, pos int, rule domain.FirewallRuleCreateInput) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.UpdateVMFirewallRule(ctx, node, vmid, pos, firewallRuleInputToRequest(rule))
+}
+
+func (p *Provider) DeleteVMFirewallRule(ctx context.Context, node string, vmid int, pos int) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteVMFirewallRule(ctx, node, vmid, pos)
+}
+
+func (p *Provider) CreateCTFirewallRule(ctx context.Context, node string, vmid int, rule domain.FirewallRuleCreateInput) (*domain.FirewallRule, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	item, err := p.client.CreateCTFirewallRule(ctx, node, vmid, firewallRuleInputToRequest(rule))
+	if err != nil {
+		return nil, err
+	}
+	return &domain.FirewallRule{
+		Type:     item.Type,
+		Action:   item.Action,
+		Enable:   item.Enable,
+		Pos:      item.Pos,
+		Proto:    item.Proto,
+		Dest:     item.Dest,
+		Dport:    item.Dport,
+		Source:   item.Source,
+		Sport:    item.Sport,
+		ICMPType: item.ICMPType,
+		Log:      item.Log,
+		Comment:  item.Comment,
+	}, nil
+}
+
+func (p *Provider) UpdateCTFirewallRule(ctx context.Context, node string, vmid int, pos int, rule domain.FirewallRuleCreateInput) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.UpdateCTFirewallRule(ctx, node, vmid, pos, firewallRuleInputToRequest(rule))
+}
+
+func (p *Provider) DeleteCTFirewallRule(ctx context.Context, node string, vmid int, pos int) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteCTFirewallRule(ctx, node, vmid, pos)
+}
+
+func (p *Provider) CreateFirewallAlias(ctx context.Context, name, cidr, comment string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.CreateFirewallAlias(ctx, name, cidr, comment)
+}
+
+func (p *Provider) DeleteFirewallAlias(ctx context.Context, name string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteFirewallAlias(ctx, name)
+}
+
+func (p *Provider) CreateFirewallIPSet(ctx context.Context, name, comment string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.CreateFirewallIPSet(ctx, name, comment)
+}
+
+func (p *Provider) AddFirewallIPSetEntry(ctx context.Context, name, cidr, comment string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.AddFirewallIPSetEntry(ctx, name, cidr, comment)
+}
+
+func (p *Provider) RemoveFirewallIPSetEntry(ctx context.Context, name, cidr string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.RemoveFirewallIPSetEntry(ctx, name, cidr)
+}
+
+func (p *Provider) DeleteFirewallIPSet(ctx context.Context, name string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteFirewallIPSet(ctx, name)
+}
+
+func (p *Provider) CreateFirewallGroup(ctx context.Context, name, comment string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.CreateFirewallGroup(ctx, name, comment)
+}
+
+func (p *Provider) DeleteFirewallGroup(ctx context.Context, name string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteFirewallGroup(ctx, name)
+}
+
+func (p *Provider) UpdateFirewallOptions(ctx context.Context, opts domain.FirewallOptionsUpdateInput) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	req := client.FirewallOptionsUpdateRequest{
+		Enable:       opts.Enable,
+		PolicyIn:     opts.PolicyIn,
+		PolicyOut:    opts.PolicyOut,
+		LogInDrop:    opts.LogInDrop,
+		LogRateLimit: opts.LogRateLimit,
+		NFConntrack:  opts.NFConntrack,
+		Digest:       opts.Digest,
+	}
+	return p.client.UpdateFirewallOptions(ctx, req)
+}
+
+// --- AccessProvider methods ---
+
+func (p *Provider) Users(ctx context.Context) ([]domain.AccessUser, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetUsers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get users: %w", err)
+	}
+	result := make([]domain.AccessUser, 0, len(items))
+	for _, item := range items {
+		tokens := 0
+		if item.Tokens != nil {
+			tokens = *item.Tokens
+		}
+		result = append(result, domain.AccessUser{
+			UserID:    item.UserID,
+			Comment:   item.Comment,
+			Email:     item.Email,
+			Enable:    item.Enable,
+			Expire:    item.Expire,
+			FirstName: item.FirstName,
+			LastName:  item.LastName,
+			Tokens:    tokens,
+		})
+	}
+	return result, nil
+}
+
+func (p *Provider) Groups(ctx context.Context) ([]domain.AccessGroup, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get groups: %w", err)
+	}
+	result := make([]domain.AccessGroup, 0, len(items))
+	for _, item := range items {
+		members := item.Members
+		if members == nil {
+			members = []string{}
+		}
+		result = append(result, domain.AccessGroup{
+			GroupID: item.GroupID,
+			Comment: item.Comment,
+			Members: members,
+		})
+	}
+	return result, nil
+}
+
+func (p *Provider) Roles(ctx context.Context) ([]domain.AccessRole, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetRoles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get roles: %w", err)
+	}
+	result := make([]domain.AccessRole, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.AccessRole{
+			RoleID:  item.RoleID,
+			Privs:   item.Privs,
+			Special: item.Special,
+		})
+	}
+	return result, nil
+}
+
+func (p *Provider) ACL(ctx context.Context) ([]domain.AccessACLEntry, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetACL(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get ACL: %w", err)
+	}
+	result := make([]domain.AccessACLEntry, 0, len(items))
+	for _, item := range items {
+		userID := item.UserID
+		groupID := item.GroupID
+		result = append(result, domain.AccessACLEntry{
+			Path:      item.Path,
+			Type:      item.Type,
+			RoleID:    item.RoleID,
+			Propagate: item.Propagate,
+			UserID:    userID,
+			GroupID:   groupID,
+		})
+	}
+	return result, nil
+}
+
+func (p *Provider) Domains(ctx context.Context) ([]domain.AccessDomain, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetDomains(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get domains: %w", err)
+	}
+	result := make([]domain.AccessDomain, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.AccessDomain{
+			Realm:   item.Realm,
+			Type:    item.Type,
+			Comment: item.Comment,
+			Default: item.Default,
+			TFA:     item.TFA,
+		})
+	}
+	return result, nil
+}
+
+func (p *Provider) Tokens(ctx context.Context, user string) ([]domain.AccessToken, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetTokens(ctx, user)
+	if err != nil {
+		return nil, fmt.Errorf("get tokens for user %s: %w", user, err)
+	}
+	result := make([]domain.AccessToken, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.AccessToken{
+			TokenID:  item.TokenID,
+			Comment:  item.Comment,
+			Expire:   item.Expire,
+			Privsep:  item.Privsep,
+			Created:  item.Created,
+			UserID:   item.UserID,
+			Disabled: item.Disabled,
+		})
+	}
+	return result, nil
+}
+
+func (p *Provider) CreateUser(ctx context.Context, userid, password, email, firstname, lastname, comment string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.CreateUser(ctx, userid, password, email, firstname, lastname, comment)
+}
+
+func (p *Provider) DeleteUser(ctx context.Context, userid string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteUser(ctx, userid)
+}
+
+func (p *Provider) AddACL(ctx context.Context, path, role, user, group string, propagate int) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.AddACL(ctx, path, role, user, group, propagate)
+}
+
+// firewallRuleInputToRequest converts a domain.FirewallRuleCreateInput to a client request.
+func firewallRuleInputToRequest(input domain.FirewallRuleCreateInput) client.FirewallRuleCreateRequest {
+	return client.FirewallRuleCreateRequest{
+		Type:     input.Type,
+		Action:   input.Action,
+		Enable:   input.Enable,
+		Pos:      input.Pos,
+		Proto:    input.Proto,
+		Dest:     input.Dest,
+		Dport:    input.Dport,
+		Source:   input.Source,
+		Sport:    input.Sport,
+		ICMPType: input.ICMPType,
+		Log:      input.Log,
+		Comment:  input.Comment,
+		IFace:    input.IFace,
+		Macro:    input.Macro,
+	}
 }
 
 // mapToValues converts a map[string]string to url.Values.

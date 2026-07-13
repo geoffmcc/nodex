@@ -103,3 +103,39 @@ func requireClusterLog(prov domain.Provider) (domain.ClusterLogProvider, error) 
 	}
 	return p, nil
 }
+
+// requireNetworkMutation checks if the provider supports NetworkMutationProvider.
+func requireNetworkMutation(prov domain.Provider) (domain.NetworkMutationProvider, error) {
+	p, ok := prov.(domain.NetworkMutationProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: network mutation commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireFirewallMutation checks if the provider supports FirewallMutationProvider.
+func requireFirewallMutation(prov domain.Provider) (domain.FirewallMutationProvider, error) {
+	p, ok := prov.(domain.FirewallMutationProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: firewall mutation commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireAccess checks if the provider supports AccessProvider.
+func requireAccess(prov domain.Provider) (domain.AccessProvider, error) {
+	p, ok := prov.(domain.AccessProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: access commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
