@@ -60,6 +60,7 @@ Profiles must use `https://` Proxmox endpoints without URL user info, query stri
 ```
 nodex version
 nodex init
+nodex completion bash|zsh|fish
 nodex profile add|list|show|set-credentials|use|current|test|remove
 nodex provider list|capabilities
 nodex doctor

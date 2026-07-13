@@ -30,6 +30,7 @@ Local, single-user CLI for Proxmox VE. The built-in Proxmox provider is read-onl
 ```
 nodex version
 nodex init
+nodex completion bash|zsh|fish
 nodex profile add <name>
 nodex profile list
 nodex profile show <name>

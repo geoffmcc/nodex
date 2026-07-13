@@ -39,6 +39,16 @@ nodex profile test [name]
 nodex profile remove <name>
 ```
 
+### nodex completion
+
+Generate shell completion scripts.
+
+```
+nodex completion bash
+nodex completion zsh
+nodex completion fish
+```
+
 ### nodex provider
 
 Manage providers.

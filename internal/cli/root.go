@@ -61,6 +61,7 @@ func register(name, short string, run CommandFunc, subs ...*command) {
 func init() {
 	register("version", "Print version information", runVersion)
 	register("init", "Initialize nodex configuration", runInit)
+	register("completion", "Generate shell completion scripts", runCompletion)
 	register("profile", "Manage connection profiles", nil,
 		&command{name: "add", short: "Add a new profile", run: runProfileAdd},
 		&command{name: "list", short: "List all profiles", run: runProfileList},

@@ -1,0 +1,98 @@
+package cli
+
+import (
+	"bytes"
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/geoffmcc/nodex/internal/config"
+	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/provider"
+)
+
+const e2eMockProviderName = "nodex-e2e-mock"
+
+func init() {
+	provider.Register(e2eMockProviderName, func() domain.Provider { return &e2eMockProvider{} })
+}
+
+type e2eMockProvider struct {
+	connected bool
+}
+
+func (p *e2eMockProvider) Name() string    { return e2eMockProviderName }
+func (p *e2eMockProvider) Version() string { return "e2e" }
+func (p *e2eMockProvider) Close() error    { return nil }
+func (p *e2eMockProvider) Capabilities() []domain.Capability {
+	return []domain.Capability{domain.CapabilityNodes, domain.CapabilityVMs, domain.CapabilityContainers, domain.CapabilityStorage, domain.CapabilityCluster}
+}
+func (p *e2eMockProvider) Connect(_ context.Context, endpoint string, creds *domain.Credentials) error {
+	if endpoint == "https://e2e.example.invalid" && creds != nil && creds.Token == "e2e-token" {
+		p.connected = true
+	}
+	return nil
+}
+func (p *e2eMockProvider) Nodes(_ context.Context) ([]domain.Node, error) {
+	if !p.connected {
+		return nil, nil
+	}
+	return []domain.Node{{ID: "node/e2e-node", Name: "e2e-node", Status: "online", Role: "node", Platform: "mock"}}, nil
+}
+func (p *e2eMockProvider) VMs(_ context.Context) ([]domain.VM, error) {
+	return []domain.VM{{ID: "e2e-node/100", Name: "e2e-vm", Status: "running", Node: "e2e-node", CPU: 2, Memory: 1024, Disk: 2048}}, nil
+}
+func (p *e2eMockProvider) Containers(_ context.Context) ([]domain.Container, error) {
+	return []domain.Container{{ID: "e2e-node/200", Name: "e2e-ct", Status: "running", Node: "e2e-node", OS: "debian", Memory: 512, Disk: 1024}}, nil
+}
+func (p *e2eMockProvider) Storage(_ context.Context) ([]domain.Storage, error) {
+	return []domain.Storage{{ID: "storage/e2e-node/local", Name: "local", Type: "dir", Status: "available", Node: "e2e-node", Total: 4096, Used: 1024, Avail: 3072}}, nil
+}
+func (p *e2eMockProvider) Cluster(_ context.Context) (*domain.Cluster, error) {
+	return &domain.Cluster{Name: "e2e", Version: "test", Nodes: 1}, nil
+}
+
+func TestRunE2EWithMockProvider(t *testing.T) {
+	isolateConfigAndHome(t)
+	t.Setenv("NODEX_E2E_TOKEN", "e2e-token")
+	cfg := config.DefaultConfig()
+	cfg.CurrentProfile = "e2e"
+	cfg.Profiles["e2e"] = config.Profile{
+		Provider:      e2eMockProviderName,
+		Endpoint:      "https://e2e.example.invalid",
+		CredentialRef: "env:e2e",
+	}
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := config.WriteTo(cfg, path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "node list", args: []string{"--output", "json", "node", "list"}, want: []string{`"name": "e2e-node"`, `"platform": "mock"`}},
+		{name: "vm show", args: []string{"--output", "json", "vm", "show", "e2e-node/100"}, want: []string{`"id": "e2e-node/100"`, `"name": "e2e-vm"`}},
+		{name: "container list", args: []string{"--output", "json", "container", "list"}, want: []string{`"id": "e2e-node/200"`, `"os": "debian"`}},
+		{name: "storage show", args: []string{"--output", "json", "storage", "show", "local"}, want: []string{`"id": "storage/e2e-node/local"`, `"avail": 3072`}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if err := Run(context.Background(), tt.args, &stdout, &stderr); err != nil {
+				t.Fatalf("Run(%v): %v stderr=%q", tt.args, err, stderr.String())
+			}
+			out := stdout.String()
+			for _, want := range tt.want {
+				if !strings.Contains(out, want) {
+					t.Fatalf("Run(%v) output missing %q:\n%s", tt.args, want, out)
+				}
+			}
+		})
+	}
+}
