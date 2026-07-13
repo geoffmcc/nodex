@@ -1,0 +1,16 @@
+[
+  {
+    "type": "node",
+    "time": 1700000000,
+    "node": "e2e-node",
+    "id": "node/e2e-node",
+    "message": "node online"
+  },
+  {
+    "type": "vm",
+    "time": 1700000001,
+    "node": "e2e-node",
+    "id": "vm/100",
+    "message": "VM started"
+  }
+]

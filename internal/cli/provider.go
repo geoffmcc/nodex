@@ -175,6 +175,14 @@ func connectProfile(ctx context.Context, cmdCtx *Context, profileName string) (d
 	return prov, cleanup, nil
 }
 
+// applyLimit truncates a string slice to n elements if n > 0.
+func applyLimit[S any](items []S, limit int) []S {
+	if limit > 0 && len(items) > limit {
+		return items[:limit]
+	}
+	return items
+}
+
 // formatBytes formats bytes as a human-readable string.
 func formatBytes(b int64) string {
 	const unit = 1024

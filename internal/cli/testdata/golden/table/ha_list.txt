@@ -1,0 +1,2 @@
+ID         TYPE  STATE    NODE      GROUP
+ha:vm/100  vm    started  e2e-node  default

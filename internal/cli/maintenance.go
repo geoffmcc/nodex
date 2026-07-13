@@ -27,7 +27,7 @@ func runBackupList(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list backups: %w", err)
 	}
-	return writeBackups(cmdCtx, backups)
+	return writeBackups(cmdCtx, applyLimit(backups, cmdCtx.Opts.Limit))
 }
 
 func writeBackups(cmdCtx *Context, backups []domain.Backup) error {
@@ -69,7 +69,7 @@ func runFirewallList(ctx context.Context, cmdCtx *Context, args []string) error 
 	if err != nil {
 		return fmt.Errorf("list firewall rules: %w", err)
 	}
-	return writeFirewallRules(cmdCtx, rules)
+	return writeFirewallRules(cmdCtx, applyLimit(rules, cmdCtx.Opts.Limit))
 }
 
 func writeFirewallRules(cmdCtx *Context, rules []domain.FirewallRule) error {
@@ -121,7 +121,7 @@ func runHAList(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list HA resources: %w", err)
 	}
-	return writeHAResources(cmdCtx, resources)
+	return writeHAResources(cmdCtx, applyLimit(resources, cmdCtx.Opts.Limit))
 }
 
 func writeHAResources(cmdCtx *Context, resources []domain.HAResource) error {
@@ -163,7 +163,7 @@ func runHAGroups(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list HA groups: %w", err)
 	}
-	return writeHAGroups(cmdCtx, groups)
+	return writeHAGroups(cmdCtx, applyLimit(groups, cmdCtx.Opts.Limit))
 }
 
 func writeHAGroups(cmdCtx *Context, groups []domain.HAGroup) error {

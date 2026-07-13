@@ -1,0 +1,4 @@
+FIELD    VALUE
+NAME     e2e
+VERSION  test
+NODES    1

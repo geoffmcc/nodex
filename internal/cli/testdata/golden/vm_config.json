@@ -1,0 +1,6 @@
+{
+  "cores": 2,
+  "memory": 1024,
+  "name": "e2e-vm",
+  "vmid": 100
+}

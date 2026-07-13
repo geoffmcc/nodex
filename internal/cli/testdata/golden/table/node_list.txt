@@ -1,0 +1,2 @@
+NAME      STATUS  IP  ROLE  UPTIME
+e2e-node  online      node  

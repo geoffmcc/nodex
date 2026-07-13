@@ -24,6 +24,7 @@ type Options struct {
 	Quiet          bool
 	Verbose        bool
 	Debug          bool
+	Limit          int
 }
 
 // Context carries global state through command execution.
@@ -210,12 +211,16 @@ func parseGlobal(args []string) (Options, []string, error) {
 	fs.BoolVar(&opts.Quiet, "quiet", false, "")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "")
 	fs.BoolVar(&opts.Debug, "debug", false, "")
+	fs.IntVar(&opts.Limit, "limit", 0, "")
 
 	if err := fs.Parse(args); err != nil {
 		return opts, nil, err
 	}
 	if opts.Timeout <= 0 {
 		return opts, nil, fmt.Errorf("timeout must be greater than zero")
+	}
+	if opts.Limit < 0 {
+		return opts, nil, fmt.Errorf("limit must be non-negative")
 	}
 
 	// Resolve output format.
@@ -265,6 +270,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --profile <name>     Override current profile")
 	fmt.Fprintln(w, "  --output <format>    Output format: table, json, yaml (default: table/tty, json/non-tty)")
 	fmt.Fprintln(w, "  --timeout <duration> Request timeout (default: 30s)")
+	fmt.Fprintln(w, "  --limit <n>          Limit output to n items (0 = no limit)")
 	fmt.Fprintln(w, "  --no-color           Disable color output")
 	fmt.Fprintln(w, "  --non-interactive    Disable interactive prompts")
 	fmt.Fprintln(w, "  --quiet              Suppress non-essential output")

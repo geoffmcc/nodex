@@ -1,0 +1,2 @@
+UPID                      STATE    STATUS  STARTED     NODE
+UPID:e2e-node/00012345/0  stopped  OK      1700000000  e2e-node

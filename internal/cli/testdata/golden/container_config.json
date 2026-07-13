@@ -1,0 +1,7 @@
+{
+  "cores": 1,
+  "hostname": "e2e-ct",
+  "memory": 512,
+  "swap": 256,
+  "vmid": 200
+}

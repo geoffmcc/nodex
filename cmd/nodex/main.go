@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
 
@@ -32,7 +33,12 @@ func main() {
 	}()
 
 	if err := run(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", output.SanitizeTerminal(redact.String(err.Error())))
+		msg := output.SanitizeTerminal(redact.String(err.Error()))
+		if wantsJSON(os.Args[1:]) {
+			_ = output.WriteErrorJSON(os.Stderr, msg, "", app.ExitCodeFromError(err))
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+		}
 		if code := signalExit.Load(); code != 0 {
 			os.Exit(int(code))
 		}
@@ -45,4 +51,17 @@ func main() {
 
 func run(ctx context.Context) error {
 	return cli.Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
+}
+
+// wantsJSON checks if --output json appears in the args.
+func wantsJSON(args []string) bool {
+	for i, a := range args {
+		if a == "--output" && i+1 < len(args) && strings.EqualFold(args[i+1], "json") {
+			return true
+		}
+		if strings.HasPrefix(a, "--output=") && strings.EqualFold(strings.TrimPrefix(a, "--output="), "json") {
+			return true
+		}
+	}
+	return false
 }

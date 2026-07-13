@@ -1,0 +1,9 @@
+[
+  {
+    "name": "clean",
+    "vmid": 200,
+    "ctime": 1700000000,
+    "node": "e2e-node",
+    "target": "e2e-node/200"
+  }
+]

@@ -1,0 +1,2 @@
+NAME   TYPE  STATUS     NODE      TOTAL    USED     AVAIL
+local  dir   available  e2e-node  4.0 KiB  1.0 KiB  3.0 KiB

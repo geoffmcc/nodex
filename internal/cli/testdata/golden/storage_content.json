@@ -1,0 +1,15 @@
+[
+  {
+    "content": "iso",
+    "format": "iso",
+    "volid": "local:iso/debian-12.iso",
+    "size": 5368709120
+  },
+  {
+    "content": "images",
+    "format": "raw",
+    "volid": "local-lvm:vm-100-disk-0",
+    "size": 34359738368,
+    "vmid": 100
+  }
+]

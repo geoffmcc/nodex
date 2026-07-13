@@ -1,0 +1,14 @@
+FIELD       VALUE
+NODE        e2e-node
+STATUS      online
+CPU         0.00%
+MAX CPU     0
+MEMORY      0 B
+MAX MEMORY  0 B
+DISK        0 B
+MAX DISK    0 B
+UPTIME      
+LEVEL       
+KVERSION    
+PVEVERSION  
+LOAD AVG    

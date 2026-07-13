@@ -36,6 +36,7 @@ var (
 	ErrNetwork         = errors.New("network error")
 	ErrProvider        = errors.New("provider error")
 	ErrRedaction       = errors.New("redaction error")
+	ErrUnsupportedCap  = errors.New("unsupported capability")
 )
 
 // ExitCoder wraps an error with an exit code.

@@ -1,0 +1,8 @@
+[
+  {
+    "id": "default",
+    "type": "group",
+    "nodes": "e2e-node",
+    "comment": "Default HA group"
+  }
+]

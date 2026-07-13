@@ -1,0 +1,9 @@
+[
+  {
+    "id": "node/e2e-node",
+    "name": "e2e-node",
+    "status": "online",
+    "role": "node",
+    "platform": "mock"
+  }
+]
