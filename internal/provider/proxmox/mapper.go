@@ -2,6 +2,7 @@ package proxmox
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,6 +99,25 @@ func MapCluster(version *client.VersionData, nodeCount int) *domain.Cluster {
 		Version: version.Version,
 		Nodes:   nodeCount,
 	}
+}
+
+// MapClusterStatus converts cluster status items to a domain.Cluster.
+func MapClusterStatus(items []client.ClusterStatusItem) *domain.Cluster {
+	cluster := &domain.Cluster{}
+	nodeCount := 0
+	for _, item := range items {
+		if item.Type == "cluster" {
+			cluster.Name = item.Name
+			if item.Version > 0 {
+				cluster.Version = strconv.Itoa(item.Version)
+			}
+		}
+		if item.Type == "node" {
+			nodeCount++
+		}
+	}
+	cluster.Nodes = nodeCount
+	return cluster
 }
 
 func vmID(res client.ClusterResource) string {

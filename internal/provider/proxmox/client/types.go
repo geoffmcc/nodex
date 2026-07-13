@@ -112,3 +112,28 @@ type NodeStatus = NodeStatusResponse
 
 // Version is a convenience alias.
 type Version = VersionResponse
+
+// ClusterStatusResponse is the response from /cluster/status.
+type ClusterStatusResponse struct {
+	Data []ClusterStatusItem `json:"data"`
+}
+
+// ClusterStatusItem represents a single item from the cluster status API.
+type ClusterStatusItem struct {
+	Type      string `json:"type"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	Level     string `json:"level,omitempty"`
+	IP        string `json:"ip,omitempty"`
+	Localmem  int64  `json:"localmem,omitempty"`
+	Maxmem    int64  `json:"maxmem,omitempty"`
+	Localdisk int64  `json:"localdisk,omitempty"`
+	Maxdisk   int64  `json:"maxdisk,omitempty"`
+	Quorate   int    `json:"quorate,omitempty"`
+	Version   int    `json:"version,omitempty"`
+	Commit    string `json:"commit,omitempty"`
+}
+
+// ClusterStatus is a convenience alias.
+type ClusterStatus = ClusterStatusResponse

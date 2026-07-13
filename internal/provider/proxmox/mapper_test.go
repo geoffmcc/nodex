@@ -188,3 +188,34 @@ func TestMapNodeStatusFallsBackToIDForName(t *testing.T) {
 		t.Fatalf("Name = %q, want node/backup (fallback from ID)", status.Name)
 	}
 }
+
+func TestMapClusterStatusExtractsNameVersionAndNodeCount(t *testing.T) {
+	items := []client.ClusterStatusItem{
+		{Type: "cluster", ID: "cluster/0", Name: "mycluster", Status: "online", Quorate: 1, Version: 3},
+		{Type: "node", ID: "node/proxmox", Name: "proxmox", Status: "online"},
+		{Type: "node", ID: "node/backup", Name: "backup", Status: "online"},
+	}
+	cluster := MapClusterStatus(items)
+	if cluster.Name != "mycluster" {
+		t.Fatalf("Name = %q, want mycluster", cluster.Name)
+	}
+	if cluster.Version != "3" {
+		t.Fatalf("Version = %q, want 3", cluster.Version)
+	}
+	if cluster.Nodes != 2 {
+		t.Fatalf("Nodes = %d, want 2", cluster.Nodes)
+	}
+}
+
+func TestMapClusterStatusHandlesNoClusterItem(t *testing.T) {
+	items := []client.ClusterStatusItem{
+		{Type: "node", ID: "node/a", Name: "a", Status: "online"},
+	}
+	cluster := MapClusterStatus(items)
+	if cluster.Name != "" {
+		t.Fatalf("Name = %q, want empty", cluster.Name)
+	}
+	if cluster.Nodes != 1 {
+		t.Fatalf("Nodes = %d, want 1", cluster.Nodes)
+	}
+}

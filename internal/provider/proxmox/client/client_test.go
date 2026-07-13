@@ -232,3 +232,33 @@ func TestReleaseReturnsEmptyWhenNoVersion(t *testing.T) {
 		t.Errorf("Release() = %q, want empty", got)
 	}
 }
+
+func TestGetClusterStatusDecodesQuorumAndNodes(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cluster/status" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"cluster","id":"cluster/0","name":"mycluster","status":"online","quorate":1,"version":3},{"type":"node","id":"node/proxmox","name":"proxmox","status":"online","ip":"10.0.0.1","localmem":4294967296,"maxmem":17179869184,"localdisk":107374182400,"maxdisk":1073741824000}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	items, err := c.GetClusterStatus(context.Background())
+	if err != nil {
+		t.Fatalf("GetClusterStatus: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items) = %d, want 2", len(items))
+	}
+	if items[0].Type != "cluster" || items[0].Name != "mycluster" || items[0].Quorate != 1 || items[0].Version != 3 {
+		t.Fatalf("cluster item = %+v", items[0])
+	}
+	if items[1].Type != "node" || items[1].Name != "proxmox" || items[1].IP != "10.0.0.1" {
+		t.Fatalf("node item = %+v", items[1])
+	}
+	if items[1].Localmem != 4294967296 || items[1].Maxmem != 17179869184 {
+		t.Fatalf("node memory = %d/%d", items[1].Localmem, items[1].Maxmem)
+	}
+	if items[1].Localdisk != 107374182400 || items[1].Maxdisk != 1073741824000 {
+		t.Fatalf("node disk = %d/%d", items[1].Localdisk, items[1].Maxdisk)
+	}
+}
