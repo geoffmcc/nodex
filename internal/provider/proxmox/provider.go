@@ -68,6 +68,12 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilityContainers,
 		domain.CapabilityStorage,
 		domain.CapabilityCluster,
+		domain.CapabilityNodeDetail,
+		domain.CapabilityFirewallAdvanced,
+		domain.CapabilityHAStatus,
+		domain.CapabilityBackupContent,
+		domain.CapabilitySDN,
+		domain.CapabilitySnapshotDetail,
 	}
 }
 
@@ -570,4 +576,485 @@ func (p *Provider) HAGroups(ctx context.Context) ([]domain.HAGroup, error) {
 		})
 	}
 	return result, nil
+}
+
+// NodeStatus returns detailed status for a specific node.
+func (p *Provider) NodeStatus(ctx context.Context, node string) (map[string]interface{}, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	status, err := p.client.GetNodeStatus(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get node status: %w", err)
+	}
+	m := map[string]interface{}{
+		"cpu":     status.CPU,
+		"maxcpu":  status.MaxCPU,
+		"mem":     status.Mem,
+		"maxmem":  status.MaxMem,
+		"disk":    status.Disk,
+		"maxdisk": status.MaxDisk,
+		"uptime":  status.Uptime,
+		"level":   status.Level,
+		"id":      status.ID,
+		"node":    status.Node,
+		"type":    status.Type,
+		"status":  status.Status,
+	}
+	if status.KVersion != "" {
+		m["kversion"] = status.KVersion
+	}
+	if status.PVEVersion != "" {
+		m["pveversion"] = status.PVEVersion
+	}
+	if len(status.LoadAvg) > 0 {
+		m["loadavg"] = status.LoadAvg
+	}
+	return m, nil
+}
+
+// NodeServices returns services on a specific node.
+func (p *Provider) NodeServices(ctx context.Context, node string) ([]domain.NodeService, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetNodeServices(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get node services: %w", err)
+	}
+	result := make([]domain.NodeService, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.NodeService{
+			Name:   item.Name,
+			State:  item.State,
+			Active: item.Active,
+		})
+	}
+	return result, nil
+}
+
+// NodeNetwork returns network interfaces on a specific node.
+func (p *Provider) NodeNetwork(ctx context.Context, node string) ([]domain.NodeNetwork, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetNodeNetwork(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get node network: %w", err)
+	}
+	result := make([]domain.NodeNetwork, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.NodeNetwork{
+			Name:   item.Name,
+			Type:   item.Type,
+			Status: item.Status,
+			IP:     item.IP,
+			MAC:    item.MAC,
+		})
+	}
+	return result, nil
+}
+
+// NodeDNS returns DNS configuration for a specific node.
+func (p *Provider) NodeDNS(ctx context.Context, node string) (*domain.NodeDNS, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	data, err := p.client.GetNodeDNS(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get node DNS: %w", err)
+	}
+	return &domain.NodeDNS{
+		DNS1:         data.DNS1,
+		DNS2:         data.DNS2,
+		SearchDomain: data.SearchDomain,
+	}, nil
+}
+
+// NodeTime returns time configuration for a specific node.
+func (p *Provider) NodeTime(ctx context.Context, node string) (*domain.NodeTime, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	data, err := p.client.GetNodeTime(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get node time: %w", err)
+	}
+	return &domain.NodeTime{
+		TimeZone: data.TimeZone,
+		Epoch:    data.Epoch,
+		Local:    data.Local,
+	}, nil
+}
+
+// NodeDisks returns disk inventory for a specific node.
+func (p *Provider) NodeDisks(ctx context.Context, node string) ([]domain.NodeDisk, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetNodeDisks(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get node disks: %w", err)
+	}
+	result := make([]domain.NodeDisk, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.NodeDisk{
+			Name:   item.Name,
+			Path:   item.Path,
+			Size:   item.Size,
+			Type:   item.Type,
+			Model:  item.Model,
+			Health: item.Health,
+		})
+	}
+	return result, nil
+}
+
+// NodeCertificates returns TLS certificates for a specific node.
+func (p *Provider) NodeCertificates(ctx context.Context, node string) ([]domain.NodeCertificate, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetNodeCertificates(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get node certificates: %w", err)
+	}
+	result := make([]domain.NodeCertificate, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.NodeCertificate{
+			Fingerprint: item.Fingerprint,
+			Subject:     item.Subject,
+			Issuer:      item.Issuer,
+			NotBefore:   item.NotBefore,
+			NotAfter:    item.NotAfter,
+		})
+	}
+	return result, nil
+}
+
+// NodeSubscription returns subscription status for a specific node.
+func (p *Provider) NodeSubscription(ctx context.Context, node string) (*domain.NodeSubscription, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	data, err := p.client.GetNodeSubscription(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get node subscription: %w", err)
+	}
+	return &domain.NodeSubscription{
+		Status:  data.Status,
+		Key:     data.Key,
+		Expires: data.Expires,
+	}, nil
+}
+
+// NodeUpdates returns available updates for a specific node.
+func (p *Provider) NodeUpdates(ctx context.Context, node string) ([]domain.NodeUpdate, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetNodeUpdates(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get node updates: %w", err)
+	}
+	result := make([]domain.NodeUpdate, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.NodeUpdate{
+			Package: item.Package,
+			Version: item.Version,
+		})
+	}
+	return result, nil
+}
+
+// FirewallAliases returns cluster firewall aliases.
+func (p *Provider) FirewallAliases(ctx context.Context) ([]domain.FirewallAlias, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetFirewallAliases(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get firewall aliases: %w", err)
+	}
+	result := make([]domain.FirewallAlias, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.FirewallAlias{
+			Name:    item.Name,
+			CIDR:    item.CIDR,
+			Comment: item.Comment,
+		})
+	}
+	return result, nil
+}
+
+// FirewallIPSet returns entries for a specific IP set.
+func (p *Provider) FirewallIPSet(ctx context.Context, name string) ([]domain.FirewallIPSetEntry, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetFirewallIPSetEntries(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("get firewall IP set entries: %w", err)
+	}
+	result := make([]domain.FirewallIPSetEntry, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.FirewallIPSetEntry{
+			CIDR:    item.CIDR,
+			Comment: item.Comment,
+		})
+	}
+	return result, nil
+}
+
+// FirewallIPSets returns cluster firewall IP sets.
+func (p *Provider) FirewallIPSets(ctx context.Context) ([]domain.FirewallIPSet, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetFirewallIPSets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get firewall IP sets: %w", err)
+	}
+	result := make([]domain.FirewallIPSet, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.FirewallIPSet{
+			Name:    item.Name,
+			Comment: item.Comment,
+		})
+	}
+	return result, nil
+}
+
+// FirewallSecurityGroups returns cluster firewall security groups.
+func (p *Provider) FirewallSecurityGroups(ctx context.Context) ([]domain.FirewallSecurityGroup, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetFirewallSecurityGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get firewall security groups: %w", err)
+	}
+	result := make([]domain.FirewallSecurityGroup, 0, len(items))
+	for _, item := range items {
+		group := domain.FirewallSecurityGroup{
+			Name:    item.Name,
+			Comment: item.Comment,
+			Rules:   make([]domain.FirewallRule, 0, len(item.Rules)),
+		}
+		for _, r := range item.Rules {
+			group.Rules = append(group.Rules, domain.FirewallRule{
+				Type:     r.Type,
+				Action:   r.Action,
+				Enable:   r.Enable,
+				Pos:      r.Pos,
+				Proto:    r.Proto,
+				Dest:     r.Dest,
+				Dport:    r.Dport,
+				Source:   r.Source,
+				Sport:    r.Sport,
+				ICMPType: r.ICMPType,
+				Log:      r.Log,
+				Comment:  r.Comment,
+			})
+		}
+		result = append(result, group)
+	}
+	return result, nil
+}
+
+// FirewallOptions returns cluster firewall options.
+func (p *Provider) FirewallOptions(ctx context.Context) (*domain.FirewallOptions, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	data, err := p.client.GetFirewallOptions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get firewall options: %w", err)
+	}
+	return &domain.FirewallOptions{
+		Enable: data.Enable,
+		Log:    data.Log,
+	}, nil
+}
+
+// NodeFirewallRules returns firewall rules for a specific node.
+func (p *Provider) NodeFirewallRules(ctx context.Context, node string) ([]domain.FirewallRule, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetNodeFirewallRules(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get node firewall rules: %w", err)
+	}
+	result := make([]domain.FirewallRule, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.FirewallRule{
+			Type:     item.Type,
+			Action:   item.Action,
+			Enable:   item.Enable,
+			Pos:      item.Pos,
+			Proto:    item.Proto,
+			Dest:     item.Dest,
+			Dport:    item.Dport,
+			Source:   item.Source,
+			Sport:    item.Sport,
+			ICMPType: item.ICMPType,
+			Log:      item.Log,
+			Comment:  item.Comment,
+		})
+	}
+	return result, nil
+}
+
+// VMFirewallRules returns firewall rules for a specific VM.
+func (p *Provider) VMFirewallRules(ctx context.Context, node string, vmid int) ([]domain.FirewallRule, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetVMFirewallRules(ctx, node, vmid)
+	if err != nil {
+		return nil, fmt.Errorf("get VM firewall rules: %w", err)
+	}
+	result := make([]domain.FirewallRule, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.FirewallRule{
+			Type:     item.Type,
+			Action:   item.Action,
+			Enable:   item.Enable,
+			Pos:      item.Pos,
+			Proto:    item.Proto,
+			Dest:     item.Dest,
+			Dport:    item.Dport,
+			Source:   item.Source,
+			Sport:    item.Sport,
+			ICMPType: item.ICMPType,
+			Log:      item.Log,
+			Comment:  item.Comment,
+		})
+	}
+	return result, nil
+}
+
+// HAStatus returns cluster HA status.
+func (p *Provider) HAStatus(ctx context.Context) (*domain.HAStatus, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	data, err := p.client.GetHAStatus(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get HA status: %w", err)
+	}
+	return &domain.HAStatus{
+		Quorum: data.Quorum,
+		Status: data.Status,
+	}, nil
+}
+
+// HACurrent returns current HA resource states.
+func (p *Provider) HACurrent(ctx context.Context) ([]domain.HACurrent, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetHACurrent(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get HA current: %w", err)
+	}
+	result := make([]domain.HACurrent, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.HACurrent{
+			ID:     item.ID,
+			Type:   item.Type,
+			State:  item.State,
+			Node:   item.Node,
+			Status: item.Status,
+		})
+	}
+	return result, nil
+}
+
+// BackupContent returns content items for backup on a specific storage.
+func (p *Provider) BackupContent(ctx context.Context, node, storage string) ([]domain.BackupContentItem, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetStorageContent(ctx, node, storage)
+	if err != nil {
+		return nil, fmt.Errorf("get backup content: %w", err)
+	}
+	result := make([]domain.BackupContentItem, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.BackupContentItem{
+			Content: item.Content,
+			Volid:   item.Volid,
+			Size:    item.Size,
+			Format:  item.Format,
+		})
+	}
+	return result, nil
+}
+
+// SDNZones returns SDN zones.
+func (p *Provider) SDNZones(ctx context.Context) ([]domain.SDNZone, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetSDNZones(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get SDN zones: %w", err)
+	}
+	result := make([]domain.SDNZone, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.SDNZone{
+			Name:   item.Name,
+			Type:   item.Type,
+			Status: item.Status,
+			VNets:  item.VNets,
+		})
+	}
+	return result, nil
+}
+
+// SDNVNets returns SDN virtual networks.
+func (p *Provider) SDNVNets(ctx context.Context) ([]domain.SDNVNet, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetSDNVNets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get SDN vnets: %w", err)
+	}
+	result := make([]domain.SDNVNet, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.SDNVNet{
+			Name:  item.Name,
+			Zone:  item.Zone,
+			VLAN:  item.VLAN,
+			Alias: item.Alias,
+		})
+	}
+	return result, nil
+}
+
+// VMSnapshotConfig returns configuration for a specific VM snapshot.
+func (p *Provider) VMSnapshotConfig(ctx context.Context, node string, vmid int, name string) (map[string]interface{}, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	config, err := p.client.GetVMSnapshotConfig(ctx, node, vmid, name)
+	if err != nil {
+		return nil, fmt.Errorf("get VM snapshot config: %w", err)
+	}
+	return config, nil
+}
+
+// ContainerSnapshotConfig returns configuration for a specific container snapshot.
+func (p *Provider) ContainerSnapshotConfig(ctx context.Context, node string, vmid int, name string) (map[string]interface{}, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	config, err := p.client.GetContainerSnapshotConfig(ctx, node, vmid, name)
+	if err != nil {
+		return nil, fmt.Errorf("get container snapshot config: %w", err)
+	}
+	return config, nil
 }

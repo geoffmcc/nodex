@@ -348,6 +348,262 @@ func (c *Client) GetHAGroups(ctx context.Context) ([]HAGroupItem, error) {
 	return resp.Data, nil
 }
 
+// GetNodeServices returns services running on a specific node.
+func (c *Client) GetNodeServices(ctx context.Context, node string) ([]NodeServiceItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp NodeServicesResponse
+	path := "/nodes/" + url.PathEscape(node) + "/services"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetNodeNetwork returns network interfaces on a specific node.
+func (c *Client) GetNodeNetwork(ctx context.Context, node string) ([]NodeNetworkItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp NodeNetworkResponse
+	path := "/nodes/" + url.PathEscape(node) + "/network"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetNodeDNS returns DNS configuration for a specific node.
+func (c *Client) GetNodeDNS(ctx context.Context, node string) (*NodeDNSData, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp NodeDNSResponse
+	path := "/nodes/" + url.PathEscape(node) + "/dns"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// GetNodeTime returns time configuration for a specific node.
+func (c *Client) GetNodeTime(ctx context.Context, node string) (*NodeTimeData, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp NodeTimeResponse
+	path := "/nodes/" + url.PathEscape(node) + "/time"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// GetNodeDisks returns disk inventory for a specific node.
+func (c *Client) GetNodeDisks(ctx context.Context, node string) ([]NodeDiskItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp NodeDisksResponse
+	path := "/nodes/" + url.PathEscape(node) + "/disks/list"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetNodeCertificates returns TLS certificates for a specific node.
+func (c *Client) GetNodeCertificates(ctx context.Context, node string) ([]NodeCertificateItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp NodeCertificatesResponse
+	path := "/nodes/" + url.PathEscape(node) + "/certificates"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetNodeSubscription returns subscription status for a specific node.
+func (c *Client) GetNodeSubscription(ctx context.Context, node string) (*NodeSubscriptionData, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp NodeSubscriptionResponse
+	path := "/nodes/" + url.PathEscape(node) + "/subscription"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// GetNodeUpdates returns available updates for a specific node.
+func (c *Client) GetNodeUpdates(ctx context.Context, node string) ([]NodeUpdateItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp NodeUpdatesResponse
+	path := "/nodes/" + url.PathEscape(node) + "/updates"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetFirewallAliases returns cluster firewall aliases.
+func (c *Client) GetFirewallAliases(ctx context.Context) ([]FirewallAliasItem, error) {
+	var resp FirewallAliasesResponse
+	if err := c.get(ctx, "/cluster/firewall/aliases", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetFirewallIPSets returns cluster firewall IP sets.
+func (c *Client) GetFirewallIPSets(ctx context.Context) ([]FirewallIPSetItem, error) {
+	var resp FirewallIPSetsResponse
+	if err := c.get(ctx, "/cluster/firewall/ipset", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetFirewallIPSetEntries returns entries for a specific IP set.
+func (c *Client) GetFirewallIPSetEntries(ctx context.Context, name string) ([]FirewallIPSetEntryItem, error) {
+	if name == "" {
+		return nil, fmt.Errorf("IP set name is required")
+	}
+	var resp FirewallIPSetEntriesResponse
+	path := "/cluster/firewall/ipset/" + url.PathEscape(name)
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetFirewallSecurityGroups returns cluster firewall security groups.
+func (c *Client) GetFirewallSecurityGroups(ctx context.Context) ([]FirewallSecurityGroupItem, error) {
+	var resp FirewallSecurityGroupsResponse
+	if err := c.get(ctx, "/cluster/firewall/groups", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetFirewallOptions returns cluster firewall options.
+func (c *Client) GetFirewallOptions(ctx context.Context) (*FirewallOptionsData, error) {
+	var resp FirewallOptionsResponse
+	if err := c.get(ctx, "/cluster/firewall/options", &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// GetNodeFirewallRules returns firewall rules for a specific node.
+func (c *Client) GetNodeFirewallRules(ctx context.Context, node string) ([]FirewallRuleItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp NodeFirewallRulesResponse
+	path := "/nodes/" + url.PathEscape(node) + "/firewall/rules"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetVMFirewallRules returns firewall rules for a specific VM.
+func (c *Client) GetVMFirewallRules(ctx context.Context, node string, vmid int) ([]FirewallRuleItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return nil, fmt.Errorf("VMID is required")
+	}
+	var resp VMFirewallRulesResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/firewall/rules"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetHAStatus returns cluster HA status.
+func (c *Client) GetHAStatus(ctx context.Context) (*HAStatusData, error) {
+	var resp HAStatusResponse
+	if err := c.get(ctx, "/cluster/ha/status", &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// GetHACurrent returns current HA resource states.
+func (c *Client) GetHACurrent(ctx context.Context) ([]HACurrentItem, error) {
+	var resp HACurrentResponse
+	if err := c.get(ctx, "/cluster/ha/current", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetSDNZones returns SDN zones.
+func (c *Client) GetSDNZones(ctx context.Context) ([]SDNZoneItem, error) {
+	var resp SDNZonesResponse
+	if err := c.get(ctx, "/cluster/sdn/zones", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetSDNVNets returns SDN virtual networks.
+func (c *Client) GetSDNVNets(ctx context.Context) ([]SDNVNetItem, error) {
+	var resp SDNVNetsResponse
+	if err := c.get(ctx, "/cluster/sdn/vnets", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetVMSnapshotConfig returns configuration for a specific VM snapshot.
+func (c *Client) GetVMSnapshotConfig(ctx context.Context, node string, vmid int, name string) (map[string]interface{}, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return nil, fmt.Errorf("VMID is required")
+	}
+	if name == "" {
+		return nil, fmt.Errorf("snapshot name is required")
+	}
+	var resp VMSnapshotConfigResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/snapshot/" + url.PathEscape(name) + "/config"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetContainerSnapshotConfig returns configuration for a specific container snapshot.
+func (c *Client) GetContainerSnapshotConfig(ctx context.Context, node string, vmid int, name string) (map[string]interface{}, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return nil, fmt.Errorf("VMID is required")
+	}
+	if name == "" {
+		return nil, fmt.Errorf("snapshot name is required")
+	}
+	var resp ContainerSnapshotConfigResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/snapshot/" + url.PathEscape(name) + "/config"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil
