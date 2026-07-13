@@ -819,3 +819,122 @@ func writeSnapshotList(cmdCtx *Context, snaps []domain.Snapshot) error {
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
 }
+
+type statusOverview struct {
+	Cluster     string          `json:"cluster" yaml:"cluster"`
+	Version     string          `json:"version" yaml:"version"`
+	Nodes       int             `json:"nodes" yaml:"nodes"`
+	NodesDetail []statusNode    `json:"nodes_detail" yaml:"nodes_detail"`
+	VMs         int             `json:"vms" yaml:"vms"`
+	VMsRunning  int             `json:"vms_running" yaml:"vms_running"`
+	VMsStopped  int             `json:"vms_stopped" yaml:"vms_stopped"`
+	Containers  int             `json:"containers" yaml:"containers"`
+	CTsRunning  int             `json:"cts_running" yaml:"cts_running"`
+	CTsStopped  int             `json:"cts_stopped" yaml:"cts_stopped"`
+	Storage     []statusStorage `json:"storage" yaml:"storage"`
+}
+
+type statusNode struct {
+	Name   string `json:"name" yaml:"name"`
+	Status string `json:"status" yaml:"status"`
+	Uptime string `json:"uptime,omitempty" yaml:"uptime,omitempty"`
+}
+
+type statusStorage struct {
+	Name  string `json:"name" yaml:"name"`
+	Type  string `json:"type" yaml:"type"`
+	Total int64  `json:"total" yaml:"total"`
+	Used  int64  `json:"used" yaml:"used"`
+	Avail int64  `json:"avail" yaml:"avail"`
+}
+
+func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex status"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	overview := statusOverview{}
+
+	nodes, err := prov.Nodes(ctx)
+	if err == nil {
+		overview.Nodes = len(nodes)
+		for _, n := range nodes {
+			sn := statusNode{Name: n.Name, Status: n.Status}
+			if n.Uptime != nil {
+				sn.Uptime = n.Uptime.String()
+			}
+			overview.NodesDetail = append(overview.NodesDetail, sn)
+		}
+	}
+
+	vms, err := prov.VMs(ctx)
+	if err == nil {
+		overview.VMs = len(vms)
+		for _, v := range vms {
+			if v.Status == "running" {
+				overview.VMsRunning++
+			} else {
+				overview.VMsStopped++
+			}
+		}
+	}
+
+	cts, err := prov.Containers(ctx)
+	if err == nil {
+		overview.Containers = len(cts)
+		for _, c := range cts {
+			if c.Status == "running" {
+				overview.CTsRunning++
+			} else {
+				overview.CTsStopped++
+			}
+		}
+	}
+
+	stors, err := prov.Storage(ctx)
+	if err == nil {
+		for _, s := range stors {
+			overview.Storage = append(overview.Storage, statusStorage{
+				Name:  s.Name,
+				Type:  s.Type,
+				Total: s.Total,
+				Used:  s.Used,
+				Avail: s.Avail,
+			})
+		}
+	}
+
+	cluster, err := prov.Cluster(ctx)
+	if err == nil && cluster != nil {
+		overview.Cluster = cluster.Name
+		overview.Version = cluster.Version
+	}
+
+	return writeStatus(cmdCtx, &overview)
+}
+
+func writeStatus(cmdCtx *Context, overview *statusOverview) error {
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, overview)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, overview)
+	default:
+		w := cmdCtx.Writer
+		fmt.Fprintf(w, "Cluster: %s  Version: %s  Nodes: %d\n", overview.Cluster, overview.Version, overview.Nodes)
+		fmt.Fprintf(w, "VMs: %d running, %d stopped\n", overview.VMsRunning, overview.VMsStopped)
+		fmt.Fprintf(w, "Containers: %d running, %d stopped\n", overview.CTsRunning, overview.CTsStopped)
+		if len(overview.Storage) > 0 {
+			fmt.Fprintln(w, "\nStorage:")
+			for _, s := range overview.Storage {
+				fmt.Fprintf(w, "  %-20s %-8s %s / %s\n", s.Name, s.Type, formatBytes(s.Used), formatBytes(s.Total))
+			}
+		}
+		return nil
+	}
+}

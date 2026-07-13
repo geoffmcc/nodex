@@ -140,6 +140,7 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "task show", args: []string{"--output", "json", "task", "show", "e2e-node", "UPID:e2e-node/00012345/0"}, want: []string{`"upid": "UPID:e2e-node/00012345/0"`, `"status": "OK"`, `"node": "e2e-node"`}},
 		{name: "vm snapshots", args: []string{"--output", "json", "vm", "snapshots", "e2e-node/100"}, want: []string{`"name": "before-upgrade"`, `"parent": "current"`, `"vmid": 100`}},
 		{name: "container snapshots", args: []string{"--output", "json", "container", "snapshots", "e2e-node/200"}, want: []string{`"name": "clean"`, `"vmid": 200`}},
+		{name: "status", args: []string{"--output", "json", "status"}, want: []string{`"cluster": "e2e"`, `"nodes": 1`, `"vms_running": 1`}},
 	}
 
 	for _, tt := range tests {

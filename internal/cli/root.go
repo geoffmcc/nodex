@@ -76,6 +76,8 @@ func init() {
 		&command{name: "list", short: "List available providers", run: runProviderList},
 		&command{name: "capabilities", short: "Show provider capabilities", run: runProviderCapabilities},
 	)
+	register("status", "Show cluster status overview", runStatus)
+
 	register("node", "Manage nodes", nil,
 		&command{name: "list", short: "List all nodes", run: runNodeList},
 		&command{name: "show", short: "Show node details", run: runNodeShow},
