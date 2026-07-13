@@ -76,6 +76,7 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		want []string
 	}{
 		{name: "node list", args: []string{"--output", "json", "node", "list"}, want: []string{`"name": "e2e-node"`, `"platform": "mock"`}},
+		{name: "node status", args: []string{"--output", "json", "node", "status", "e2e-node"}, want: []string{`"node": "e2e-node"`, `"status": "online"`}},
 		{name: "vm show", args: []string{"--output", "json", "vm", "show", "e2e-node/100"}, want: []string{`"id": "e2e-node/100"`, `"name": "e2e-vm"`}},
 		{name: "container list", args: []string{"--output", "json", "container", "list"}, want: []string{`"id": "e2e-node/200"`, `"os": "debian"`}},
 		{name: "storage show", args: []string{"--output", "json", "storage", "show", "local"}, want: []string{`"id": "storage/e2e-node/local"`, `"avail": 3072`}},

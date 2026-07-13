@@ -120,3 +120,71 @@ func TestMapStorageUsesStorageNameFallback(t *testing.T) {
 		t.Fatalf("mapped storage content = %+v", storage.Content)
 	}
 }
+
+func TestMapNodeStatusConvertsFieldsCorrectly(t *testing.T) {
+	status := MapNodeStatus(&client.NodeStatusData{
+		ID:         "node/proxmox",
+		Node:       "proxmox",
+		Status:     "online",
+		Type:       "node",
+		Uptime:     86400,
+		PVEVersion: "pve-manager/8.2.4",
+		CPU:        0.25,
+		MaxCPU:     4,
+		Mem:        2147483648,
+		MaxMem:     8589934592,
+		Disk:       10737418240,
+		MaxDisk:    107374182400,
+		LoadAvg:    []float64{0.12, 0.34, 0.56},
+		KVersion:   "6.8.12-1-pve",
+	})
+
+	if status.ID != "node/proxmox" {
+		t.Fatalf("ID = %q, want node/proxmox", status.ID)
+	}
+	if status.Name != "proxmox" {
+		t.Fatalf("Name = %q, want proxmox", status.Name)
+	}
+	if status.Status != "online" {
+		t.Fatalf("Status = %q, want online", status.Status)
+	}
+	if status.Role != "node" {
+		t.Fatalf("Role = %q, want node", status.Role)
+	}
+	if status.Platform != "proxmox" {
+		t.Fatalf("Platform = %q, want proxmox", status.Platform)
+	}
+	if status.Version != "pve-manager/8.2.4" {
+		t.Fatalf("Version = %q, want pve-manager/8.2.4", status.Version)
+	}
+	if status.Uptime == nil || *status.Uptime != 86400*time.Second {
+		t.Fatalf("Uptime = %v, want 86400s", status.Uptime)
+	}
+}
+
+func TestMapNodeStatusHandlesZeroUptime(t *testing.T) {
+	status := MapNodeStatus(&client.NodeStatusData{
+		ID:     "node/proxmox",
+		Node:   "proxmox",
+		Status: "offline",
+		Type:   "node",
+		Uptime: 0,
+	})
+
+	if status.Uptime != nil {
+		t.Fatalf("Uptime = %v, want nil for zero uptime", *status.Uptime)
+	}
+}
+
+func TestMapNodeStatusFallsBackToIDForName(t *testing.T) {
+	status := MapNodeStatus(&client.NodeStatusData{
+		ID:     "node/backup",
+		Node:   "",
+		Status: "online",
+		Type:   "node",
+	})
+
+	if status.Name != "node/backup" {
+		t.Fatalf("Name = %q, want node/backup (fallback from ID)", status.Name)
+	}
+}
