@@ -26,7 +26,13 @@ func (p *e2eMockProvider) Name() string    { return e2eMockProviderName }
 func (p *e2eMockProvider) Version() string { return "e2e" }
 func (p *e2eMockProvider) Close() error    { return nil }
 func (p *e2eMockProvider) Capabilities() []domain.Capability {
-	return []domain.Capability{domain.CapabilityNodes, domain.CapabilityVMs, domain.CapabilityContainers, domain.CapabilityStorage, domain.CapabilityCluster}
+	return []domain.Capability{
+		domain.CapabilityNodes, domain.CapabilityVMs, domain.CapabilityContainers,
+		domain.CapabilityStorage, domain.CapabilityCluster,
+		domain.CapabilityNodeDetail, domain.CapabilityFirewallAdvanced,
+		domain.CapabilityHAStatus, domain.CapabilityBackupContent,
+		domain.CapabilitySDN, domain.CapabilitySnapshotDetail,
+	}
 }
 func (p *e2eMockProvider) Connect(_ context.Context, endpoint string, creds *domain.Credentials) error {
 	if endpoint == "https://e2e.example.invalid" && creds != nil && creds.Token == "e2e-token" {
@@ -134,6 +140,94 @@ func (p *e2eMockProvider) HAGroups(_ context.Context) ([]domain.HAGroup, error) 
 	return []domain.HAGroup{
 		{ID: "default", Type: "group", Nodes: "e2e-node", Comment: "Default HA group"},
 	}, nil
+}
+
+// Optional interfaces
+
+func (p *e2eMockProvider) NodeStatus(_ context.Context, name string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"node":       name,
+		"status":     "online",
+		"cpu":        0.12,
+		"maxcpu":     8,
+		"mem":        2147483648,
+		"maxmem":     8589934592,
+		"disk":       10737418240,
+		"maxdisk":    107374182400,
+		"uptime":     12345,
+		"level":      "",
+		"kversion":   "6.8.0",
+		"pveversion": "pve-manager/8.1.0",
+		"loadavg":    []float64{0.10, 0.15, 0.20},
+	}, nil
+}
+func (p *e2eMockProvider) NodeServices(_ context.Context, node string) ([]domain.NodeService, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) NodeNetwork(_ context.Context, node string) ([]domain.NodeNetwork, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) NodeDNS(_ context.Context, node string) (*domain.NodeDNS, error) {
+	return &domain.NodeDNS{DNS1: "8.8.8.8"}, nil
+}
+func (p *e2eMockProvider) NodeTime(_ context.Context, node string) (*domain.NodeTime, error) {
+	return &domain.NodeTime{TimeZone: "UTC", Epoch: 1700000000}, nil
+}
+func (p *e2eMockProvider) NodeDisks(_ context.Context, node string) ([]domain.NodeDisk, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) NodeCertificates(_ context.Context, node string) ([]domain.NodeCertificate, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) NodeSubscription(_ context.Context, node string) (*domain.NodeSubscription, error) {
+	return &domain.NodeSubscription{Status: "valid"}, nil
+}
+func (p *e2eMockProvider) NodeUpdates(_ context.Context, node string) ([]domain.NodeUpdate, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) FirewallAliases(_ context.Context) ([]domain.FirewallAlias, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) FirewallIPSet(_ context.Context, name string) ([]domain.FirewallIPSetEntry, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) FirewallIPSets(_ context.Context) ([]domain.FirewallIPSet, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) FirewallSecurityGroups(_ context.Context) ([]domain.FirewallSecurityGroup, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) FirewallOptions(_ context.Context) (*domain.FirewallOptions, error) {
+	return &domain.FirewallOptions{Enable: 1, Log: 0}, nil
+}
+func (p *e2eMockProvider) NodeFirewallRules(_ context.Context, node string) ([]domain.FirewallRule, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) VMFirewallRules(_ context.Context, node string, vmid int) ([]domain.FirewallRule, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) HAStatus(_ context.Context) (*domain.HAStatus, error) {
+	return &domain.HAStatus{Quorum: 1, Status: "online"}, nil
+}
+func (p *e2eMockProvider) HACurrent(_ context.Context) ([]domain.HACurrent, error) {
+	return []domain.HACurrent{{ID: "vm/100", Type: "vm", State: "started", Node: "e2e-node"}}, nil
+}
+func (p *e2eMockProvider) BackupContent(_ context.Context, node, storage string) ([]domain.BackupContentItem, error) {
+	return []domain.BackupContentItem{
+		{Content: "backup", Volid: "backup:vzdump-qemu-100-2024_01_01-12_00_00.vma.zst", Size: 1073741824, Format: "vma.zst"},
+	}, nil
+}
+func (p *e2eMockProvider) SDNZones(_ context.Context) ([]domain.SDNZone, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) SDNVNets(_ context.Context) ([]domain.SDNVNet, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) VMSnapshotConfig(_ context.Context, node string, vmid int, name string) (map[string]interface{}, error) {
+	return map[string]interface{}{"name": name, "vmid": vmid, "parent": "current"}, nil
+}
+func (p *e2eMockProvider) ContainerSnapshotConfig(_ context.Context, node string, vmid int, name string) (map[string]interface{}, error) {
+	return map[string]interface{}{"name": name, "vmid": vmid}, nil
 }
 
 func TestRunE2EWithMockProvider(t *testing.T) {

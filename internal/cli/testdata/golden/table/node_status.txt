@@ -1,14 +1,14 @@
 FIELD       VALUE
 NODE        e2e-node
 STATUS      online
-CPU         0.00%
-MAX CPU     0
-MEMORY      0 B
-MAX MEMORY  0 B
-DISK        0 B
-MAX DISK    0 B
-UPTIME      
+CPU         12.00%
+MAX CPU     8
+MEMORY      2.0 GiB
+MAX MEMORY  8.0 GiB
+DISK        10.0 GiB
+MAX DISK    100.0 GiB
+UPTIME      12345
 LEVEL       
-KVERSION    
-PVEVERSION  
-LOAD AVG    
+KVERSION    6.8.0
+PVEVERSION  pve-manager/8.1.0
+LOAD AVG    [0.1 0.15 0.2]

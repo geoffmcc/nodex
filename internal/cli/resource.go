@@ -6,12 +6,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
-	"github.com/geoffmcc/nodex/internal/provider/proxmox/client"
 )
 
 func runNodeList(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -63,87 +61,67 @@ func runNodeStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	// Get detailed node status via typed client method
-	status, err := getNodeStatus(ctx, prov, args[0])
+	detail, err := requireNodeDetail(prov)
 	if err != nil {
 		return err
 	}
-	return writeNodeStatus(cmdCtx, status)
-}
-
-func getNodeStatus(ctx context.Context, prov domain.Provider, nodeName string) (*client.NodeStatusData, error) {
-	// For now, use the existing Nodes method and filter
-	// In the future, we can add a typed method to the provider interface
-	nodes, err := prov.Nodes(ctx)
+	status, err := detail.NodeStatus(ctx, args[0])
 	if err != nil {
-		return nil, fmt.Errorf("list nodes: %w", err)
+		return fmt.Errorf("get node status: %w", err)
 	}
-	for _, node := range nodes {
-		if node.Name == nodeName || node.ID == nodeName {
-			// Return a basic NodeStatusData from the existing node info
-			return &client.NodeStatusData{
-				ID:         node.ID,
-				Node:       node.Name,
-				Status:     node.Status,
-				Type:       node.Role,
-				Uptime:     0,
-				PVEVersion: node.Version,
-			}, nil
-		}
-	}
-	return nil, app.NewExitError(fmt.Errorf("node %q not found", nodeName), app.ExitProvider)
+	return writeNodeStatusMap(cmdCtx, status)
 }
 
-func writeNodeStatus(cmdCtx *Context, status *client.NodeStatusData) error {
+func writeNodeStatusMap(cmdCtx *Context, status map[string]interface{}) error {
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
 		return output.WriteJSON(cmdCtx.Writer, status)
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, status)
 	default:
-		uptime := ""
-		if status.Uptime > 0 {
-			uptime = formatDuration(status.Uptime)
-		}
-		loadAvg := ""
-		if len(status.LoadAvg) > 0 {
-			parts := make([]string, len(status.LoadAvg))
-			for i, v := range status.LoadAvg {
-				parts[i] = fmt.Sprintf("%.2f", v)
-			}
-			loadAvg = strings.Join(parts, " ")
-		}
 		rows := [][]string{
-			{"NODE", status.Node},
-			{"STATUS", status.Status},
-			{"CPU", fmt.Sprintf("%.2f%%", status.CPU*100)},
-			{"MAX CPU", fmt.Sprintf("%d", status.MaxCPU)},
-			{"MEMORY", formatBytes(status.Mem)},
-			{"MAX MEMORY", formatBytes(status.MaxMem)},
-			{"DISK", formatBytes(status.Disk)},
-			{"MAX DISK", formatBytes(status.MaxDisk)},
-			{"UPTIME", uptime},
-			{"LEVEL", status.Level},
-			{"KVERSION", status.KVersion},
-			{"PVEVERSION", status.PVEVersion},
-			{"LOAD AVG", loadAvg},
+			{"NODE", fmt.Sprintf("%v", status["node"])},
+			{"STATUS", fmt.Sprintf("%v", status["status"])},
+			{"CPU", fmt.Sprintf("%.2f%%", toFloat(status["cpu"])*100)},
+			{"MAX CPU", fmt.Sprintf("%v", status["maxcpu"])},
+			{"MEMORY", formatBytes(toInt64(status["mem"]))},
+			{"MAX MEMORY", formatBytes(toInt64(status["maxmem"]))},
+			{"DISK", formatBytes(toInt64(status["disk"]))},
+			{"MAX DISK", formatBytes(toInt64(status["maxdisk"]))},
+			{"UPTIME", fmt.Sprintf("%v", status["uptime"])},
+			{"LEVEL", fmt.Sprintf("%v", status["level"])},
+			{"KVERSION", fmt.Sprintf("%v", status["kversion"])},
+			{"PVEVERSION", fmt.Sprintf("%v", status["pveversion"])},
+			{"LOAD AVG", fmt.Sprintf("%v", status["loadavg"])},
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
 }
 
-func formatDuration(seconds int) string {
-	d := time.Duration(seconds) * time.Second
-	hours := int(d.Hours())
-	minutes := int(d.Minutes()) % 60
-	secs := int(d.Seconds()) % 60
-	if hours > 0 {
-		return fmt.Sprintf("%dh %dm %ds", hours, minutes, secs)
+func toFloat(v interface{}) float64 {
+	switch val := v.(type) {
+	case float64:
+		return val
+	case int:
+		return float64(val)
+	case int64:
+		return float64(val)
+	default:
+		return 0
 	}
-	if minutes > 0 {
-		return fmt.Sprintf("%dm %ds", minutes, secs)
+}
+
+func toInt64(v interface{}) int64 {
+	switch val := v.(type) {
+	case int64:
+		return val
+	case float64:
+		return int64(val)
+	case int:
+		return int64(val)
+	default:
+		return 0
 	}
-	return fmt.Sprintf("%ds", secs)
 }
 
 func findNode(nodes []domain.Node, name string) (domain.Node, bool) {
