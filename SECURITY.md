@@ -6,7 +6,9 @@ Nodex is in early development and has no stable release series yet. Security fix
 
 ## Reporting a vulnerability
 
-Please report suspected vulnerabilities privately to the repository maintainer instead of opening a public issue with exploit details or secrets. Include the affected commit or version, a concise impact description, and safe reproduction steps using local test fixtures where possible.
+Please report suspected vulnerabilities privately to the repository maintainer instead of opening a public issue with exploit details or secrets. This repository does not currently publish a dedicated security-reporting email address in its documentation; if no private channel is available to you, open a public GitHub issue with only a minimal, non-sensitive summary and ask for a private coordination channel.
+
+Include the affected commit or version, a concise impact description, and safe reproduction steps using local test fixtures where possible.
 
 Do not include live Proxmox tokens, passwords, private keys, or authorization headers in reports. If a credential may have been exposed, rotate it before sharing diagnostics.
 
@@ -18,4 +20,4 @@ Out of scope unless explicitly authorized: testing against a live Proxmox server
 
 ## Disclosure expectations
 
-The maintainer will acknowledge reports when received, investigate reachability and impact, and coordinate a fix or documented mitigation. Public disclosure should wait until a fix or mitigation is available, or until coordinated timing has been agreed.
+The maintainer will investigate reachability and impact, then coordinate a fix or documented mitigation when appropriate. Public disclosure should wait until a fix or mitigation is available, or until coordinated timing has been agreed.

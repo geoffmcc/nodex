@@ -8,9 +8,8 @@ nodex \- open infrastructure management for self\-hosters
 [\fICOMMAND\-ARGS\fR]
 .SH DESCRIPTION
 .B nodex
-is a unified command\-line interface for managing self\-hosted infrastructure.
-It supports Proxmox VE with a provider\-based architecture that can be extended
-to other platforms.
+is a local command\-line interface for inspecting self\-hosted infrastructure.
+The current implementation supports read\-only Proxmox VE inspection commands.
 .SH GLOBAL FLAGS
 .TP
 .BI \-\-profile " " \fINAME\fR
@@ -46,14 +45,16 @@ Add a new connection profile.
 List all configured profiles.
 .SS nodex profile show \fINAME\fR
 Show details for a specific profile.
+.SS nodex profile set\-credentials \fINAME\fR [\-\-backend file|keyring] [\-\-credential\-name \fINAME\fR]
+Prompt for Proxmox API token credentials, store them, and update the profile credential reference.
 .SS nodex profile use \fINAME\fR
 Set the current active profile.
 .SS nodex profile current
 Show the current active profile.
 .SS nodex profile test [\fINAME\fR]
 Test connectivity for a profile.
-.SS nodex profile remove \fINAME\fR
-Remove a profile.
+.SS nodex profile remove \fINAME\fR [\-\-remove\-credential]
+Remove a profile, optionally deleting its referenced credential.
 .SS nodex provider list
 List available providers.
 .SS nodex provider capabilities \fINAME\fR
@@ -105,6 +106,7 @@ Interactive prompt (read\-only, does not store).
 .SH PROFILES
 Profiles are stored in \fI~/.config/nodex/config.yaml\fR.
 Each profile specifies a provider, endpoint, and optional credential reference.
+On Linux, \fIXDG_CONFIG_HOME\fR overrides \fI~/.config\fR. On macOS the configuration file is under \fI~/Library/Application Support/Nodex/\fR. On Windows it is under \fI%AppData%\\Nodex\\\fR.
 .SH EXIT CODES
 .TP
 .B 0
@@ -156,19 +158,19 @@ Credential files directory.
 Add a Proxmox profile:
 .PP
 .RS
-nodex profile add myserver
+nodex profile add lab
 .RE
 .PP
-Set the endpoint:
+Show the profile:
 .PP
 .RS
-nodex profile show myserver
+nodex profile show lab
 .RE
 .PP
 Test connectivity:
 .PP
 .RS
-nodex profile test myserver
+nodex profile test lab
 .RE
 .PP
 List nodes:
