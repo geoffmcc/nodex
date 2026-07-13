@@ -652,6 +652,98 @@ func TestWriteNodeDetailNilHandling(t *testing.T) {
 	}
 }
 
+func TestFirewallAdvancedSubcommandsRegistered(t *testing.T) {
+	cmd, ok := GetCommand("firewall")
+	if !ok {
+		t.Fatal("firewall command not registered")
+	}
+	subs := []string{"aliases", "ipsets", "ipset", "security-groups", "options", "node-rules", "vm-rules"}
+	for _, subName := range subs {
+		if _, ok := cmd.sub[subName]; !ok {
+			t.Fatalf("firewall command missing %s subcommand", subName)
+		}
+	}
+}
+
+func TestFirewallAdvancedSubcommandsRejectWrongArgCount(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "aliases-extra", args: []string{"firewall", "aliases", "extra"}},
+		{name: "ipsets-extra", args: []string{"firewall", "ipsets", "extra"}},
+		{name: "ipset-no-name", args: []string{"firewall", "ipset"}},
+		{name: "ipset-extra", args: []string{"firewall", "ipset", "name", "extra"}},
+		{name: "security-groups-extra", args: []string{"firewall", "security-groups", "extra"}},
+		{name: "options-extra", args: []string{"firewall", "options", "extra"}},
+		{name: "node-rules-no-node", args: []string{"firewall", "node-rules"}},
+		{name: "node-rules-extra", args: []string{"firewall", "node-rules", "node1", "extra"}},
+		{name: "vm-rules-no-arg", args: []string{"firewall", "vm-rules"}},
+		{name: "vm-rules-bad-format", args: []string{"firewall", "vm-rules", "not-node/vmid-format"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfigAndHome(t)
+			setupE2EConfig(t)
+
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err == nil {
+				t.Fatal("expected usage error")
+			}
+			var exitCode *app.ExitCoder
+			if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+				t.Fatalf("error = %v, want ExitUsage", err)
+			}
+		})
+	}
+}
+
+func TestRun_FirewallAliases(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"firewall", "aliases"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+func TestRun_FirewallOptions(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"firewall", "options"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+func TestWriteFirewallAdvancedNilHandling(t *testing.T) {
+	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+		t.Run(string(format), func(t *testing.T) {
+			ctx := &Context{Writer: &bytes.Buffer{}, Opts: Options{Output: format}}
+			if err := writeFirewallAliases(ctx, nil); err != nil {
+				t.Fatalf("writeFirewallAliases nil: %v", err)
+			}
+			if err := writeFirewallIPSets(ctx, nil); err != nil {
+				t.Fatalf("writeFirewallIPSets nil: %v", err)
+			}
+			if err := writeFirewallIPSetEntries(ctx, nil); err != nil {
+				t.Fatalf("writeFirewallIPSetEntries nil: %v", err)
+			}
+			if err := writeFirewallSecurityGroups(ctx, nil); err != nil {
+				t.Fatalf("writeFirewallSecurityGroups nil: %v", err)
+			}
+			if err := writeFirewallOptionsTable(ctx, nil); err != nil {
+				t.Fatalf("writeFirewallOptionsTable nil: %v", err)
+			}
+		})
+	}
+}
+
 func TestWriteEmptyResourceListsAsStructuredArrays(t *testing.T) {
 	tests := []struct {
 		name  string
