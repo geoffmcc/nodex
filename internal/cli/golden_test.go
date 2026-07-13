@@ -60,6 +60,14 @@ func TestGoldenJSON(t *testing.T) {
 		{name: "ha_list", args: []string{"--output", "json", "ha", "list"}},
 		{name: "ha_groups", args: []string{"--output", "json", "ha", "groups"}},
 		{name: "status", args: []string{"--output", "json", "status"}},
+		{name: "node_services", args: []string{"--output", "json", "node", "services", "e2e-node"}},
+		{name: "node_network", args: []string{"--output", "json", "node", "network", "e2e-node"}},
+		{name: "node_dns", args: []string{"--output", "json", "node", "dns", "e2e-node"}},
+		{name: "node_time", args: []string{"--output", "json", "node", "time", "e2e-node"}},
+		{name: "node_disks", args: []string{"--output", "json", "node", "disks", "e2e-node"}},
+		{name: "node_certificates", args: []string{"--output", "json", "node", "certificates", "e2e-node"}},
+		{name: "node_subscription", args: []string{"--output", "json", "node", "subscription", "e2e-node"}},
+		{name: "node_updates", args: []string{"--output", "json", "node", "updates", "e2e-node"}},
 	}
 
 	goldenDir := filepath.Join("testdata", "golden")
