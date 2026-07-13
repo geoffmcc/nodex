@@ -53,6 +53,7 @@ Manage nodes.
 
 ```
 nodex node list
+nodex node show <name>
 ```
 
 ### nodex vm
@@ -61,6 +62,7 @@ Manage virtual machines.
 
 ```
 nodex vm list
+nodex vm show <id>
 ```
 
 ### nodex container
@@ -69,6 +71,7 @@ Manage containers.
 
 ```
 nodex container list
+nodex container show <id>
 ```
 
 ### nodex storage
@@ -77,6 +80,7 @@ Manage storage.
 
 ```
 nodex storage list
+nodex storage show <name>
 ```
 
 ### nodex doctor

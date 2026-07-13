@@ -31,9 +31,13 @@ nodex init                    # create config
 nodex profile add home        # add a Proxmox endpoint
 nodex profile test            # verify connectivity
 nodex node list               # list nodes
+nodex node show proxmox       # show node details
 nodex vm list                 # list VMs
+nodex vm show proxmox/100     # show VM details
 nodex container list          # list containers
+nodex container show proxmox/200
 nodex storage list            # list storage
+nodex storage show local-lvm
 ```
 
 ## Configuration
@@ -58,10 +62,10 @@ nodex init
 nodex profile add|list|show|use|current|test|remove
 nodex provider list|capabilities
 nodex doctor
-nodex node list
-nodex vm list
-nodex container list
-nodex storage list
+nodex node list|show
+nodex vm list|show
+nodex container list|show
+nodex storage list|show
 ```
 
 ## Output

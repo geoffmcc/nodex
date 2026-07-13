@@ -76,15 +76,19 @@ func init() {
 	)
 	register("node", "Manage nodes", nil,
 		&command{name: "list", short: "List all nodes", run: runNodeList},
+		&command{name: "show", short: "Show node details", run: runNodeShow},
 	)
 	register("vm", "Manage virtual machines", nil,
 		&command{name: "list", short: "List all VMs", run: runVMList},
+		&command{name: "show", short: "Show VM details", run: runVMShow},
 	)
 	register("container", "Manage containers", nil,
 		&command{name: "list", short: "List all containers", run: runContainerList},
+		&command{name: "show", short: "Show container details", run: runContainerShow},
 	)
 	register("storage", "Manage storage", nil,
 		&command{name: "list", short: "List all storage pools", run: runStorageList},
+		&command{name: "show", short: "Show storage details", run: runStorageShow},
 	)
 	register("doctor", "Check system health", runDoctor)
 }
