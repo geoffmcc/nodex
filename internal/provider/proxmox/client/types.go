@@ -137,3 +137,71 @@ type ClusterStatusItem struct {
 
 // ClusterStatus is a convenience alias.
 type ClusterStatus = ClusterStatusResponse
+
+// VMConfigResponse is the response from /nodes/{node}/qemu/{vmid}/config.
+type VMConfigResponse struct {
+	Data VMConfigData `json:"data"`
+}
+
+// VMConfigData holds VM configuration information.
+type VMConfigData struct {
+	VMID        int               `json:"vmid"`
+	Name        string            `json:"name,omitempty"`
+	CPU         int               `json:"cores,omitempty"`
+	Memory      int               `json:"memory,omitempty"`
+	Net0        string            `json:"net0,omitempty"`
+	Scsi0       string            `json:"scsi0,omitempty"`
+	Boot        string            `json:"boot,omitempty"`
+	OnBoot      int               `json:"onboot,omitempty"`
+	Agent       int               `json:"agent,omitempty"`
+	SMBIOS1     string            `json:"smbios1,omitempty"`
+	Numa        int               `json:"numa,omitempty"`
+	OSType      string            `json:"ostype,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Protection  int               `json:"protection,omitempty"`
+	Tags        string            `json:"tags,omitempty"`
+	VMGenID     string            `json:"vmgenid,omitempty"`
+	Args        string            `json:"args,omitempty"`
+	Bios        string            `json:"bios,omitempty"`
+	IDE2        string            `json:"ide2,omitempty"`
+	ScsiHW      string            `json:"scsihw,omitempty"`
+	Unused0     string            `json:"unused0,omitempty"`
+	Raw         map[string]string `json:"raw,omitempty"`
+}
+
+// VMConfig is a convenience alias.
+type VMConfig = VMConfigResponse
+
+// ContainerConfigResponse is the response from /nodes/{node}/lxc/{vmid}/config.
+type ContainerConfigResponse struct {
+	Data ContainerConfigData `json:"data"`
+}
+
+// ContainerConfigData holds container configuration information.
+type ContainerConfigData struct {
+	VMID         int               `json:"vmid"`
+	Hostname     string            `json:"hostname,omitempty"`
+	CPU          int               `json:"cores,omitempty"`
+	Memory       int               `json:"memory,omitempty"`
+	Swap         int               `json:"swap,omitempty"`
+	Rootfs       string            `json:"rootfs,omitempty"`
+	MP0          string            `json:"mp0,omitempty"`
+	Net0         string            `json:"net0,omitempty"`
+	OnBoot       int               `json:"onboot,omitempty"`
+	OSType       string            `json:"ostype,omitempty"`
+	Description  string            `json:"description,omitempty"`
+	Protection   int               `json:"protection,omitempty"`
+	Tags         string            `json:"tags,omitempty"`
+	Unfiltered   int               `json:"unfiltered,omitempty"`
+	Features     string            `json:"features,omitempty"`
+	Architecture string            `json:"architecture,omitempty"`
+	Nameserver   string            `json:"nameserver,omitempty"`
+	SearchDomain string            `json:"searchdomain,omitempty"`
+	Dev0         string            `json:"dev0,omitempty"`
+	Fstab        string            `json:"fstab,omitempty"`
+	Hookscript   string            `json:"hookscript,omitempty"`
+	Raw          map[string]string `json:"raw,omitempty"`
+}
+
+// ContainerConfig is a convenience alias.
+type ContainerConfig = ContainerConfigResponse

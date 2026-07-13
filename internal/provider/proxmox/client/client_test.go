@@ -262,3 +262,89 @@ func TestGetClusterStatusDecodesQuorumAndNodes(t *testing.T) {
 		t.Fatalf("node disk = %d/%d", items[1].Localdisk, items[1].Maxdisk)
 	}
 }
+
+func TestGetVMConfigDecodesConfigFields(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/qemu/100/config" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":{"vmid":100,"name":"test-vm","cores":2,"memory":2048,"net0":"virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0","scsi0":"local-lvm:vm-100-disk-0,size=32G","onboot":1,"ostype":"l26","description":"Test VM","tags":"test,dev"}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	config, err := c.GetVMConfig(context.Background(), "proxmox", 100)
+	if err != nil {
+		t.Fatalf("GetVMConfig: %v", err)
+	}
+	if config.VMID != 100 || config.Name != "test-vm" {
+		t.Fatalf("vmid/name = %d/%q", config.VMID, config.Name)
+	}
+	if config.CPU != 2 || config.Memory != 2048 {
+		t.Fatalf("cpu/memory = %d/%d", config.CPU, config.Memory)
+	}
+	if config.OnBoot != 1 || config.OSType != "l26" {
+		t.Fatalf("onboot/ostype = %d/%q", config.OnBoot, config.OSType)
+	}
+	if config.Description != "Test VM" || config.Tags != "test,dev" {
+		t.Fatalf("description/tags = %q/%q", config.Description, config.Tags)
+	}
+}
+
+func TestGetVMConfigRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetVMConfig(context.Background(), "", 100)
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("GetVMConfig('') error = %v, want node name required", err)
+	}
+}
+
+func TestGetVMConfigRejectsZeroVMID(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetVMConfig(context.Background(), "proxmox", 0)
+	if err == nil || !strings.Contains(err.Error(), "VMID is required") {
+		t.Fatalf("GetVMConfig(0) error = %v, want VMID required", err)
+	}
+}
+
+func TestGetContainerConfigDecodesConfigFields(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/lxc/200/config" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":{"vmid":200,"hostname":"test-ct","cores":1,"memory":512,"swap":256,"rootfs":"local-lvm:vm-200-disk-0,size=8G","net0":"name=eth0,bridge=vmbr0,hwaddr=AA:BB:CC:DD:EE:FF,ip=dhcp","onboot":1,"ostype":"debian","description":"Test Container"}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	config, err := c.GetContainerConfig(context.Background(), "proxmox", 200)
+	if err != nil {
+		t.Fatalf("GetContainerConfig: %v", err)
+	}
+	if config.VMID != 200 || config.Hostname != "test-ct" {
+		t.Fatalf("vmid/hostname = %d/%q", config.VMID, config.Hostname)
+	}
+	if config.CPU != 1 || config.Memory != 512 || config.Swap != 256 {
+		t.Fatalf("cpu/memory/swap = %d/%d/%d", config.CPU, config.Memory, config.Swap)
+	}
+	if config.OnBoot != 1 || config.OSType != "debian" {
+		t.Fatalf("onboot/ostype = %d/%q", config.OnBoot, config.OSType)
+	}
+	if config.Description != "Test Container" {
+		t.Fatalf("description = %q", config.Description)
+	}
+}
+
+func TestGetContainerConfigRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetContainerConfig(context.Background(), "", 200)
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("GetContainerConfig('') error = %v, want node name required", err)
+	}
+}
+
+func TestGetContainerConfigRejectsZeroVMID(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetContainerConfig(context.Background(), "proxmox", 0)
+	if err == nil || !strings.Contains(err.Error(), "VMID is required") {
+		t.Fatalf("GetContainerConfig(0) error = %v, want VMID required", err)
+	}
+}

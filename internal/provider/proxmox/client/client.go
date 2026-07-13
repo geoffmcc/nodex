@@ -169,6 +169,38 @@ func (c *Client) GetClusterStatus(ctx context.Context) ([]ClusterStatusItem, err
 	return resp.Data, nil
 }
 
+// GetVMConfig returns configuration for a specific VM.
+func (c *Client) GetVMConfig(ctx context.Context, node string, vmid int) (*VMConfigData, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return nil, fmt.Errorf("VMID is required")
+	}
+	var resp VMConfigResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/config"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// GetContainerConfig returns configuration for a specific container.
+func (c *Client) GetContainerConfig(ctx context.Context, node string, vmid int) (*ContainerConfigData, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return nil, fmt.Errorf("VMID is required")
+	}
+	var resp ContainerConfigResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/config"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil

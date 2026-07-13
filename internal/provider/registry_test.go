@@ -21,6 +21,12 @@ func (m *mockProvider) VMs(_ context.Context) ([]domain.VM, error)              
 func (m *mockProvider) Containers(_ context.Context) ([]domain.Container, error)         { return nil, nil }
 func (m *mockProvider) Storage(_ context.Context) ([]domain.Storage, error)              { return nil, nil }
 func (m *mockProvider) Cluster(_ context.Context) (*domain.Cluster, error)               { return nil, nil }
+func (m *mockProvider) VMConfig(_ context.Context, _ string, _ int) (map[string]interface{}, error) {
+	return nil, nil
+}
+func (m *mockProvider) ContainerConfig(_ context.Context, _ string, _ int) (map[string]interface{}, error) {
+	return nil, nil
+}
 
 func TestRegisterAndGet(t *testing.T) {
 	factory := func() domain.Provider { return &mockProvider{name: "test-provider"} }
