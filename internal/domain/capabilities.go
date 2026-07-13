@@ -316,4 +316,156 @@ const (
 	CapabilityMigration        Capability = "migration"
 	CapabilityClone            Capability = "clone"
 	CapabilityDisk             Capability = "disk"
+	CapabilityNetworkMutation  Capability = "network_mutation"
+	CapabilityFirewallMutation Capability = "firewall_mutation"
+	CapabilityAccess           Capability = "access"
 )
+
+// NetworkMutationProvider exposes network configuration mutation operations.
+type NetworkMutationProvider interface {
+	ApplyNodeNetwork(ctx context.Context, node string, config map[string]string) error
+	RevertNodeNetwork(ctx context.Context, node string) error
+}
+
+// FirewallMutationProvider exposes firewall rule, alias, IP set, group, and options mutations.
+type FirewallMutationProvider interface {
+	// Rule mutations (cluster level).
+	CreateFirewallRule(ctx context.Context, rule FirewallRuleCreateInput) (*FirewallRule, error)
+	UpdateFirewallRule(ctx context.Context, pos int, rule FirewallRuleCreateInput) error
+	DeleteFirewallRule(ctx context.Context, pos int) error
+
+	// Rule mutations (node level).
+	CreateNodeFirewallRule(ctx context.Context, node string, rule FirewallRuleCreateInput) (*FirewallRule, error)
+	UpdateNodeFirewallRule(ctx context.Context, node string, pos int, rule FirewallRuleCreateInput) error
+	DeleteNodeFirewallRule(ctx context.Context, node string, pos int) error
+
+	// Rule mutations (VM level).
+	CreateVMFirewallRule(ctx context.Context, node string, vmid int, rule FirewallRuleCreateInput) (*FirewallRule, error)
+	UpdateVMFirewallRule(ctx context.Context, node string, vmid int, pos int, rule FirewallRuleCreateInput) error
+	DeleteVMFirewallRule(ctx context.Context, node string, vmid int, pos int) error
+
+	// Rule mutations (CT level).
+	CreateCTFirewallRule(ctx context.Context, node string, vmid int, rule FirewallRuleCreateInput) (*FirewallRule, error)
+	UpdateCTFirewallRule(ctx context.Context, node string, vmid int, pos int, rule FirewallRuleCreateInput) error
+	DeleteCTFirewallRule(ctx context.Context, node string, vmid int, pos int) error
+
+	// Alias mutations.
+	CreateFirewallAlias(ctx context.Context, name, cidr, comment string) error
+	DeleteFirewallAlias(ctx context.Context, name string) error
+
+	// IP set mutations.
+	CreateFirewallIPSet(ctx context.Context, name, comment string) error
+	AddFirewallIPSetEntry(ctx context.Context, name, cidr, comment string) error
+	RemoveFirewallIPSetEntry(ctx context.Context, name, cidr string) error
+	DeleteFirewallIPSet(ctx context.Context, name string) error
+
+	// Security group mutations.
+	CreateFirewallGroup(ctx context.Context, name, comment string) error
+	DeleteFirewallGroup(ctx context.Context, name string) error
+
+	// Options mutations.
+	UpdateFirewallOptions(ctx context.Context, opts FirewallOptionsUpdateInput) error
+}
+
+// FirewallRuleCreateInput holds the fields for creating or updating a firewall rule.
+type FirewallRuleCreateInput struct {
+	Type     string
+	Action   string
+	Enable   int
+	Pos      int
+	Proto    string
+	Dest     string
+	Dport    string
+	Source   string
+	Sport    string
+	ICMPType string
+	Log      string
+	Comment  string
+	IFace    string
+	Macro    string
+}
+
+// FirewallOptionsUpdateInput holds the fields for updating firewall options.
+type FirewallOptionsUpdateInput struct {
+	Enable       int
+	PolicyIn     string
+	PolicyOut    string
+	LogInDrop    int
+	LogRateLimit string
+	NFConntrack  int
+	Digest       string
+}
+
+// AccessProvider exposes identity management operations.
+type AccessProvider interface {
+	// Read-only operations.
+	Users(ctx context.Context) ([]AccessUser, error)
+	Groups(ctx context.Context) ([]AccessGroup, error)
+	Roles(ctx context.Context) ([]AccessRole, error)
+	ACL(ctx context.Context) ([]AccessACLEntry, error)
+	Domains(ctx context.Context) ([]AccessDomain, error)
+	Tokens(ctx context.Context, user string) ([]AccessToken, error)
+
+	// Expert-mode mutations (Tier 4).
+	CreateUser(ctx context.Context, userid, password, email, firstname, lastname, comment string) error
+	DeleteUser(ctx context.Context, userid string) error
+	AddACL(ctx context.Context, path, role, user, group string, propagate int) error
+}
+
+// --- Identity domain types ---
+
+// AccessUser represents a Proxmox VE user.
+type AccessUser struct {
+	UserID    string `json:"userid" yaml:"userid"`
+	Comment   string `json:"comment,omitempty" yaml:"comment,omitempty"`
+	Email     string `json:"email,omitempty" yaml:"email,omitempty"`
+	Enable    int    `json:"enable" yaml:"enable"`
+	Expire    int64  `json:"expire,omitempty" yaml:"expire,omitempty"`
+	FirstName string `json:"firstname,omitempty" yaml:"firstname,omitempty"`
+	LastName  string `json:"lastname,omitempty" yaml:"lastname,omitempty"`
+	Tokens    int    `json:"tokens,omitempty" yaml:"tokens,omitempty"`
+}
+
+// AccessGroup represents a Proxmox VE group.
+type AccessGroup struct {
+	GroupID string   `json:"groupid" yaml:"groupid"`
+	Comment string   `json:"comment,omitempty" yaml:"comment,omitempty"`
+	Members []string `json:"members,omitempty" yaml:"members,omitempty"`
+}
+
+// AccessRole represents a Proxmox VE role.
+type AccessRole struct {
+	RoleID  string `json:"roleid" yaml:"roleid"`
+	Privs   string `json:"privs,omitempty" yaml:"privs,omitempty"`
+	Special int    `json:"special,omitempty" yaml:"special,omitempty"`
+}
+
+// AccessACLEntry represents a Proxmox VE ACL entry.
+type AccessACLEntry struct {
+	Path      string `json:"path" yaml:"path"`
+	Type      string `json:"type" yaml:"type"`
+	RoleID    string `json:"roleid" yaml:"roleid"`
+	Propagate int    `json:"propagate,omitempty" yaml:"propagate,omitempty"`
+	UserID    string `json:"userid,omitempty" yaml:"userid,omitempty"`
+	GroupID   string `json:"groupid,omitempty" yaml:"groupid,omitempty"`
+}
+
+// AccessDomain represents a Proxmox VE authentication realm.
+type AccessDomain struct {
+	Realm   string `json:"realm" yaml:"realm"`
+	Type    string `json:"type" yaml:"type"`
+	Comment string `json:"comment,omitempty" yaml:"comment,omitempty"`
+	Default int    `json:"default,omitempty" yaml:"default,omitempty"`
+	TFA     string `json:"tfa,omitempty" yaml:"tfa,omitempty"`
+}
+
+// AccessToken represents a Proxmox VE API token (metadata only).
+type AccessToken struct {
+	TokenID  string `json:"tokenid" yaml:"tokenid"`
+	Comment  string `json:"comment,omitempty" yaml:"comment,omitempty"`
+	Expire   int64  `json:"expire,omitempty" yaml:"expire,omitempty"`
+	Privsep  int    `json:"privsep,omitempty" yaml:"privsep,omitempty"`
+	Created  int64  `json:"created,omitempty" yaml:"created,omitempty"`
+	UserID   string `json:"userid,omitempty" yaml:"userid,omitempty"`
+	Disabled int    `json:"disabled,omitempty" yaml:"disabled,omitempty"`
+}

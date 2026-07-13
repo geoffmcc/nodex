@@ -28,6 +28,7 @@ type Options struct {
 	Yes            bool
 	Force          bool
 	Wait           bool
+	Expert         bool
 }
 
 // Context carries global state through command execution.
@@ -172,11 +173,14 @@ func init() {
 	)
 	register("firewall", "Manage firewall", nil,
 		&command{name: "list", short: "List firewall rules", run: runFirewallList},
+		&command{name: "rule", short: "Manage firewall rules", run: runFirewallRuleDispatch},
 		&command{name: "aliases", short: "List firewall aliases", run: runFirewallAliases},
+		&command{name: "alias", short: "Manage firewall aliases", run: runFirewallAliasDispatch},
 		&command{name: "ipsets", short: "List firewall IP sets", run: runFirewallIPSets},
-		&command{name: "ipset", short: "Show IP set entries", run: runFirewallIPSet},
+		&command{name: "ipset", short: "Manage firewall IP sets", run: runFirewallIPSetDispatch},
 		&command{name: "security-groups", short: "List firewall security groups", run: runFirewallSecurityGroups},
-		&command{name: "options", short: "Show firewall options", run: runFirewallOptions},
+		&command{name: "group", short: "Manage firewall security groups", run: runFirewallGroupDispatch},
+		&command{name: "options", short: "Manage firewall options", run: runFirewallOptionsDispatch},
 		&command{name: "node-rules", short: "List node-level firewall rules", run: runFirewallNodeRules},
 		&command{name: "vm-rules", short: "List VM-level firewall rules", run: runFirewallVMRules},
 	)
@@ -192,6 +196,20 @@ func init() {
 	)
 	register("pools", "Manage resource pools", nil,
 		&command{name: "list", short: "List all resource pools", run: runPoolsList},
+	)
+	register("network", "Manage network configuration", nil,
+		&command{name: "show", short: "Show node network interfaces", run: runNetworkShow},
+		&command{name: "apply", short: "Apply network configuration", run: runNetworkApply},
+		&command{name: "revert", short: "Revert pending network changes", run: runNetworkRevert},
+	)
+	register("access", "Manage access and identity", nil,
+		&command{name: "users", short: "Manage users", run: runAccessUsersDispatch},
+		&command{name: "groups", short: "Manage groups", run: runAccessGroupsDispatch},
+		&command{name: "roles", short: "Manage roles", run: runAccessRolesDispatch},
+		&command{name: "acl", short: "Manage ACL entries", run: runAccessACLDispatch},
+		&command{name: "domains", short: "Manage authentication domains", run: runAccessDomainsDispatch},
+		&command{name: "tokens", short: "Manage API tokens", run: runAccessTokensDispatch},
+		&command{name: "user", short: "Manage individual users", run: runAccessUserDispatch},
 	)
 }
 
@@ -292,6 +310,7 @@ func parseGlobal(args []string) (Options, []string, error) {
 	fs.BoolVar(&opts.Yes, "yes", false, "")
 	fs.BoolVar(&opts.Force, "force", false, "")
 	fs.BoolVar(&opts.Wait, "wait", false, "")
+	fs.BoolVar(&opts.Expert, "expert", false, "")
 
 	if err := fs.Parse(args); err != nil {
 		return opts, nil, err
@@ -361,6 +380,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --yes                Confirm reversible operations (Tier 1)")
 	fmt.Fprintln(w, "  --force              Confirm disruptive operations (Tier 2, requires --yes)")
 	fmt.Fprintln(w, "  --wait               Wait for the task to complete before exiting")
+	fmt.Fprintln(w, "  --expert             Enable expert-mode operations (Tier 4: identity, ACL changes)")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Run 'nodex help <command>' for details on a specific command.")
 }
