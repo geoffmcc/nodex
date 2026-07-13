@@ -320,7 +320,7 @@ func TestWriteResourceShowOutput(t *testing.T) {
 	})
 }
 
-func TestWriteEmptyResourceListsAsJSONArrays(t *testing.T) {
+func TestWriteEmptyResourceListsAsStructuredArrays(t *testing.T) {
 	tests := []struct {
 		name  string
 		write func(*Context) error
@@ -330,15 +330,17 @@ func TestWriteEmptyResourceListsAsJSONArrays(t *testing.T) {
 		{name: "storage", write: func(ctx *Context) error { return writeStorages(ctx, nil) }},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var stdout bytes.Buffer
-			cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: output.FormatJSON}}
-			if err := tt.write(cmdCtx); err != nil {
-				t.Fatalf("write: %v", err)
-			}
-			if got := strings.TrimSpace(stdout.String()); got != "[]" {
-				t.Fatalf("JSON output = %q, want []", got)
-			}
-		})
+		for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+			t.Run(tt.name+"/"+string(format), func(t *testing.T) {
+				var stdout bytes.Buffer
+				cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: format}}
+				if err := tt.write(cmdCtx); err != nil {
+					t.Fatalf("write: %v", err)
+				}
+				if got := strings.TrimSpace(stdout.String()); got != "[]" {
+					t.Fatalf("%s output = %q, want []", format, got)
+				}
+			})
+		}
 	}
 }
