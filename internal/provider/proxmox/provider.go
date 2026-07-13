@@ -166,3 +166,152 @@ func (p *Provider) TestConnectivity(ctx context.Context) (*client.VersionData, e
 	}
 	return version, nil
 }
+
+// VMConfig returns configuration for a specific VM.
+func (p *Provider) VMConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	config, err := p.client.GetVMConfig(ctx, node, vmid)
+	if err != nil {
+		return nil, fmt.Errorf("get vm config: %w", err)
+	}
+	return vmConfigToMap(config), nil
+}
+
+// ContainerConfig returns configuration for a specific container.
+func (p *Provider) ContainerConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	config, err := p.client.GetContainerConfig(ctx, node, vmid)
+	if err != nil {
+		return nil, fmt.Errorf("get container config: %w", err)
+	}
+	return containerConfigToMap(config), nil
+}
+
+func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
+	m := map[string]interface{}{
+		"vmid": c.VMID,
+	}
+	if c.Name != "" {
+		m["name"] = c.Name
+	}
+	if c.CPU > 0 {
+		m["cores"] = c.CPU
+	}
+	if c.Memory > 0 {
+		m["memory"] = c.Memory
+	}
+	if c.Net0 != "" {
+		m["net0"] = c.Net0
+	}
+	if c.Scsi0 != "" {
+		m["scsi0"] = c.Scsi0
+	}
+	if c.Boot != "" {
+		m["boot"] = c.Boot
+	}
+	if c.OnBoot != 0 {
+		m["onboot"] = c.OnBoot
+	}
+	if c.Agent != 0 {
+		m["agent"] = c.Agent
+	}
+	if c.OSType != "" {
+		m["ostype"] = c.OSType
+	}
+	if c.Description != "" {
+		m["description"] = c.Description
+	}
+	if c.Protection != 0 {
+		m["protection"] = c.Protection
+	}
+	if c.Tags != "" {
+		m["tags"] = c.Tags
+	}
+	if c.ScsiHW != "" {
+		m["scsihw"] = c.ScsiHW
+	}
+	if c.Bios != "" {
+		m["bios"] = c.Bios
+	}
+	if c.IDE2 != "" {
+		m["ide2"] = c.IDE2
+	}
+	if c.Args != "" {
+		m["args"] = c.Args
+	}
+	if c.VMGenID != "" {
+		m["vmgenid"] = c.VMGenID
+	}
+	if c.SMBIOS1 != "" {
+		m["smbios1"] = c.SMBIOS1
+	}
+	if c.Numa != 0 {
+		m["numa"] = c.Numa
+	}
+	return m
+}
+
+func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} {
+	m := map[string]interface{}{
+		"vmid": c.VMID,
+	}
+	if c.Hostname != "" {
+		m["hostname"] = c.Hostname
+	}
+	if c.CPU > 0 {
+		m["cores"] = c.CPU
+	}
+	if c.Memory > 0 {
+		m["memory"] = c.Memory
+	}
+	if c.Swap > 0 {
+		m["swap"] = c.Swap
+	}
+	if c.Rootfs != "" {
+		m["rootfs"] = c.Rootfs
+	}
+	if c.MP0 != "" {
+		m["mp0"] = c.MP0
+	}
+	if c.Net0 != "" {
+		m["net0"] = c.Net0
+	}
+	if c.OnBoot != 0 {
+		m["onboot"] = c.OnBoot
+	}
+	if c.OSType != "" {
+		m["ostype"] = c.OSType
+	}
+	if c.Description != "" {
+		m["description"] = c.Description
+	}
+	if c.Protection != 0 {
+		m["protection"] = c.Protection
+	}
+	if c.Tags != "" {
+		m["tags"] = c.Tags
+	}
+	if c.Features != "" {
+		m["features"] = c.Features
+	}
+	if c.Architecture != "" {
+		m["architecture"] = c.Architecture
+	}
+	if c.Nameserver != "" {
+		m["nameserver"] = c.Nameserver
+	}
+	if c.SearchDomain != "" {
+		m["searchdomain"] = c.SearchDomain
+	}
+	if c.Fstab != "" {
+		m["fstab"] = c.Fstab
+	}
+	if c.Hookscript != "" {
+		m["hookscript"] = c.Hookscript
+	}
+	return m
+}

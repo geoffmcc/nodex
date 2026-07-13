@@ -84,10 +84,12 @@ func init() {
 	register("vm", "Manage virtual machines", nil,
 		&command{name: "list", short: "List all VMs", run: runVMList},
 		&command{name: "show", short: "Show VM details", run: runVMShow},
+		&command{name: "config", short: "Show VM configuration", run: runVMConfig},
 	)
 	register("container", "Manage containers", nil,
 		&command{name: "list", short: "List all containers", run: runContainerList},
 		&command{name: "show", short: "Show container details", run: runContainerShow},
+		&command{name: "config", short: "Show container configuration", run: runContainerConfig},
 	)
 	register("storage", "Manage storage", nil,
 		&command{name: "list", short: "List all storage pools", run: runStorageList},

@@ -33,6 +33,12 @@ type Provider interface {
 
 	// Cluster returns cluster information.
 	Cluster(ctx context.Context) (*Cluster, error)
+
+	// VMConfig returns configuration for a specific VM.
+	VMConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error)
+
+	// ContainerConfig returns configuration for a specific container.
+	ContainerConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error)
 }
 
 // Credentials holds authentication information for a provider.

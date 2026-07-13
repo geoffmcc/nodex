@@ -51,6 +51,23 @@ func (p *e2eMockProvider) Storage(_ context.Context) ([]domain.Storage, error) {
 func (p *e2eMockProvider) Cluster(_ context.Context) (*domain.Cluster, error) {
 	return &domain.Cluster{Name: "e2e", Version: "test", Nodes: 1}, nil
 }
+func (p *e2eMockProvider) VMConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"vmid":   vmid,
+		"name":   "e2e-vm",
+		"cores":  2,
+		"memory": 1024,
+	}, nil
+}
+func (p *e2eMockProvider) ContainerConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"vmid":     vmid,
+		"hostname": "e2e-ct",
+		"cores":    1,
+		"memory":   512,
+		"swap":     256,
+	}, nil
+}
 
 func TestRunE2EWithMockProvider(t *testing.T) {
 	isolateConfigAndHome(t)
@@ -81,6 +98,8 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "container list", args: []string{"--output", "json", "container", "list"}, want: []string{`"id": "e2e-node/200"`, `"os": "debian"`}},
 		{name: "storage show", args: []string{"--output", "json", "storage", "show", "local"}, want: []string{`"id": "storage/e2e-node/local"`, `"avail": 3072`}},
 		{name: "cluster status", args: []string{"--output", "json", "cluster", "status"}, want: []string{`"name": "e2e"`, `"version": "test"`, `"nodes": 1`}},
+		{name: "vm config", args: []string{"--output", "json", "vm", "config", "e2e-node/100"}, want: []string{`"vmid": 100`, `"name": "e2e-vm"`, `"cores": 2`}},
+		{name: "container config", args: []string{"--output", "json", "container", "config", "e2e-node/200"}, want: []string{`"vmid": 200`, `"hostname": "e2e-ct"`, `"cores": 1`}},
 	}
 
 	for _, tt := range tests {

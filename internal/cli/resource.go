@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -528,6 +529,78 @@ func writeClusterStatus(cmdCtx *Context, cluster *domain.Cluster) error {
 			{"NAME", cluster.Name},
 			{"VERSION", cluster.Version},
 			{"NODES", fmt.Sprintf("%d", cluster.Nodes)},
+		}
+		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
+	}
+}
+
+func runVMConfig(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex vm config <node/vmid>"), app.ExitUsage)
+	}
+	parts := strings.SplitN(args[0], "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex vm config <node/vmid>"), app.ExitUsage)
+	}
+	node := parts[0]
+	vmid, err := strconv.Atoi(parts[1])
+	if err != nil || vmid <= 0 {
+		return app.NewExitError(fmt.Errorf("invalid VMID: %s", parts[1]), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	config, err := prov.VMConfig(ctx, node, vmid)
+	if err != nil {
+		return fmt.Errorf("get vm config: %w", err)
+	}
+	return writeConfig(cmdCtx, config)
+}
+
+func runContainerConfig(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex container config <node/vmid>"), app.ExitUsage)
+	}
+	parts := strings.SplitN(args[0], "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex container config <node/vmid>"), app.ExitUsage)
+	}
+	node := parts[0]
+	vmid, err := strconv.Atoi(parts[1])
+	if err != nil || vmid <= 0 {
+		return app.NewExitError(fmt.Errorf("invalid VMID: %s", parts[1]), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	config, err := prov.ContainerConfig(ctx, node, vmid)
+	if err != nil {
+		return fmt.Errorf("get container config: %w", err)
+	}
+	return writeConfig(cmdCtx, config)
+}
+
+func writeConfig(cmdCtx *Context, config map[string]interface{}) error {
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, config)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, config)
+	default:
+		keys := make([]string, 0, len(config))
+		for k := range config {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		rows := make([][]string, 0, len(keys))
+		for _, k := range keys {
+			rows = append(rows, []string{strings.ToUpper(k), fmt.Sprintf("%v", config[k])})
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
