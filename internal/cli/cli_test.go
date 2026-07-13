@@ -183,6 +183,45 @@ func TestRun_RejectsInvalidTimeout(t *testing.T) {
 	}
 }
 
+func TestResourceShowSubcommandsRegistered(t *testing.T) {
+	for _, commandName := range []string{"node", "vm", "container", "storage"} {
+		cmd, ok := GetCommand(commandName)
+		if !ok {
+			t.Fatalf("command %q not registered", commandName)
+		}
+		if _, ok := cmd.sub["show"]; !ok {
+			t.Fatalf("command %q missing show subcommand", commandName)
+		}
+	}
+}
+
+func TestResourceShowRejectsWrongArgCounts(t *testing.T) {
+	tests := []struct {
+		name string
+		run  CommandFunc
+		args []string
+	}{
+		{name: "node", run: runNodeShow},
+		{name: "vm", run: runVMShow},
+		{name: "container", run: runContainerShow},
+		{name: "storage", run: runStorageShow},
+		{name: "node-extra", run: runNodeShow, args: []string{"one", "two"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := tt.run(context.Background(), &Context{Writer: &stdout, ErrW: &stderr}, tt.args)
+			if err == nil {
+				t.Fatal("expected usage error")
+			}
+			var exitCode *app.ExitCoder
+			if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+				t.Fatalf("error = %v, want ExitUsage", err)
+			}
+		})
+	}
+}
+
 func TestWriteNodesTableShowsUnavailableFieldsHonestly(t *testing.T) {
 	var stdout bytes.Buffer
 	cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: output.FormatTable}}
@@ -234,6 +273,51 @@ func TestWriteNodesMultipleWithUptime(t *testing.T) {
 	if strings.Index(out, "a") > strings.Index(out, "b") {
 		t.Fatalf("nodes not sorted by name: %q", out)
 	}
+}
+
+func TestFindResourceShowTargets(t *testing.T) {
+	if node, ok := findNode([]domain.Node{{ID: "node/proxmox", Name: "proxmox"}}, "proxmox"); !ok || node.ID != "node/proxmox" {
+		t.Fatalf("findNode by name = %+v, %v", node, ok)
+	}
+	if vm, ok := findVM([]domain.VM{{ID: "proxmox/100", Name: "vm-one"}}, "proxmox/100"); !ok || vm.Name != "vm-one" {
+		t.Fatalf("findVM = %+v, %v", vm, ok)
+	}
+	if container, ok := findContainer([]domain.Container{{ID: "proxmox/200", Name: "ct-one"}}, "proxmox/200"); !ok || container.Name != "ct-one" {
+		t.Fatalf("findContainer = %+v, %v", container, ok)
+	}
+	if storage, ok := findStorage([]domain.Storage{{ID: "storage/proxmox/local-lvm", Name: "local-lvm"}}, "local-lvm"); !ok || storage.ID != "storage/proxmox/local-lvm" {
+		t.Fatalf("findStorage by name = %+v, %v", storage, ok)
+	}
+	if _, ok := findVM([]domain.VM{{ID: "proxmox/100"}}, "missing"); ok {
+		t.Fatal("findVM matched missing ID")
+	}
+}
+
+func TestWriteResourceShowOutput(t *testing.T) {
+	t.Run("vm json", func(t *testing.T) {
+		var stdout bytes.Buffer
+		cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: output.FormatJSON}}
+		if err := writeVM(cmdCtx, domain.VM{ID: "proxmox/100", Name: "vm-one", Status: "running", Node: "proxmox", CPU: 2}); err != nil {
+			t.Fatalf("writeVM: %v", err)
+		}
+		out := stdout.String()
+		if !strings.Contains(out, `"id": "proxmox/100"`) || !strings.Contains(out, `"name": "vm-one"`) {
+			t.Fatalf("JSON output missing VM fields: %q", out)
+		}
+	})
+
+	t.Run("storage table", func(t *testing.T) {
+		var stdout bytes.Buffer
+		cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: output.FormatTable}}
+		storage := domain.Storage{ID: "storage/proxmox/local-lvm", Name: "local-lvm", Type: "storage", Status: "available", Node: "proxmox", Total: 4096, Used: 1024, Avail: 3072, Content: []string{"images", "rootdir"}}
+		if err := writeStorage(cmdCtx, storage); err != nil {
+			t.Fatalf("writeStorage: %v", err)
+		}
+		out := stdout.String()
+		if !strings.Contains(out, "local-lvm") || !strings.Contains(out, "images,rootdir") {
+			t.Fatalf("table output missing storage fields: %q", out)
+		}
+	})
 }
 
 func TestWriteEmptyResourceListsAsJSONArrays(t *testing.T) {
