@@ -637,3 +637,106 @@ type ClusterLogItem struct {
 	N int64  `json:"n"`
 	T string `json:"t"`
 }
+
+// BackupScheduleListResponse is the response from GET /cluster/backup.
+type BackupScheduleListResponse struct {
+	Data []BackupScheduleItem `json:"data"`
+}
+
+// BackupScheduleDetailResponse is the response from GET /cluster/backup/{id}.
+type BackupScheduleDetailResponse struct {
+	Data BackupScheduleItem `json:"data"`
+}
+
+// BackupScheduleItem represents a single backup job schedule.
+type BackupScheduleItem struct {
+	ID               string `json:"id"`
+	Node             string `json:"node,omitempty"`
+	Storage          string `json:"storage"`
+	VMID             string `json:"vmid,omitempty"`
+	All              int    `json:"all,omitempty"`
+	Dow              string `json:"dow,omitempty"`
+	Starttime        string `json:"starttime"`
+	Mode             string `json:"mode"`
+	Enabled          int    `json:"enabled,omitempty"`
+	Compress         string `json:"compress,omitempty"`
+	Comment          string `json:"comment,omitempty"`
+	Bwlimit          int    `json:"bwlimit,omitempty"`
+	Ionice           int    `json:"ionice,omitempty"`
+	MailNotification string `json:"mailnotification,omitempty"`
+	Mailto           string `json:"mailto,omitempty"`
+	Maxfiles         int    `json:"maxfiles,omitempty"`
+	PruneBackups     string `json:"prune-backups,omitempty"`
+	Quiet            int    `json:"quiet,omitempty"`
+	Remove           int    `json:"remove,omitempty"`
+	Pool             string `json:"pool,omitempty"`
+	Tmpdir           string `json:"tmpdir,omitempty"`
+}
+
+// BackupScheduleCreateRequest is the body for POST /cluster/backup.
+type BackupScheduleCreateRequest struct {
+	Node             string `json:"node,omitempty"`
+	Storage          string `json:"storage"`
+	VMID             string `json:"vmid,omitempty"`
+	All              int    `json:"all,omitempty"`
+	Dow              string `json:"dow,omitempty"`
+	Starttime        string `json:"starttime"`
+	Mode             string `json:"mode"`
+	Enabled          int    `json:"enabled,omitempty"`
+	Compress         string `json:"compress,omitempty"`
+	Comment          string `json:"comment,omitempty"`
+	Bwlimit          int    `json:"bwlimit,omitempty"`
+	Ionice           int    `json:"ionice,omitempty"`
+	MailNotification string `json:"mailnotification,omitempty"`
+	Mailto           string `json:"mailto,omitempty"`
+	Maxfiles         int    `json:"maxfiles,omitempty"`
+	PruneBackups     string `json:"prune-backups,omitempty"`
+	Quiet            int    `json:"quiet,omitempty"`
+	Remove           int    `json:"remove,omitempty"`
+	Pool             string `json:"pool,omitempty"`
+	Tmpdir           string `json:"tmpdir,omitempty"`
+}
+
+// VMCloneRequest is the body for POST /nodes/{node}/qemu/{vmid}/clone.
+type VMCloneRequest struct {
+	NewID   int    `json:"newid"`
+	Name    string `json:"name,omitempty"`
+	Storage string `json:"storage,omitempty"`
+}
+
+// CTCloneRequest is the body for POST /nodes/{node}/lxc/{vmid}/clone.
+type CTCloneRequest struct {
+	NewID    int    `json:"newid"`
+	Hostname string `json:"hostname,omitempty"`
+	Storage  string `json:"storage,omitempty"`
+}
+
+// VMMigrateRequest is the body for POST /nodes/{node}/qemu/{vmid}/migrate.
+type VMMigrateRequest struct {
+	Target string `json:"target"`
+	Online int    `json:"online,omitempty"`
+}
+
+// CTMigrateRequest is the body for POST /nodes/{node}/lxc/{vmid}/migrate.
+type CTMigrateRequest struct {
+	Target string `json:"target"`
+}
+
+// VMDiskResizeRequest is the body for PUT /nodes/{node}/qemu/{vmid}/resize.
+type VMDiskResizeRequest struct {
+	Disk string `json:"disk"`
+	Size string `json:"size"`
+}
+
+// VMDiskMoveRequest is the body for POST /nodes/{node}/qemu/{vmid}/move_disk.
+type VMDiskMoveRequest struct {
+	Disk    string `json:"disk"`
+	Storage string `json:"storage"`
+}
+
+// VzdumpCreateRequest is the body for POST /nodes/{node}/vzdump.
+type VzdumpCreateRequest struct {
+	VMID    string `json:"vmid"`
+	Storage string `json:"storage"`
+	Mode    string `json:"mode"`
+}

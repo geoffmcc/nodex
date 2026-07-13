@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 // NodeDetailProvider exposes detailed per-node information.
 type NodeDetailProvider interface {
@@ -95,6 +98,43 @@ type TemplateProvider interface {
 // CloudInitProvider exposes cloud-init regeneration operations.
 type CloudInitProvider interface {
 	VMCloudInit(ctx context.Context, node string, vmid int) (string, error)
+}
+
+// BackupMutationProvider exposes backup creation and backup job management operations.
+// All mutation methods return a UPID string that can be followed with task polling.
+type BackupMutationProvider interface {
+	CreateBackup(ctx context.Context, node string, vmid int, storage, mode string) (string, error)
+	RestoreVM(ctx context.Context, node string, vmid int, archive, storage string) (string, error)
+	GetBackupSchedules(ctx context.Context) ([]BackupSchedule, error)
+	GetBackupSchedule(ctx context.Context, id string) (*BackupSchedule, error)
+	CreateBackupSchedule(ctx context.Context, schedule BackupScheduleCreateParams) (string, error)
+	UpdateBackupSchedule(ctx context.Context, id string, schedule BackupScheduleCreateParams) error
+	DeleteBackupSchedule(ctx context.Context, id string) error
+}
+
+// StorageMutationProvider exposes storage content upload/download/delete operations.
+type StorageMutationProvider interface {
+	UploadContent(ctx context.Context, node, storage, localPath string) (string, error)
+	DownloadContentBody(ctx context.Context, node, storage, volumeID string, w io.Writer) error
+	DeleteContent(ctx context.Context, node, storage, volumeID string) (string, error)
+}
+
+// MigrationProvider exposes VM and container migration operations.
+type MigrationProvider interface {
+	VMMigrate(ctx context.Context, node string, vmid int, target string, online bool) (string, error)
+	CTMigrate(ctx context.Context, node string, vmid int, target string) (string, error)
+}
+
+// CloneProvider exposes VM and container clone operations.
+type CloneProvider interface {
+	VMClone(ctx context.Context, node string, vmid, newVmid int, name, storage string) (string, error)
+	CTClone(ctx context.Context, node string, vmid, newVmid int, hostname, storage string) (string, error)
+}
+
+// DiskProvider exposes VM disk resize and move operations.
+type DiskProvider interface {
+	VMDiskResize(ctx context.Context, node string, vmid int, disk, size string) (string, error)
+	VMDiskMove(ctx context.Context, node string, vmid int, disk, storage string) (string, error)
 }
 
 // LifecycleProvider exposes VM and container lifecycle mutation operations.
@@ -271,4 +311,9 @@ const (
 	CapabilityDelete           Capability = "delete"
 	CapabilityTemplate         Capability = "template"
 	CapabilityCloudInit        Capability = "cloud_init"
+	CapabilityBackupMutation   Capability = "backup_mutation"
+	CapabilityStorageMutation  Capability = "storage_mutation"
+	CapabilityMigration        Capability = "migration"
+	CapabilityClone            Capability = "clone"
+	CapabilityDisk             Capability = "disk"
 )
