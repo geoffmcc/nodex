@@ -42,6 +42,18 @@ type Provider interface {
 
 	// StorageContent returns content items for a specific storage.
 	StorageContent(ctx context.Context, node, storage string) ([]StorageContentItem, error)
+
+	// Tasks returns all tasks for a specific node.
+	Tasks(ctx context.Context, node string) ([]Task, error)
+
+	// Task returns details for a specific task by UPID.
+	Task(ctx context.Context, node, upid string) (*Task, error)
+
+	// VMSnapshots returns snapshots for a VM.
+	VMSnapshots(ctx context.Context, node string, vmid int) ([]Snapshot, error)
+
+	// ContainerSnapshots returns snapshots for a container.
+	ContainerSnapshots(ctx context.Context, node string, vmid int) ([]Snapshot, error)
 }
 
 // Credentials holds authentication information for a provider.

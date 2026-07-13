@@ -656,3 +656,166 @@ func writeStorageContent(cmdCtx *Context, items []domain.StorageContentItem) err
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
 }
+
+func runTaskList(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex task list <node>"), app.ExitUsage)
+	}
+	node := args[0]
+	if node == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex task list <node>"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	tasks, err := prov.Tasks(ctx, node)
+	if err != nil {
+		return fmt.Errorf("list tasks: %w", err)
+	}
+	return writeTaskList(cmdCtx, tasks)
+}
+
+func writeTaskList(cmdCtx *Context, tasks []domain.Task) error {
+	if tasks == nil {
+		tasks = []domain.Task{}
+	}
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, tasks)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, tasks)
+	default:
+		headers := []string{"UPID", "TYPE", "STATE", "STATUS", "STARTED"}
+		rows := make([][]string, 0, len(tasks))
+		for _, t := range tasks {
+			rows = append(rows, []string{
+				t.UPID,
+				t.Type,
+				t.State,
+				t.Status,
+				fmt.Sprintf("%d", t.StartTime),
+			})
+		}
+		return output.WriteTable(cmdCtx.Writer, headers, rows)
+	}
+}
+
+func runTaskShow(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 2 {
+		return app.NewExitError(fmt.Errorf("usage: nodex task show <node> <upid>"), app.ExitUsage)
+	}
+	node := args[0]
+	upid := args[1]
+	if node == "" || upid == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex task show <node> <upid>"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	task, err := prov.Task(ctx, node, upid)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+	return writeTaskDetail(cmdCtx, task)
+}
+
+func writeTaskDetail(cmdCtx *Context, task *domain.Task) error {
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, task)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, task)
+	default:
+		rows := [][]string{
+			{"UPID", task.UPID},
+			{"TYPE", task.Type},
+			{"STATE", task.State},
+			{"STATUS", task.Status},
+			{"NODE", task.Node},
+			{"STARTED", fmt.Sprintf("%d", task.StartTime)},
+			{"ENDED", fmt.Sprintf("%d", task.EndTime)},
+		}
+		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
+	}
+}
+
+func runVMSnapshots(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex vm snapshots <node/vmid>"), app.ExitUsage)
+	}
+	parts := strings.SplitN(args[0], "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex vm snapshots <node/vmid>"), app.ExitUsage)
+	}
+	node := parts[0]
+	vmid, err := strconv.Atoi(parts[1])
+	if err != nil || vmid <= 0 {
+		return app.NewExitError(fmt.Errorf("invalid VMID: %s", parts[1]), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	snaps, err := prov.VMSnapshots(ctx, node, vmid)
+	if err != nil {
+		return fmt.Errorf("get vm snapshots: %w", err)
+	}
+	return writeSnapshotList(cmdCtx, snaps)
+}
+
+func runContainerSnapshots(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex container snapshots <node/vmid>"), app.ExitUsage)
+	}
+	parts := strings.SplitN(args[0], "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex container snapshots <node/vmid>"), app.ExitUsage)
+	}
+	node := parts[0]
+	vmid, err := strconv.Atoi(parts[1])
+	if err != nil || vmid <= 0 {
+		return app.NewExitError(fmt.Errorf("invalid VMID: %s", parts[1]), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	snaps, err := prov.ContainerSnapshots(ctx, node, vmid)
+	if err != nil {
+		return fmt.Errorf("get container snapshots: %w", err)
+	}
+	return writeSnapshotList(cmdCtx, snaps)
+}
+
+func writeSnapshotList(cmdCtx *Context, snaps []domain.Snapshot) error {
+	if snaps == nil {
+		snaps = []domain.Snapshot{}
+	}
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, snaps)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, snaps)
+	default:
+		headers := []string{"NAME", "PARENT", "CREATED"}
+		rows := make([][]string, 0, len(snaps))
+		for _, s := range snaps {
+			rows = append(rows, []string{
+				s.Name,
+				s.Parent,
+				fmt.Sprintf("%d", s.Ctime),
+			})
+		}
+		return output.WriteTable(cmdCtx.Writer, headers, rows)
+	}
+}

@@ -339,3 +339,93 @@ func (p *Provider) StorageContent(ctx context.Context, node, storage string) ([]
 	}
 	return result, nil
 }
+
+// Tasks returns all tasks for a specific node.
+func (p *Provider) Tasks(ctx context.Context, node string) ([]domain.Task, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetTasks(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get tasks: %w", err)
+	}
+	result := make([]domain.Task, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.Task{
+			UPID:      item.UPID,
+			Type:      item.Type,
+			State:     item.State,
+			StartTime: item.StartTime,
+			EndTime:   item.EndTime,
+			Status:    item.Status,
+			Node:      node,
+		})
+	}
+	return result, nil
+}
+
+// Task returns details for a specific task by UPID.
+func (p *Provider) Task(ctx context.Context, node, upid string) (*domain.Task, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	item, err := p.client.GetTask(ctx, node, upid)
+	if err != nil {
+		return nil, fmt.Errorf("get task: %w", err)
+	}
+	return &domain.Task{
+		UPID:      item.UPID,
+		Type:      item.Type,
+		State:     item.State,
+		StartTime: item.StartTime,
+		EndTime:   item.EndTime,
+		Status:    item.Status,
+		Node:      node,
+	}, nil
+}
+
+// VMSnapshots returns snapshots for a VM.
+func (p *Provider) VMSnapshots(ctx context.Context, node string, vmid int) ([]domain.Snapshot, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetVMSnapshots(ctx, node, vmid)
+	if err != nil {
+		return nil, fmt.Errorf("get vm snapshots: %w", err)
+	}
+	result := make([]domain.Snapshot, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.Snapshot{
+			Name:   item.Name,
+			VMID:   item.VMID,
+			Ctime:  item.Ctime,
+			Parent: item.Parent,
+			Node:   node,
+			Target: fmt.Sprintf("%s/%d", node, vmid),
+		})
+	}
+	return result, nil
+}
+
+// ContainerSnapshots returns snapshots for a container.
+func (p *Provider) ContainerSnapshots(ctx context.Context, node string, vmid int) ([]domain.Snapshot, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetContainerSnapshots(ctx, node, vmid)
+	if err != nil {
+		return nil, fmt.Errorf("get container snapshots: %w", err)
+	}
+	result := make([]domain.Snapshot, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.Snapshot{
+			Name:   item.Name,
+			VMID:   item.VMID,
+			Ctime:  item.Ctime,
+			Parent: item.Parent,
+			Node:   node,
+			Target: fmt.Sprintf("%s/%d", node, vmid),
+		})
+	}
+	return result, nil
+}

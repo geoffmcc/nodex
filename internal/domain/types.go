@@ -73,3 +73,24 @@ type StorageContentItem struct {
 	Subtype string `json:"subtype,omitempty" yaml:"subtype,omitempty"`
 	VMID    int    `json:"vmid,omitempty" yaml:"vmid,omitempty"`
 }
+
+// Task represents a Proxmox task.
+type Task struct {
+	UPID      string `json:"upid" yaml:"upid"`
+	Type      string `json:"type" yaml:"type"`
+	State     string `json:"state" yaml:"state"` // running, stopped
+	StartTime int    `json:"starttime" yaml:"starttime"`
+	EndTime   int    `json:"endtime,omitempty" yaml:"endtime,omitempty"`
+	Status    string `json:"status,omitempty" yaml:"status,omitempty"`
+	Node      string `json:"node,omitempty" yaml:"node,omitempty"`
+}
+
+// Snapshot represents a VM or container snapshot.
+type Snapshot struct {
+	Name   string `json:"name" yaml:"name"`
+	VMID   int    `json:"vmid,omitempty" yaml:"vmid,omitempty"`
+	Ctime  int    `json:"ctime,omitempty" yaml:"ctime,omitempty"`
+	Parent string `json:"parent,omitempty" yaml:"parent,omitempty"`
+	Node   string `json:"node,omitempty" yaml:"node,omitempty"`
+	Target string `json:"target,omitempty" yaml:"target,omitempty"` // vm or container ID
+}
