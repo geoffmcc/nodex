@@ -7,6 +7,12 @@ type APIResponse struct {
 	Data json.RawMessage `json:"data"`
 }
 
+// TaskResponse is the response from mutation endpoints that return a UPID.
+// Proxmox returns {"data": "UPID:pve1:..."} for POST/PUT/DELETE operations.
+type TaskResponse struct {
+	Data string `json:"data"`
+}
+
 // NodeListResponse is the response from /nodes.
 type NodeListResponse struct {
 	Data []NodeItem `json:"data"`

@@ -33,6 +33,7 @@ func (p *e2eMockProvider) Capabilities() []domain.Capability {
 		domain.CapabilityHAStatus, domain.CapabilityBackupContent,
 		domain.CapabilitySDN, domain.CapabilitySnapshotDetail,
 		domain.CapabilityPools, domain.CapabilityClusterLog,
+		domain.CapabilityLifecycle,
 	}
 }
 func (p *e2eMockProvider) Connect(_ context.Context, endpoint string, creds *domain.Credentials) error {
@@ -245,6 +246,53 @@ func (p *e2eMockProvider) ClusterLog(_ context.Context) ([]domain.ClusterLogEntr
 	}, nil
 }
 
+// LifecycleProvider methods
+func (p *e2eMockProvider) VMStart(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12345, 1700000000), nil
+}
+func (p *e2eMockProvider) VMStop(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12346, 1700000000), nil
+}
+func (p *e2eMockProvider) VMShutdown(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12347, 1700000000), nil
+}
+func (p *e2eMockProvider) VMReset(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12348, 1700000000), nil
+}
+func (p *e2eMockProvider) VMReboot(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12349, 1700000000), nil
+}
+func (p *e2eMockProvider) VMSuspend(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12350, 1700000000), nil
+}
+func (p *e2eMockProvider) VMResume(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12351, 1700000000), nil
+}
+func (p *e2eMockProvider) VMPause(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12352, 1700000000), nil
+}
+func (p *e2eMockProvider) VMUnpause(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12353, 1700000000), nil
+}
+func (p *e2eMockProvider) CTStart(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12354, 1700000000), nil
+}
+func (p *e2eMockProvider) CTStop(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12355, 1700000000), nil
+}
+func (p *e2eMockProvider) CTShutdown(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12356, 1700000000), nil
+}
+func (p *e2eMockProvider) CTReboot(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12357, 1700000000), nil
+}
+func (p *e2eMockProvider) CTSuspend(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12358, 1700000000), nil
+}
+func (p *e2eMockProvider) CTResume(_ context.Context, node string, vmid int) (string, error) {
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12359, 1700000000), nil
+}
+
 func (p *e2eMockProvider) ClusterStatuses(_ context.Context) ([]domain.ClusterStatusDetail, error) {
 	return []domain.ClusterStatusDetail{
 		{Type: "cluster", ID: "cluster/e2e", Name: "e2e", Status: "online", Quorate: 3, Version: 1},
@@ -298,6 +346,23 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "pools list", args: []string{"--output", "json", "pools", "list"}, want: []string{`"poolid": "admins"`, `"comment": "Admin resources"`, `"qemu/100"`}},
 		{name: "cluster log", args: []string{"--output", "json", "cluster", "log"}, want: []string{`"n": 1`, `"t": "starting cluster services"`, `"n": 2`}},
 		{name: "status with ha", args: []string{"--output", "json", "status"}, want: []string{`"quorum": 3`, `"ha":`, `"status": "online"`}},
+		// Lifecycle commands (Tier 1, need --yes)
+		{name: "vm start", args: []string{"--yes", "vm", "start", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		{name: "vm stop", args: []string{"--yes", "vm", "stop", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		{name: "vm shutdown", args: []string{"--yes", "vm", "shutdown", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		{name: "vm resume", args: []string{"--yes", "vm", "resume", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		{name: "vm pause", args: []string{"--yes", "vm", "pause", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		{name: "vm unpause", args: []string{"--yes", "vm", "unpause", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		// Lifecycle commands (Tier 2, need --yes --force)
+		{name: "vm reset", args: []string{"--yes", "--force", "vm", "reset", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		{name: "vm reboot", args: []string{"--yes", "--force", "vm", "reboot", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		// Container lifecycle
+		{name: "container start", args: []string{"--yes", "container", "start", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
+		{name: "container stop", args: []string{"--yes", "container", "stop", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
+		{name: "container shutdown", args: []string{"--yes", "container", "shutdown", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
+		{name: "container reboot", args: []string{"--yes", "--force", "container", "reboot", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
+		{name: "container suspend", args: []string{"--yes", "container", "suspend", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
+		{name: "container resume", args: []string{"--yes", "container", "resume", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
 	}
 
 	for _, tt := range tests {

@@ -611,6 +611,121 @@ func (c *Client) GetContainerSnapshotConfig(ctx context.Context, node string, vm
 	return resp.Data, nil
 }
 
+// VMStart starts a VM and returns the task UPID.
+func (c *Client) VMStart(ctx context.Context, node string, vmid int) (string, error) {
+	return c.vmMutation(ctx, node, vmid, "start", nil)
+}
+
+// VMStop performs a force stop of a VM and returns the task UPID.
+func (c *Client) VMStop(ctx context.Context, node string, vmid int) (string, error) {
+	return c.vmMutation(ctx, node, vmid, "stop", nil)
+}
+
+// VMShutdown performs a graceful shutdown of a VM and returns the task UPID.
+func (c *Client) VMShutdown(ctx context.Context, node string, vmid int, timeout int) (string, error) {
+	body := url.Values{}
+	if timeout > 0 {
+		body.Set("timeout", strconv.Itoa(timeout))
+	}
+	return c.vmMutation(ctx, node, vmid, "shutdown", body)
+}
+
+// VMReset performs a hard reset of a VM and returns the task UPID.
+func (c *Client) VMReset(ctx context.Context, node string, vmid int) (string, error) {
+	return c.vmMutation(ctx, node, vmid, "reset", nil)
+}
+
+// VMReboot requests a reboot of a VM and returns the task UPID.
+func (c *Client) VMReboot(ctx context.Context, node string, vmid int) (string, error) {
+	return c.vmMutation(ctx, node, vmid, "reboot", nil)
+}
+
+// VMSuspend suspends a VM to disk and returns the task UPID.
+func (c *Client) VMSuspend(ctx context.Context, node string, vmid int) (string, error) {
+	return c.vmMutation(ctx, node, vmid, "suspend", nil)
+}
+
+// VMResume resumes a suspended VM and returns the task UPID.
+func (c *Client) VMResume(ctx context.Context, node string, vmid int) (string, error) {
+	return c.vmMutation(ctx, node, vmid, "resume", nil)
+}
+
+// VMPause freezes a running VM and returns the task UPID.
+func (c *Client) VMPause(ctx context.Context, node string, vmid int) (string, error) {
+	return c.vmMutation(ctx, node, vmid, "pause", nil)
+}
+
+// VMUnpause unfreezes a paused VM and returns the task UPID.
+func (c *Client) VMUnpause(ctx context.Context, node string, vmid int) (string, error) {
+	return c.vmMutation(ctx, node, vmid, "unpause", nil)
+}
+
+// CTStart starts a container and returns the task UPID.
+func (c *Client) CTStart(ctx context.Context, node string, vmid int) (string, error) {
+	return c.ctMutation(ctx, node, vmid, "start", nil)
+}
+
+// CTStop performs a force stop of a container and returns the task UPID.
+func (c *Client) CTStop(ctx context.Context, node string, vmid int) (string, error) {
+	return c.ctMutation(ctx, node, vmid, "stop", nil)
+}
+
+// CTShutdown performs a graceful shutdown of a container and returns the task UPID.
+func (c *Client) CTShutdown(ctx context.Context, node string, vmid int, timeout int) (string, error) {
+	body := url.Values{}
+	if timeout > 0 {
+		body.Set("timeout", strconv.Itoa(timeout))
+	}
+	return c.ctMutation(ctx, node, vmid, "shutdown", body)
+}
+
+// CTReboot requests a reboot of a container and returns the task UPID.
+func (c *Client) CTReboot(ctx context.Context, node string, vmid int) (string, error) {
+	return c.ctMutation(ctx, node, vmid, "reboot", nil)
+}
+
+// CTSuspend suspends a container and returns the task UPID.
+func (c *Client) CTSuspend(ctx context.Context, node string, vmid int) (string, error) {
+	return c.ctMutation(ctx, node, vmid, "suspend", nil)
+}
+
+// CTResume resumes a suspended container and returns the task UPID.
+func (c *Client) CTResume(ctx context.Context, node string, vmid int) (string, error) {
+	return c.ctMutation(ctx, node, vmid, "resume", nil)
+}
+
+// vmMutation executes a POST mutation on a QEMU VM status endpoint and returns the UPID.
+func (c *Client) vmMutation(ctx context.Context, node string, vmid int, action string, body url.Values) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/status/" + action
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// ctMutation executes a POST mutation on an LXC container status endpoint and returns the UPID.
+func (c *Client) ctMutation(ctx context.Context, node string, vmid int, action string, body url.Values) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/status/" + action
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
 // GetPools returns all resource pools.
 func (c *Client) GetPools(ctx context.Context) ([]PoolItem, error) {
 	var resp PoolsResponse

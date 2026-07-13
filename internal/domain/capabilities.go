@@ -64,6 +64,29 @@ type SnapshotDetailProvider interface {
 	ContainerSnapshotConfig(ctx context.Context, node string, vmid int, name string) (map[string]interface{}, error)
 }
 
+// LifecycleProvider exposes VM and container lifecycle mutation operations.
+// All methods return a UPID string that can be followed with task polling.
+type LifecycleProvider interface {
+	// VM lifecycle operations.
+	VMStart(ctx context.Context, node string, vmid int) (string, error)
+	VMStop(ctx context.Context, node string, vmid int) (string, error)
+	VMShutdown(ctx context.Context, node string, vmid int) (string, error)
+	VMReset(ctx context.Context, node string, vmid int) (string, error)
+	VMReboot(ctx context.Context, node string, vmid int) (string, error)
+	VMSuspend(ctx context.Context, node string, vmid int) (string, error)
+	VMResume(ctx context.Context, node string, vmid int) (string, error)
+	VMPause(ctx context.Context, node string, vmid int) (string, error)
+	VMUnpause(ctx context.Context, node string, vmid int) (string, error)
+
+	// Container lifecycle operations.
+	CTStart(ctx context.Context, node string, vmid int) (string, error)
+	CTStop(ctx context.Context, node string, vmid int) (string, error)
+	CTShutdown(ctx context.Context, node string, vmid int) (string, error)
+	CTReboot(ctx context.Context, node string, vmid int) (string, error)
+	CTSuspend(ctx context.Context, node string, vmid int) (string, error)
+	CTResume(ctx context.Context, node string, vmid int) (string, error)
+}
+
 // --- Domain types for optional capabilities ---
 
 // NodeService represents a system service on a node.
@@ -209,4 +232,5 @@ const (
 	CapabilitySnapshotDetail   Capability = "snapshot_detail"
 	CapabilityPools            Capability = "pools"
 	CapabilityClusterLog       Capability = "cluster_log"
+	CapabilityLifecycle        Capability = "lifecycle"
 )
