@@ -348,3 +348,43 @@ func TestGetContainerConfigRejectsZeroVMID(t *testing.T) {
 		t.Fatalf("GetContainerConfig(0) error = %v, want VMID required", err)
 	}
 }
+
+func TestGetStorageContentDecodesContentItems(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/storage/local/content" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"content":"iso","volid":"local:iso/debian-12.iso","size":5368709120,"format":"iso","ctime":1700000000},{"content":"images","volid":"local-lvm:vm-100-disk-0","size":34359738368,"format":"raw","vmid":100}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	items, err := c.GetStorageContent(context.Background(), "proxmox", "local")
+	if err != nil {
+		t.Fatalf("GetStorageContent: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items) = %d, want 2", len(items))
+	}
+	if items[0].Content != "iso" || items[0].Volid != "local:iso/debian-12.iso" || items[0].Size != 5368709120 {
+		t.Fatalf("first item = %+v", items[0])
+	}
+	if items[1].Content != "images" || items[1].VMID != 100 || items[1].Size != 34359738368 {
+		t.Fatalf("second item = %+v", items[1])
+	}
+}
+
+func TestGetStorageContentRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetStorageContent(context.Background(), "", "local")
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("GetStorageContent('') error = %v, want node name required", err)
+	}
+}
+
+func TestGetStorageContentRejectsEmptyStorage(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetStorageContent(context.Background(), "proxmox", "")
+	if err == nil || !strings.Contains(err.Error(), "storage name is required") {
+		t.Fatalf("GetStorageContent('') error = %v, want storage name required", err)
+	}
+}

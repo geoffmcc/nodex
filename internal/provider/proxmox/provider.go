@@ -315,3 +315,27 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	}
 	return m
 }
+
+// StorageContent returns content items for a specific storage.
+func (p *Provider) StorageContent(ctx context.Context, node, storage string) ([]domain.StorageContentItem, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetStorageContent(ctx, node, storage)
+	if err != nil {
+		return nil, fmt.Errorf("get storage content: %w", err)
+	}
+	result := make([]domain.StorageContentItem, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.StorageContentItem{
+			Content: item.Content,
+			Ctime:   item.Ctime,
+			Format:  item.Format,
+			Volid:   item.Volid,
+			Size:    item.Size,
+			Subtype: item.Subtype,
+			VMID:    item.VMID,
+		})
+	}
+	return result, nil
+}

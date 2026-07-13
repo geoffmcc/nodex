@@ -205,3 +205,26 @@ type ContainerConfigData struct {
 
 // ContainerConfig is a convenience alias.
 type ContainerConfig = ContainerConfigResponse
+
+// StorageContentResponse is the response from /nodes/{node}/storage/{storage}/content.
+type StorageContentResponse struct {
+	Data []StorageContentItem `json:"data"`
+}
+
+// StorageContentItem represents a single content item in storage.
+type StorageContentItem struct {
+	Content string `json:"content"`
+	Ctime   int    `json:"ctime,omitempty"`
+	Format  string `json:"format,omitempty"`
+	Volid   string `json:"volid,omitempty"`
+	Size    int64  `json:"size,omitempty"`
+	Subtype string `json:"subtype,omitempty"`
+	VMID    int    `json:"vmid,omitempty"`
+	Store   string `json:"store,omitempty"`
+	Checked int    `json:"checked,omitempty"`
+	Encrypt string `json:"encrypt,omitempty"`
+	Source  string `json:"source,omitempty"`
+}
+
+// StorageContent is a convenience alias.
+type StorageContent = StorageContentResponse

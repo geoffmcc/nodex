@@ -94,6 +94,7 @@ func init() {
 	register("storage", "Manage storage", nil,
 		&command{name: "list", short: "List all storage pools", run: runStorageList},
 		&command{name: "show", short: "Show storage details", run: runStorageShow},
+		&command{name: "content", short: "List storage content", run: runStorageContent},
 	)
 	register("cluster", "Manage cluster", nil,
 		&command{name: "status", short: "Show cluster status", run: runClusterStatus},
