@@ -83,7 +83,7 @@ func runNetworkApply(ctx context.Context, cmdCtx *Context, args []string) error 
 			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
 	if err := nm.ApplyNodeNetwork(ctx, node, config); err != nil {
@@ -131,7 +131,7 @@ func runNetworkRevert(ctx context.Context, cmdCtx *Context, args []string) error
 			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
 	if err := nm.RevertNodeNetwork(ctx, node); err != nil {
@@ -297,11 +297,8 @@ func runFirewallRuleCreate(ctx context.Context, cmdCtx *Context, args []string) 
 		desc = fmt.Sprintf("firewall rule (VM %s/%d, action: %s, type: %s)", node, vmid, input.Action, input.Type)
 	}
 
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	var rule *domain.FirewallRule
@@ -400,11 +397,8 @@ func runFirewallRuleUpdate(ctx context.Context, cmdCtx *Context, args []string) 
 		desc = fmt.Sprintf("firewall rule pos %d (VM %s/%d)", pos, node, vmid)
 	}
 
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	switch scope {
@@ -497,11 +491,8 @@ func runFirewallRuleDelete(ctx context.Context, cmdCtx *Context, args []string) 
 		target = fmt.Sprintf("%s-%d-rule-%d", node, vmid, pos)
 	}
 
-	if err := confirmDestructiveType(cmdCtx, desc, target); err != nil {
+	if err := checkDestructive(cmdCtx, desc, target); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	switch scope {
@@ -553,11 +544,8 @@ func runFirewallAliasCreate(ctx context.Context, cmdCtx *Context, args []string)
 	}
 
 	desc := fmt.Sprintf("firewall alias %s (%s)", name, cidr)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := fm.CreateFirewallAlias(ctx, name, cidr, comment); err != nil {
@@ -590,11 +578,8 @@ func runFirewallAliasDelete(ctx context.Context, cmdCtx *Context, args []string)
 	}
 
 	desc := fmt.Sprintf("firewall alias %s", name)
-	if err := confirmDestructiveType(cmdCtx, desc, name); err != nil {
+	if err := checkDestructive(cmdCtx, desc, name); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := fm.DeleteFirewallAlias(ctx, name); err != nil {
@@ -637,11 +622,8 @@ func runFirewallIPSetCreate(ctx context.Context, cmdCtx *Context, args []string)
 	}
 
 	desc := fmt.Sprintf("firewall IP set %s", name)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := fm.CreateFirewallIPSet(ctx, name, comment); err != nil {
@@ -683,11 +665,8 @@ func runFirewallIPSetEntryAdd(ctx context.Context, cmdCtx *Context, args []strin
 	}
 
 	desc := fmt.Sprintf("IP set %s entry %s", name, cidr)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := fm.AddFirewallIPSetEntry(ctx, name, cidr, comment); err != nil {
@@ -722,11 +701,8 @@ func runFirewallIPSetEntryRemove(ctx context.Context, cmdCtx *Context, args []st
 
 	desc := fmt.Sprintf("IP set %s entry %s", name, cidr)
 	target := fmt.Sprintf("%s-%s", name, cidr)
-	if err := confirmDestructiveType(cmdCtx, desc, target); err != nil {
+	if err := checkDestructive(cmdCtx, desc, target); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := fm.RemoveFirewallIPSetEntry(ctx, name, cidr); err != nil {
@@ -759,11 +735,8 @@ func runFirewallIPSetDelete(ctx context.Context, cmdCtx *Context, args []string)
 	}
 
 	desc := fmt.Sprintf("firewall IP set %s", name)
-	if err := confirmDestructiveType(cmdCtx, desc, name); err != nil {
+	if err := checkDestructive(cmdCtx, desc, name); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := fm.DeleteFirewallIPSet(ctx, name); err != nil {
@@ -806,11 +779,8 @@ func runFirewallGroupCreate(ctx context.Context, cmdCtx *Context, args []string)
 	}
 
 	desc := fmt.Sprintf("firewall security group %s", name)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := fm.CreateFirewallGroup(ctx, name, comment); err != nil {
@@ -843,11 +813,8 @@ func runFirewallGroupDelete(ctx context.Context, cmdCtx *Context, args []string)
 	}
 
 	desc := fmt.Sprintf("firewall security group %s", name)
-	if err := confirmDestructiveType(cmdCtx, desc, name); err != nil {
+	if err := checkDestructive(cmdCtx, desc, name); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := fm.DeleteFirewallGroup(ctx, name); err != nil {
@@ -919,11 +886,8 @@ func runFirewallOptionsUpdate(ctx context.Context, cmdCtx *Context, args []strin
 	}
 
 	desc := "firewall options"
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := fm.UpdateFirewallOptions(ctx, opts); err != nil {
@@ -1087,33 +1051,32 @@ func runAccessTokensList(ctx context.Context, cmdCtx *Context, args []string) er
 
 // --- Access / Identity mutation handlers (Tier 4, expert mode) ---
 
-// confirmSecurityAdmin checks Tier 4 safety. Returns nil if confirmed, or an error to abort.
-func confirmSecurityAdmin(cmdCtx *Context, desc string) error {
+// checkSecurityAdmin verifies Tier 4 authorization. Returns nil if authorized.
+// Requires --expert flag. Prints prompts to stderr when interactive confirmation
+// is required but not provided. Returns error if not authorized.
+func checkSecurityAdmin(cmdCtx *Context, desc string) error {
+	if !cmdCtx.Opts.Expert {
+		return app.NewExitError(
+			fmt.Errorf("%w: identity operations require --expert flag (Tier 4: Security Administration)", safety.ErrExpertRequired),
+			app.ExitUsage,
+		)
+	}
 	policy := safety.ConfirmationPolicy{
 		Tier:                safety.TierSecurityAdmin,
 		ResourceDescription: desc,
 	}
 	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-
-	// Tier 4 requires --expert flag
-	if !cmdCtx.Opts.Expert {
-		return app.NewExitError(
-			fmt.Errorf("identity operations require --expert flag (Tier 4: Security Administration)"),
-			app.ExitUsage,
-		)
+	if !result.ConfirmationRequired {
+		return nil // Authorized via flags.
 	}
-
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+	if cmdCtx.Opts.NonInteractive {
+		return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 	}
-	return nil
+	if result.Warning != "" {
+		fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
+	}
+	fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
+	return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 }
 
 func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -1162,11 +1125,8 @@ func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) er
 	}
 
 	desc := fmt.Sprintf("create user %s", userid)
-	if err := confirmSecurityAdmin(cmdCtx, desc); err != nil {
+	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := ap.CreateUser(ctx, userid, password, email, firstname, lastname, comment); err != nil {
@@ -1199,11 +1159,8 @@ func runAccessUserDelete(ctx context.Context, cmdCtx *Context, args []string) er
 	}
 
 	desc := fmt.Sprintf("delete user %s", userid)
-	if err := confirmSecurityAdmin(cmdCtx, desc); err != nil {
+	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := ap.DeleteUser(ctx, userid); err != nil {
@@ -1268,11 +1225,8 @@ func runAccessACLAdd(ctx context.Context, cmdCtx *Context, args []string) error 
 	}
 
 	desc := fmt.Sprintf("ACL add path=%s role=%s", path, role)
-	if err := confirmSecurityAdmin(cmdCtx, desc); err != nil {
+	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := ap.AddACL(ctx, path, role, user, group, propagate); err != nil {

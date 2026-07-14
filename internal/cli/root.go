@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ type Context struct {
 	Writer io.Writer // stdout
 	ErrW   io.Writer // stderr
 	Config io.Reader // optional, for testing
+	Stdin  io.Reader // injectable for testing; defaults to os.Stdin
 }
 
 // CommandFunc is the signature for command handlers.
@@ -255,6 +257,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		Logger: logging.NewStderr(level, opts.Debug),
 		Writer: stdout,
 		ErrW:   stderr,
+		Stdin:  osIn(),
 	}
 
 	if len(remaining) == 0 {
@@ -450,3 +453,6 @@ func GetCommand(name string) (*command, bool) {
 	c, ok := commands[name]
 	return c, ok
 }
+
+// osIn returns os.Stdin, overridable in tests.
+var osIn = func() io.Reader { return os.Stdin }

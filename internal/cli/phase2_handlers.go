@@ -102,7 +102,7 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
 	// Execute operation.
@@ -123,14 +123,19 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 	poller := task.NewPoller(adapter)
 	tr := poller.Wait(ctx, node, upid)
 	if tr.Error != nil {
-		fmt.Fprintf(cmdCtx.ErrW, "Task %s: %v\n", upid, tr.Error)
+		return app.NewExitError(
+			fmt.Errorf("task %s failed: %w", upid, tr.Error),
+			app.ExitProvider,
+		)
 	}
 	if tr.OK {
 		fmt.Fprintf(cmdCtx.Writer, "%s (completed OK)\n", upid)
-	} else {
-		fmt.Fprintf(cmdCtx.Writer, "%s (status: %s)\n", upid, tr.State)
+		return nil
 	}
-	return nil
+	return app.NewExitError(
+		fmt.Errorf("task %s failed with status %q", upid, tr.State),
+		app.ExitProvider,
+	)
 }
 
 // executeLifecycleOp calls the appropriate lifecycle method.

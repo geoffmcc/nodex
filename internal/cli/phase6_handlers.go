@@ -241,11 +241,8 @@ func runCephOSDCreate(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 
 	desc := fmt.Sprintf("create Ceph OSD on %s dev %s", node, dev)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := cm.CephCreateOSD(ctx, node, dev)
@@ -280,11 +277,8 @@ func runCephOSDOut(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	desc := fmt.Sprintf("mark Ceph OSD %d out on node %s", osdid, node)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := cm.CephOSDOut(ctx, node, osdid); err != nil {
@@ -329,7 +323,7 @@ func runCephOSDIn(ctx context.Context, cmdCtx *Context, args []string) error {
 			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
 	if err := cm.CephOSDIn(ctx, node, osdid); err != nil {
@@ -365,7 +359,7 @@ func runCephOSDDestroy(ctx context.Context, cmdCtx *Context, args []string) erro
 
 	targetID := fmt.Sprintf("%s/osd.%d", node, osdid)
 	desc := fmt.Sprintf("Ceph OSD %d on %s", osdid, node)
-	if err := confirmDestructiveType(cmdCtx, desc, targetID); err != nil {
+	if err := checkDestructive(cmdCtx, desc, targetID); err != nil {
 		return err
 	}
 
@@ -409,11 +403,8 @@ func runCephPoolCreate(ctx context.Context, cmdCtx *Context, args []string) erro
 	}
 
 	desc := fmt.Sprintf("create Ceph pool %q on node %s", name, node)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := cm.CephCreatePool(ctx, node, name, params)
@@ -448,7 +439,7 @@ func runCephPoolDestroy(ctx context.Context, cmdCtx *Context, args []string) err
 
 	targetID := fmt.Sprintf("%s/%s", node, name)
 	desc := fmt.Sprintf("Ceph pool %q on %s", name, node)
-	if err := confirmDestructiveType(cmdCtx, desc, targetID); err != nil {
+	if err := checkDestructive(cmdCtx, desc, targetID); err != nil {
 		return err
 	}
 
@@ -500,11 +491,8 @@ func runSDNZoneCreate(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 
 	desc := fmt.Sprintf("create SDN zone %q (type: %s)", zoneName, zoneType)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := sm.SDNCreateZone(ctx, zoneType, zoneName); err != nil {
@@ -534,7 +522,7 @@ func runSDNZoneDelete(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 
 	desc := fmt.Sprintf("SDN zone %q", zoneName)
-	if err := confirmDestructiveType(cmdCtx, desc, zoneName); err != nil {
+	if err := checkDestructive(cmdCtx, desc, zoneName); err != nil {
 		return err
 	}
 
@@ -578,11 +566,8 @@ func runSDNVNetCreate(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 
 	desc := fmt.Sprintf("create SDN VNet %q (zone: %s)", vnetName, zone)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := sm.SDNCreateVNet(ctx, vnetName, zone); err != nil {
@@ -612,7 +597,7 @@ func runSDNVNetDelete(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 
 	desc := fmt.Sprintf("SDN VNet %q", vnetName)
-	if err := confirmDestructiveType(cmdCtx, desc, vnetName); err != nil {
+	if err := checkDestructive(cmdCtx, desc, vnetName); err != nil {
 		return err
 	}
 
@@ -653,11 +638,8 @@ func runSDNSubnetCreate(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 
 	desc := fmt.Sprintf("create SDN subnet %s in VNet %s", cidr, vnet)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := sm.SDNCreateSubnet(ctx, vnet, cidr, gateway); err != nil {
@@ -690,7 +672,7 @@ func runSDNSubnetDelete(ctx context.Context, cmdCtx *Context, args []string) err
 
 	targetID := fmt.Sprintf("%s/%s", vnet, subnet)
 	desc := fmt.Sprintf("SDN subnet %s in VNet %s", subnet, vnet)
-	if err := confirmDestructiveType(cmdCtx, desc, targetID); err != nil {
+	if err := checkDestructive(cmdCtx, desc, targetID); err != nil {
 		return err
 	}
 
@@ -721,11 +703,8 @@ func runSDNControllerCreate(ctx context.Context, cmdCtx *Context, args []string)
 	}
 
 	desc := fmt.Sprintf("create SDN controller %q", ctrlName)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := sm.SDNCreateController(ctx, ctrlName); err != nil {
@@ -755,7 +734,7 @@ func runSDNControllerDelete(ctx context.Context, cmdCtx *Context, args []string)
 	}
 
 	desc := fmt.Sprintf("SDN controller %q", ctrlName)
-	if err := confirmDestructiveType(cmdCtx, desc, ctrlName); err != nil {
+	if err := checkDestructive(cmdCtx, desc, ctrlName); err != nil {
 		return err
 	}
 
@@ -933,11 +912,8 @@ func runReplicationCreate(ctx context.Context, cmdCtx *Context, args []string) e
 	}
 
 	desc := fmt.Sprintf("create replication job %q for guest %d", id, guest)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := rp.ReplicationCreate(ctx, input); err != nil {
@@ -998,11 +974,8 @@ func runReplicationUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 	}
 
 	desc := fmt.Sprintf("update replication job %q", id)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := rp.ReplicationUpdate(ctx, id, input); err != nil {
@@ -1032,7 +1005,7 @@ func runReplicationDelete(ctx context.Context, cmdCtx *Context, args []string) e
 	}
 
 	desc := fmt.Sprintf("replication job %q", id)
-	if err := confirmDestructiveType(cmdCtx, desc, id); err != nil {
+	if err := checkDestructive(cmdCtx, desc, id); err != nil {
 		return err
 	}
 
@@ -1077,7 +1050,7 @@ func runReplicationSchedule(ctx context.Context, cmdCtx *Context, args []string)
 			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
 	if err := rp.ReplicationSchedule(ctx, node, id); err != nil {
