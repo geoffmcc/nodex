@@ -427,10 +427,10 @@ func TestGetTasksRejectsEmptyNode(t *testing.T) {
 
 func TestGetTaskDecodesTaskDetail(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/nodes/proxmox/tasks/UPID:proxmox/00012345/0" {
+		if r.URL.Path != "/nodes/proxmox/tasks/UPID:proxmox/00012345/0/status" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		_, _ = fmt.Fprint(w, `{"data":{"upid":"UPID:proxmox/00012345/0","type":"vzdump","state":"stopped","starttime":1700000000,"endtime":1700000010,"status":"OK","pid":1234}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"upid":"UPID:proxmox/00012345/0","type":"vzdump","status":"stopped","exitstatus":"OK","starttime":1700000000,"pid":1234}}`)
 	}))
 	defer s.Close()
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
@@ -438,7 +438,7 @@ func TestGetTaskDecodesTaskDetail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	if task.UPID != "UPID:proxmox/00012345/0" || task.State != "stopped" || task.Status != "OK" {
+	if task.UPID != "UPID:proxmox/00012345/0" || task.Status != "stopped" || task.ExitStatus != "OK" {
 		t.Fatalf("task = %+v", task)
 	}
 }

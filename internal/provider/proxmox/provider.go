@@ -388,15 +388,7 @@ func (p *Provider) Tasks(ctx context.Context, node string) ([]domain.Task, error
 	}
 	result := make([]domain.Task, 0, len(items))
 	for _, item := range items {
-		result = append(result, domain.Task{
-			UPID:      item.UPID,
-			Type:      item.Type,
-			State:     item.State,
-			StartTime: item.StartTime,
-			EndTime:   item.EndTime,
-			Status:    item.Status,
-			Node:      node,
-		})
+		result = append(result, mapTask(item, node))
 	}
 	return result, nil
 }
@@ -410,15 +402,28 @@ func (p *Provider) Task(ctx context.Context, node, upid string) (*domain.Task, e
 	if err != nil {
 		return nil, fmt.Errorf("get task: %w", err)
 	}
-	return &domain.Task{
+	task := mapTask(*item, node)
+	return &task, nil
+}
+
+func mapTask(item client.TaskListItem, node string) domain.Task {
+	state := item.State
+	status := item.Status
+	if item.ExitStatus != "" {
+		// /nodes/{node}/tasks/{upid}/status uses status for running/stopped
+		// state and exitstatus for the final OK/error value.
+		state = item.Status
+		status = item.ExitStatus
+	}
+	return domain.Task{
 		UPID:      item.UPID,
 		Type:      item.Type,
-		State:     item.State,
+		State:     state,
 		StartTime: item.StartTime,
 		EndTime:   item.EndTime,
-		Status:    item.Status,
+		Status:    status,
 		Node:      node,
-	}, nil
+	}
 }
 
 // VMSnapshots returns snapshots for a VM.

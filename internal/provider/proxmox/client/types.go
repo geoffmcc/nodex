@@ -242,14 +242,15 @@ type TaskListResponse struct {
 
 // TaskListItem represents a single task in the task list.
 type TaskListItem struct {
-	UPID      string `json:"upid"`
-	Type      string `json:"type"`
-	State     string `json:"state"` // running, stopped
-	StartTime int    `json:"starttime"`
-	EndTime   int    `json:"endtime,omitempty"`
-	Status    string `json:"status,omitempty"` // OK on completion
-	PID       int    `json:"pid,omitempty"`
-	Worker    string `json:"worker,omitempty"`
+	UPID       string `json:"upid"`
+	Type       string `json:"type"`
+	State      string `json:"state"` // running, stopped
+	StartTime  int    `json:"starttime"`
+	EndTime    int    `json:"endtime,omitempty"`
+	Status     string `json:"status,omitempty"`     // OK on completion
+	ExitStatus string `json:"exitstatus,omitempty"` // OK on task-status responses
+	PID        int    `json:"pid,omitempty"`
+	Worker     string `json:"worker,omitempty"`
 }
 
 // TaskDetailResponse is the response from /nodes/{node}/tasks/{upid}.

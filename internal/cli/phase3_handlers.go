@@ -141,11 +141,11 @@ func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Pr
 		result.Error = &output.ResultError{
 			Class:  "task_failure",
 			Exit:   app.ExitTaskFailure,
-			Detail: fmt.Sprintf("task failed with status %q", tr.State),
+			Detail: fmt.Sprintf("task failed with status %q", tr.Status),
 		}
 		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 		return app.NewExitError(
-			fmt.Errorf("task %s failed with status %q", upid, tr.State),
+			fmt.Errorf("task %s failed with status %q", upid, tr.Status),
 			app.ExitTaskFailure,
 		)
 	}

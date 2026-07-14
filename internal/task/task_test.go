@@ -165,11 +165,14 @@ func TestPollerTaskFailure(t *testing.T) {
 		WithMaxWait(5*time.Second),
 	)
 	result := poller.Wait(context.Background(), "pve1", "UPID:pve1/100/0")
-	if result.Error == nil {
-		t.Fatal("expected error for failed task")
+	if result.Error != nil {
+		t.Fatalf("unexpected polling error for known failed task: %v", result.Error)
 	}
 	if result.OK {
 		t.Error("expected non-OK result")
+	}
+	if result.Status != "error" {
+		t.Errorf("Status = %q, want error", result.Status)
 	}
 }
 
