@@ -109,7 +109,14 @@ func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Pr
 	}
 
 	fmt.Fprintf(cmdCtx.ErrW, "Waiting for task %s...\n", upid)
-	adapter := &taskStatusAdapter{prov: prov}
+	ti, ok := prov.(domain.TaskInspector)
+	if !ok {
+		return app.NewExitError(
+			fmt.Errorf("%w: task polling not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	adapter := &taskStatusAdapter{ti: ti}
 	poller := task.NewPoller(adapter)
 	tr := poller.Wait(ctx, node, upid)
 

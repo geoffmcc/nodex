@@ -15,7 +15,6 @@ import (
 	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
-	"github.com/geoffmcc/nodex/internal/provider/proxmox"
 	"golang.org/x/term"
 )
 
@@ -452,16 +451,7 @@ func runProfileTest(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	proxmoxProv, ok := prov.(*proxmox.Provider)
-	if !ok {
-		return app.NewExitError(
-			fmt.Errorf("provider %q is not a Proxmox provider", p.Provider),
-			app.ExitProvider,
-		)
-	}
-
-	version, err := proxmoxProv.TestConnectivity(ctx)
-	if err != nil {
+	if err := prov.Health(ctx); err != nil {
 		return app.NewExitError(
 			fmt.Errorf("test connectivity: %w", err),
 			app.ExitNetwork,
@@ -469,9 +459,7 @@ func runProfileTest(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	fmt.Fprintf(cmdCtx.Writer, "Profile %q (%s): OK\n", name, p.Endpoint)
-	if version != nil {
-		fmt.Fprintf(cmdCtx.Writer, "  Version: %s\n", version.Version)
-	}
+	fmt.Fprintf(cmdCtx.Writer, "  Version: %s\n", prov.Version())
 	return nil
 }
 

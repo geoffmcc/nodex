@@ -25,7 +25,11 @@ func runNodeList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	nodes, err := prov.Nodes(ctx)
+	ni, err := requireNodeInspector(prov)
+	if err != nil {
+		return err
+	}
+	nodes, err := ni.Nodes(ctx)
 	if err != nil {
 		return fmt.Errorf("list nodes: %w", err)
 	}
@@ -43,7 +47,11 @@ func runNodeShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	nodes, err := prov.Nodes(ctx)
+	ni, err := requireNodeInspector(prov)
+	if err != nil {
+		return err
+	}
+	nodes, err := ni.Nodes(ctx)
 	if err != nil {
 		return fmt.Errorf("list nodes: %w", err)
 	}
@@ -202,7 +210,11 @@ func runVMList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	vms, err := prov.VMs(ctx)
+	vi, err := requireVMInspector(prov)
+	if err != nil {
+		return err
+	}
+	vms, err := vi.VMs(ctx)
 	if err != nil {
 		return fmt.Errorf("list VMs: %w", err)
 	}
@@ -219,7 +231,11 @@ func runVMShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	vms, err := prov.VMs(ctx)
+	vi, err := requireVMInspector(prov)
+	if err != nil {
+		return err
+	}
+	vms, err := vi.VMs(ctx)
 	if err != nil {
 		return fmt.Errorf("list VMs: %w", err)
 	}
@@ -303,7 +319,11 @@ func runContainerList(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 	defer cleanup()
 
-	containers, err := prov.Containers(ctx)
+	ci, err := requireContainerInspector(prov)
+	if err != nil {
+		return err
+	}
+	containers, err := ci.Containers(ctx)
 	if err != nil {
 		return fmt.Errorf("list containers: %w", err)
 	}
@@ -320,7 +340,11 @@ func runContainerShow(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 	defer cleanup()
 
-	containers, err := prov.Containers(ctx)
+	ci, err := requireContainerInspector(prov)
+	if err != nil {
+		return err
+	}
+	containers, err := ci.Containers(ctx)
 	if err != nil {
 		return fmt.Errorf("list containers: %w", err)
 	}
@@ -400,7 +424,11 @@ func runStorageList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	storages, err := prov.Storage(ctx)
+	si, err := requireStorageInspector(prov)
+	if err != nil {
+		return err
+	}
+	storages, err := si.Storage(ctx)
 	if err != nil {
 		return fmt.Errorf("list storage: %w", err)
 	}
@@ -417,7 +445,11 @@ func runStorageShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	storages, err := prov.Storage(ctx)
+	si, err := requireStorageInspector(prov)
+	if err != nil {
+		return err
+	}
+	storages, err := si.Storage(ctx)
 	if err != nil {
 		return fmt.Errorf("list storage: %w", err)
 	}
@@ -498,7 +530,11 @@ func runClusterStatus(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 	defer cleanup()
 
-	cluster, err := prov.Cluster(ctx)
+	cl, err := requireClusterInspector(prov)
+	if err != nil {
+		return err
+	}
+	cluster, err := cl.Cluster(ctx)
 	if err != nil {
 		return fmt.Errorf("get cluster status: %w", err)
 	}
@@ -540,7 +576,11 @@ func runVMConfig(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	config, err := prov.VMConfig(ctx, node, vmid)
+	vi, err := requireVMInspector(prov)
+	if err != nil {
+		return err
+	}
+	config, err := vi.VMConfig(ctx, node, vmid)
 	if err != nil {
 		return fmt.Errorf("get vm config: %w", err)
 	}
@@ -566,7 +606,11 @@ func runContainerConfig(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 	defer cleanup()
 
-	config, err := prov.ContainerConfig(ctx, node, vmid)
+	ci, err := requireContainerInspector(prov)
+	if err != nil {
+		return err
+	}
+	config, err := ci.ContainerConfig(ctx, node, vmid)
 	if err != nil {
 		return fmt.Errorf("get container config: %w", err)
 	}
@@ -608,7 +652,11 @@ func runStorageContent(ctx context.Context, cmdCtx *Context, args []string) erro
 	}
 	defer cleanup()
 
-	items, err := prov.StorageContent(ctx, node, storage)
+	si, err := requireStorageInspector(prov)
+	if err != nil {
+		return err
+	}
+	items, err := si.StorageContent(ctx, node, storage)
 	if err != nil {
 		return fmt.Errorf("get storage content: %w", err)
 	}
@@ -658,7 +706,11 @@ func runTaskList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	tasks, err := prov.Tasks(ctx, node)
+	ti, err := requireTaskInspector(prov)
+	if err != nil {
+		return err
+	}
+	tasks, err := ti.Tasks(ctx, node)
 	if err != nil {
 		return fmt.Errorf("list tasks: %w", err)
 	}
@@ -705,7 +757,11 @@ func runTaskShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	task, err := prov.Task(ctx, node, upid)
+	ti, err := requireTaskInspector(prov)
+	if err != nil {
+		return err
+	}
+	task, err := ti.Task(ctx, node, upid)
 	if err != nil {
 		return fmt.Errorf("get task: %w", err)
 	}
@@ -751,7 +807,11 @@ func runVMSnapshots(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	snaps, err := prov.VMSnapshots(ctx, node, vmid)
+	sp, err := requireSnapshotInspector(prov)
+	if err != nil {
+		return err
+	}
+	snaps, err := sp.VMSnapshots(ctx, node, vmid)
 	if err != nil {
 		return fmt.Errorf("get vm snapshots: %w", err)
 	}
@@ -777,7 +837,11 @@ func runContainerSnapshots(ctx context.Context, cmdCtx *Context, args []string) 
 	}
 	defer cleanup()
 
-	snaps, err := prov.ContainerSnapshots(ctx, node, vmid)
+	sp, err := requireSnapshotInspector(prov)
+	if err != nil {
+		return err
+	}
+	snaps, err := sp.ContainerSnapshots(ctx, node, vmid)
 	if err != nil {
 		return fmt.Errorf("get container snapshots: %w", err)
 	}
@@ -857,59 +921,64 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 
 	overview := statusOverview{}
 
-	nodes, err := prov.Nodes(ctx)
-	if err == nil {
-		overview.Nodes = len(nodes)
-		for _, n := range nodes {
-			sn := statusNode{Name: n.Name, Status: n.Status}
-			if n.Uptime != nil {
-				sn.Uptime = n.Uptime.String()
-			}
-			overview.NodesDetail = append(overview.NodesDetail, sn)
-		}
-	}
-
-	vms, err := prov.VMs(ctx)
-	if err == nil {
-		overview.VMs = len(vms)
-		for _, v := range vms {
-			if v.Status == "running" {
-				overview.VMsRunning++
-			} else {
-				overview.VMsStopped++
+	if ni, ok := prov.(domain.NodeInspector); ok {
+		if nodes, err := ni.Nodes(ctx); err == nil {
+			overview.Nodes = len(nodes)
+			for _, n := range nodes {
+				sn := statusNode{Name: n.Name, Status: n.Status}
+				if n.Uptime != nil {
+					sn.Uptime = n.Uptime.String()
+				}
+				overview.NodesDetail = append(overview.NodesDetail, sn)
 			}
 		}
 	}
 
-	cts, err := prov.Containers(ctx)
-	if err == nil {
-		overview.Containers = len(cts)
-		for _, c := range cts {
-			if c.Status == "running" {
-				overview.CTsRunning++
-			} else {
-				overview.CTsStopped++
+	if vi, ok := prov.(domain.VMInspector); ok {
+		if vms, err := vi.VMs(ctx); err == nil {
+			overview.VMs = len(vms)
+			for _, v := range vms {
+				if v.Status == "running" {
+					overview.VMsRunning++
+				} else {
+					overview.VMsStopped++
+				}
 			}
 		}
 	}
 
-	stors, err := prov.Storage(ctx)
-	if err == nil {
-		for _, s := range stors {
-			overview.Storage = append(overview.Storage, statusStorage{
-				Name:  s.Name,
-				Type:  s.Type,
-				Total: s.Total,
-				Used:  s.Used,
-				Avail: s.Avail,
-			})
+	if ci, ok := prov.(domain.ContainerInspector); ok {
+		if cts, err := ci.Containers(ctx); err == nil {
+			overview.Containers = len(cts)
+			for _, c := range cts {
+				if c.Status == "running" {
+					overview.CTsRunning++
+				} else {
+					overview.CTsStopped++
+				}
+			}
 		}
 	}
 
-	cluster, err := prov.Cluster(ctx)
-	if err == nil && cluster != nil {
-		overview.Cluster = cluster.Name
-		overview.Version = cluster.Version
+	if si, ok := prov.(domain.StorageInspector); ok {
+		if stors, err := si.Storage(ctx); err == nil {
+			for _, s := range stors {
+				overview.Storage = append(overview.Storage, statusStorage{
+					Name:  s.Name,
+					Type:  s.Type,
+					Total: s.Total,
+					Used:  s.Used,
+					Avail: s.Avail,
+				})
+			}
+		}
+	}
+
+	if cl, ok := prov.(domain.ClusterInspector); ok {
+		if cluster, err := cl.Cluster(ctx); err == nil && cluster != nil {
+			overview.Cluster = cluster.Name
+			overview.Version = cluster.Version
+		}
 	}
 
 	// Query cluster status for quorum information.
@@ -984,7 +1053,11 @@ func runEventList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	events, err := prov.Events(ctx)
+	ei, err := requireEventInspector(prov)
+	if err != nil {
+		return err
+	}
+	events, err := ei.Events(ctx)
 	if err != nil {
 		return fmt.Errorf("list events: %w", err)
 	}
@@ -1030,7 +1103,11 @@ func runLog(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	entries, err := prov.Syslog(ctx, node)
+	sl, err := requireSyslogInspector(prov)
+	if err != nil {
+		return err
+	}
+	entries, err := sl.Syslog(ctx, node)
 	if err != nil {
 		return fmt.Errorf("get syslog: %w", err)
 	}

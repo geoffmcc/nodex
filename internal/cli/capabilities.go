@@ -7,6 +7,154 @@ import (
 	"github.com/geoffmcc/nodex/internal/domain"
 )
 
+// --- Core inspection helpers ---
+
+// requireNodeInspector asserts the provider has NodeInspector.
+func requireNodeInspector(prov domain.Provider) (domain.NodeInspector, error) {
+	p, ok := prov.(domain.NodeInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: node listing not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireVMInspector asserts the provider has VMInspector.
+func requireVMInspector(prov domain.Provider) (domain.VMInspector, error) {
+	p, ok := prov.(domain.VMInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: VM listing not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireContainerInspector asserts the provider has ContainerInspector.
+func requireContainerInspector(prov domain.Provider) (domain.ContainerInspector, error) {
+	p, ok := prov.(domain.ContainerInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: container listing not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireStorageInspector asserts the provider has StorageInspector.
+func requireStorageInspector(prov domain.Provider) (domain.StorageInspector, error) {
+	p, ok := prov.(domain.StorageInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: storage listing not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireClusterInspector asserts the provider has ClusterInspector.
+func requireClusterInspector(prov domain.Provider) (domain.ClusterInspector, error) {
+	p, ok := prov.(domain.ClusterInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: cluster info not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireTaskInspector asserts the provider has TaskInspector.
+func requireTaskInspector(prov domain.Provider) (domain.TaskInspector, error) {
+	p, ok := prov.(domain.TaskInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: task operations not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireSnapshotInspector asserts the provider has SnapshotInspector.
+func requireSnapshotInspector(prov domain.Provider) (domain.SnapshotInspector, error) {
+	p, ok := prov.(domain.SnapshotInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: snapshot listing not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireEventInspector asserts the provider has EventInspector.
+func requireEventInspector(prov domain.Provider) (domain.EventInspector, error) {
+	p, ok := prov.(domain.EventInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: event listing not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireSyslogInspector asserts the provider has SyslogInspector.
+func requireSyslogInspector(prov domain.Provider) (domain.SyslogInspector, error) {
+	p, ok := prov.(domain.SyslogInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: syslog not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireBackupInspector asserts the provider has BackupInspector.
+func requireBackupInspector(prov domain.Provider) (domain.BackupInspector, error) {
+	p, ok := prov.(domain.BackupInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: backup listing not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireFirewallInspector asserts the provider has FirewallInspector.
+func requireFirewallInspector(prov domain.Provider) (domain.FirewallInspector, error) {
+	p, ok := prov.(domain.FirewallInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: firewall rule listing not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireHAInspector asserts the provider has HAInspector.
+func requireHAInspector(prov domain.Provider) (domain.HAInspector, error) {
+	p, ok := prov.(domain.HAInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: HA resource listing not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// --- Optional capability helpers ---
+
 // requireNodeDetail checks if the provider supports NodeDetailProvider
 // and returns an error if not.
 func requireNodeDetail(prov domain.Provider) (domain.NodeDetailProvider, error) {

@@ -22,9 +22,10 @@ type e2eMockProvider struct {
 	connected bool
 }
 
-func (p *e2eMockProvider) Name() string    { return e2eMockProviderName }
-func (p *e2eMockProvider) Version() string { return "e2e" }
-func (p *e2eMockProvider) Close() error    { return nil }
+func (p *e2eMockProvider) Name() string                   { return e2eMockProviderName }
+func (p *e2eMockProvider) Version() string                { return "e2e" }
+func (p *e2eMockProvider) Close() error                   { return nil }
+func (p *e2eMockProvider) Health(_ context.Context) error { return nil }
 func (p *e2eMockProvider) Capabilities() []domain.Capability {
 	return []domain.Capability{
 		domain.CapabilityNodes, domain.CapabilityVMs, domain.CapabilityContainers,

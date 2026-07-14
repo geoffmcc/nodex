@@ -177,16 +177,18 @@ func runStatusAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		}
 
 		// Get cluster info.
-		cluster, err := prov.Cluster(ctx)
-		if err == nil && cluster != nil {
-			as.Version = cluster.Version
-			as.Nodes = cluster.Nodes
+		if cl, ok := prov.(domain.ClusterInspector); ok {
+			if cluster, err := cl.Cluster(ctx); err == nil && cluster != nil {
+				as.Version = cluster.Version
+				as.Nodes = cluster.Nodes
+			}
 		}
 
 		// Count VMs.
-		vms, err := prov.VMs(ctx)
-		if err == nil {
-			as.VMs = len(vms)
+		if vi, ok := prov.(domain.VMInspector); ok {
+			if vms, err := vi.VMs(ctx); err == nil {
+				as.VMs = len(vms)
+			}
 		}
 
 		cleanup()
@@ -246,16 +248,18 @@ func runNodesAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 			continue
 		}
 
-		nodes, err := prov.Nodes(ctx)
-		if err != nil {
-			fmt.Fprintf(cmdCtx.ErrW, "profile %q nodes: %v\n", profileName, err)
-			cleanup()
-			failures++
-			continue
-		}
+		if ni, ok := prov.(domain.NodeInspector); ok {
+			nodes, err := ni.Nodes(ctx)
+			if err != nil {
+				fmt.Fprintf(cmdCtx.ErrW, "profile %q nodes: %v\n", profileName, err)
+				cleanup()
+				failures++
+				continue
+			}
 
-		for _, n := range nodes {
-			allNodes = append(allNodes, nodeWithProfile{Profile: profileName, Node: n})
+			for _, n := range nodes {
+				allNodes = append(allNodes, nodeWithProfile{Profile: profileName, Node: n})
+			}
 		}
 		cleanup()
 	}
@@ -322,16 +326,18 @@ func runVMsAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 			continue
 		}
 
-		vms, err := prov.VMs(ctx)
-		if err != nil {
-			fmt.Fprintf(cmdCtx.ErrW, "profile %q vms: %v\n", profileName, err)
-			cleanup()
-			failures++
-			continue
-		}
+		if vi, ok := prov.(domain.VMInspector); ok {
+			vms, err := vi.VMs(ctx)
+			if err != nil {
+				fmt.Fprintf(cmdCtx.ErrW, "profile %q vms: %v\n", profileName, err)
+				cleanup()
+				failures++
+				continue
+			}
 
-		for _, v := range vms {
-			allVMs = append(allVMs, vmWithProfile{Profile: profileName, VM: v})
+			for _, v := range vms {
+				allVMs = append(allVMs, vmWithProfile{Profile: profileName, VM: v})
+			}
 		}
 		cleanup()
 	}
@@ -395,16 +401,18 @@ func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 			continue
 		}
 
-		cts, err := prov.Containers(ctx)
-		if err != nil {
-			fmt.Fprintf(cmdCtx.ErrW, "profile %q containers: %v\n", profileName, err)
-			cleanup()
-			failures++
-			continue
-		}
+		if ci, ok := prov.(domain.ContainerInspector); ok {
+			cts, err := ci.Containers(ctx)
+			if err != nil {
+				fmt.Fprintf(cmdCtx.ErrW, "profile %q containers: %v\n", profileName, err)
+				cleanup()
+				failures++
+				continue
+			}
 
-		for _, c := range cts {
-			allCTs = append(allCTs, containerWithProfile{Profile: profileName, Container: c})
+			for _, c := range cts {
+				allCTs = append(allCTs, containerWithProfile{Profile: profileName, Container: c})
+			}
 		}
 		cleanup()
 	}
