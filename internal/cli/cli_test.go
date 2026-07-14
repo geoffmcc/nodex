@@ -1582,3 +1582,124 @@ func TestMultiProfileCancellation(t *testing.T) {
 		t.Log("mock provider completed despite cancelled context (expected)")
 	}
 }
+
+// TestRunDoctor verifies the doctor command runs without live infrastructure.
+func TestRunDoctor(t *testing.T) {
+	isolateConfigAndHome(t)
+
+	// Without config, doctor should still report config failure but not crash.
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := config.WriteTo(config.DefaultConfig(), path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err = Run(context.Background(), []string{"doctor"}, &stdout, &stderr)
+	// Doctor may fail because config is missing profiles, but it should not panic.
+	// The output should contain the config check result.
+	out := stdout.String()
+	if !strings.Contains(out, "config") {
+		t.Errorf("doctor output missing config check: %q", out)
+	}
+	t.Logf("doctor output: %s", out)
+	if err != nil {
+		t.Logf("doctor error (expected if issues found): %v", err)
+	}
+}
+
+// TestRunDoctorJSON verifies doctor JSON output.
+func TestRunDoctorJSON(t *testing.T) {
+	isolateConfigAndHome(t)
+
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	cfg := config.DefaultConfig()
+	cfg.Profiles["test"] = config.Profile{Provider: "proxmox", Endpoint: "https://example.com"}
+	if err := config.WriteTo(cfg, path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err = Run(context.Background(), []string{"--output", "json", "doctor"}, &stdout, &stderr)
+	if err != nil {
+		t.Logf("doctor JSON error: %v", err)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"results"`) && !strings.Contains(out, `"pass"`) {
+		t.Errorf("doctor JSON missing expected keys: %q", out)
+	}
+}
+
+// TestRunDoctorRejectsExtraArgs verifies doctor rejects extra arguments.
+func TestRunDoctorRejectsExtraArgs(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"doctor", "extra"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for extra args")
+	}
+}
+
+// TestSortResultsNilSafe verifies sortResults handles nil/empty slices.
+func TestSortResultsNilSafe(t *testing.T) {
+	// Must not panic on nil.
+	sortResults(nil)
+	// Must not panic on empty.
+	sortResults([]checkResult{})
+	// Must sort correctly.
+	results := []checkResult{
+		{Name: "z", Status: "pass"},
+		{Name: "a", Status: "pass"},
+		{Name: "m", Status: "pass"},
+	}
+	sortResults(results)
+	if results[0].Name != "a" || results[1].Name != "m" || results[2].Name != "z" {
+		t.Errorf("sortResults did not sort: %v", results)
+	}
+}
+
+// TestToHandler verifies the operation-path-to-handler-name conversion.
+func TestToHandler(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"vm start", "VmStart"},
+		{"vm delete", "VmDelete"},
+		{"container snapshot create", "ContainerSnapshotCreate"},
+		{"firewall ipset entry add", "FirewallIpsetEntryAdd"},
+		{"ceph osd in", "CephOsdIn"},
+		{"backup job delete", "BackupJobDelete"},
+		{"sdn zone create", "SdnZoneCreate"},
+		{"access user create", "AccessUserCreate"},
+	}
+	for _, tt := range tests {
+		got := toHandler(tt.path)
+		if got != tt.want {
+			t.Errorf("toHandler(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}
+
+// TestToHandlerEdgeCases verifies toHandler handles edge cases.
+func TestToHandlerEdgeCases(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"", ""},
+		{" ", ""},
+		{"  a  ", "A"},
+		{"a b c d", "ABCD"},
+	}
+	for _, tt := range tests {
+		got := toHandler(tt.path)
+		if got != tt.want {
+			t.Errorf("toHandler(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}
