@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
@@ -139,13 +140,13 @@ func runProfileImport(_ context.Context, cmdCtx *Context, args []string) error {
 // === Cross-Profile Aggregation ===
 
 // aggregatedStatus is a per-profile status summary for --all output.
+// The Error field has been removed; per-profile errors are carried in the
+// MultiProfileOutput envelope via ProfileResult.Error.
 type aggregatedStatus struct {
-	Profile  string `json:"profile" yaml:"profile"`
 	Endpoint string `json:"endpoint" yaml:"endpoint"`
 	Version  string `json:"version" yaml:"version"`
 	Nodes    int    `json:"nodes" yaml:"nodes"`
 	VMs      int    `json:"vms" yaml:"vms"`
-	Error    string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 func runStatusAll(ctx context.Context, cmdCtx *Context, _ []string) error {
@@ -159,22 +160,20 @@ func runStatusAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		return app.NewExitError(fmt.Errorf("no profiles configured"), app.ExitConfig)
 	}
 
-	var results []aggregatedStatus
-	failures := 0
+	out := output.NewMultiProfileOutput[aggregatedStatus]()
 	for _, profileName := range names {
 		p := cfg.Profiles[profileName]
-		as := aggregatedStatus{
-			Profile:  profileName,
-			Endpoint: p.Endpoint,
-		}
+		start := time.Now()
 
 		prov, cleanup, connErr := connectProfile(ctx, cmdCtx, profileName)
 		if connErr != nil {
-			as.Error = connErr.Error()
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q: %v\n", profileName, connErr)
-			results = append(results, as)
-			failures++
+			out.AddFailure(profileName, connErr, time.Since(start))
 			continue
+		}
+
+		as := aggregatedStatus{
+			Endpoint: p.Endpoint,
 		}
 
 		// Get cluster info.
@@ -193,40 +192,36 @@ func runStatusAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		}
 
 		cleanup()
-		results = append(results, as)
+		out.AddSuccess(profileName, as, time.Since(start))
 	}
 
-	_ = writeAggregatedStatus(cmdCtx, results)
-	return aggregateError(names, failures)
+	out.SortResults()
+	_ = writeAggregatedStatus(cmdCtx, out)
+	return exitFromMulti(out)
 }
 
-func writeAggregatedStatus(cmdCtx *Context, results []aggregatedStatus) error {
+func writeAggregatedStatus(cmdCtx *Context, out output.MultiProfileOutput[aggregatedStatus]) error {
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
-		return output.WriteJSON(cmdCtx.Writer, results)
+		return output.WriteJSON(cmdCtx.Writer, out)
 	case output.FormatYAML:
-		return output.WriteYAML(cmdCtx.Writer, results)
+		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
 		headers := []string{"PROFILE", "ENDPOINT", "VERSION", "NODES", "VMS"}
-		rows := make([][]string, 0, len(results))
-		for _, r := range results {
-			if r.Error != "" {
-				rows = append(rows, []string{r.Profile, r.Endpoint, "", "", fmt.Sprintf("ERROR: %s", r.Error)})
+		rows := make([][]string, 0, len(out.Results))
+		for _, r := range out.Results {
+			if !r.Success && r.Error != nil {
+				rows = append(rows, []string{r.Profile, r.Data.Endpoint, "", "", fmt.Sprintf("ERROR: %s", r.Error.Detail)})
 				continue
 			}
-			rows = append(rows, []string{r.Profile, r.Endpoint, r.Version, fmt.Sprintf("%d", r.Nodes), fmt.Sprintf("%d", r.VMs)})
+			rows = append(rows, []string{r.Profile, r.Data.Endpoint, r.Data.Version,
+				fmt.Sprintf("%d", r.Data.Nodes), fmt.Sprintf("%d", r.Data.VMs)})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
 }
 
 // === Nodes --all ===
-
-// nodeWithProfile adds a profile field to domain.Node.
-type nodeWithProfile struct {
-	Profile string `json:"profile" yaml:"profile"`
-	domain.Node
-}
 
 func runNodesAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 	cfg, err := config.Read()
@@ -239,13 +234,14 @@ func runNodesAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		return app.NewExitError(fmt.Errorf("no profiles configured"), app.ExitConfig)
 	}
 
-	var allNodes []nodeWithProfile
-	failures := 0
+	out := output.NewMultiProfileOutput[[]domain.Node]()
 	for _, profileName := range names {
+		start := time.Now()
+
 		prov, cleanup, connErr := connectProfile(ctx, cmdCtx, profileName)
 		if connErr != nil {
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q: %v\n", profileName, connErr)
-			failures++
+			out.AddFailure(profileName, connErr, time.Since(start))
 			continue
 		}
 
@@ -254,57 +250,51 @@ func runNodesAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 			if err != nil {
 				fmt.Fprintf(cmdCtx.ErrW, "profile %q nodes: %v\n", profileName, err)
 				cleanup()
-				failures++
+				out.AddFailure(profileName, err, time.Since(start))
 				continue
 			}
-
-			for _, n := range nodes {
-				allNodes = append(allNodes, nodeWithProfile{Profile: profileName, Node: n})
-			}
+			out.AddSuccess(profileName, applyLimitN(nodes, cmdCtx.Opts.Limit), time.Since(start))
 		}
 		cleanup()
 	}
 
-	_ = writeNodesAll(cmdCtx, applyLimitN(allNodes, cmdCtx.Opts.Limit))
-	return aggregateError(names, failures)
+	out.SortResults()
+	_ = writeNodesAll(cmdCtx, out)
+	return exitFromMulti(out)
 }
 
-func writeNodesAll(cmdCtx *Context, nodes []nodeWithProfile) error {
-	if nodes == nil {
-		nodes = []nodeWithProfile{}
-	}
-	sort.Slice(nodes, func(i, j int) bool {
-		if nodes[i].Profile != nodes[j].Profile {
-			return nodes[i].Profile < nodes[j].Profile
-		}
-		return nodes[i].Name < nodes[j].Name
-	})
-
+func writeNodesAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.Node]) error {
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
-		return output.WriteJSON(cmdCtx.Writer, nodes)
+		return output.WriteJSON(cmdCtx.Writer, out)
 	case output.FormatYAML:
-		return output.WriteYAML(cmdCtx.Writer, nodes)
+		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
 		headers := []string{"PROFILE", "NAME", "STATUS", "IP", "ROLE", "UPTIME"}
-		rows := make([][]string, 0, len(nodes))
-		for _, n := range nodes {
-			uptime := ""
-			if n.Uptime != nil {
-				uptime = n.Uptime.String()
+		var rows [][]string
+		for _, r := range out.Results {
+			if !r.Success {
+				errDetail := ""
+				if r.Error != nil {
+					errDetail = r.Error.Detail
+				}
+				rows = append(rows, []string{r.Profile, "", "", "", "", fmt.Sprintf("ERROR: %s", errDetail)})
+				continue
 			}
-			rows = append(rows, []string{n.Profile, n.Name, n.Status, n.IP, n.Role, uptime})
+			sort.Slice(r.Data, func(i, j int) bool { return r.Data[i].Name < r.Data[j].Name })
+			for _, n := range r.Data {
+				uptime := ""
+				if n.Uptime != nil {
+					uptime = n.Uptime.String()
+				}
+				rows = append(rows, []string{r.Profile, n.Name, n.Status, n.IP, n.Role, uptime})
+			}
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
 }
 
 // === VMs --all ===
-
-type vmWithProfile struct {
-	Profile string `json:"profile" yaml:"profile"`
-	domain.VM
-}
 
 func runVMsAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 	cfg, err := config.Read()
@@ -317,13 +307,14 @@ func runVMsAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		return app.NewExitError(fmt.Errorf("no profiles configured"), app.ExitConfig)
 	}
 
-	var allVMs []vmWithProfile
-	failures := 0
+	out := output.NewMultiProfileOutput[[]domain.VM]()
 	for _, profileName := range names {
+		start := time.Now()
+
 		prov, cleanup, connErr := connectProfile(ctx, cmdCtx, profileName)
 		if connErr != nil {
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q: %v\n", profileName, connErr)
-			failures++
+			out.AddFailure(profileName, connErr, time.Since(start))
 			continue
 		}
 
@@ -332,54 +323,48 @@ func runVMsAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 			if err != nil {
 				fmt.Fprintf(cmdCtx.ErrW, "profile %q vms: %v\n", profileName, err)
 				cleanup()
-				failures++
+				out.AddFailure(profileName, err, time.Since(start))
 				continue
 			}
-
-			for _, v := range vms {
-				allVMs = append(allVMs, vmWithProfile{Profile: profileName, VM: v})
-			}
+			out.AddSuccess(profileName, applyLimitN(vms, cmdCtx.Opts.Limit), time.Since(start))
 		}
 		cleanup()
 	}
 
-	_ = writeVMsAll(cmdCtx, applyLimitN(allVMs, cmdCtx.Opts.Limit))
-	return aggregateError(names, failures)
+	out.SortResults()
+	_ = writeVMsAll(cmdCtx, out)
+	return exitFromMulti(out)
 }
 
-func writeVMsAll(cmdCtx *Context, vms []vmWithProfile) error {
-	if vms == nil {
-		vms = []vmWithProfile{}
-	}
-	sort.Slice(vms, func(i, j int) bool {
-		if vms[i].Profile != vms[j].Profile {
-			return vms[i].Profile < vms[j].Profile
-		}
-		return vms[i].Name < vms[j].Name
-	})
-
+func writeVMsAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.VM]) error {
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
-		return output.WriteJSON(cmdCtx.Writer, vms)
+		return output.WriteJSON(cmdCtx.Writer, out)
 	case output.FormatYAML:
-		return output.WriteYAML(cmdCtx.Writer, vms)
+		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
 		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "CPU", "MEMORY", "DISK"}
-		rows := make([][]string, 0, len(vms))
-		for _, v := range vms {
-			rows = append(rows, []string{v.Profile, v.ID, v.Name, v.Status, v.Node,
-				fmt.Sprintf("%d", v.CPU), formatBytes(v.Memory), formatBytes(v.Disk)})
+		var rows [][]string
+		for _, r := range out.Results {
+			if !r.Success {
+				errDetail := ""
+				if r.Error != nil {
+					errDetail = r.Error.Detail
+				}
+				rows = append(rows, []string{r.Profile, "", "", "", "", "", "", fmt.Sprintf("ERROR: %s", errDetail)})
+				continue
+			}
+			sort.Slice(r.Data, func(i, j int) bool { return r.Data[i].Name < r.Data[j].Name })
+			for _, v := range r.Data {
+				rows = append(rows, []string{r.Profile, v.ID, v.Name, v.Status, v.Node,
+					fmt.Sprintf("%d", v.CPU), formatBytes(v.Memory), formatBytes(v.Disk)})
+			}
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
 }
 
 // === Containers --all ===
-
-type containerWithProfile struct {
-	Profile string `json:"profile" yaml:"profile"`
-	domain.Container
-}
 
 func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 	cfg, err := config.Read()
@@ -392,13 +377,14 @@ func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		return app.NewExitError(fmt.Errorf("no profiles configured"), app.ExitConfig)
 	}
 
-	var allCTs []containerWithProfile
-	failures := 0
+	out := output.NewMultiProfileOutput[[]domain.Container]()
 	for _, profileName := range names {
+		start := time.Now()
+
 		prov, cleanup, connErr := connectProfile(ctx, cmdCtx, profileName)
 		if connErr != nil {
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q: %v\n", profileName, connErr)
-			failures++
+			out.AddFailure(profileName, connErr, time.Since(start))
 			continue
 		}
 
@@ -407,61 +393,63 @@ func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 			if err != nil {
 				fmt.Fprintf(cmdCtx.ErrW, "profile %q containers: %v\n", profileName, err)
 				cleanup()
-				failures++
+				out.AddFailure(profileName, err, time.Since(start))
 				continue
 			}
-
-			for _, c := range cts {
-				allCTs = append(allCTs, containerWithProfile{Profile: profileName, Container: c})
-			}
+			out.AddSuccess(profileName, applyLimitN(cts, cmdCtx.Opts.Limit), time.Since(start))
 		}
 		cleanup()
 	}
 
-	_ = writeContainersAll(cmdCtx, applyLimitN(allCTs, cmdCtx.Opts.Limit))
-	return aggregateError(names, failures)
+	out.SortResults()
+	_ = writeContainersAll(cmdCtx, out)
+	return exitFromMulti(out)
 }
 
-// aggregateError returns nil when all profiles succeeded, ExitPartialFailure
-// when some but not all failed, or a general error when every profile failed.
-func aggregateError(names []string, failures int) error {
-	if failures == 0 {
-		return nil
-	}
-	if failures >= len(names) {
-		return app.NewExitError(fmt.Errorf("all %d profile(s) failed", len(names)), app.ExitPartialFailure)
-	}
-	return app.NewExitError(
-		fmt.Errorf("%d of %d profile(s) failed", failures, len(names)),
-		app.ExitPartialFailure,
-	)
-}
-
-func writeContainersAll(cmdCtx *Context, containers []containerWithProfile) error {
-	if containers == nil {
-		containers = []containerWithProfile{}
-	}
-	sort.Slice(containers, func(i, j int) bool {
-		if containers[i].Profile != containers[j].Profile {
-			return containers[i].Profile < containers[j].Profile
-		}
-		return containers[i].Name < containers[j].Name
-	})
-
+func writeContainersAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.Container]) error {
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
-		return output.WriteJSON(cmdCtx.Writer, containers)
+		return output.WriteJSON(cmdCtx.Writer, out)
 	case output.FormatYAML:
-		return output.WriteYAML(cmdCtx.Writer, containers)
+		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
 		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "OS", "MEMORY", "DISK"}
-		rows := make([][]string, 0, len(containers))
-		for _, c := range containers {
-			rows = append(rows, []string{c.Profile, c.ID, c.Name, c.Status, c.Node,
-				c.OS, formatBytes(c.Memory), formatBytes(c.Disk)})
+		var rows [][]string
+		for _, r := range out.Results {
+			if !r.Success {
+				errDetail := ""
+				if r.Error != nil {
+					errDetail = r.Error.Detail
+				}
+				rows = append(rows, []string{r.Profile, "", "", "", "", "", "", fmt.Sprintf("ERROR: %s", errDetail)})
+				continue
+			}
+			sort.Slice(r.Data, func(i, j int) bool { return r.Data[i].Name < r.Data[j].Name })
+			for _, c := range r.Data {
+				rows = append(rows, []string{r.Profile, c.ID, c.Name, c.Status, c.Node,
+					c.OS, formatBytes(c.Memory), formatBytes(c.Disk)})
+			}
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
+}
+
+// exitFromMulti returns an appropriate error for the process exit code.
+// All success → nil (exit 0). Any failure → ExitPartialFailure (exit 11).
+func exitFromMulti[T any](out output.MultiProfileOutput[T]) error {
+	if out.Failed() == 0 {
+		return nil
+	}
+	if out.AllFailed() {
+		return app.NewExitError(
+			fmt.Errorf("all %d profile(s) failed", out.Summary.Total),
+			app.ExitPartialFailure,
+		)
+	}
+	return app.NewExitError(
+		fmt.Errorf("%d of %d profile(s) failed", out.Summary.Failed, out.Summary.Total),
+		app.ExitPartialFailure,
+	)
 }
 
 // applyLimitN applies the limit to any slice type.

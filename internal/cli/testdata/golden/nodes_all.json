@@ -1,18 +1,38 @@
-[
-  {
-    "profile": "e2e",
-    "id": "node/e2e-node",
-    "name": "e2e-node",
-    "status": "online",
-    "role": "node",
-    "platform": "mock"
-  },
-  {
-    "profile": "lab",
-    "id": "node/e2e-node",
-    "name": "e2e-node",
-    "status": "online",
-    "role": "node",
-    "platform": "mock"
+{
+  "schema": 1,
+  "results": [
+    {
+      "profile": "e2e",
+      "success": true,
+      "data": [
+        {
+          "id": "node/e2e-node",
+          "name": "e2e-node",
+          "status": "online",
+          "role": "node",
+          "platform": "mock"
+        }
+      ],
+      "duration": "0s"
+    },
+    {
+      "profile": "lab",
+      "success": true,
+      "data": [
+        {
+          "id": "node/e2e-node",
+          "name": "e2e-node",
+          "status": "online",
+          "role": "node",
+          "platform": "mock"
+        }
+      ],
+      "duration": "0s"
+    }
+  ],
+  "summary": {
+    "total": 2,
+    "success": 2,
+    "failed": 0
   }
-]
+}

@@ -1,16 +1,32 @@
-[
-  {
-    "profile": "e2e",
-    "endpoint": "https://e2e.example.invalid",
-    "version": "test",
-    "nodes": 1,
-    "vms": 1
-  },
-  {
-    "profile": "lab",
-    "endpoint": "https://e2e.example.invalid",
-    "version": "test",
-    "nodes": 1,
-    "vms": 1
+{
+  "schema": 1,
+  "results": [
+    {
+      "profile": "e2e",
+      "success": true,
+      "data": {
+        "endpoint": "https://e2e.example.invalid",
+        "version": "test",
+        "nodes": 1,
+        "vms": 1
+      },
+      "duration": "0s"
+    },
+    {
+      "profile": "lab",
+      "success": true,
+      "data": {
+        "endpoint": "https://e2e.example.invalid",
+        "version": "test",
+        "nodes": 1,
+        "vms": 1
+      },
+      "duration": "0s"
+    }
+  ],
+  "summary": {
+    "total": 2,
+    "success": 2,
+    "failed": 0
   }
-]
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	stderrors "errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1319,11 +1320,13 @@ func TestWriteNodesAllNilHandling(t *testing.T) {
 		t.Run(string(format), func(t *testing.T) {
 			var stdout bytes.Buffer
 			cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: format}}
-			if err := writeNodesAll(cmdCtx, nil); err != nil {
-				t.Fatalf("writeNodesAll nil: %v", err)
+			out := output.NewMultiProfileOutput[[]domain.Node]()
+			if err := writeNodesAll(cmdCtx, out); err != nil {
+				t.Fatalf("writeNodesAll empty: %v", err)
 			}
-			if got := strings.TrimSpace(stdout.String()); got != "[]" {
-				t.Fatalf("writeNodesAll nil = %q, want []", got)
+			got := strings.TrimSpace(stdout.String())
+			if !strings.Contains(got, "results") {
+				t.Fatalf("writeNodesAll empty = %q, want MultiProfileOutput envelope", got)
 			}
 		})
 	}
@@ -1334,11 +1337,13 @@ func TestWriteVMsAllNilHandling(t *testing.T) {
 		t.Run(string(format), func(t *testing.T) {
 			var stdout bytes.Buffer
 			cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: format}}
-			if err := writeVMsAll(cmdCtx, nil); err != nil {
-				t.Fatalf("writeVMsAll nil: %v", err)
+			out := output.NewMultiProfileOutput[[]domain.VM]()
+			if err := writeVMsAll(cmdCtx, out); err != nil {
+				t.Fatalf("writeVMsAll empty: %v", err)
 			}
-			if got := strings.TrimSpace(stdout.String()); got != "[]" {
-				t.Fatalf("writeVMsAll nil = %q, want []", got)
+			got := strings.TrimSpace(stdout.String())
+			if !strings.Contains(got, "results") {
+				t.Fatalf("writeVMsAll empty = %q, want MultiProfileOutput envelope", got)
 			}
 		})
 	}
@@ -1349,11 +1354,13 @@ func TestWriteContainersAllNilHandling(t *testing.T) {
 		t.Run(string(format), func(t *testing.T) {
 			var stdout bytes.Buffer
 			cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: format}}
-			if err := writeContainersAll(cmdCtx, nil); err != nil {
-				t.Fatalf("writeContainersAll nil: %v", err)
+			out := output.NewMultiProfileOutput[[]domain.Container]()
+			if err := writeContainersAll(cmdCtx, out); err != nil {
+				t.Fatalf("writeContainersAll empty: %v", err)
 			}
-			if got := strings.TrimSpace(stdout.String()); got != "[]" {
-				t.Fatalf("writeContainersAll nil = %q, want []", got)
+			got := strings.TrimSpace(stdout.String())
+			if !strings.Contains(got, "results") {
+				t.Fatalf("writeContainersAll empty = %q, want MultiProfileOutput envelope", got)
 			}
 		})
 	}
@@ -1364,11 +1371,13 @@ func TestWriteAggregatedStatusNilHandling(t *testing.T) {
 		t.Run(string(format), func(t *testing.T) {
 			var stdout bytes.Buffer
 			cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: format}}
-			if err := writeAggregatedStatus(cmdCtx, nil); err != nil {
-				t.Fatalf("writeAggregatedStatus nil: %v", err)
+			out := output.NewMultiProfileOutput[aggregatedStatus]()
+			if err := writeAggregatedStatus(cmdCtx, out); err != nil {
+				t.Fatalf("writeAggregatedStatus empty: %v", err)
 			}
-			if got := strings.TrimSpace(stdout.String()); got != "[]" && got != "null" {
-				t.Fatalf("writeAggregatedStatus nil = %q, want [] or null", got)
+			got := strings.TrimSpace(stdout.String())
+			if !strings.Contains(got, "results") {
+				t.Fatalf("writeAggregatedStatus empty = %q, want MultiProfileOutput envelope", got)
 			}
 		})
 	}
@@ -1468,25 +1477,108 @@ func TestMultiProfileExitCodes(t *testing.T) {
 		}
 	})
 
-	// TestPartialFailureAggregate verifies the aggregateError helper function
-	// returns the correct exit codes for various failure scenarios.
-	t.Run("partial-failure-aggregate", func(t *testing.T) {
-		names := []string{"a", "b", "c"}
+	// TestPartialFailureExitFromMulti verifies the exitFromMulti helper returns
+	// the correct exit codes for various failure scenarios.
+	t.Run("partial-failure-exit-from-multi", func(t *testing.T) {
 		// No failures -> nil
-		if err := aggregateError(names, 0); err != nil {
+		out0 := output.NewMultiProfileOutput[any]()
+		out0.AddSuccess("a", nil, 0)
+		out0.AddSuccess("b", nil, 0)
+		if err := exitFromMulti(out0); err != nil {
 			t.Errorf("0 failures should return nil, got: %v", err)
 		}
 		// Partial -> ExitPartialFailure
-		if err := aggregateError(names, 1); err == nil {
-			t.Error("1/3 failures should return error, got nil")
+		out1 := output.NewMultiProfileOutput[any]()
+		out1.AddSuccess("a", nil, 0)
+		out1.AddFailure("b", fmt.Errorf("connection refused"), 0)
+		if err := exitFromMulti(out1); err == nil {
+			t.Error("1/2 failures should return error, got nil")
 		} else if code := app.ExitCodeFromError(err); code != app.ExitPartialFailure {
-			t.Errorf("1/3 failures: expected ExitPartialFailure (11), got %d", code)
+			t.Errorf("1/2 failures: expected ExitPartialFailure (11), got %d", code)
 		}
 		// All fail -> ExitPartialFailure
-		if err := aggregateError(names, 3); err == nil {
-			t.Error("3/3 failures should return error, got nil")
+		out2 := output.NewMultiProfileOutput[any]()
+		out2.AddFailure("a", fmt.Errorf("timeout"), 0)
+		out2.AddFailure("b", fmt.Errorf("connection refused"), 0)
+		if err := exitFromMulti(out2); err == nil {
+			t.Error("2/2 failures should return error, got nil")
 		} else if code := app.ExitCodeFromError(err); code != app.ExitPartialFailure {
-			t.Errorf("3/3 failures: expected ExitPartialFailure (11), got %d", code)
+			t.Errorf("2/2 failures: expected ExitPartialFailure (11), got %d", code)
 		}
 	})
+}
+
+// TestCheckAllSupported verifies that --all is rejected for commands not
+// in the explicit allowlist.
+func TestCheckAllSupported(t *testing.T) {
+	// Allowed commands.
+	for _, path := range [][]string{
+		{"status"},
+		{"node", "list"},
+		{"vm", "list"},
+		{"container", "list"},
+	} {
+		if err := checkAllSupported(true, path...); err != nil {
+			t.Errorf("checkAllSupported(true, %v) = %v, want nil", path, err)
+		}
+	}
+
+	// When --all is not set, always pass.
+	for _, path := range [][]string{
+		{"status"},
+		{"vm", "start"},
+		{"backup", "create"},
+	} {
+		if err := checkAllSupported(false, path...); err != nil {
+			t.Errorf("checkAllSupported(false, %v) = %v, want nil", path, err)
+		}
+	}
+
+	// Rejected commands.
+	rejected := [][]string{
+		{"vm", "start"},
+		{"vm", "stop"},
+		{"vm", "delete"},
+		{"container", "start"},
+		{"container", "delete"},
+		{"backup", "create"},
+		{"storage", "upload"},
+		{"storage", "delete"},
+		{"firewall", "list"},
+	}
+	for _, path := range rejected {
+		err := checkAllSupported(true, path...)
+		if err == nil {
+			t.Errorf("checkAllSupported(true, %v) = nil, want error", path)
+			continue
+		}
+		if !strings.Contains(err.Error(), "not supported") {
+			t.Errorf("checkAllSupported(true, %v) error should say 'not supported', got: %v", path, err)
+		}
+	}
+}
+
+// TestMultiProfileCancellation verifies that a cancelled context is handled
+// gracefully during multi-profile execution. The e2e mock provider currently
+// does not check context on its domain methods, so this test verifies the
+// code path does not panic or hang. A real provider would return a context
+// cancellation error and produce ExitCancellation.
+func TestMultiProfileCancellation(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	var stdout, stderr bytes.Buffer
+	err := Run(ctx, []string{"--all", "node", "list"}, &stdout, &stderr)
+	// With the mock provider, cancellation may or may not produce an error
+	// depending on whether context is checked. Either outcome is acceptable
+	// as long as the code does not panic or hang.
+	if err != nil {
+		code := app.ExitCodeFromError(err)
+		t.Logf("cancelled context exit code: %d, error: %v", code, err)
+	} else {
+		t.Log("mock provider completed despite cancelled context (expected)")
+	}
 }

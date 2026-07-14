@@ -582,12 +582,18 @@ func TestRunStatusAll(t *testing.T) {
 		t.Fatalf("status --all: %v stderr=%q", err, stderr.String())
 	}
 	out := stdout.String()
-	// Should have entries for both profiles.
+	// Envelope should have schema, results with profile entries, and summary.
+	if !strings.Contains(out, `"schema"`) {
+		t.Fatalf("status --all missing schema: %s", out)
+	}
 	if !strings.Contains(out, `"profile": "e2e"`) {
 		t.Fatalf("status --all missing e2e profile: %s", out)
 	}
 	if !strings.Contains(out, `"profile": "lab"`) {
 		t.Fatalf("status --all missing lab profile: %s", out)
+	}
+	if !strings.Contains(out, `"summary"`) {
+		t.Fatalf("status --all missing summary: %s", out)
 	}
 }
 
@@ -601,6 +607,9 @@ func TestRunNodesAll(t *testing.T) {
 		t.Fatalf("nodes --all: %v stderr=%q", err, stderr.String())
 	}
 	out := stdout.String()
+	if !strings.Contains(out, `"schema"`) {
+		t.Fatalf("nodes --all missing schema envelope: %s", out)
+	}
 	if !strings.Contains(out, `"profile": "e2e"`) {
 		t.Fatalf("nodes --all missing e2e profile: %s", out)
 	}
@@ -609,6 +618,9 @@ func TestRunNodesAll(t *testing.T) {
 	}
 	if !strings.Contains(out, `"name": "e2e-node"`) {
 		t.Fatalf("nodes --all missing node: %s", out)
+	}
+	if !strings.Contains(out, `"summary"`) {
+		t.Fatalf("nodes --all missing summary: %s", out)
 	}
 }
 
@@ -622,6 +634,9 @@ func TestRunVMsAll(t *testing.T) {
 		t.Fatalf("vms --all: %v stderr=%q", err, stderr.String())
 	}
 	out := stdout.String()
+	if !strings.Contains(out, `"schema"`) {
+		t.Fatalf("vms --all missing schema envelope: %s", out)
+	}
 	if !strings.Contains(out, `"profile": "e2e"`) {
 		t.Fatalf("vms --all missing e2e profile: %s", out)
 	}
@@ -630,6 +645,9 @@ func TestRunVMsAll(t *testing.T) {
 	}
 	if !strings.Contains(out, `"id": "e2e-node/100"`) {
 		t.Fatalf("vms --all missing VM: %s", out)
+	}
+	if !strings.Contains(out, `"summary"`) {
+		t.Fatalf("vms --all missing summary: %s", out)
 	}
 }
 
@@ -643,6 +661,9 @@ func TestRunContainersAll(t *testing.T) {
 		t.Fatalf("containers --all: %v stderr=%q", err, stderr.String())
 	}
 	out := stdout.String()
+	if !strings.Contains(out, `"schema"`) {
+		t.Fatalf("containers --all missing schema envelope: %s", out)
+	}
 	if !strings.Contains(out, `"profile": "e2e"`) {
 		t.Fatalf("containers --all missing e2e profile: %s", out)
 	}
@@ -651,6 +672,9 @@ func TestRunContainersAll(t *testing.T) {
 	}
 	if !strings.Contains(out, `"id": "e2e-node/200"`) {
 		t.Fatalf("containers --all missing container: %s", out)
+	}
+	if !strings.Contains(out, `"summary"`) {
+		t.Fatalf("containers --all missing summary: %s", out)
 	}
 }
 
@@ -683,6 +707,165 @@ func TestRunAllTableOutput(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRunAllOnMutationRejected(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "vm_start", args: []string{"--all", "--yes", "vm", "start", "e2e-node/100"}},
+		{name: "vm_stop", args: []string{"--all", "--yes", "vm", "stop", "e2e-node/100"}},
+		{name: "vm_delete", args: []string{"--all", "--yes", "vm", "delete", "e2e-node/100"}},
+		{name: "container_start", args: []string{"--all", "--yes", "container", "start", "e2e-node/200"}},
+		{name: "backup_create", args: []string{"--all", "backup", "create", "e2e-node/100"}},
+		{name: "storage_delete", args: []string{"--all", "storage", "delete", "local:iso/test.iso"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err == nil {
+				t.Fatalf("expected error for --all with mutation %q, got nil", tt.name)
+			}
+			if !strings.Contains(err.Error(), "not supported") {
+				t.Fatalf("error should mention 'not supported', got: %v", err)
+			}
+		})
+	}
+}
+
+func TestDeterministicMultiProfileOrdering(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	// Run node list --all twice and verify that profile order is deterministic.
+	// (Exact JSON equality is not guaranteed because the "duration" field
+	// depends on wall-clock timing.)
+	var run1Stdout, run1Stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--output", "json", "--all", "node", "list"}, &run1Stdout, &run1Stderr)
+	if err != nil {
+		t.Fatalf("run1: %v stderr=%q", err, run1Stderr.String())
+	}
+
+	var run2Stdout, run2Stderr bytes.Buffer
+	err = Run(context.Background(), []string{"--output", "json", "--all", "node", "list"}, &run2Stdout, &run2Stderr)
+	if err != nil {
+		t.Fatalf("run2: %v stderr=%q", err, run2Stderr.String())
+	}
+
+	// Parse and extract profile order from both runs.
+	extractOrder := func(in string) []string {
+		var order []string
+		// The results array contains "profile" keys in order.
+		// Simple string scan is sufficient for deterministic output.
+		start := 0
+		for {
+			idx := strings.Index(in[start:], `"profile"`)
+			if idx == -1 {
+				break
+			}
+			start += idx
+			colon := strings.Index(in[start:], ":")
+			if colon == -1 {
+				break
+			}
+			start += colon + 1
+			end := strings.Index(in[start:], ",")
+			if end == -1 {
+				end = strings.Index(in[start:], "\n")
+			}
+			if end == -1 {
+				break
+			}
+			name := strings.TrimSpace(strings.Trim(in[start:start+end], `" `))
+			if name != "" {
+				order = append(order, name)
+			}
+			start += end
+		}
+		return order
+	}
+
+	order1 := extractOrder(run1Stdout.String())
+	order2 := extractOrder(run2Stdout.String())
+
+	if len(order1) != len(order2) {
+		t.Fatalf("profile count differs: %d vs %d", len(order1), len(order2))
+	}
+	for i := range order1 {
+		if order1[i] != order2[i] {
+			t.Fatalf("profile order mismatch at position %d: %q vs %q", i, order1[i], order2[i])
+		}
+	}
+}
+
+func TestMultiProfileOutputEnvelopeStructure(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--output", "json", "--all", "status"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("status --all: %v", err)
+	}
+	out := stdout.String()
+
+	// Verify top-level envelope fields.
+	for _, want := range []string{
+		`"schema":`,
+		`"results":`,
+		`"summary":`,
+		`"total":`,
+		`"success":`,
+		`"failed":`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing envelope field %q in:\n%s", want, out)
+		}
+	}
+
+	// Verify per-profile fields in results.
+	for _, want := range []string{
+		`"profile":`,
+		`"success":`,
+		`"data":`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing result field %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestMultiProfileListsFailedProfilesInOutput(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	// Run with --all and --output table to verify that even empty or
+	// error profiles appear in output. With the current mock, both
+	// profiles succeed, so we verify the table includes both.
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--output", "table", "--all", "vm", "list"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("vm list --all table: %v", err)
+	}
+	out := stdout.String()
+
+	// Both profiles should appear in table.
+	if !strings.Contains(out, "e2e") {
+		t.Fatalf("table output missing e2e profile:\n%s", out)
+	}
+	if !strings.Contains(out, "lab") {
+		t.Fatalf("table output missing lab profile:\n%s", out)
+	}
+	// Table headers should include PROFILE column.
+	if !strings.Contains(out, "PROFILE") {
+		t.Fatalf("table output missing PROFILE header:\n%s", out)
 	}
 }
 
