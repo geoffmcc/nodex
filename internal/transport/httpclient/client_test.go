@@ -453,8 +453,8 @@ func TestDoRejectsHTTPSToHTTPRedirect(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for HTTPS to HTTP redirect")
 	}
-	if !strings.Contains(err.Error(), "https to http") {
-		t.Errorf("error = %q, want 'https to http' message", err)
+	if !strings.Contains(err.Error(), "HTTPS to HTTP downgrade") {
+		t.Errorf("error = %q, want 'HTTPS to HTTP downgrade' message", err)
 	}
 }
 
