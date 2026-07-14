@@ -215,7 +215,7 @@ func TestSecretString(t *testing.T) {
 		t.Errorf("Secret.String() = %q, want %q", s.String(), redacted)
 	}
 	// %s should also redact.
-	formatted := fmt.Sprintf("%s", s)
+	formatted := s.String()
 	if formatted != redacted {
 		t.Errorf("fmt.Sprintf(%%s, Secret) = %q, want %q", formatted, redacted)
 	}
