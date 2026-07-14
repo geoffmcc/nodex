@@ -53,9 +53,7 @@ func runProfileExport(_ context.Context, cmdCtx *Context, args []string) error {
 		CAFile:   p.CAFile,
 	}
 
-	enc := json.NewEncoder(cmdCtx.Writer)
-	enc.SetIndent("", "  ")
-	return enc.Encode(exp)
+	return output.WriteJSON(cmdCtx.Writer, exp)
 }
 
 // === Profile Import ===
@@ -161,6 +159,7 @@ func runStatusAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 	}
 
 	var results []aggregatedStatus
+	failures := 0
 	for _, profileName := range names {
 		p := cfg.Profiles[profileName]
 		as := aggregatedStatus{
@@ -173,6 +172,7 @@ func runStatusAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 			as.Error = connErr.Error()
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q: %v\n", profileName, connErr)
 			results = append(results, as)
+			failures++
 			continue
 		}
 
@@ -193,7 +193,8 @@ func runStatusAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		results = append(results, as)
 	}
 
-	return writeAggregatedStatus(cmdCtx, results)
+	_ = writeAggregatedStatus(cmdCtx, results)
+	return aggregateError(names, failures)
 }
 
 func writeAggregatedStatus(cmdCtx *Context, results []aggregatedStatus) error {
@@ -236,10 +237,12 @@ func runNodesAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 	}
 
 	var allNodes []nodeWithProfile
+	failures := 0
 	for _, profileName := range names {
 		prov, cleanup, connErr := connectProfile(ctx, cmdCtx, profileName)
 		if connErr != nil {
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q: %v\n", profileName, connErr)
+			failures++
 			continue
 		}
 
@@ -247,6 +250,7 @@ func runNodesAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		if err != nil {
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q nodes: %v\n", profileName, err)
 			cleanup()
+			failures++
 			continue
 		}
 
@@ -256,7 +260,8 @@ func runNodesAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		cleanup()
 	}
 
-	return writeNodesAll(cmdCtx, applyLimitN(allNodes, cmdCtx.Opts.Limit))
+	_ = writeNodesAll(cmdCtx, applyLimitN(allNodes, cmdCtx.Opts.Limit))
+	return aggregateError(names, failures)
 }
 
 func writeNodesAll(cmdCtx *Context, nodes []nodeWithProfile) error {
@@ -308,10 +313,12 @@ func runVMsAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 	}
 
 	var allVMs []vmWithProfile
+	failures := 0
 	for _, profileName := range names {
 		prov, cleanup, connErr := connectProfile(ctx, cmdCtx, profileName)
 		if connErr != nil {
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q: %v\n", profileName, connErr)
+			failures++
 			continue
 		}
 
@@ -319,6 +326,7 @@ func runVMsAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		if err != nil {
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q vms: %v\n", profileName, err)
 			cleanup()
+			failures++
 			continue
 		}
 
@@ -328,7 +336,8 @@ func runVMsAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		cleanup()
 	}
 
-	return writeVMsAll(cmdCtx, applyLimitN(allVMs, cmdCtx.Opts.Limit))
+	_ = writeVMsAll(cmdCtx, applyLimitN(allVMs, cmdCtx.Opts.Limit))
+	return aggregateError(names, failures)
 }
 
 func writeVMsAll(cmdCtx *Context, vms []vmWithProfile) error {
@@ -377,10 +386,12 @@ func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 	}
 
 	var allCTs []containerWithProfile
+	failures := 0
 	for _, profileName := range names {
 		prov, cleanup, connErr := connectProfile(ctx, cmdCtx, profileName)
 		if connErr != nil {
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q: %v\n", profileName, connErr)
+			failures++
 			continue
 		}
 
@@ -388,6 +399,7 @@ func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		if err != nil {
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q containers: %v\n", profileName, err)
 			cleanup()
+			failures++
 			continue
 		}
 
@@ -397,7 +409,23 @@ func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 		cleanup()
 	}
 
-	return writeContainersAll(cmdCtx, applyLimitN(allCTs, cmdCtx.Opts.Limit))
+	_ = writeContainersAll(cmdCtx, applyLimitN(allCTs, cmdCtx.Opts.Limit))
+	return aggregateError(names, failures)
+}
+
+// aggregateError returns nil when all profiles succeeded, ExitPartialFailure
+// when some but not all failed, or a general error when every profile failed.
+func aggregateError(names []string, failures int) error {
+	if failures == 0 {
+		return nil
+	}
+	if failures >= len(names) {
+		return app.NewExitError(fmt.Errorf("all %d profile(s) failed", len(names)), app.ExitPartialFailure)
+	}
+	return app.NewExitError(
+		fmt.Errorf("%d of %d profile(s) failed", failures, len(names)),
+		app.ExitPartialFailure,
+	)
 }
 
 func writeContainersAll(cmdCtx *Context, containers []containerWithProfile) error {

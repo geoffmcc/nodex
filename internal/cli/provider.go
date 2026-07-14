@@ -175,6 +175,23 @@ func connectProfile(ctx context.Context, cmdCtx *Context, profileName string) (d
 	return prov, cleanup, nil
 }
 
+// resolveProfileName returns the effective profile name for a command context.
+// When cmdCtx.Opts.Profile is set, it is returned directly. Otherwise the
+// current profile from config is used.
+func resolveProfileName(cmdCtx *Context) (string, error) {
+	if cmdCtx.Opts.Profile != "" {
+		return cmdCtx.Opts.Profile, nil
+	}
+	cfg, err := config.Read()
+	if err != nil {
+		return "", err
+	}
+	if cfg.CurrentProfile == "" {
+		return "", fmt.Errorf("no profile configured")
+	}
+	return cfg.CurrentProfile, nil
+}
+
 // applyLimit truncates a string slice to n elements if n > 0.
 func applyLimit[S any](items []S, limit int) []S {
 	if limit > 0 && len(items) > limit {

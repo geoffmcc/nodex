@@ -94,6 +94,11 @@ func TestGoldenJSON(t *testing.T) {
 		{name: "nodes_all", args: []string{"--output", "json", "--all", "node", "list"}},
 		{name: "vms_all", args: []string{"--output", "json", "--all", "vm", "list"}},
 		{name: "containers_all", args: []string{"--output", "json", "--all", "container", "list"}},
+		// Mutation operation results (JSON envelope)
+		{name: "mutation_vm_start", args: []string{"--output", "json", "--yes", "vm", "start", "e2e-node/100"}},
+		{name: "mutation_vm_start_wait", args: []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/100"}},
+		{name: "mutation_vm_update", args: []string{"--output", "json", "--yes", "vm", "update", "e2e-node/100", "memory=4096"}},
+		{name: "mutation_ct_start", args: []string{"--output", "json", "--yes", "container", "start", "e2e-node/200"}},
 	}
 
 	goldenDir := filepath.Join("testdata", "golden")
@@ -228,6 +233,9 @@ func TestGoldenTable(t *testing.T) {
 		{name: "cluster_status", args: []string{"--output", "table", "cluster", "status"}},
 		{name: "pools_list", args: []string{"--output", "table", "pools", "list"}},
 		{name: "cluster_log", args: []string{"--output", "table", "cluster", "log"}},
+		// Mutation table output
+		{name: "mutation_vm_start", args: []string{"--output", "table", "--yes", "vm", "start", "e2e-node/100"}},
+		{name: "mutation_vm_start_wait", args: []string{"--output", "table", "--yes", "--wait", "vm", "start", "e2e-node/100"}},
 	}
 
 	goldenDir := filepath.Join("testdata", "golden", "table")

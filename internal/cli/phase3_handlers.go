@@ -7,6 +7,7 @@ import (
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/safety"
 	"github.com/geoffmcc/nodex/internal/task"
 )
@@ -91,32 +92,56 @@ func requireCloudInit(prov domain.Provider) (domain.CloudInitProvider, error) {
 	return p, nil
 }
 
-// runMutationWithPolling executes a mutation, prints the UPID, and optionally polls the task.
-// Returns an error if the task fails or polling encounters a timeout/cancellation.
-func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Provider, node, upid string) error {
+// runMutationWithPolling writes an OperationResult to stdout and, when --wait
+// is set, polls the provider task until completion.
+func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Provider, node, upid, operation, target, safetyTier string) error {
+	profileName, _ := resolveProfileName(cmdCtx)
+
+	result := output.NewOperationResult(operation, prov.Name(), profileName)
+	result.Target = target
+	result.Safety = safetyTier
+	result.UPID = upid
+	result.Submitted = true
+	result.Success = true
+
 	if !cmdCtx.Opts.Wait {
-		fmt.Fprintf(cmdCtx.Writer, "%s\n", upid)
-		return nil
+		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 	}
 
 	fmt.Fprintf(cmdCtx.ErrW, "Waiting for task %s...\n", upid)
 	adapter := &taskStatusAdapter{prov: prov}
 	poller := task.NewPoller(adapter)
 	tr := poller.Wait(ctx, node, upid)
+
+	result.Waited = true
 	if tr.Error != nil {
+		result.Success = false
+		result.Error = &output.ResultError{
+			Class:  "provider",
+			Exit:   app.ExitProvider,
+			Detail: tr.Error.Error(),
+		}
+		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 		return app.NewExitError(
 			fmt.Errorf("task %s failed: %w", upid, tr.Error),
 			app.ExitProvider,
 		)
 	}
-	if tr.OK {
-		fmt.Fprintf(cmdCtx.Writer, "%s (completed OK)\n", upid)
-		return nil
+	if !tr.OK {
+		result.Success = false
+		result.Error = &output.ResultError{
+			Class:  "provider",
+			Exit:   app.ExitProvider,
+			Detail: fmt.Sprintf("task failed with status %q", tr.State),
+		}
+		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
+		return app.NewExitError(
+			fmt.Errorf("task %s failed with status %q", upid, tr.State),
+			app.ExitProvider,
+		)
 	}
-	return app.NewExitError(
-		fmt.Errorf("task %s failed with status %q", upid, tr.State),
-		app.ExitProvider,
-	)
+	result.Status = "OK"
+	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 }
 
 // --- VM Config Update ---
@@ -169,7 +194,7 @@ func runVMUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("update VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm update", fmt.Sprintf("%s/%d", node, vmid), "reversible")
 }
 
 // --- Container Config Update ---
@@ -222,7 +247,7 @@ func runCTUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("update container %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container update", fmt.Sprintf("%s/%d", node, vmid), "reversible")
 }
 
 // --- VM Snapshot Create ---
@@ -276,7 +301,7 @@ func runVMSnapshotCreate(ctx context.Context, cmdCtx *Context, args []string) er
 		return fmt.Errorf("create VM snapshot %s/%d/%s: %w", node, vmid, name, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm snapshot create", fmt.Sprintf("%s/%d", node, vmid), "reversible")
 }
 
 // --- VM Snapshot Delete (Tier 3: destructive) ---
@@ -315,7 +340,7 @@ func runVMSnapshotDelete(ctx context.Context, cmdCtx *Context, args []string) er
 		return fmt.Errorf("delete VM snapshot %s/%d/%s: %w", node, vmid, name, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm snapshot delete", fmt.Sprintf("%s/%d", node, vmid), "destructive")
 }
 
 // --- VM Snapshot Rollback (Tier 2: disruptive) ---
@@ -353,7 +378,7 @@ func runVMSnapshotRollback(ctx context.Context, cmdCtx *Context, args []string) 
 		return fmt.Errorf("rollback VM snapshot %s/%d/%s: %w", node, vmid, name, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm snapshot rollback", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- Container Snapshot Create ---
@@ -407,7 +432,7 @@ func runCTSnapshotCreate(ctx context.Context, cmdCtx *Context, args []string) er
 		return fmt.Errorf("create container snapshot %s/%d/%s: %w", node, vmid, name, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container snapshot create", fmt.Sprintf("%s/%d", node, vmid), "reversible")
 }
 
 // --- Container Snapshot Delete (Tier 3: destructive) ---
@@ -445,7 +470,7 @@ func runCTSnapshotDelete(ctx context.Context, cmdCtx *Context, args []string) er
 		return fmt.Errorf("delete container snapshot %s/%d/%s: %w", node, vmid, name, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container snapshot delete", fmt.Sprintf("%s/%d", node, vmid), "destructive")
 }
 
 // --- Container Snapshot Rollback (Tier 2: disruptive) ---
@@ -483,7 +508,7 @@ func runCTSnapshotRollback(ctx context.Context, cmdCtx *Context, args []string) 
 		return fmt.Errorf("rollback container snapshot %s/%d/%s: %w", node, vmid, name, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container snapshot rollback", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- VM Delete (Tier 3: destructive) ---
@@ -520,7 +545,7 @@ func runVMDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("delete VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm delete", fmt.Sprintf("%s/%d", node, vmid), "destructive")
 }
 
 // --- Container Delete (Tier 3: destructive) ---
@@ -557,7 +582,7 @@ func runCTDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("delete container %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container delete", fmt.Sprintf("%s/%d", node, vmid), "destructive")
 }
 
 // --- VM Cloud-Init (Tier 1: reversible) ---
@@ -602,7 +627,7 @@ func runVMCloudInit(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("cloud-init VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm cloud-init", fmt.Sprintf("%s/%d", node, vmid), "reversible")
 }
 
 // --- VM Template (Tier 2: disruptive) ---
@@ -638,7 +663,7 @@ func runVMTemplate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("template VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm template", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- Container Template (Tier 2: disruptive) ---
@@ -674,7 +699,7 @@ func runCTTemplate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("template container %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container template", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- Snapshot Dispatch Handlers ---

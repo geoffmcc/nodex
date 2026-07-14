@@ -175,7 +175,7 @@ func runBackupCreate(ctx context.Context, cmdCtx *Context, args []string) error 
 		return fmt.Errorf("create backup %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "backup create", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- Backup Restore (Tier 2: disruptive) ---
@@ -223,7 +223,7 @@ func runBackupRestore(ctx context.Context, cmdCtx *Context, args []string) error
 		return fmt.Errorf("restore VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "backup restore", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- Backup Job List (Tier 0: read) ---
@@ -475,7 +475,7 @@ func runStorageUpload(ctx context.Context, cmdCtx *Context, args []string) error
 		return fmt.Errorf("upload to %s/%s: %w", node, storage, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "storage upload", fmt.Sprintf("%s/%s", node, storage), "disruptive")
 }
 
 // --- Storage Download (Tier 1: read, reversible in effect) ---
@@ -561,7 +561,7 @@ func runStorageDelete(ctx context.Context, cmdCtx *Context, args []string) error
 		return fmt.Errorf("delete %s/%s/%s: %w", node, storage, volumeID, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "storage delete", fmt.Sprintf("%s/%s/%s", node, storage, volumeID), "destructive")
 }
 
 // --- VM Migrate (Tier 2: disruptive) ---
@@ -613,7 +613,7 @@ func runVMMigrate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("migrate VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm migrate", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- Container Migrate (Tier 2: disruptive) ---
@@ -658,7 +658,7 @@ func runCTMigrate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("migrate container %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container migrate", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- VM Clone (Tier 2: disruptive) ---
@@ -706,7 +706,7 @@ func runVMClone(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("clone VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm clone", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- Container Clone (Tier 2: disruptive) ---
@@ -754,7 +754,7 @@ func runCTClone(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("clone container %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container clone", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- VM Disk Resize (Tier 2: disruptive) ---
@@ -798,7 +798,7 @@ func runVMDiskResize(ctx context.Context, cmdCtx *Context, args []string) error 
 		return fmt.Errorf("resize disk VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm disk resize", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- VM Disk Move (Tier 2: disruptive) ---
@@ -842,7 +842,7 @@ func runVMDiskMove(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("move disk VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm disk move", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- VM Disk Dispatch ---
