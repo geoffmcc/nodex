@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/redact"
@@ -2348,7 +2349,7 @@ func (c *Client) get(ctx context.Context, path string, result any) error {
 
 	resp, err := c.client.Do(ctx, req)
 	if err != nil {
-		return fmt.Errorf("execute request: %w", err)
+		return &app.ProviderError{StatusCode: 0, Detail: fmt.Sprintf("execute request: %v", err), Err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -2394,7 +2395,7 @@ func (c *Client) sendMutation(ctx context.Context, method, path string, body url
 
 	resp, err := c.client.DoMutation(ctx, req)
 	if err != nil {
-		return fmt.Errorf("execute request: %w", err)
+		return &app.ProviderError{StatusCode: 0, Detail: fmt.Sprintf("execute request: %v", err), Err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -2409,7 +2410,7 @@ func (c *Client) decodeResponse(resp *http.Response, result any) error {
 		if truncated {
 			msg += "... [truncated]"
 		}
-		return fmt.Errorf("API error %d: %s", resp.StatusCode, msg)
+		return newProviderError(resp.StatusCode, fmt.Sprintf("API error %d: %s", resp.StatusCode, msg))
 	}
 
 	body, truncated := readLimited(resp.Body, c.client.MaxBodySize())
@@ -2424,6 +2425,14 @@ func (c *Client) decodeResponse(resp *http.Response, result any) error {
 		return fmt.Errorf("decode response: trailing data")
 	}
 	return nil
+}
+
+// newProviderError creates an app.ProviderError from an HTTP status code and detail.
+func newProviderError(statusCode int, detail string) *app.ProviderError {
+	return &app.ProviderError{
+		StatusCode: statusCode,
+		Detail:     detail,
+	}
 }
 
 func readLimited(r io.Reader, limit int64) ([]byte, bool) {
