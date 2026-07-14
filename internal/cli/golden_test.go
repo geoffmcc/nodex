@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -106,7 +107,7 @@ func TestGoldenJSON(t *testing.T) {
 		t.Fatalf("create golden dir: %v", err)
 	}
 
-	for _, tt := range tests {
+		for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			if err := Run(context.Background(), tt.args, &stdout, &stderr); err != nil {
@@ -130,8 +131,11 @@ func TestGoldenJSON(t *testing.T) {
 				}
 				t.Fatalf("read golden: %v", err)
 			}
-			if got != string(want) {
-				t.Errorf("output mismatch for %s\ngot:\n%s\nwant:\n%s\nRun with -update to refresh golden files", tt.name, got, string(want))
+			// Normalize timing-dependent duration fields before comparison.
+			got = stripDurations(got)
+			wantStr := stripDurations(string(want))
+			if got != wantStr {
+				t.Errorf("output mismatch for %s\ngot:\n%s\nwant:\n%s\nRun with -update to refresh golden files", tt.name, got, wantStr)
 			}
 		})
 	}
@@ -327,4 +331,12 @@ func TestGoldenFormatErrors(t *testing.T) {
 
 		})
 	}
+}
+
+// stripDurations removes timing-dependent "duration" fields from JSON/YAML
+// golden output so that wall-clock jitter does not cause spurious mismatches.
+var durationRE = regexp.MustCompile(`"duration":\s*"[^"]*"[,]?`)
+
+func stripDurations(s string) string {
+	return durationRE.ReplaceAllString(s, "")
 }
