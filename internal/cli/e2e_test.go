@@ -744,7 +744,9 @@ func TestDeterministicMultiProfileOrdering(t *testing.T) {
 	isolateConfigAndHome(t)
 	setupMultiProfileConfig(t)
 
-	// Run node list --all twice and verify identical JSON output.
+	// Run node list --all twice and verify that profile order is deterministic.
+	// (Exact JSON equality is not guaranteed because the "duration" field
+	// depends on wall-clock timing.)
 	var run1Stdout, run1Stderr bytes.Buffer
 	err := Run(context.Background(), []string{"--output", "json", "--all", "node", "list"}, &run1Stdout, &run1Stderr)
 	if err != nil {
@@ -757,8 +759,49 @@ func TestDeterministicMultiProfileOrdering(t *testing.T) {
 		t.Fatalf("run2: %v stderr=%q", err, run2Stderr.String())
 	}
 
-	if run1Stdout.String() != run2Stdout.String() {
-		t.Fatalf("deterministic ordering violated:\nrun1: %s\nrun2: %s", run1Stdout.String(), run2Stdout.String())
+	// Parse and extract profile order from both runs.
+	extractOrder := func(in string) []string {
+		var order []string
+		// The results array contains "profile" keys in order.
+		// Simple string scan is sufficient for deterministic output.
+		start := 0
+		for {
+			idx := strings.Index(in[start:], `"profile"`)
+			if idx == -1 {
+				break
+			}
+			start += idx
+			colon := strings.Index(in[start:], ":")
+			if colon == -1 {
+				break
+			}
+			start += colon + 1
+			end := strings.Index(in[start:], ",")
+			if end == -1 {
+				end = strings.Index(in[start:], "\n")
+			}
+			if end == -1 {
+				break
+			}
+			name := strings.TrimSpace(strings.Trim(in[start:start+end], `" `))
+			if name != "" {
+				order = append(order, name)
+			}
+			start += end
+		}
+		return order
+	}
+
+	order1 := extractOrder(run1Stdout.String())
+	order2 := extractOrder(run2Stdout.String())
+
+	if len(order1) != len(order2) {
+		t.Fatalf("profile count differs: %d vs %d", len(order1), len(order2))
+	}
+	for i := range order1 {
+		if order1[i] != order2[i] {
+			t.Fatalf("profile order mismatch at position %d: %q vs %q", i, order1[i], order2[i])
+		}
 	}
 }
 
