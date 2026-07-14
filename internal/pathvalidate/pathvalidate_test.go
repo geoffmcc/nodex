@@ -95,7 +95,11 @@ func TestValidateSafePathInDirRejectsTraversal(t *testing.T) {
 
 func TestValidateSafePathInDirRejectsAbsolute(t *testing.T) {
 	dir := t.TempDir()
-	_, err := ValidateSafePathInDir(dir, "/etc/passwd")
+	absPath := "/etc/passwd"
+	if runtime.GOOS == "windows" {
+		absPath = "C:\\Windows\\System32\\drivers\\etc\\hosts"
+	}
+	_, err := ValidateSafePathInDir(dir, absPath)
 	if err == nil {
 		t.Fatal("expected error for absolute path")
 	}
