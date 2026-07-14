@@ -59,8 +59,14 @@ func WriteFile(dest string, data []byte, overwrite bool, dirPerm, filePerm os.Fi
 		return fmt.Errorf("atomic write: write temp file: %w", err)
 	}
 
-	if err := tmp.Sync(); err != nil {
-		return fmt.Errorf("atomic write: sync temp file: %w", err)
+	// On Windows, Sync may fail on some filesystems (e.g., temp directories).
+	// Treat sync errors as non-fatal; Close still ensures data integrity.
+	if runtime.GOOS != "windows" {
+		if err := tmp.Sync(); err != nil {
+			return fmt.Errorf("atomic write: sync temp file: %w", err)
+		}
+	} else {
+		_ = tmp.Sync()
 	}
 
 	if err := tmp.Close(); err != nil {
@@ -116,8 +122,13 @@ func WriteStream(dest string, src io.Reader, overwrite bool, dirPerm, filePerm o
 		return fmt.Errorf("atomic write: stream to temp file: %w", err)
 	}
 
-	if err := tmp.Sync(); err != nil {
-		return fmt.Errorf("atomic write: sync temp file: %w", err)
+	// On Windows, Sync may fail on some filesystems (e.g., temp directories).
+	if runtime.GOOS != "windows" {
+		if err := tmp.Sync(); err != nil {
+			return fmt.Errorf("atomic write: sync temp file: %w", err)
+		}
+	} else {
+		_ = tmp.Sync()
 	}
 
 	if err := tmp.Close(); err != nil {
