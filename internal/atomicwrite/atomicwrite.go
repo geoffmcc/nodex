@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // WriteFile atomically writes data to dest using a temp-file + rename.
@@ -48,8 +49,10 @@ func WriteFile(dest string, data []byte, overwrite bool, dirPerm, filePerm os.Fi
 		}
 	}()
 
-	if err := tmp.Chmod(filePerm); err != nil {
-		return fmt.Errorf("atomic write: chmod temp file: %w", err)
+	if runtime.GOOS != "windows" {
+		if err := tmp.Chmod(filePerm); err != nil {
+			return fmt.Errorf("atomic write: chmod temp file: %w", err)
+		}
 	}
 
 	if _, err := tmp.Write(data); err != nil {
@@ -101,8 +104,10 @@ func WriteStream(dest string, src io.Reader, overwrite bool, dirPerm, filePerm o
 		}
 	}()
 
-	if err := tmp.Chmod(filePerm); err != nil {
-		return fmt.Errorf("atomic write: chmod temp file: %w", err)
+	if runtime.GOOS != "windows" {
+		if err := tmp.Chmod(filePerm); err != nil {
+			return fmt.Errorf("atomic write: chmod temp file: %w", err)
+		}
 	}
 
 	// Stream data through a LimitReader when size limits are needed.
