@@ -1,6 +1,6 @@
-.TH NODEX 1 "2026-07-12" "nodex 0.1.0" "User Commands"
+.TH NODEX 1 "2026-07-13" "nodex 0.1.0" "User Commands"
 .SH NAME
-nodex \- open infrastructure management for self\-hosters
+nodex \- secure CLI for inspecting and operating self\-hosted infrastructure
 .SH SYNOPSIS
 .B nodex
 [\fIGLOBAL\-FLAGS\fR]
@@ -8,8 +8,9 @@ nodex \- open infrastructure management for self\-hosters
 [\fICOMMAND\-ARGS\fR]
 .SH DESCRIPTION
 .B nodex
-is a local command\-line interface for inspecting self\-hosted infrastructure.
-The current implementation supports read\-only Proxmox VE inspection commands.
+is a local command\-line interface for inspecting and operating self\-hosted infrastructure.
+It is Proxmox\-first, supporting both read\-only inspection and safe mutation operations across 31 provider capabilities with a five\-tier safety model.
+Nodex is a single binary with no daemon, agent, or telemetry.
 .SH GLOBAL FLAGS
 .TP
 .BI \-\-profile " " \fINAME\fR
@@ -21,6 +22,12 @@ Default: table (TTY), json (non\-TTY).
 .TP
 .BI \-\-timeout " " \fIDURATION\fR
 Request timeout (default: 30s).
+.TP
+.BI \-\-limit " " \fIN\fR
+Limit output items (0 = no limit).
+.TP
+.B \-\-all
+Aggregate across all configured profiles.
 .TP
 .B \-\-no\-color
 Disable color output.
@@ -36,9 +43,50 @@ Info\-level stderr output.
 .TP
 .B \-\-debug
 Debug\-level stderr output (redacted).
+.SH MUTATION FLAGS
+.TP
+.B \-\-yes
+Confirm reversible operations (Tier 1).
+.TP
+.B \-\-force
+Confirm disruptive operations (Tier 2, requires \-\-yes).
+.TP
+.B \-\-wait
+Wait for the provider task to complete before exiting.
+.TP
+.B \-\-expert
+Enable expert\-mode operations (Tier 4: identity, ACL changes).
+.TP
+.B \-\-password\-stdin
+Read password from stdin instead of interactive prompt.
+.SH SAFETY TIERS
+.TP
+.B Tier 0 (Observation)
+Read\-only. No confirmation required.
+.TP
+.B Tier 1 (Reversible)
+Requires \-\-yes or interactive prompt.
+.TP
+.B Tier 2 (Disruptive)
+Requires \-\-yes \-\-force or double confirmation.
+.TP
+.B Tier 3 (Destructive)
+Requires typing the target identifier.
+.TP
+.B Tier 4 (Security Admin)
+Requires \-\-expert flag.
 .SH COMMANDS
 .SS nodex init
 Initialize nodex configuration interactively.
+Non\-interactive with \-\-non\-interactive.
+.SS nodex completion \fISHELL\fR
+Generate shell completion (bash|zsh|fish). Writes to stdout.
+.SS nodex version
+Print version information.
+.SS nodex provider list
+List available providers.
+.SS nodex provider capabilities \fINAME\fR
+Show capabilities for a provider.
 .SS nodex profile add \fINAME\fR
 Add a new connection profile.
 .SS nodex profile list
@@ -55,32 +103,262 @@ Show the current active profile.
 Test connectivity for a profile.
 .SS nodex profile remove \fINAME\fR [\-\-remove\-credential]
 Remove a profile, optionally deleting its referenced credential.
-.SS nodex provider list
-List available providers.
-.SS nodex provider capabilities \fINAME\fR
-Show capabilities for a provider.
+.SS nodex profile export \fINAME\fR
+Export a sanitized profile (no credentials). Writes JSON to stdout.
+.SS nodex profile import
+Import a profile from stdin.
 .SS nodex node list
 List all nodes.
 .SS nodex node show \fINAME\fR
-Show details for a node.
+Show details for a specific node.
+.SS nodex node status \fINAME\fR
+Show detailed node status including CPU, memory, disk, and uptime.
+.SS nodex node services \fINAME\fR
+List services running on a node.
+.SS nodex node network \fINAME\fR
+Show network interface configuration for a node.
+.SS nodex node dns \fINAME\fR
+Show DNS configuration for a node.
+.SS nodex node time \fINAME\fR
+Show time configuration for a node.
+.SS nodex node disks \fINAME\fR
+List physical disks on a node.
+.SS nodex node certificates \fINAME\fR
+List TLS certificates on a node.
+.SS nodex node subscription \fINAME\fR
+Show subscription status for a node.
+.SS nodex node updates \fINAME\fR
+List available package updates for a node.
 .SS nodex vm list
 List all virtual machines.
 .SS nodex vm show \fIID\fR
-Show details for a virtual machine.
+Show details for a virtual machine (e.g., pve\-a/100).
+.SS nodex vm config \fIID\fR
+Show VM configuration.
+.SS nodex vm snapshots \fIID\fR
+List snapshots for a VM.
+.SS nodex vm snapshot\-config \fIID\fR \fINAME\fR
+Show snapshot configuration for a VM.
+.SS nodex vm start \fIID\fR [\-\-yes]
+Start a VM. Safety: Tier 1 (Reversible).
+.SS nodex vm shutdown \fIID\fR [\-\-yes]
+Graceful VM shutdown. Safety: Tier 1.
+.SS nodex vm stop \fIID\fR [\-\-yes \-\-force]
+Force\-stop a VM. Safety: Tier 2 (Disruptive).
+.SS nodex vm reset \fIID\fR [\-\-yes \-\-force]
+Hard reset a VM. Safety: Tier 2.
+.SS nodex vm reboot \fIID\fR [\-\-yes]
+Reboot a VM. Safety: Tier 1.
+.SS nodex vm suspend \fIID\fR [\-\-yes]
+Suspend a VM to disk. Safety: Tier 1.
+.SS nodex vm resume \fIID\fR [\-\-yes]
+Resume a suspended VM. Safety: Tier 1.
+.SS nodex vm pause \fIID\fR [\-\-yes]
+Pause (freeze) a VM. Safety: Tier 1.
+.SS nodex vm unpause \fIID\fR [\-\-yes]
+Unpause a frozen VM. Safety: Tier 1.
+.SS nodex vm update \fIID\fR \fIPARAMS...\fR
+Update VM configuration. Safety: varies.
+.SS nodex vm delete \fIID\fR [\-\-yes \-\-force]
+Delete a VM (destructive, requires type\-in confirmation). Safety: Tier 3.
+.SS nodex vm cloud\-init \fIID\fR
+Regenerate cloud\-init configuration for a VM.
+.SS nodex vm template \fIID\fR
+Convert VM to template.
+.SS nodex vm snapshot create \fIID\fR \fINAME\fR [\-\-description \fITEXT\fR]
+Create a VM snapshot.
+.SS nodex vm snapshot delete \fIID\fR \fINAME\fR
+Delete a VM snapshot (destructive).
+.SS nodex vm snapshot rollback \fIID\fR \fINAME\fR
+Roll back to a VM snapshot.
+.SS nodex vm migrate \fIID\fR \-\-target \fINODE\fR [\-\-yes \-\-force]
+Migrate a VM to another node. Safety: Tier 2.
+.SS nodex vm clone \fIID\fR \-\-newid \fIID\fR \-\-name \fINAME\fR
+Clone a VM.
+.SS nodex vm disk resize \fIID\fR \fIDISK\fR \-\-size \fISIZE\fR
+Resize a VM disk.
+.SS nodex vm disk move \fIID\fR \fIDISK\fR \-\-storage \fISTORAGE\fR
+Move a VM disk to another storage.
 .SS nodex container list
 List all containers.
 .SS nodex container show \fIID\fR
 Show details for a container.
+.SS nodex container config \fIID\fR
+Show container configuration.
+.SS nodex container snapshots \fIID\fR
+List container snapshots.
+.SS nodex container snapshot\-config \fIID\fR \fINAME\fR
+Show snapshot configuration for a container.
+.SS nodex container start \fIID\fR [\-\-yes]
+Start a container. Safety: Tier 1.
+.SS nodex container shutdown \fIID\fR [\-\-yes]
+Graceful container shutdown. Safety: Tier 1.
+.SS nodex container stop \fIID\fR [\-\-yes \-\-force]
+Force\-stop a container. Safety: Tier 2.
+.SS nodex container reboot \fIID\fR [\-\-yes]
+Reboot a container. Safety: Tier 1.
+.SS nodex container suspend \fIID\fR [\-\-yes]
+Suspend a container. Safety: Tier 1.
+.SS nodex container resume \fIID\fR [\-\-yes]
+Resume a suspended container. Safety: Tier 1.
+.SS nodex container update \fIID\fR \fIPARAMS...\fR
+Update container configuration. Safety: varies.
+.SS nodex container delete \fIID\fR [\-\-yes \-\-force]
+Delete a container (destructive, requires type\-in confirmation). Safety: Tier 3.
+.SS nodex container template \fIID\fR
+Convert container to template.
+.SS nodex container snapshot create \fIID\fR \fINAME\fR
+Create a container snapshot.
+.SS nodex container snapshot delete \fIID\fR \fINAME\fR
+Delete a container snapshot (destructive).
+.SS nodex container snapshot rollback \fIID\fR \fINAME\fR
+Roll back to a container snapshot.
+.SS nodex container migrate \fIID\fR \-\-target \fINODE\fR [\-\-yes \-\-force]
+Migrate a container. Safety: Tier 2.
+.SS nodex container clone \fIID\fR \-\-newid \fIID\fR
+Clone a container.
 .SS nodex storage list
 List all storage pools.
 .SS nodex storage show \fINAME\fR
-Show details for a storage pool.
+Show storage details.
+.SS nodex storage content \fINAME\fR \-\-node \fINODE\fR
+List storage content.
+.SS nodex storage upload \fINAME\fR \-\-node \fINODE\fR \fIPATH\fR
+Upload a file to storage.
+.SS nodex storage download \fINAME\fR \-\-node \fINODE\fR \fIVOLUME\fR
+Download a volume from storage.
+.SS nodex storage delete \fINAME\fR \-\-node \fINODE\fR \fIVOLUME\fR
+Delete a storage volume (destructive). Safety: Tier 3.
+.SS nodex task list \-\-node \fINODE\fR
+List all tasks for a node.
+.SS nodex task show \-\-node \fINODE\fR \fIUPID\fR
+Show task details.
+.SS nodex status
+Show cluster status overview.
+.SS nodex cluster status
+Show cluster quorum and node health.
+.SS nodex cluster log
+Show cluster log entries.
+.SS nodex event list
+List cluster events.
+.SS nodex log \-\-node \fINODE\fR
+Show node syslog.
 .SS nodex doctor
 Check system health and connectivity.
-.SS nodex version
-Print version information.
-.SS nodex help [\fICOMMAND\fR]
-Show help for a command.
+.SS nodex backup list \-\-node \fINODE\fR
+List backup tasks for a node.
+.SS nodex backup content \-\-node \fINODE\fR \-\-storage \fISTORAGE\fR
+List backup content on a storage.
+.SS nodex backup create \fIVMID\fR \-\-node \fINODE\fR \-\-storage \fISTORAGE\fR
+Create a manual backup.
+.SS nodex backup restore \fIVMID\fR \-\-archive \fIARCHIVE\fR \-\-storage \fISTORAGE\fR
+Restore a VM from backup.
+.SS nodex backup job list
+List backup job schedules.
+.SS nodex backup job show \fIID\fR
+Show backup job details.
+.SS nodex backup job create \fIPARAMS...\fR
+Create a backup job schedule.
+.SS nodex backup job update \fIID\fR \fIPARAMS...\fR
+Update a backup job schedule.
+.SS nodex backup job delete \fIID\fR
+Delete a backup job schedule.
+.SS nodex firewall list
+List cluster firewall rules.
+.SS nodex firewall aliases
+List firewall aliases.
+.SS nodex firewall ipsets
+List firewall IP sets.
+.SS nodex firewall security\-groups
+List firewall security groups.
+.SS nodex firewall options
+Show firewall options.
+.SS nodex firewall node\-rules \fINODE\fR
+List node\-level firewall rules.
+.SS nodex firewall vm\-rules \fINODE\fR \fIVMID\fR
+List VM\-level firewall rules.
+.SS nodex firewall rule create \fIPARAMS...\fR
+Create a firewall rule.
+.SS nodex firewall rule update \fIPOS\fR \fIPARAMS...\fR
+Update a firewall rule.
+.SS nodex firewall rule delete \fIPOS\fR
+Delete a firewall rule.
+.SS nodex ha list
+List HA resources.
+.SS nodex ha groups
+List HA groups.
+.SS nodex ha status
+Show HA status.
+.SS nodex ha current
+Show current HA resource state.
+.SS nodex sdn zones
+List SDN zones.
+.SS nodex sdn vnets
+List SDN VNets.
+.SS nodex sdn zone create \fITYPE\fR \fIZONE\fR
+Create an SDN zone.
+.SS nodex sdn zone delete \fIZONE\fR
+Delete an SDN zone.
+.SS nodex sdn vnet create \fIVNET\fR \-\-zone \fIZONE\fR
+Create an SDN VNet.
+.SS nodex sdn vnet delete \fIVNET\fR
+Delete an SDN VNet.
+.SS nodex pools list
+List resource pools.
+.SS nodex network show \-\-node \fINODE\fR
+Show node network interfaces.
+.SS nodex network apply \-\-node \fINODE\fR \fICONFIG\fR
+Apply network configuration.
+.SS nodex network revert \-\-node \fINODE\fR
+Revert pending network changes.
+.SS nodex access users
+List users.
+.SS nodex access groups
+List groups.
+.SS nodex access roles
+List roles.
+.SS nodex access acl
+List ACL entries.
+.SS nodex access domains
+List authentication domains.
+.SS nodex access tokens \fIUSER\fR
+List API tokens for a user.
+.SS nodex access user create \fIUSERID\fR [\-\-password\-stdin]
+Create a user (Tier 4: requires \-\-expert).
+.SS nodex access user delete \fIUSERID\fR
+Delete a user (Tier 4: requires \-\-expert).
+.SS nodex ceph status \-\-node \fINODE\fR
+Show Ceph cluster status.
+.SS nodex ceph osd list \-\-node \fINODE\fR
+List Ceph OSDs.
+.SS nodex ceph mon list \-\-node \fINODE\fR
+List Ceph monitors.
+.SS nodex ceph pool list \-\-node \fINODE\fR
+List Ceph pools.
+.SS nodex ceph osd create \-\-node \fINODE\fR \fIDEV\fR
+Create a new Ceph OSD.
+.SS nodex ceph osd out \-\-node \fINODE\fR \fIOSDID\fR
+Mark OSD as out.
+.SS nodex ceph osd in \-\-node \fINODE\fR \fIOSDID\fR
+Mark OSD as in.
+.SS nodex ceph osd destroy \-\-node \fINODE\fR \fIOSDID\fR
+Destroy an OSD (destructive).
+.SS nodex ceph pool create \-\-node \fINODE\fR \fINAME\fR \fIPARAMS...\fR
+Create a Ceph pool.
+.SS nodex ceph pool destroy \-\-node \fINODE\fR \fINAME\fR
+Destroy a Ceph pool (destructive).
+.SS nodex replication list
+List replication jobs.
+.SS nodex replication show \fIID\fR
+Show replication job details.
+.SS nodex replication create \fIPARAMS...\fR
+Create a replication job.
+.SS nodex replication update \fIID\fR \fIPARAMS...\fR
+Update a replication job.
+.SS nodex replication delete \fIID\fR
+Delete a replication job.
+.SS nodex replication schedule \fIID\fR \-\-node \fINODE\fR
+Schedule replication now.
 .SH CREDENTIALS
 Credentials are resolved in the following order:
 .TP 1.
@@ -143,10 +421,16 @@ Incompatibility
 Unsupported capability
 .TP
 .B 11
-Partial failure
+Partial failure (\-\-all)
 .TP
 .B 12
 Provider error
+.TP
+.B 130
+Interrupted (SIGINT)
+.TP
+.B 143
+Terminated (SIGTERM)
 .SH FILES
 .TP
 .I ~/.config/nodex/config.yaml
@@ -154,17 +438,40 @@ Main configuration file.
 .TP
 .I ~/.nodex/credentials/
 Credential files directory.
+.SH ENVIRONMENT
+.TP
+.BI NODEX_ " " \fIPROFILE\fR "_TOKEN"
+API token for the given profile.
+.TP
+.BI NODEX_ " " \fIPROFILE\fR "_TOKEN_ID"
+Token ID for the given profile.
+.TP
+.BI NODEX_ " " \fIPROFILE\fR "_TOKEN_SECRET"
+Token secret for the given profile.
+.TP
+.BI NODEX_ " " \fIPROFILE\fR "_USERNAME"
+Username for the given profile.
+.TP
+.BI NODEX_ " " \fIPROFILE\fR "_PASSWORD"
+Password for the given profile.
 .SH EXAMPLES
+.PP
+Initialize configuration:
+.PP
+.RS
+nodex init \-\-non\-interactive
+.RE
+.PP
 Add a Proxmox profile:
 .PP
 .RS
 nodex profile add lab
 .RE
 .PP
-Show the profile:
+Set credentials:
 .PP
 .RS
-nodex profile show lab
+nodex profile set\-credentials lab
 .RE
 .PP
 Test connectivity:
@@ -179,22 +486,30 @@ List nodes:
 nodex node list
 .RE
 .PP
+Start a VM:
+.PP
+.RS
+nodex \-\-yes vm start pve\-a/100
+.RE
+.PP
+Wait for a VM shutdown:
+.PP
+.RS
+nodex \-\-yes \-\-wait vm shutdown pve\-a/100
+.RE
+.PP
 Output as JSON:
 .PP
 .RS
 nodex \-\-output json node list
 .RE
-.SH ENVIRONMENT
-.TP
-.BI NODEX_ " " \fIPROFILE\fR "_TOKEN"
-API token for the given profile.
-.TP
-.BI NODEX_ " " \fIPROFILE\fR "_TOKEN_ID"
-Token ID for the given profile.
-.TP
-.BI NODEX_ " " \fIPROFILE\fR "_TOKEN_SECRET"
-Token secret for the given profile.
+.PP
+Run across all profiles:
+.PP
+.RS
+nodex \-\-all \-\-output json vm list
+.RE
 .SH AUTHOR
-Geoff and contributors.
+Geoffrey McClinsey.
 .SH LICENSE
 GPL v3. See \fI/usr/share/doc/nodex/LICENSE\fR.
