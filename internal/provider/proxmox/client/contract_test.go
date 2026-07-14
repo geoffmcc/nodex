@@ -366,11 +366,35 @@ func TestTaskListItemContract(t *testing.T) {
 	if item.Status != "OK" {
 		t.Errorf("Status = %q, want OK", item.Status)
 	}
+	if item.ExitStatus != "" {
+		t.Errorf("ExitStatus = %q, want empty for task list row", item.ExitStatus)
+	}
 	if item.StartTime != 1700000000 {
 		t.Errorf("StartTime = %d, want 1700000000", item.StartTime)
 	}
 	if item.EndTime != 1700000010 {
 		t.Errorf("EndTime = %d, want 1700000010", item.EndTime)
+	}
+}
+
+func TestTaskStatusItemContract(t *testing.T) {
+	raw := `{
+		"upid": "UPID:pve-test:00002183:000434BF:6A56BE4B:qmstart:100:root@pam!token:",
+		"type": "qmstart",
+		"status": "stopped",
+		"exitstatus": "OK",
+		"starttime": 1784069707,
+		"pid": 8579
+	}`
+	var item TaskListItem
+	if err := json.Unmarshal([]byte(raw), &item); err != nil {
+		t.Fatalf("unmarshal TaskListItem status response: %v", err)
+	}
+	if item.Status != "stopped" {
+		t.Errorf("Status = %q, want stopped", item.Status)
+	}
+	if item.ExitStatus != "OK" {
+		t.Errorf("ExitStatus = %q, want OK", item.ExitStatus)
 	}
 }
 

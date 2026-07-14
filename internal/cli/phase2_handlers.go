@@ -158,11 +158,11 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 		opResult.Error = &output.ResultError{
 			Class:  "task_failure",
 			Exit:   app.ExitTaskFailure,
-			Detail: fmt.Sprintf("task failed with status %q", tr.State),
+			Detail: fmt.Sprintf("task failed with status %q", tr.Status),
 		}
 		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
 		return app.NewExitError(
-			fmt.Errorf("task %s failed with status %q", upid, tr.State),
+			fmt.Errorf("task %s failed with status %q", upid, tr.Status),
 			app.ExitTaskFailure,
 		)
 	}

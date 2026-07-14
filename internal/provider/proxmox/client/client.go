@@ -293,7 +293,7 @@ func (c *Client) GetTask(ctx context.Context, node, upid string) (*TaskListItem,
 		return nil, fmt.Errorf("task UPID is required")
 	}
 	var resp TaskDetailResponse
-	path := "/nodes/" + url.PathEscape(node) + "/tasks/" + url.PathEscape(upid)
+	path := "/nodes/" + url.PathEscape(node) + "/tasks/" + url.PathEscape(upid) + "/status"
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
 	}

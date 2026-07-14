@@ -136,10 +136,11 @@ type TaskStatusClient interface {
 
 // TaskResult represents the final outcome of a task.
 type TaskResult struct {
-	UPID  string
-	State State
-	OK    bool  // true when status is "OK"
-	Error error // set when task fails or polling times out
+	UPID   string
+	State  State
+	Status string
+	OK     bool  // true when status is "OK"
+	Error  error // set when task fails or polling times out
 }
 
 // Poller polls a Proxmox task until completion.
@@ -246,12 +247,10 @@ func (p *Poller) Wait(ctx context.Context, node, upid string) *TaskResult {
 
 		if status.State == StateStopped {
 			result := &TaskResult{
-				UPID:  upid,
-				State: StateStopped,
-				OK:    status.Status == "OK",
-			}
-			if !result.OK {
-				result.Error = fmt.Errorf("task %s failed with status %q", upid, status.Status)
+				UPID:   upid,
+				State:  StateStopped,
+				Status: status.Status,
+				OK:     status.Status == "OK",
 			}
 			return result
 		}
