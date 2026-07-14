@@ -1120,7 +1120,9 @@ func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) er
 	// Secure password collection.
 	var password string
 	if cmdCtx.Opts.PasswordStdin {
-		data, err := io.ReadAll(cmdCtx.Stdin)
+		// Bound stdin reads to prevent memory exhaustion.
+		limited := io.LimitReader(cmdCtx.Stdin, 4096)
+		data, err := io.ReadAll(limited)
 		if err != nil {
 			return fmt.Errorf("read password from stdin: %w", err)
 		}

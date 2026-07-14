@@ -12,6 +12,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
+	"github.com/geoffmcc/nodex/internal/pathvalidate"
 	"github.com/geoffmcc/nodex/internal/safety"
 )
 
@@ -449,10 +450,15 @@ func runStorageUpload(ctx context.Context, cmdCtx *Context, args []string) error
 
 	node := args[0]
 	storage := args[1]
-	localPath := args[2]
+	localPath := filepath.Clean(args[2])
 
 	if node == "" || storage == "" || localPath == "" {
 		return app.NewExitError(fmt.Errorf("node, storage, and local-file are required"), app.ExitUsage)
+	}
+
+	// Validate the local file is safe to open.
+	if err := pathvalidate.RejectNonRegular(localPath); err != nil {
+		return app.NewExitError(fmt.Errorf("local file: %w", err), app.ExitUsage)
 	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
@@ -496,18 +502,24 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		return app.NewExitError(fmt.Errorf("all arguments are required"), app.ExitUsage)
 	}
 
-	// Check for overwrite safety.
+	// Clean and validate the destination path.
+	cleaned := filepath.Clean(localPath)
+	if err := pathvalidate.ValidateSafePath(cleaned); err != nil {
+		return app.NewExitError(fmt.Errorf("unsafe destination path %s: %w", localPath, err), app.ExitUsage)
+	}
+
+	// Check for overwrite safety using Lstat (does not follow symlinks).
 	if !cmdCtx.Opts.Force {
-		if info, err := os.Stat(localPath); err == nil {
+		if info, err := os.Lstat(cleaned); err == nil {
 			if info.Mode().IsRegular() {
 				return app.NewExitError(
-					fmt.Errorf("destination %s already exists; use --force to overwrite", localPath),
+					fmt.Errorf("destination %s already exists; use --force to overwrite", cleaned),
 					app.ExitUsage,
 				)
 			}
 			// Non-regular existing path (dir, symlink, etc.) — refuse regardless.
 			return app.NewExitError(
-				fmt.Errorf("destination %s exists and is not a regular file", localPath),
+				fmt.Errorf("destination %s exists and is not a regular file", cleaned),
 				app.ExitUsage,
 			)
 		} else if !os.IsNotExist(err) {
@@ -528,7 +540,7 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 
 	// Write to a temporary file in the destination directory, then atomically rename.
 	// This ensures no partial or corrupt file is left at the final path.
-	dir := filepath.Dir(localPath)
+	dir := filepath.Dir(cleaned)
 	if dir == "" {
 		dir = "."
 	}
@@ -538,13 +550,19 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 	tmpPath := tmp.Name()
 	cleanupTmp := func() {
-		tmp.Close()
-		os.Remove(tmpPath)
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
 	}
 
 	if err := sp.DownloadContentBody(ctx, node, storage, volumeID, tmp); err != nil {
 		cleanupTmp()
 		return fmt.Errorf("download %s/%s/%s: %w", node, storage, volumeID, err)
+	}
+
+	// Sync to disk before closing to ensure durability.
+	if err := tmp.Sync(); err != nil {
+		cleanupTmp()
+		return fmt.Errorf("sync temporary file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		cleanupTmp()
@@ -553,22 +571,22 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 
 	// On Windows, os.Rename fails if the target exists and is open, so remove target first.
 	if cmdCtx.Opts.Force {
-		if info, err := os.Stat(localPath); err == nil {
+		if info, err := os.Lstat(cleaned); err == nil {
 			if info.Mode().IsRegular() {
-				if err := os.Remove(localPath); err != nil {
+				if err := os.Remove(cleaned); err != nil {
 					cleanupTmp()
-					return fmt.Errorf("remove existing file %s: %w", localPath, err)
+					return fmt.Errorf("remove existing file %s: %w", cleaned, err)
 				}
 			}
 		}
 	}
 
-	if err := os.Rename(tmpPath, localPath); err != nil {
+	if err := os.Rename(tmpPath, cleaned); err != nil {
 		cleanupTmp()
 		return fmt.Errorf("finalize download: %w", err)
 	}
 
-	fmt.Fprintf(cmdCtx.Writer, "Downloaded %s/%s/%s to %s\n", node, storage, volumeID, localPath)
+	fmt.Fprintf(cmdCtx.Writer, "Downloaded %s/%s/%s to %s\n", node, storage, volumeID, cleaned)
 	return nil
 }
 
