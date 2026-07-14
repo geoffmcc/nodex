@@ -2018,6 +2018,282 @@ func firewallRuleToValues(rule FirewallRuleCreateRequest) url.Values {
 	return v
 }
 
+// --- Phase 6: Ceph, SDN, Replication ---
+
+// GetCephStatus returns Ceph cluster health status.
+func (c *Client) GetCephStatus(ctx context.Context, node string) (map[string]interface{}, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp CephStatusResponse
+	path := "/nodes/" + url.PathEscape(node) + "/ceph/status"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetCephOSDs returns the Ceph OSD tree.
+func (c *Client) GetCephOSDs(ctx context.Context, node string) (*CephOSDListResponse, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp CephOSDListResponse
+	path := "/nodes/" + url.PathEscape(node) + "/ceph/osd"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// GetCephMONs returns the Ceph monitor list.
+func (c *Client) GetCephMONs(ctx context.Context, node string) ([]CephMONItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp CephMONListResponse
+	path := "/nodes/" + url.PathEscape(node) + "/ceph/mon"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetCephPools returns the Ceph pool list.
+func (c *Client) GetCephPools(ctx context.Context, node string) ([]CephPoolItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	var resp CephPoolListResponse
+	path := "/nodes/" + url.PathEscape(node) + "/ceph/pool"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// CreateOSD creates a new Ceph OSD and returns the task UPID.
+func (c *Client) CreateOSD(ctx context.Context, node, dev string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if dev == "" {
+		return "", fmt.Errorf("device name is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/ceph/osd"
+	body := url.Values{}
+	body.Set("dev", dev)
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// OSDOut marks an OSD as out.
+func (c *Client) OSDOut(ctx context.Context, node string, osdid int) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/ceph/osd/" + strconv.Itoa(osdid) + "/out"
+	return c.post(ctx, path, nil, nil)
+}
+
+// OSDIn marks an OSD as in.
+func (c *Client) OSDIn(ctx context.Context, node string, osdid int) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/ceph/osd/" + strconv.Itoa(osdid) + "/in"
+	return c.post(ctx, path, nil, nil)
+}
+
+// DestroyOSD destroys a Ceph OSD and returns the task UPID.
+func (c *Client) DestroyOSD(ctx context.Context, node string, osdid int) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/ceph/osd/" + strconv.Itoa(osdid)
+	if err := c.del(ctx, path, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CreatePool creates a new Ceph pool and returns the task UPID.
+func (c *Client) CreatePool(ctx context.Context, node string, params url.Values) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/ceph/pool"
+	if err := c.post(ctx, path, params, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// DestroyPool destroys a Ceph pool and returns the task UPID.
+func (c *Client) DestroyPool(ctx context.Context, node, name string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if name == "" {
+		return "", fmt.Errorf("pool name is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/ceph/pool/" + url.PathEscape(name)
+	if err := c.del(ctx, path, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// --- SDN mutations ---
+
+// CreateSDNZone creates an SDN zone.
+func (c *Client) CreateSDNZone(ctx context.Context, zoneType, zone string) error {
+	body := url.Values{}
+	body.Set("type", zoneType)
+	body.Set("zone", zone)
+	return c.post(ctx, "/cluster/sdn/zones", body, nil)
+}
+
+// DeleteSDNZone deletes an SDN zone.
+func (c *Client) DeleteSDNZone(ctx context.Context, zone string) error {
+	path := "/cluster/sdn/zones/" + url.PathEscape(zone)
+	return c.del(ctx, path, nil)
+}
+
+// CreateSDNVNet creates an SDN virtual network.
+func (c *Client) CreateSDNVNet(ctx context.Context, vnet, zone string) error {
+	body := url.Values{}
+	body.Set("vnet", vnet)
+	body.Set("zone", zone)
+	return c.post(ctx, "/cluster/sdn/vnets", body, nil)
+}
+
+// DeleteSDNVNet deletes an SDN virtual network.
+func (c *Client) DeleteSDNVNet(ctx context.Context, vnet string) error {
+	path := "/cluster/sdn/vnets/" + url.PathEscape(vnet)
+	return c.del(ctx, path, nil)
+}
+
+// CreateSDNSubnet creates an SDN subnet.
+func (c *Client) CreateSDNSubnet(ctx context.Context, vnet, cidr, gateway string) error {
+	body := url.Values{}
+	body.Set("subnet", cidr)
+	body.Set("type", "subnet")
+	if gateway != "" {
+		body.Set("gateway", gateway)
+	}
+	path := "/cluster/sdn/vnets/" + url.PathEscape(vnet) + "/subnets"
+	return c.post(ctx, path, body, nil)
+}
+
+// DeleteSDNSubnet deletes an SDN subnet.
+func (c *Client) DeleteSDNSubnet(ctx context.Context, vnet, subnet string) error {
+	path := "/cluster/sdn/vnets/" + url.PathEscape(vnet) + "/subnets/" + url.PathEscape(subnet)
+	return c.del(ctx, path, nil)
+}
+
+// CreateSDNController creates an SDN controller.
+func (c *Client) CreateSDNController(ctx context.Context, ctrl string) error {
+	body := url.Values{}
+	body.Set("controller", ctrl)
+	return c.post(ctx, "/cluster/sdn/controllers", body, nil)
+}
+
+// DeleteSDNController deletes an SDN controller.
+func (c *Client) DeleteSDNController(ctx context.Context, ctrl string) error {
+	path := "/cluster/sdn/controllers/" + url.PathEscape(ctrl)
+	return c.del(ctx, path, nil)
+}
+
+// --- Replication ---
+
+// GetReplicationJobs returns all replication jobs.
+func (c *Client) GetReplicationJobs(ctx context.Context) ([]ReplicationJobItem, error) {
+	var resp ReplicationListResponse
+	if err := c.get(ctx, "/cluster/replication", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetReplicationJob returns a single replication job.
+func (c *Client) GetReplicationJob(ctx context.Context, id string) (*ReplicationJobItem, error) {
+	var resp ReplicationGetResponse
+	path := "/cluster/replication/" + url.PathEscape(id)
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// CreateReplication creates a new replication job.
+func (c *Client) CreateReplication(ctx context.Context, req ReplicationCreateRequest) error {
+	body := url.Values{}
+	body.Set("id", req.ID)
+	body.Set("guest", strconv.Itoa(req.Guest))
+	body.Set("type", req.Type)
+	body.Set("target", req.Target)
+	if req.Schedule != "" {
+		body.Set("schedule", req.Schedule)
+	}
+	if req.Comment != "" {
+		body.Set("comment", req.Comment)
+	}
+	if req.Rate > 0 {
+		body.Set("rate", strconv.FormatInt(req.Rate, 10))
+	}
+	if req.Source != "" {
+		body.Set("source", req.Source)
+	}
+	return c.post(ctx, "/cluster/replication", body, nil)
+}
+
+// UpdateReplication updates a replication job.
+func (c *Client) UpdateReplication(ctx context.Context, id string, req ReplicationUpdateRequest) error {
+	body := url.Values{}
+	if req.Target != "" {
+		body.Set("target", req.Target)
+	}
+	if req.Schedule != "" {
+		body.Set("schedule", req.Schedule)
+	}
+	if req.Comment != "" {
+		body.Set("comment", req.Comment)
+	}
+	if req.Rate > 0 {
+		body.Set("rate", strconv.FormatInt(req.Rate, 10))
+	}
+	if req.Source != "" {
+		body.Set("source", req.Source)
+	}
+	if req.Delete != "" {
+		body.Set("delete", req.Delete)
+	}
+	path := "/cluster/replication/" + url.PathEscape(id)
+	return c.put(ctx, path, body, nil)
+}
+
+// DeleteReplication deletes a replication job.
+func (c *Client) DeleteReplication(ctx context.Context, id string) error {
+	path := "/cluster/replication/" + url.PathEscape(id)
+	return c.del(ctx, path, nil)
+}
+
+// ScheduleReplication schedules a replication job to run now.
+func (c *Client) ScheduleReplication(ctx context.Context, node, id string) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/replication/" + url.PathEscape(id) + "/schedule_now"
+	return c.post(ctx, path, nil, nil)
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil

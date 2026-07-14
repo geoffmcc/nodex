@@ -139,3 +139,51 @@ func requireAccess(prov domain.Provider) (domain.AccessProvider, error) {
 	}
 	return p, nil
 }
+
+// requireCeph checks if the provider supports CephProvider.
+func requireCeph(prov domain.Provider) (domain.CephProvider, error) {
+	p, ok := prov.(domain.CephProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: ceph commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireCephMutation checks if the provider supports CephMutationProvider.
+func requireCephMutation(prov domain.Provider) (domain.CephMutationProvider, error) {
+	p, ok := prov.(domain.CephMutationProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: ceph mutation commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireSDNMutation checks if the provider supports SDNMutationProvider.
+func requireSDNMutation(prov domain.Provider) (domain.SDNMutationProvider, error) {
+	p, ok := prov.(domain.SDNMutationProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: SDN mutation commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requireReplication checks if the provider supports ReplicationProvider.
+func requireReplication(prov domain.Provider) (domain.ReplicationProvider, error) {
+	p, ok := prov.(domain.ReplicationProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: replication commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}

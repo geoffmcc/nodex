@@ -295,6 +295,158 @@ type SDNVNet struct {
 	Alias string `json:"alias,omitempty" yaml:"alias,omitempty"`
 }
 
+// --- Ceph, SDN Mutation, and Replication provider interfaces ---
+
+// CephProvider exposes Ceph health and inventory (read-only).
+type CephProvider interface {
+	CephStatus(ctx context.Context, node string) (*CephStatus, error)
+	CephOSDs(ctx context.Context, node string) ([]CephOSD, error)
+	CephMONs(ctx context.Context, node string) ([]CephMON, error)
+	CephPools(ctx context.Context, node string) ([]CephPool, error)
+}
+
+// CephMutationProvider exposes Ceph mutation operations.
+type CephMutationProvider interface {
+	CephCreateOSD(ctx context.Context, node, dev string) (string, error)
+	CephOSDOut(ctx context.Context, node string, osdid int) error
+	CephOSDIn(ctx context.Context, node string, osdid int) error
+	CephDestroyOSD(ctx context.Context, node string, osdid int) (string, error)
+	CephCreatePool(ctx context.Context, node, name string, params map[string]string) (string, error)
+	CephDestroyPool(ctx context.Context, node, name string) (string, error)
+}
+
+// SDNMutationProvider exposes SDN mutation operations.
+type SDNMutationProvider interface {
+	SDNCreateZone(ctx context.Context, zoneType, zone string) error
+	SDNDeleteZone(ctx context.Context, zone string) error
+	SDNCreateVNet(ctx context.Context, vnet, zone string) error
+	SDNDeleteVNet(ctx context.Context, vnet string) error
+	SDNCreateSubnet(ctx context.Context, vnet, cidr, gateway string) error
+	SDNDeleteSubnet(ctx context.Context, vnet, subnet string) error
+	SDNCreateController(ctx context.Context, ctrl string) error
+	SDNDeleteController(ctx context.Context, ctrl string) error
+}
+
+// ReplicationProvider exposes replication job operations.
+type ReplicationProvider interface {
+	ReplicationList(ctx context.Context) ([]ReplicationJob, error)
+	ReplicationGet(ctx context.Context, id string) (*ReplicationJob, error)
+	ReplicationCreate(ctx context.Context, params ReplicationCreateInput) error
+	ReplicationUpdate(ctx context.Context, id string, params ReplicationUpdateInput) error
+	ReplicationDelete(ctx context.Context, id string) error
+	ReplicationSchedule(ctx context.Context, node, id string) error
+}
+
+// --- Domain types for Ceph, SDN, and Replication ---
+
+// CephStatus represents the Ceph cluster health overview.
+type CephStatus struct {
+	Health map[string]interface{} `json:"health" yaml:"health"`
+}
+
+// CephOSD represents a Ceph OSD entry.
+type CephOSD struct {
+	ID          int     `json:"id" yaml:"id"`
+	Name        string  `json:"name" yaml:"name"`
+	Type        string  `json:"type" yaml:"type"`
+	Status      string  `json:"status" yaml:"status"`
+	In          int     `json:"in" yaml:"in"`
+	Host        string  `json:"host,omitempty" yaml:"host,omitempty"`
+	DeviceClass string  `json:"device_class,omitempty" yaml:"device_class,omitempty"`
+	TotalSpace  int64   `json:"total_space,omitempty" yaml:"total_space,omitempty"`
+	BytesUsed   int64   `json:"bytes_used,omitempty" yaml:"bytes_used,omitempty"`
+	PercentUsed float64 `json:"percent_used,omitempty" yaml:"percent_used,omitempty"`
+}
+
+// CephMON represents a Ceph Monitor entry.
+type CephMON struct {
+	Name    string `json:"name" yaml:"name"`
+	Host    string `json:"host,omitempty" yaml:"host,omitempty"`
+	Quorum  bool   `json:"quorum" yaml:"quorum"`
+	State   string `json:"state,omitempty" yaml:"state,omitempty"`
+	Rank    int    `json:"rank,omitempty" yaml:"rank,omitempty"`
+	Version string `json:"ceph_version_short,omitempty" yaml:"ceph_version_short,omitempty"`
+}
+
+// CephPool represents a Ceph pool entry.
+type CephPool struct {
+	ID              int     `json:"pool" yaml:"pool"`
+	Name            string  `json:"pool_name" yaml:"pool_name"`
+	Size            int     `json:"size" yaml:"size"`
+	MinSize         int     `json:"min_size" yaml:"min_size"`
+	PGNum           int     `json:"pg_num" yaml:"pg_num"`
+	CrushRule       int     `json:"crush_rule" yaml:"crush_rule"`
+	CrushRuleName   string  `json:"crush_rule_name,omitempty" yaml:"crush_rule_name,omitempty"`
+	Type            string  `json:"type" yaml:"type"`
+	PGNumFinal      int     `json:"pg_num_final,omitempty" yaml:"pg_num_final,omitempty"`
+	PercentUsed     float64 `json:"percent_used,omitempty" yaml:"percent_used,omitempty"`
+	BytesUsed       int64   `json:"bytes_used,omitempty" yaml:"bytes_used,omitempty"`
+	PGAutoscaleMode string  `json:"pg_autoscale_mode,omitempty" yaml:"pg_autoscale_mode,omitempty"`
+}
+
+// SDNZoneCreateInput holds the fields for creating an SDN zone.
+type SDNZoneCreateInput struct {
+	Type string
+	Zone string
+}
+
+// SDNVNetCreateInput holds the fields for creating an SDN VNet.
+type SDNVNetCreateInput struct {
+	VNet string
+	Zone string
+}
+
+// SDNSubnetCreateInput holds the fields for creating an SDN subnet.
+type SDNSubnetCreateInput struct {
+	VNet    string
+	CIDR    string
+	Gateway string
+}
+
+// SDNControllerCreateInput holds the fields for creating an SDN controller.
+type SDNControllerCreateInput struct {
+	Controller string
+}
+
+// ReplicationJob represents a replication job.
+type ReplicationJob struct {
+	ID        string `json:"id" yaml:"id"`
+	Guest     int    `json:"guest" yaml:"guest"`
+	Type      string `json:"type" yaml:"type"`
+	Source    string `json:"source,omitempty" yaml:"source,omitempty"`
+	Target    string `json:"target" yaml:"target"`
+	Schedule  string `json:"schedule,omitempty" yaml:"schedule,omitempty"`
+	Comment   string `json:"comment,omitempty" yaml:"comment,omitempty"`
+	Enabled   int    `json:"enabled" yaml:"enabled"`
+	Rate      int64  `json:"rate,omitempty" yaml:"rate,omitempty"`
+	JobNum    int    `json:"jobnum,omitempty" yaml:"jobnum,omitempty"`
+	LastSync  int64  `json:"last_sync,omitempty" yaml:"last_sync,omitempty"`
+	FailCount int    `json:"fail_count,omitempty" yaml:"fail_count,omitempty"`
+}
+
+// ReplicationCreateInput holds fields for creating a replication job.
+type ReplicationCreateInput struct {
+	ID       string
+	Guest    int
+	Type     string
+	Target   string
+	Schedule string
+	Comment  string
+	Rate     int64
+	Source   string
+}
+
+// ReplicationUpdateInput holds fields for updating a replication job.
+type ReplicationUpdateInput struct {
+	Target   string
+	Schedule string
+	Comment  string
+	Rate     int64
+	Enable   int
+	Source   string
+	Delete   string
+}
+
 // Capability constants for optional features.
 const (
 	CapabilityNodeDetail       Capability = "node_detail"
@@ -319,6 +471,10 @@ const (
 	CapabilityNetworkMutation  Capability = "network_mutation"
 	CapabilityFirewallMutation Capability = "firewall_mutation"
 	CapabilityAccess           Capability = "access"
+	CapabilityCeph             Capability = "ceph"
+	CapabilityCephMutation     Capability = "ceph_mutation"
+	CapabilitySDNMutation      Capability = "sdn_mutation"
+	CapabilityReplication      Capability = "replication"
 )
 
 // NetworkMutationProvider exposes network configuration mutation operations.

@@ -909,3 +909,153 @@ type NodeNetworkApplyItem struct {
 	Comments        string `json:"comments,omitempty"`
 	MTU             int    `json:"mtu,omitempty"`
 }
+
+// --- Ceph types ---
+
+// CephStatusResponse is the response from /nodes/{node}/ceph/status.
+type CephStatusResponse struct {
+	Data map[string]interface{} `json:"data"`
+}
+
+// CephOSDListResponse is the response from /nodes/{node}/ceph/osd.
+type CephOSDListResponse struct {
+	Data struct {
+		Root struct {
+			Children []CephOSDTreeNode `json:"children"`
+		} `json:"root"`
+	} `json:"data"`
+}
+
+// CephOSDTreeNode represents a node in the OSD tree.
+type CephOSDTreeNode struct {
+	ID          int               `json:"id"`
+	Name        string            `json:"name"`
+	Type        string            `json:"type,omitempty"`
+	Status      string            `json:"status,omitempty"`
+	In          int               `json:"in,omitempty"`
+	Host        string            `json:"host,omitempty"`
+	DeviceClass string            `json:"device_class,omitempty"`
+	TotalSpace  int64             `json:"total_space,omitempty"`
+	BytesUsed   int64             `json:"bytes_used,omitempty"`
+	PercentUsed float64           `json:"percent_used,omitempty"`
+	Leaf        int               `json:"leaf,omitempty"`
+	Children    []CephOSDTreeNode `json:"children,omitempty"`
+}
+
+// CephMONListResponse is the response from /nodes/{node}/ceph/mon.
+type CephMONListResponse struct {
+	Data []CephMONItem `json:"data"`
+}
+
+// CephMONItem represents a Ceph monitor entry.
+type CephMONItem struct {
+	Name             string `json:"name"`
+	Host             string `json:"host,omitempty"`
+	Quorum           int    `json:"quorum,omitempty"`
+	State            string `json:"state,omitempty"`
+	Rank             int    `json:"rank,omitempty"`
+	CephVersionShort string `json:"ceph_version_short,omitempty"`
+}
+
+// CephPoolListResponse is the response from /nodes/{node}/ceph/pool.
+type CephPoolListResponse struct {
+	Data []CephPoolItem `json:"data"`
+}
+
+// CephPoolItem represents a Ceph pool entry.
+type CephPoolItem struct {
+	Pool            int     `json:"pool"`
+	PoolName        string  `json:"pool_name"`
+	Size            int     `json:"size"`
+	MinSize         int     `json:"min_size"`
+	PGNum           int     `json:"pg_num"`
+	CrushRule       int     `json:"crush_rule"`
+	CrushRuleName   string  `json:"crush_rule_name,omitempty"`
+	Type            string  `json:"type"`
+	PGNumFinal      int     `json:"pg_num_final,omitempty"`
+	PercentUsed     float64 `json:"percent_used,omitempty"`
+	BytesUsed       int64   `json:"bytes_used,omitempty"`
+	PGAutoscaleMode string  `json:"pg_autoscale_mode,omitempty"`
+}
+
+// --- SDN types ---
+
+// SDNCreateZoneRequest is the body for POST /cluster/sdn/zones.
+type SDNCreateZoneRequest struct {
+	Type string `json:"type"`
+	Zone string `json:"zone"`
+}
+
+// SDNCreateVNetRequest is the body for POST /cluster/sdn/vnets.
+type SDNCreateVNetRequest struct {
+	VNet string `json:"vnet"`
+	Zone string `json:"zone"`
+}
+
+// SDNCreateSubnetRequest is the body for POST /cluster/sdn/vnets/{vnet}/subnets.
+type SDNCreateSubnetRequest struct {
+	Subnet  string `json:"subnet"`
+	Type    string `json:"type"`
+	Gateway string `json:"gateway,omitempty"`
+}
+
+// SDNCreateControllerRequest is the body for POST /cluster/sdn/controllers.
+type SDNCreateControllerRequest struct {
+	Controller string `json:"controller"`
+}
+
+// SDNZonesMutationResponse is the response from SDN zone mutations.
+type SDNZonesMutationResponse struct {
+	Data interface{} `json:"data"`
+}
+
+// --- Replication types ---
+
+// ReplicationListResponse is the response from /cluster/replication.
+type ReplicationListResponse struct {
+	Data []ReplicationJobItem `json:"data"`
+}
+
+// ReplicationGetResponse is the response from /cluster/replication/{id}.
+type ReplicationGetResponse struct {
+	Data ReplicationJobItem `json:"data"`
+}
+
+// ReplicationJobItem represents a replication job.
+type ReplicationJobItem struct {
+	ID        string `json:"id"`
+	Guest     int    `json:"guest"`
+	Type      string `json:"type"`
+	Source    string `json:"source,omitempty"`
+	Target    string `json:"target"`
+	Schedule  string `json:"schedule,omitempty"`
+	Comment   string `json:"comment,omitempty"`
+	Disable   int    `json:"disable"`
+	Rate      int64  `json:"rate,omitempty"`
+	JobNum    int    `json:"jobnum,omitempty"`
+	LastSync  int64  `json:"last_sync,omitempty"`
+	FailCount int    `json:"fail_count,omitempty"`
+}
+
+// ReplicationCreateRequest is the body for POST /cluster/replication.
+type ReplicationCreateRequest struct {
+	ID       string `json:"id"`
+	Guest    int    `json:"guest"`
+	Type     string `json:"type"`
+	Target   string `json:"target"`
+	Schedule string `json:"schedule,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+	Rate     int64  `json:"rate,omitempty"`
+	Source   string `json:"source,omitempty"`
+}
+
+// ReplicationUpdateRequest is the body for PUT /cluster/replication/{id}.
+type ReplicationUpdateRequest struct {
+	Target   string `json:"target,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
+	Comment  string `json:"comment,omitempty"`
+	Rate     int64  `json:"rate,omitempty"`
+	Disable  int    `json:"disable,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Delete   string `json:"delete,omitempty"`
+}
