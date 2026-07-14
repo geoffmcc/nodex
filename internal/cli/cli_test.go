@@ -1063,6 +1063,61 @@ func TestWriteEmptyResourceListsAsStructuredArrays(t *testing.T) {
 	}
 }
 
+// TestPasswordArgumentRejected verifies that password= as a CLI argument is
+// explicitly rejected with a clear message directing users to safe alternatives.
+func TestPasswordArgumentRejected(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{
+		"--non-interactive", "access", "user", "create", "testuser@pve", "password=secret123",
+	}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for password= argument")
+	}
+	if !strings.Contains(err.Error(), "passwords must not be passed as command arguments") {
+		t.Errorf("expected password rejection message, got: %v", err)
+	}
+	// The password must not appear in the error output.
+	if strings.Contains(stderr.String(), "secret123") || strings.Contains(stdout.String(), "secret123") {
+		t.Error("password value leaked in output")
+	}
+}
+
+// TestPasswordStdinFlagAccepted verifies that --password-stdin is recognized
+// as a valid global flag.
+func TestPasswordStdinFlagAccepted(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	// Without --password-stdin and in non-interactive mode, command should
+	// proceed (with empty password) and fail at provider stage.
+	err := Run(context.Background(), []string{
+		"--non-interactive", "--yes", "--force", "--expert",
+		"access", "user", "create", "testuser@pve",
+	}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error (provider mock doesn't support AccessProvider)")
+	}
+	// Must not mention password= syntax.
+	if strings.Contains(err.Error(), "password=<p>") {
+		t.Error("error message references deprecated password= syntax")
+	}
+}
+
+// TestAccessUserHelpDoesNotShowPasswordArg verifies the usage message no longer
+// suggests password= as an acceptable argument.
+func TestAccessUserHelpDoesNotShowPasswordArg(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"access", "user"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected no error for help, got: %v", err)
+	}
+	out := stdout.String()
+	if strings.Contains(out, "password=<p>") {
+		t.Error("usage message still references password=<p> argument")
+	}
+	if !strings.Contains(out, "--password-stdin") {
+		t.Error("usage message does not mention --password-stdin")
+	}
+}
+
 // TestFailClosedConfirmation verifies that mutation commands return errors
 // (not nil) when confirmation has not been granted.
 func TestFailClosedConfirmation(t *testing.T) {
@@ -1131,7 +1186,10 @@ func TestFailClosedSecurityAdmin(t *testing.T) {
 	// itself is tested in the safety package.
 	t.Run("access-user-create-fails-closed", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
-		err := Run(context.Background(), []string{"--yes", "--force", "--expert", "access", "user", "create", "testuser@pve", "password=test"}, &stdout, &stderr)
+		// The command fails closed because the e2e mock provider does not implement
+		// AccessProvider. Password is not passed as an argument (that was removed for
+		// security). --non-interactive prevents hanging on an interactive prompt.
+		err := Run(context.Background(), []string{"--yes", "--force", "--expert", "--non-interactive", "access", "user", "create", "testuser@pve"}, &stdout, &stderr)
 		if err == nil {
 			t.Fatal("access command with unsupported provider returned nil (fail-open)")
 		}

@@ -30,6 +30,10 @@ var successCodes = map[int]bool{
 const (
 	// DefaultAPIPath is the Proxmox API base path.
 	DefaultAPIPath = "/api2/json"
+
+	// DefaultMaxUploadSize is the maximum upload file size (100 GiB).
+	// This is a safety limit; Proxmox storage backends may have lower limits.
+	DefaultMaxUploadSize int64 = 100 * 1024 * 1024 * 1024
 )
 
 // Client is a Proxmox API client.
@@ -1201,6 +1205,8 @@ func (c *Client) DeleteBackupSchedule(ctx context.Context, id string) error {
 }
 
 // UploadContent uploads a file to storage via POST /nodes/{node}/storage/{storage}/upload.
+// Uses streaming multipart construction to avoid buffering the entire file in memory.
+// Only regular files are accepted; symlinks, directories, and special files are rejected.
 func (c *Client) UploadContent(ctx context.Context, node, storage, localPath string) (string, error) {
 	if node == "" {
 		return "", fmt.Errorf("node name is required")
@@ -1212,6 +1218,17 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 		return "", fmt.Errorf("local file path is required")
 	}
 
+	info, err := os.Lstat(localPath)
+	if err != nil {
+		return "", fmt.Errorf("stat local file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is not a regular file (symlinks, directories, and special files are not supported)", localPath)
+	}
+	if info.Size() > DefaultMaxUploadSize {
+		return "", fmt.Errorf("%s size %d exceeds maximum upload size %d", localPath, info.Size(), DefaultMaxUploadSize)
+	}
+
 	filename := filepath.Base(localPath)
 	file, err := os.Open(localPath)
 	if err != nil {
@@ -1219,24 +1236,35 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 	}
 	defer file.Close()
 
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-	part, err := writer.CreateFormFile("content", filename)
-	if err != nil {
-		return "", fmt.Errorf("create multipart form: %w", err)
-	}
-	if _, err := io.Copy(part, file); err != nil {
-		return "", fmt.Errorf("read local file: %w", err)
-	}
-	if err := writer.WriteField("filename", filename); err != nil {
-		return "", fmt.Errorf("write filename field: %w", err)
-	}
-	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("close multipart writer: %w", err)
-	}
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+
+	// Write the multipart body in a goroutine so the HTTP client can stream it.
+	pipeDone := make(chan error, 1)
+	go func() {
+		defer pw.Close()
+		part, err := writer.CreateFormFile("content", filename)
+		if err != nil {
+			pipeDone <- fmt.Errorf("create multipart form: %w", err)
+			return
+		}
+		if _, err := io.Copy(part, file); err != nil {
+			pipeDone <- fmt.Errorf("read local file: %w", err)
+			return
+		}
+		if err := writer.WriteField("filename", filename); err != nil {
+			pipeDone <- fmt.Errorf("write filename field: %w", err)
+			return
+		}
+		if err := writer.Close(); err != nil {
+			pipeDone <- fmt.Errorf("close multipart writer: %w", err)
+			return
+		}
+		pipeDone <- nil
+	}()
 
 	u := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/upload"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, pr)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
@@ -1247,9 +1275,18 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 
 	resp, err := c.client.DoMutation(ctx, req)
 	if err != nil {
+		// Wait for the pipe writer goroutine to finish and check for local read errors.
+		if pwErr := <-pipeDone; pwErr != nil {
+			return "", fmt.Errorf("%v: %w", pwErr, err)
+		}
 		return "", fmt.Errorf("execute request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	// Verify the pipe writer completed without errors.
+	if pwErr := <-pipeDone; pwErr != nil {
+		return "", pwErr
+	}
 
 	var taskResp TaskResponse
 	if err := c.decodeResponse(resp, &taskResp); err != nil {

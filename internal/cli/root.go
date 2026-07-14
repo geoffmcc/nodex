@@ -31,6 +31,7 @@ type Options struct {
 	Wait           bool
 	Expert         bool
 	All            bool
+	PasswordStdin  bool
 }
 
 // Context carries global state through command execution.
@@ -336,6 +337,7 @@ func parseGlobal(args []string) (Options, []string, error) {
 	fs.BoolVar(&opts.Wait, "wait", false, "")
 	fs.BoolVar(&opts.Expert, "expert", false, "")
 	fs.BoolVar(&opts.All, "all", false, "")
+	fs.BoolVar(&opts.PasswordStdin, "password-stdin", false, "")
 
 	if err := fs.Parse(args); err != nil {
 		return opts, nil, err
@@ -407,6 +409,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --force              Confirm disruptive operations (Tier 2, requires --yes)")
 	fmt.Fprintln(w, "  --wait               Wait for the task to complete before exiting")
 	fmt.Fprintln(w, "  --expert             Enable expert-mode operations (Tier 4: identity, ACL changes)")
+	fmt.Fprintln(w, "  --password-stdin     Read password from stdin instead of interactive prompt")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Run 'nodex help <command>' for details on a specific command.")
 }
