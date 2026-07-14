@@ -39,6 +39,44 @@ func TestWriteYAML(t *testing.T) {
 	}
 }
 
+func TestWriteJSONRedactsAndSanitizesStringValues(t *testing.T) {
+	var buf bytes.Buffer
+	data := map[string]string{
+		"name":  "bad\x1b]0;owned\x07\u202ename",
+		"token": "Authorization: PVEAPIToken=root@pam!test=abc12345-1234-1234-1234-123456789abc",
+	}
+
+	if err := WriteJSON(&buf, data); err != nil {
+		t.Fatalf("WriteJSON: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "\\u001b") || strings.Contains(out, "\\u202e") || strings.Contains(out, "owned") || strings.Contains(out, "abc12345") {
+		t.Fatalf("unsafe JSON output: %q", out)
+	}
+	if !strings.Contains(out, "[REDACTED]") {
+		t.Fatalf("expected redacted token in JSON output: %q", out)
+	}
+}
+
+func TestWriteYAMLRedactsAndSanitizesStringValues(t *testing.T) {
+	var buf bytes.Buffer
+	data := map[string]string{
+		"name":  "bad\x1b]0;owned\x07\u202ename",
+		"token": "Authorization: PVEAPIToken=root@pam!test=abc12345-1234-1234-1234-123456789abc",
+	}
+
+	if err := WriteYAML(&buf, data); err != nil {
+		t.Fatalf("WriteYAML: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "\x1b") || strings.Contains(out, "\u202e") || strings.Contains(out, "owned") || strings.Contains(out, "abc12345") {
+		t.Fatalf("unsafe YAML output: %q", out)
+	}
+	if !strings.Contains(out, "[REDACTED]") {
+		t.Fatalf("expected redacted token in YAML output: %q", out)
+	}
+}
+
 func TestWriteTable(t *testing.T) {
 	var buf bytes.Buffer
 	headers := []string{"NAME", "STATUS"}

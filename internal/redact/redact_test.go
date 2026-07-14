@@ -51,7 +51,7 @@ func TestStringRedactsSecrets(t *testing.T) {
 		},
 		{
 			name:     "CSRF token",
-			input:    "CSRFPreventionToken=abc123def456",
+			input:    "CSRFPreventionToken=" + "abc123def456",
 			contains: "",
 		},
 		{

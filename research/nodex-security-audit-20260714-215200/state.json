@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "audit_id": "nodex-security-audit-20260714-215200",
+  "mode": "full",
+  "repository": {
+    "windows_path": "C:\\Users\\geoff\\Projects\\nodex",
+    "wsl_path": "/mnt/c/Users/geoff/Projects/nodex",
+    "git_root": "C:/Users/geoff/Projects/nodex",
+    "remote": "origin\thttps://github.com/geoffmcc/nodex.git (fetch)\norigin\thttps://github.com/geoffmcc/nodex.git (push)",
+    "module_path": "github.com/geoffmcc/nodex",
+    "entry_point": "cmd/nodex/main.go",
+    "project": "Nodex"
+  },
+  "branch": "security-audit-20260714",
+  "baseline_commit": "899f2507ba9b93fffa7c8d6998407b306b011433",
+  "current_commit": "899f2507ba9b93fffa7c8d6998407b306b011433",
+  "baseline_git_status": "## main...origin/main\nbranch created for audit: security-audit-20260714 at 899f2507ba9b93fffa7c8d6998407b306b011433",
+  "baseline_porcelain": "",
+  "scope_manifest_hash": "93bff0d742dfc598e8dc0ee1ceb51d6d5a87c4c32c00536ddb9752c7c4eeb654",
+  "current_phase": "phase9_final_review_staging",
+  "phase_statuses": {
+    "phase1_bootstrap": "complete",
+    "phase2_scope_coverage": "complete",
+    "phase3_architecture_operations": "complete",
+    "phase4_automated_baseline": "complete",
+    "phase5_manual_review": "complete",
+    "phase6_validation_design": "complete",
+    "phase7_remediation": "complete",
+    "phase8_independent_verification": "complete",
+    "phase9_final_review_staging": "complete"
+  },
+  "coverage_counts": {
+    "total": 197,
+    "pending": 0,
+    "reviewed": 125,
+    "binary_metadata_only": 0,
+    "generated_recorded": 72,
+    "blocked": 0
+  },
+  "finding_counts": {
+    "Medium": {
+      "fixed_verified": 3
+    },
+    "Informational": {
+      "false_positive": 1
+    }
+  },
+  "fixed_finding_ids": [
+    "SEC-001",
+    "SEC-002",
+    "SEC-003"
+  ],
+  "unresolved_finding_ids": [],
+  "tests_and_tools": [
+    "go version/go env/go mod verify/go list -m -json all",
+    "go build ./...",
+    "go test -count=1 ./...",
+    "go test -race -count=1 ./...",
+    "go vet ./...",
+    "gofmt -s -d check",
+    "staticcheck ./...",
+    "go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...",
+    "govulncheck ./...",
+    "gosec ./...",
+    "manual Python secret-pattern scan",
+    "gitleaks dir --redact --exit-code 0 .",
+    "cross builds linux/darwin/windows",
+    "bounded fuzz targets for cli/config/credentials/task",
+    "focused remediation tests"
+  ],
+  "blocked_checks": [
+    "gitleaks dir --no-git unsupported by installed gitleaks; replaced by redacted dir scan plus manual manifest scan"
+  ],
+  "material_decisions": [],
+  "created_at": "2026-07-14T21:52:00Z",
+  "updated_at": "2026-07-14T22:22:00Z",
+  "completion_status": "complete",
+  "exact_next_action": "git commit -S -m \"security: harden output and redirect safety\""
+}

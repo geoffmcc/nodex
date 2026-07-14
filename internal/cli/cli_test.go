@@ -28,6 +28,33 @@ func TestRun_NoArgs(t *testing.T) {
 	}
 }
 
+func TestRunSanitizesDirectHandlerStdoutAndStderr(t *testing.T) {
+	const name = "unsafe-output-test"
+	commands[name] = &command{
+		name:  name,
+		short: "test command with direct output",
+		run: func(_ context.Context, cmdCtx *Context, _ []string) error {
+			_, _ = fmt.Fprintf(cmdCtx.Writer, "stdout:%s\n", "bad\x1b]0;owned\x07PVEAPIToken=user@pam!tok=secret")
+			_, _ = fmt.Fprintf(cmdCtx.ErrW, "stderr:%s\n", "bad\x1b]0;owned\x07PVEAPIToken=user@pam!tok=secret")
+			return nil
+		},
+	}
+	defer delete(commands, name)
+
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{name}, &stdout, &stderr); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for stream, out := range map[string]string{"stdout": stdout.String(), "stderr": stderr.String()} {
+		if strings.Contains(out, "\x1b") || strings.Contains(out, "owned") || strings.Contains(out, "secret") {
+			t.Fatalf("%s was not sanitized/redacted: %q", stream, out)
+		}
+		if !strings.Contains(out, "[REDACTED]") {
+			t.Fatalf("%s missing redaction marker: %q", stream, out)
+		}
+	}
+}
+
 func TestRun_Help(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), []string{"help"}, &stdout, &stderr)

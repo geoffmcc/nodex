@@ -243,6 +243,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return app.NewExitError(err, app.ExitUsage)
 	}
+	safeStdout := output.NewSanitizingWriter(stdout)
+	safeStderr := output.NewSanitizingWriter(stderr)
 
 	level := logging.LevelError
 	if opts.Debug {
@@ -255,14 +257,14 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 
 	cmdCtx := &Context{
 		Opts:   opts,
-		Logger: logging.NewStderr(level, opts.Debug),
-		Writer: stdout,
-		ErrW:   stderr,
+		Logger: logging.New(safeStderr, level, opts.Debug),
+		Writer: safeStdout,
+		ErrW:   safeStderr,
 		Stdin:  osIn(),
 	}
 
 	if len(remaining) == 0 {
-		printUsage(stdout)
+		printUsage(safeStdout)
 		return nil
 	}
 
@@ -274,9 +276,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			return app.NewExitError(fmt.Errorf("usage: nodex help [command]"), app.ExitUsage)
 		}
 		if len(args) == 1 {
-			printCommandHelp(stdout, args[0])
+			printCommandHelp(safeStdout, args[0])
 		} else {
-			printUsage(stdout)
+			printUsage(safeStdout)
 		}
 		return nil
 	}
@@ -316,7 +318,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			}
 			return cmd.run(ctx, cmdCtx, args)
 		}
-		printSubcommandUsage(stdout, cmd)
+		printSubcommandUsage(safeStdout, cmd)
 		return nil
 	}
 

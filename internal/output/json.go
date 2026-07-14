@@ -10,7 +10,7 @@ import (
 // WriteJSON sanitizes data with type-based redaction, marshals it as
 // indented JSON, applies regex defense-in-depth, and writes the result.
 func WriteJSON(w io.Writer, data any) error {
-	sanitized := redact.Sanitize(data)
+	sanitized := sanitizeTerminalData(redact.Sanitize(data))
 	raw, err := json.MarshalIndent(sanitized, "", "  ")
 	if err != nil {
 		return err
