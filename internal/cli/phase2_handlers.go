@@ -141,28 +141,29 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 	opResult.Waited = true
 	if tr.Error != nil {
 		opResult.Success = false
+		exitCode := classifyTaskError(tr.Error, upid)
 		opResult.Error = &output.ResultError{
-			Class:  "provider",
-			Exit:   app.ExitProvider,
+			Class:  exitClassFromCode(exitCode),
+			Exit:   exitCode,
 			Detail: tr.Error.Error(),
 		}
 		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
 		return app.NewExitError(
-			fmt.Errorf("task %s failed: %w", upid, tr.Error),
-			app.ExitProvider,
+			&app.ProviderError{UPID: upid, Detail: tr.Error.Error(), Err: tr.Error},
+			exitCode,
 		)
 	}
 	if !tr.OK {
 		opResult.Success = false
 		opResult.Error = &output.ResultError{
-			Class:  "provider",
-			Exit:   app.ExitProvider,
+			Class:  "task_failure",
+			Exit:   app.ExitTaskFailure,
 			Detail: fmt.Sprintf("task failed with status %q", tr.State),
 		}
 		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
 		return app.NewExitError(
 			fmt.Errorf("task %s failed with status %q", upid, tr.State),
-			app.ExitProvider,
+			app.ExitTaskFailure,
 		)
 	}
 	opResult.Status = "OK"

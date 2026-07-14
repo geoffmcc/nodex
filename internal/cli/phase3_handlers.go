@@ -123,28 +123,30 @@ func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Pr
 	result.Waited = true
 	if tr.Error != nil {
 		result.Success = false
+		// Classify the error: timeout, cancellation, or ambiguous outcome.
+		exitCode := classifyTaskError(tr.Error, upid)
 		result.Error = &output.ResultError{
-			Class:  "provider",
-			Exit:   app.ExitProvider,
+			Class:  exitClassFromCode(exitCode),
+			Exit:   exitCode,
 			Detail: tr.Error.Error(),
 		}
 		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 		return app.NewExitError(
-			fmt.Errorf("task %s failed: %w", upid, tr.Error),
-			app.ExitProvider,
+			&app.ProviderError{UPID: upid, Detail: tr.Error.Error(), Err: tr.Error},
+			exitCode,
 		)
 	}
 	if !tr.OK {
 		result.Success = false
 		result.Error = &output.ResultError{
-			Class:  "provider",
-			Exit:   app.ExitProvider,
+			Class:  "task_failure",
+			Exit:   app.ExitTaskFailure,
 			Detail: fmt.Sprintf("task failed with status %q", tr.State),
 		}
 		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 		return app.NewExitError(
 			fmt.Errorf("task %s failed with status %q", upid, tr.State),
-			app.ExitProvider,
+			app.ExitTaskFailure,
 		)
 	}
 	result.Status = "OK"
@@ -756,5 +758,61 @@ func runCTSnapshotDispatch(ctx context.Context, cmdCtx *Context, args []string) 
 			fmt.Errorf("unknown container snapshot subcommand: %s (use create, delete, or rollback)", args[0]),
 			app.ExitUsage,
 		)
+	}
+}
+
+// classifyTaskError maps a task polling error to an exit code.
+// For timeout errors (including poller's "did not complete within"),
+// the outcome is ambiguous: we submitted but don't know the final state.
+// For cancellation errors, returns ExitCancellation.
+// For other errors, returns ExitTaskFailure.
+func classifyTaskError(err error, upid string) int {
+	if err == nil {
+		return app.ExitSuccess
+	}
+	if app.IsCancellationError(err) {
+		return app.ExitCancellation
+	}
+	if app.IsTimeoutError(err) {
+		// Task timeout means we submitted but don't know the outcome.
+		return app.ExitAmbiguousOutcome
+	}
+	// Handle the task.Poller timeout message specifically:
+	// "task <upid> did not complete within <duration>"
+	if strings.Contains(err.Error(), "did not complete within") {
+		return app.ExitAmbiguousOutcome
+	}
+	return app.ExitTaskFailure
+}
+
+// exitClassFromCode returns a human-readable error class string for an exit code.
+func exitClassFromCode(code int) string {
+	switch code {
+	case app.ExitAuth:
+		return "authentication"
+	case app.ExitAuthorization:
+		return "authorization"
+	case app.ExitNotFound:
+		return "not_found"
+	case app.ExitTimeout:
+		return "timeout"
+	case app.ExitCancellation:
+		return "cancellation"
+	case app.ExitTaskFailure:
+		return "task_failure"
+	case app.ExitAmbiguousOutcome:
+		return "ambiguous_outcome"
+	case app.ExitNetwork:
+		return "network"
+	case app.ExitValidationError:
+		return "validation"
+	case app.ExitRateLimit:
+		return "rate_limit"
+	case app.ExitConflict:
+		return "conflict"
+	case app.ExitProvider:
+		return "provider"
+	default:
+		return "unknown"
 	}
 }

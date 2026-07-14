@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/transport/httpclient"
 )
 
@@ -582,5 +583,201 @@ func TestGetSyslogRejectsEmptyNode(t *testing.T) {
 	_, err := c.GetSyslog(context.Background(), "")
 	if err == nil || !strings.Contains(err.Error(), "node name is required") {
 		t.Fatalf("GetSyslog('') error = %v, want node name required", err)
+	}
+}
+
+// --- Exit-code classification integration tests ---
+// These tests use a mock HTTP server to verify that each HTTP status
+// code produces the correct typed ProviderError and maps to the
+// expected exit code through app.ExitCodeFromError.
+
+func TestProviderError_401_ExitsAuth(t *testing.T) {
+	pe := newProviderError(http.StatusUnauthorized, "401 Unauthorized")
+	if pe.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("StatusCode = %d", pe.StatusCode)
+	}
+	code := app.ExitCodeFromError(pe)
+	if code != app.ExitAuth {
+		t.Errorf("exit code for 401 = %d, want ExitAuth(%d)", code, app.ExitAuth)
+	}
+}
+
+func TestProviderError_403_ExitsAuthorization(t *testing.T) {
+	pe := newProviderError(http.StatusForbidden, "403 Forbidden")
+	code := app.ExitCodeFromError(pe)
+	if code != app.ExitAuthorization {
+		t.Errorf("exit code for 403 = %d, want ExitAuthorization(%d)", code, app.ExitAuthorization)
+	}
+}
+
+func TestProviderError_404_ExitsNotFound(t *testing.T) {
+	pe := newProviderError(http.StatusNotFound, "404 Not Found")
+	code := app.ExitCodeFromError(pe)
+	if code != app.ExitNotFound {
+		t.Errorf("exit code for 404 = %d, want ExitNotFound(%d)", code, app.ExitNotFound)
+	}
+}
+
+func TestProviderError_409_ExitsConflict(t *testing.T) {
+	pe := newProviderError(http.StatusConflict, "409 Conflict")
+	code := app.ExitCodeFromError(pe)
+	if code != app.ExitConflict {
+		t.Errorf("exit code for 409 = %d, want ExitConflict(%d)", code, app.ExitConflict)
+	}
+}
+
+func TestProviderError_500_ExitsProvider(t *testing.T) {
+	pe := newProviderError(http.StatusInternalServerError, "500 Internal Server Error")
+	code := app.ExitCodeFromError(pe)
+	if code != app.ExitProvider {
+		t.Errorf("exit code for 500 = %d, want ExitProvider(%d)", code, app.ExitProvider)
+	}
+}
+
+func TestProviderError_503_ExitsProvider(t *testing.T) {
+	pe := newProviderError(http.StatusServiceUnavailable, "503 Unavailable")
+	code := app.ExitCodeFromError(pe)
+	if code != app.ExitProvider {
+		t.Errorf("exit code for 503 = %d, want ExitProvider(%d)", code, app.ExitProvider)
+	}
+}
+
+func TestProviderError_400_ExitsValidation(t *testing.T) {
+	pe := newProviderError(http.StatusBadRequest, "400 Bad Request")
+	code := app.ExitCodeFromError(pe)
+	if code != app.ExitValidationError {
+		t.Errorf("exit code for 400 = %d, want ExitValidationError(%d)", code, app.ExitValidationError)
+	}
+}
+
+func TestProviderError_429_ExitsRateLimit(t *testing.T) {
+	pe := newProviderError(http.StatusTooManyRequests, "429 Too Many Requests")
+	code := app.ExitCodeFromError(pe)
+	if code != app.ExitRateLimit {
+		t.Errorf("exit code for 429 = %d, want ExitRateLimit(%d)", code, app.ExitRateLimit)
+	}
+}
+
+func TestProviderError_504_ExitsTimeout(t *testing.T) {
+	pe := newProviderError(http.StatusGatewayTimeout, "504 Gateway Timeout")
+	code := app.ExitCodeFromError(pe)
+	if code != app.ExitTimeout {
+		t.Errorf("exit code for 504 = %d, want ExitTimeout(%d)", code, app.ExitTimeout)
+	}
+}
+
+// TestProviderError_WrappedInChain verifies that ProviderError survives
+// error wrapping (fmt.Errorf("... %w", ...)) and the exit code is still
+// correctly extracted.
+func TestProviderError_WrappedInChain(t *testing.T) {
+	pe := newProviderError(http.StatusNotFound, "not found")
+	wrapped := fmt.Errorf("list VMs: %w", pe)
+	code := app.ExitCodeFromError(wrapped)
+	if code != app.ExitNotFound {
+		t.Errorf("wrapped 404 exit code = %d, want ExitNotFound(%d)", code, app.ExitNotFound)
+	}
+}
+
+// TestProviderError_MockHTTPServer_401 proves the full chain:
+// httptest → get() → decodeResponse → ProviderError → ExitCode.
+func TestProviderError_MockHTTPServer_401(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	var out map[string]any
+	err := c.get(context.Background(), "/test", &out)
+	if err == nil {
+		t.Fatal("expected error for 401")
+	}
+	code := app.ExitCodeFromError(err)
+	if code != app.ExitAuth {
+		t.Errorf("mock 401 exit code = %d, want ExitAuth(%d)", code, app.ExitAuth)
+	}
+}
+
+func TestProviderError_MockHTTPServer_403(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "403 Forbidden", http.StatusForbidden)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	var out map[string]any
+	err := c.get(context.Background(), "/test", &out)
+	if err == nil {
+		t.Fatal("expected error for 403")
+	}
+	code := app.ExitCodeFromError(err)
+	if code != app.ExitAuthorization {
+		t.Errorf("mock 403 exit code = %d, want ExitAuthorization(%d)", code, app.ExitAuthorization)
+	}
+}
+
+func TestProviderError_MockHTTPServer_404(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "404 Not Found", http.StatusNotFound)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	var out map[string]any
+	err := c.get(context.Background(), "/test", &out)
+	if err == nil {
+		t.Fatal("expected error for 404")
+	}
+	code := app.ExitCodeFromError(err)
+	if code != app.ExitNotFound {
+		t.Errorf("mock 404 exit code = %d, want ExitNotFound(%d)", code, app.ExitNotFound)
+	}
+}
+
+func TestProviderError_MockHTTPServer_409(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "409 Conflict", http.StatusConflict)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	var out map[string]any
+	err := c.get(context.Background(), "/test", &out)
+	if err == nil {
+		t.Fatal("expected error for 409")
+	}
+	code := app.ExitCodeFromError(err)
+	if code != app.ExitConflict {
+		t.Errorf("mock 409 exit code = %d, want ExitConflict(%d)", code, app.ExitConflict)
+	}
+}
+
+func TestProviderError_MockHTTPServer_500(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	var out map[string]any
+	err := c.get(context.Background(), "/test", &out)
+	if err == nil {
+		t.Fatal("expected error for 500")
+	}
+	code := app.ExitCodeFromError(err)
+	if code != app.ExitProvider {
+		t.Errorf("mock 500 exit code = %d, want ExitProvider(%d)", code, app.ExitProvider)
+	}
+}
+
+func TestProviderError_MockHTTPServer_RedactsSecrets(t *testing.T) {
+	secret := "PVEAPIToken=user@pam!tok=secret123" // #nosec G101 -- test fixture
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, secret, http.StatusForbidden)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	var out map[string]any
+	err := c.get(context.Background(), "/test", &out)
+	if err == nil {
+		t.Fatal("expected error for 403")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("error leaked secret: %s", err.Error())
 	}
 }
