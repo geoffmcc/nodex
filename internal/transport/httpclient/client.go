@@ -127,6 +127,25 @@ func New(opts ...Option) *Client {
 					MinVersion: tls.VersionTLS12,
 				},
 			},
+			// Prevent credential forwarding on redirect: reject redirects
+			// that change host or downgrade from HTTPS to HTTP.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return fmt.Errorf("stopped after 10 redirects")
+				}
+				if len(via) > 0 {
+					orig := via[len(via)-1]
+					// Reject HTTPS → HTTP downgrade (prevents token leakage).
+					if orig.URL.Scheme == "https" && req.URL.Scheme == "http" {
+						return fmt.Errorf("redirect from https to http not allowed")
+					}
+					// Reject cross-origin redirects (prevents token forwarding to a different host).
+					if req.URL.Host != orig.URL.Host {
+						return fmt.Errorf("redirect to different host %q not allowed", req.URL.Host)
+					}
+				}
+				return nil
+			},
 		},
 		maxBodySize:      DefaultMaxBodySize,
 		maxErrorBodySize: DefaultMaxErrorBodySize,

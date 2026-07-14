@@ -45,7 +45,7 @@ func runNetworkApply(ctx context.Context, cmdCtx *Context, args []string) error 
 	}
 
 	// Read config file
-	data, err := os.ReadFile(configFile)
+	data, err := os.ReadFile(configFile) // #nosec G304 -- configFile is user-specified config path, validated by caller.
 	if err != nil {
 		return fmt.Errorf("read config file %s: %w", configFile, err)
 	}

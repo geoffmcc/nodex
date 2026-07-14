@@ -73,6 +73,24 @@ func TestSanitizeTerminal(t *testing.T) {
 		{"multiple escapes", "\x1b[31mred\x1b[0m normal", "red normal"},
 		{"empty", "", ""},
 		{"no escapes", "no escapes here", "no escapes here"},
+		// OSC sequences (ESC ]) — e.g. window title injection.
+		{"OSC BEL terminator", "before\x1b]0;malicious title\x07after", "beforeafter"},
+		{"OSC ST terminator", "before\x1b]0;payload\x1b\\after", "beforeafter"},
+		// DCS sequences (ESC P) — e.g. device control injection.
+		{"DCS BEL", "before\x1bP|cmd\x07after", "beforeafter"},
+		{"DCS ST", "before\x1bP|cmd\x1b\\after", "beforeafter"},
+		// APC sequences (ESC _).
+		{"APC BEL", "before\x1b_payload\x07after", "beforeafter"},
+		{"APC ST", "before\x1b_payload\x1b\\after", "beforeafter"},
+		// PM sequences (ESC ^).
+		{"PM BEL", "before\x1b^payload\x07after", "beforeafter"},
+		{"PM ST", "before\x1b^payload\x1b\\after", "beforeafter"},
+		// Lone ESC at end of string should be dropped.
+		{"lone ESC", "hello\x1b", "hello"},
+		// Multi-byte CSI with parameters.
+		{"CSI params", "a\x1b[38;5;196mb", "ab"},
+		// Mixed escape types.
+		{"mixed", "\x1b[31mR\x1b]0;title\x07G\x1bP|y\x1b\\B", "RGB"},
 	}
 
 	for _, tt := range tests {

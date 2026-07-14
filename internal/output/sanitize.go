@@ -15,31 +15,59 @@ func isTerminal(f *os.File) bool {
 
 // SanitizeTerminal strips ANSI escape sequences from input.
 // This prevents terminal injection attacks from malicious data.
+// Handles CSI, OSC, DCS, APC, PM, and other escape sequence families.
 func SanitizeTerminal(s string) string {
-	// Remove CSI sequences: ESC [ ... final_byte
+	// Remove all escape sequences: ESC-initiated byte sequences.
 	result := make([]byte, 0, len(s))
-	inEscape := false
-	for i := 0; i < len(s); i++ {
+	i := 0
+	for i < len(s) {
 		c := s[i]
 		if c == 0x1b { // ESC
-			inEscape = true
-			continue
-		}
-		if inEscape {
-			// CSI sequences start with [ (0x5B) after ESC.
-			// They end with a letter in 0x40-0x7E range.
-			if c == 0x5b {
-				// CSI introducer found, now look for final byte.
-				continue
+			i++
+			if i >= len(s) {
+				// Lone ESC at end of string — drop it.
+				break
 			}
-			if c >= 0x40 && c <= 0x7e {
-				inEscape = false
+			next := s[i]
+			switch {
+			case next == '[': // CSI: ESC [ <params> <intermediate> <final>
+				i++
+				// Skip parameter bytes (0x30-0x3F), intermediate bytes (0x20-0x2F),
+				// and stop at the final byte (0x40-0x7E).
+				for i < len(s) {
+					b := s[i]
+					if b >= 0x40 && b <= 0x7e {
+						i++ // consume final byte
+						break
+					}
+					i++
+				}
+			case next == ']' || next == 'P' || next == '_' || next == '^':
+				// OSC (ESC ]), DCS (ESC P), APC (ESC _), PM (ESC ^).
+				// Payload continues until ST (ESC \) or BEL (0x07).
+				i++
+				for i < len(s) {
+					if s[i] == 0x07 { // BEL — OSC terminator
+						i++
+						break
+					}
+					if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' { // ESC \ — ST
+						i += 2
+						break
+					}
+					i++
+				}
+			default:
+				// Other single-character escape sequences (e.g., ESC A, ESC M).
+				// Just skip the ESC + the one character.
+				i++
 			}
 			continue
 		}
 		result = append(result, c)
+		i++
 	}
-	clean := strings.ToValidUTF8(string(result), "�")
+	clean := strings.ToValidUTF8(string(result), "\uFFFD")
 	out := make([]rune, 0, len(clean))
 	for _, r := range clean {
 		if (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
@@ -50,7 +78,7 @@ func SanitizeTerminal(s string) string {
 		}
 	}
 	if !utf8.ValidString(string(out)) {
-		return strings.ToValidUTF8(string(out), "�")
+		return strings.ToValidUTF8(string(out), "\uFFFD")
 	}
 	return string(out)
 }

@@ -141,3 +141,72 @@ func TestJitteredDelayProducesVariableOutput(t *testing.T) {
 		t.Errorf("jitteredDelay produced only %d unique values; want >1 (jitter not working)", len(results))
 	}
 }
+
+// --- Redirect policy tests (SEC-REDIR) ---
+
+func TestDoRejectsRedirectToDifferentHost(t *testing.T) {
+	// Server A redirects to Server B (different host).
+	// The redirect should be rejected to prevent credential forwarding.
+	sA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://evil.example.com/steal", http.StatusFound)
+	}))
+	defer sA.Close()
+
+	c := New(WithMaxRetries(0))
+	req, _ := http.NewRequest(http.MethodGet, sA.URL, nil)
+	req.Header.Set("Authorization", "PVEAPIToken=user@pam!tok=secret123") // #nosec G101
+	_, err := c.Do(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error for redirect to different host")
+	}
+	if !strings.Contains(err.Error(), "different host") {
+		t.Errorf("error = %q, want 'different host' message", err)
+	}
+}
+
+func TestDoRejectsHTTPSToHTTPRedirect(t *testing.T) {
+	// Set up an HTTPS server that redirects to HTTP.
+	// Since httptest.NewTLSServer is available, we can test scheme downgrade.
+	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Redirect from HTTPS to HTTP (scheme downgrade).
+		http.Redirect(w, r, "http://"+r.Host+"/downgrade", http.StatusFound)
+	}))
+	defer s.Close()
+
+	c := New(WithMaxRetries(0))
+	req, _ := http.NewRequest(http.MethodGet, s.URL, nil)
+	// Use the test server's TLS config to trust the self-signed cert.
+	c.httpClient.Transport = s.Client().Transport
+	_, err := c.Do(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error for HTTPS to HTTP redirect")
+	}
+	if !strings.Contains(err.Error(), "https to http") {
+		t.Errorf("error = %q, want 'https to http' message", err)
+	}
+}
+
+func TestDoAllowsRedirectToSameHost(t *testing.T) {
+	var calls int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = atomic.AddInt32(&calls, 1)
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"ok"}`))
+	}))
+	defer s.Close()
+
+	c := New(WithMaxRetries(0))
+	req, _ := http.NewRequest(http.MethodGet, s.URL+"/redirect", nil)
+	resp, err := c.Do(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	_ = resp.Body.Close()
+	if atomic.LoadInt32(&calls) != 2 {
+		t.Errorf("calls = %d, want 2 (initial + redirect)", calls)
+	}
+}
