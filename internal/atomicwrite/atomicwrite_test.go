@@ -29,12 +29,16 @@ func TestWriteFileCreatesNewFile(t *testing.T) {
 	}
 
 	// Verify permissions on the final file.
-	info, err := os.Stat(dest)
-	if err != nil {
-		t.Fatalf("Stat failed: %v", err)
-	}
-	if got, want := info.Mode().Perm(), os.FileMode(0o644); got != want {
-		t.Fatalf("permissions: got %o, want %o", got, want)
+	// On Windows, os.Chmod only affects the read-only attribute, not the
+	// full POSIX permission bits, so skip the exact-check there.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(dest)
+		if err != nil {
+			t.Fatalf("Stat failed: %v", err)
+		}
+		if got, want := info.Mode().Perm(), os.FileMode(0o644); got != want {
+			t.Fatalf("permissions: got %o, want %o", got, want)
+		}
 	}
 
 	// Verify no temp file left behind.
