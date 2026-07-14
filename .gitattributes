@@ -1,10 +1,41 @@
-# Force LF line endings for Go source files to ensure gofmt consistency across platforms
+# Normalize text files by default.
+* text=auto
+
+# Go source and module files
 *.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
 
-# Force LF for shell scripts
+# Build and automation files
+Makefile text eol=lf
+*.mk text eol=lf
 *.sh text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
 
-# Force LF for golden test data to match Go output across platforms
+# Configuration and documentation
 *.json text eol=lf
 *.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
 *.txt text eol=lf
+
+# Web and template files
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.tmpl text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.exe binary

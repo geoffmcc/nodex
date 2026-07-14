@@ -1,24 +1,51 @@
 # Personal working files
-.scratch/
-research/
+/.scratch/
+/research/
+/key/
 
-# Go binary
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Go binaries
 /nodex
 /nodex.exe
+/bin/
+/build/
+/dist/
 
-# Go build/test
+# Go build, test, coverage, and profiling
 *.test
 *.out
+*.cover
+*.prof
 coverage.html
 coverage.txt
+coverage.xml
+coverage.out
 
-# IDE
+# Temporary and runtime files
+/tmp/
+/temp/
+*.tmp
+*.log
+*.pid
+
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.project
+.settings/
 
-# OS
+# OS-generated files
 .DS_Store
 Thumbs.db
+Desktop.ini
