@@ -335,7 +335,7 @@ func TestGoldenFormatErrors(t *testing.T) {
 
 // stripDurations removes timing-dependent "duration" fields from JSON/YAML
 // golden output so that wall-clock jitter does not cause spurious mismatches.
-var durationRE = regexp.MustCompile(`"duration":\s*"[^"]*"[,]?`)
+var durationRE = regexp.MustCompile(`,?\s*"duration":\s*"[^"]*"`)
 
 func stripDurations(s string) string {
 	return durationRE.ReplaceAllString(s, "")
