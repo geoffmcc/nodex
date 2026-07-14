@@ -146,3 +146,106 @@ func TestExitCodeFromError_ExitCoderOverProviderError(t *testing.T) {
 		t.Errorf("ExitCodeFromError(ExitCoder(404)) = %d, want ExitNotFound(%d)", got, ExitNotFound)
 	}
 }
+
+// classifyByPattern fallback coverage.
+
+func TestClassifyByPattern_NetworkFallback(t *testing.T) {
+	err := fmt.Errorf("no such host: proxy.example.invalid")
+	got := ExitCodeFromError(err)
+	if got != ExitNetwork {
+		t.Errorf("ExitCodeFromError(network pattern) = %d, want ExitNetwork(%d)", got, ExitNetwork)
+	}
+}
+
+func TestClassifyByPattern_ContextCanceledFallback(t *testing.T) {
+	err := fmt.Errorf("context canceled")
+	got := ExitCodeFromError(err)
+	if got != ExitCancellation {
+		t.Errorf("ExitCodeFromError(context canceled) = %d, want ExitCancellation(%d)", got, ExitCancellation)
+	}
+}
+
+func TestClassifyByPattern_DeadlineExceededFallback(t *testing.T) {
+	err := fmt.Errorf("context deadline exceeded")
+	got := ExitCodeFromError(err)
+	if got != ExitTimeout {
+		t.Errorf("ExitCodeFromError(deadline exceeded) = %d, want ExitTimeout(%d)", got, ExitTimeout)
+	}
+}
+
+func TestClassifyByPattern_NetworkConnectionReset(t *testing.T) {
+	err := fmt.Errorf("read tcp: connection reset by peer")
+	got := ExitCodeFromError(err)
+	if got != ExitNetwork {
+		t.Errorf("ExitCodeFromError(connection reset) = %d, want ExitNetwork(%d)", got, ExitNetwork)
+	}
+}
+
+func TestClassifyByPattern_NetworkUnreachable(t *testing.T) {
+	err := fmt.Errorf("dial tcp: network is unreachable")
+	got := ExitCodeFromError(err)
+	if got != ExitNetwork {
+		t.Errorf("ExitCodeFromError(network unreachable) = %d, want ExitNetwork(%d)", got, ExitNetwork)
+	}
+}
+
+func TestClassifyByPattern_PlainErrorReturnsGeneral(t *testing.T) {
+	err := fmt.Errorf("something unexpected happened")
+	got := ExitCodeFromError(err)
+	if got != ExitGeneral {
+		t.Errorf("ExitCodeFromError(plain) = %d, want ExitGeneral(%d)", got, ExitGeneral)
+	}
+}
+
+func TestClassifyByPattern_CancelledBritishSpelling(t *testing.T) {
+	err := fmt.Errorf("operation cancelled by user")
+	got := ExitCodeFromError(err)
+	if got != ExitCancellation {
+		t.Errorf("ExitCodeFromError(cancelled) = %d, want ExitCancellation(%d)", got, ExitCancellation)
+	}
+}
+
+func TestClassifyTimeout_NilError(t *testing.T) {
+	if classifyTimeout(nil) {
+		t.Error("classifyTimeout(nil) should return false")
+	}
+}
+
+func TestClassifyCancellation_NilError(t *testing.T) {
+	if classifyCancellation(nil) {
+		t.Error("classifyCancellation(nil) should return false")
+	}
+}
+
+func TestClassifyNetwork_NilError(t *testing.T) {
+	if classifyNetwork(nil) {
+		t.Error("classifyNetwork(nil) should return false")
+	}
+}
+
+func TestIsCancellationError_NonProviderError(t *testing.T) {
+	// Without a ProviderError wrapper, IsCancellationError should fall through to classifyCancellation.
+	err := fmt.Errorf("context canceled")
+	if !IsCancellationError(err) {
+		t.Error("IsCancellationError(context canceled) should be true")
+	}
+}
+
+func TestIsNetworkError_StringFallback(t *testing.T) {
+	// Without a ProviderError wrapper, IsNetworkError should fall through to classifyNetwork.
+	err := fmt.Errorf("connection refused")
+	if !IsNetworkError(err) {
+		t.Error("IsNetworkError(connection refused) should be true")
+	}
+}
+
+func TestTaskUPIDFromError_Deprecated(t *testing.T) {
+	// Deprecated function should delegate to UPIDFromError.
+	pe := &ProviderError{UPID: "UPID:test:1"}
+	if got := TaskUPIDFromError(pe); got != "UPID:test:1" {
+		t.Errorf("TaskUPIDFromError = %q, want UPID:test:1", got)
+	}
+	if got := TaskUPIDFromError(stderrors.New("plain")); got != "" {
+		t.Errorf("TaskUPIDFromError(plain) = %q, want empty", got)
+	}
+}
