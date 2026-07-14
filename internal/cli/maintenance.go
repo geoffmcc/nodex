@@ -23,7 +23,11 @@ func runBackupList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	backups, err := prov.Backups(ctx, node)
+	bi, err := requireBackupInspector(prov)
+	if err != nil {
+		return err
+	}
+	backups, err := bi.Backups(ctx, node)
 	if err != nil {
 		return fmt.Errorf("list backups: %w", err)
 	}
@@ -65,7 +69,11 @@ func runFirewallList(ctx context.Context, cmdCtx *Context, args []string) error 
 	}
 	defer cleanup()
 
-	rules, err := prov.FirewallRules(ctx)
+	fi, err := requireFirewallInspector(prov)
+	if err != nil {
+		return err
+	}
+	rules, err := fi.FirewallRules(ctx)
 	if err != nil {
 		return fmt.Errorf("list firewall rules: %w", err)
 	}
@@ -117,7 +125,11 @@ func runHAList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	resources, err := prov.HAResources(ctx)
+	ha, err := requireHAInspector(prov)
+	if err != nil {
+		return err
+	}
+	resources, err := ha.HAResources(ctx)
 	if err != nil {
 		return fmt.Errorf("list HA resources: %w", err)
 	}
@@ -159,7 +171,11 @@ func runHAGroups(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	defer cleanup()
 
-	groups, err := prov.HAGroups(ctx)
+	ha, err := requireHAInspector(prov)
+	if err != nil {
+		return err
+	}
+	groups, err := ha.HAGroups(ctx)
 	if err != nil {
 		return fmt.Errorf("list HA groups: %w", err)
 	}

@@ -2,9 +2,16 @@ package domain
 
 import "context"
 
-// Provider is the interface that all infrastructure providers must implement.
+// Provider is the minimal interface that all infrastructure providers must implement.
+// It covers lifecycle (connect, disconnect, health), identity (name, version),
+// and capability discovery. Resource inspection and mutation are exposed through
+// narrow optional capability interfaces that a provider may choose to implement.
+//
+// Nodex is Proxmox-first and provider-extensible. A future provider (e.g. VMware)
+// need only implement the minimal Provider interface plus the specific capability
+// interfaces it supports.
 type Provider interface {
-	// Name returns the provider name (e.g., "proxmox", "vmware").
+	// Name returns the provider name (e.g., "proxmox").
 	Name() string
 
 	// Version returns the provider version.
@@ -16,62 +23,12 @@ type Provider interface {
 	// Close releases any resources held by the provider.
 	Close() error
 
+	// Health returns nil if the provider is connected and responsive.
+	// An error indicates the provider is unreachable or misconfigured.
+	Health(ctx context.Context) error
+
 	// Capabilities returns the list of capabilities this provider supports.
 	Capabilities() []Capability
-
-	// Nodes returns all nodes managed by this provider.
-	Nodes(ctx context.Context) ([]Node, error)
-
-	// VMs returns all VMs managed by this provider.
-	VMs(ctx context.Context) ([]VM, error)
-
-	// Containers returns all containers managed by this provider.
-	Containers(ctx context.Context) ([]Container, error)
-
-	// Storage returns all storage pools managed by this provider.
-	Storage(ctx context.Context) ([]Storage, error)
-
-	// Cluster returns cluster information.
-	Cluster(ctx context.Context) (*Cluster, error)
-
-	// VMConfig returns configuration for a specific VM.
-	VMConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error)
-
-	// ContainerConfig returns configuration for a specific container.
-	ContainerConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error)
-
-	// StorageContent returns content items for a specific storage.
-	StorageContent(ctx context.Context, node, storage string) ([]StorageContentItem, error)
-
-	// Tasks returns all tasks for a specific node.
-	Tasks(ctx context.Context, node string) ([]Task, error)
-
-	// Task returns details for a specific task by UPID.
-	Task(ctx context.Context, node, upid string) (*Task, error)
-
-	// VMSnapshots returns snapshots for a VM.
-	VMSnapshots(ctx context.Context, node string, vmid int) ([]Snapshot, error)
-
-	// ContainerSnapshots returns snapshots for a container.
-	ContainerSnapshots(ctx context.Context, node string, vmid int) ([]Snapshot, error)
-
-	// Events returns cluster events.
-	Events(ctx context.Context) ([]Event, error)
-
-	// Syslog returns syslog entries for a specific node.
-	Syslog(ctx context.Context, node string) ([]SyslogEntry, error)
-
-	// Backups returns backup tasks for a specific node.
-	Backups(ctx context.Context, node string) ([]Backup, error)
-
-	// FirewallRules returns cluster firewall rules.
-	FirewallRules(ctx context.Context) ([]FirewallRule, error)
-
-	// HAResources returns HA resources.
-	HAResources(ctx context.Context) ([]HAResource, error)
-
-	// HAGroups returns HA groups.
-	HAGroups(ctx context.Context) ([]HAGroup, error)
 }
 
 // Credentials holds authentication information for a provider.

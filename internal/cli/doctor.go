@@ -8,7 +8,6 @@ import (
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/output"
-	proxclient "github.com/geoffmcc/nodex/internal/provider/proxmox/client"
 )
 
 // checkResult holds the result of a single doctor check.
@@ -155,14 +154,8 @@ func checkProfile(ctx context.Context, cmdCtx *Context, name string, p config.Pr
 	}
 	defer cleanup()
 
-	// Try to get the version as a connectivity check.
-	pc, ok := prov.(interface {
-		TestConnectivity(context.Context) (*proxclient.VersionData, error)
-	})
-	if !ok {
-		return checkResult{Name: fmt.Sprintf("profile/%s", name), Status: "fail", Message: "provider has no connectivity check"}
-	}
-	if _, err := pc.TestConnectivity(ctx); err != nil {
+	// Use the provider's Health method as a connectivity check.
+	if err := prov.Health(ctx); err != nil {
 		return checkResult{
 			Name:    fmt.Sprintf("profile/%s", name),
 			Status:  "fail",

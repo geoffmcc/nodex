@@ -13,13 +13,13 @@ import (
 	"github.com/geoffmcc/nodex/internal/task"
 )
 
-// taskStatusAdapter adapts a domain.Provider to the task.TaskStatusClient interface.
+// taskStatusAdapter adapts a domain.TaskInspector to the task.TaskStatusClient interface.
 type taskStatusAdapter struct {
-	prov domain.Provider
+	ti domain.TaskInspector
 }
 
 func (a *taskStatusAdapter) GetTask(ctx context.Context, node, upid string) (*task.TaskStatus, error) {
-	t, err := a.prov.Task(ctx, node, upid)
+	t, err := a.ti.Task(ctx, node, upid)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,14 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 
 	// Wait for task to complete.
 	fmt.Fprintf(cmdCtx.ErrW, "Waiting for task %s...\n", upid)
-	adapter := &taskStatusAdapter{prov: prov}
+	ti, ok := prov.(domain.TaskInspector)
+	if !ok {
+		return app.NewExitError(
+			fmt.Errorf("%w: task polling not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	adapter := &taskStatusAdapter{ti: ti}
 	poller := task.NewPoller(adapter)
 	tr := poller.Wait(ctx, node, upid)
 

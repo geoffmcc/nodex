@@ -5,6 +5,81 @@ import (
 	"io"
 )
 
+// --- Core inspection interfaces ---
+//
+// These interfaces expose the resource-inspection methods that were previously
+// part of the base Provider interface. Splitting them into narrow, optional
+// interfaces means a provider need only implement inspection for the resource
+// families it supports.
+
+// NodeInspector provides basic node listing.
+type NodeInspector interface {
+	Nodes(ctx context.Context) ([]Node, error)
+}
+
+// VMInspector provides VM listing and configuration.
+type VMInspector interface {
+	VMs(ctx context.Context) ([]VM, error)
+	VMConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error)
+}
+
+// ContainerInspector provides container listing and configuration.
+type ContainerInspector interface {
+	Containers(ctx context.Context) ([]Container, error)
+	ContainerConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error)
+}
+
+// StorageInspector provides storage pool listing and content inspection.
+type StorageInspector interface {
+	Storage(ctx context.Context) ([]Storage, error)
+	StorageContent(ctx context.Context, node, storage string) ([]StorageContentItem, error)
+}
+
+// ClusterInspector provides cluster-level information.
+type ClusterInspector interface {
+	Cluster(ctx context.Context) (*Cluster, error)
+}
+
+// TaskInspector provides task listing and detail retrieval.
+type TaskInspector interface {
+	Tasks(ctx context.Context, node string) ([]Task, error)
+	Task(ctx context.Context, node, upid string) (*Task, error)
+}
+
+// SnapshotInspector provides snapshot listing for VMs and containers.
+type SnapshotInspector interface {
+	VMSnapshots(ctx context.Context, node string, vmid int) ([]Snapshot, error)
+	ContainerSnapshots(ctx context.Context, node string, vmid int) ([]Snapshot, error)
+}
+
+// EventInspector provides cluster event listing.
+type EventInspector interface {
+	Events(ctx context.Context) ([]Event, error)
+}
+
+// SyslogInspector provides syslog retrieval per node.
+type SyslogInspector interface {
+	Syslog(ctx context.Context, node string) ([]SyslogEntry, error)
+}
+
+// BackupInspector provides backup task listing per node.
+type BackupInspector interface {
+	Backups(ctx context.Context, node string) ([]Backup, error)
+}
+
+// FirewallInspector provides cluster-level firewall rule listing.
+type FirewallInspector interface {
+	FirewallRules(ctx context.Context) ([]FirewallRule, error)
+}
+
+// HAInspector provides HA resource and group listing.
+type HAInspector interface {
+	HAResources(ctx context.Context) ([]HAResource, error)
+	HAGroups(ctx context.Context) ([]HAGroup, error)
+}
+
+// --- Optional capability interfaces (inspection detail and mutation) ---
+
 // NodeDetailProvider exposes detailed per-node information.
 type NodeDetailProvider interface {
 	NodeStatus(ctx context.Context, node string) (map[string]interface{}, error)
@@ -624,4 +699,177 @@ type AccessToken struct {
 	Created  int64  `json:"created,omitempty" yaml:"created,omitempty"`
 	UserID   string `json:"userid,omitempty" yaml:"userid,omitempty"`
 	Disabled int    `json:"disabled,omitempty" yaml:"disabled,omitempty"`
+}
+
+// --- Capability metadata ---
+
+// CapCategory describes whether a capability is inspection or mutation.
+type CapCategory string
+
+const (
+	CapInspection CapCategory = "inspection"
+	CapMutation   CapCategory = "mutation"
+)
+
+// SafetyTier maps to the safety confirmation tiers used throughout Nodex.
+type SafetyTier string
+
+const (
+	TierObservation   SafetyTier = "observation"
+	TierReversible    SafetyTier = "reversible"
+	TierDisruptive    SafetyTier = "disruptive"
+	TierDestructive   SafetyTier = "destructive"
+	TierSecurityAdmin SafetyTier = "security_admin"
+)
+
+// CapabilityMeta describes a single capability: its category, safety tier,
+// and which optional Go interfaces it corresponds to.
+type CapabilityMeta struct {
+	Name       string
+	Category   CapCategory
+	Safety     SafetyTier
+	Interfaces []string // Go interface names, e.g. "NodeInspector"
+}
+
+// CapabilityMetadata returns the known metadata for every capability constant.
+// A provider may implement any subset of these; Capabilities() declares the
+// supported subset.
+func CapabilityMetadata() map[Capability]CapabilityMeta {
+	return map[Capability]CapabilityMeta{
+		// --- Core inspection ---
+		CapabilityNodes: {
+			Name: "Nodes", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"NodeInspector"},
+		},
+		CapabilityVMs: {
+			Name: "VMs", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"VMInspector"},
+		},
+		CapabilityContainers: {
+			Name: "Containers", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"ContainerInspector"},
+		},
+		CapabilityStorage: {
+			Name: "Storage", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"StorageInspector"},
+		},
+		CapabilityCluster: {
+			Name: "Cluster", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"ClusterInspector"},
+		},
+
+		// --- Extended inspection ---
+		CapabilityNodeDetail: {
+			Name: "Node Detail", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"NodeDetailProvider"},
+		},
+		CapabilityFirewallAdvanced: {
+			Name: "Firewall Advanced", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"FirewallProvider"},
+		},
+		CapabilityHAStatus: {
+			Name: "HA Status", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"HAProvider"},
+		},
+		CapabilityBackupContent: {
+			Name: "Backup Content", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"BackupProvider"},
+		},
+		CapabilitySDN: {
+			Name: "SDN", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"SDNProvider"},
+		},
+		CapabilitySnapshotDetail: {
+			Name: "Snapshot Detail", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"SnapshotDetailProvider"},
+		},
+		CapabilityPools: {
+			Name: "Pools", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"PoolProvider"},
+		},
+		CapabilityClusterLog: {
+			Name: "Cluster Log", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"ClusterLogProvider"},
+		},
+		CapabilityCeph: {
+			Name: "Ceph", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"CephProvider"},
+		},
+		CapabilityReplication: {
+			Name: "Replication", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"ReplicationProvider"},
+		},
+
+		// --- Mutation: reversible ---
+		CapabilityLifecycle: {
+			Name: "Lifecycle", Category: CapMutation, Safety: TierReversible,
+			Interfaces: []string{"LifecycleProvider"},
+		},
+
+		// --- Mutation: disruptive ---
+		CapabilityConfig: {
+			Name: "Config", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"ConfigProvider"},
+		},
+		CapabilityBackupMutation: {
+			Name: "Backup Mutation", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"BackupMutationProvider"},
+		},
+		CapabilityStorageMutation: {
+			Name: "Storage Mutation", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"StorageMutationProvider"},
+		},
+		CapabilityMigration: {
+			Name: "Migration", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"MigrationProvider"},
+		},
+		CapabilityClone: {
+			Name: "Clone", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"CloneProvider"},
+		},
+		CapabilityDisk: {
+			Name: "Disk", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"DiskProvider"},
+		},
+		CapabilityTemplate: {
+			Name: "Template", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"TemplateProvider"},
+		},
+		CapabilityCloudInit: {
+			Name: "Cloud Init", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"CloudInitProvider"},
+		},
+		CapabilityNetworkMutation: {
+			Name: "Network Mutation", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"NetworkMutationProvider"},
+		},
+		CapabilityFirewallMutation: {
+			Name: "Firewall Mutation", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"FirewallMutationProvider"},
+		},
+		CapabilityCephMutation: {
+			Name: "Ceph Mutation", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"CephMutationProvider"},
+		},
+		CapabilitySDNMutation: {
+			Name: "SDN Mutation", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"SDNMutationProvider"},
+		},
+
+		// --- Mutation: destructive ---
+		CapabilitySnapshotMutation: {
+			Name: "Snapshot Mutation", Category: CapMutation, Safety: TierDestructive,
+			Interfaces: []string{"SnapshotMutationProvider"},
+		},
+		CapabilityDelete: {
+			Name: "Delete", Category: CapMutation, Safety: TierDestructive,
+			Interfaces: []string{"DeleteProvider"},
+		},
+
+		// --- Mutation: security administration ---
+		CapabilityAccess: {
+			Name: "Access", Category: CapMutation, Safety: TierSecurityAdmin,
+			Interfaces: []string{"AccessProvider"},
+		},
+	}
 }

@@ -15,51 +15,8 @@ func (m *mockProvider) Name() string                                            
 func (m *mockProvider) Version() string                                                  { return "0.1.0" }
 func (m *mockProvider) Connect(_ context.Context, _ string, _ *domain.Credentials) error { return nil }
 func (m *mockProvider) Close() error                                                     { return nil }
+func (m *mockProvider) Health(_ context.Context) error                                   { return nil }
 func (m *mockProvider) Capabilities() []domain.Capability                                { return nil }
-func (m *mockProvider) Nodes(_ context.Context) ([]domain.Node, error)                   { return nil, nil }
-func (m *mockProvider) VMs(_ context.Context) ([]domain.VM, error)                       { return nil, nil }
-func (m *mockProvider) Containers(_ context.Context) ([]domain.Container, error)         { return nil, nil }
-func (m *mockProvider) Storage(_ context.Context) ([]domain.Storage, error)              { return nil, nil }
-func (m *mockProvider) Cluster(_ context.Context) (*domain.Cluster, error)               { return nil, nil }
-func (m *mockProvider) VMConfig(_ context.Context, _ string, _ int) (map[string]interface{}, error) {
-	return nil, nil
-}
-func (m *mockProvider) ContainerConfig(_ context.Context, _ string, _ int) (map[string]interface{}, error) {
-	return nil, nil
-}
-func (m *mockProvider) StorageContent(_ context.Context, _, _ string) ([]domain.StorageContentItem, error) {
-	return nil, nil
-}
-func (m *mockProvider) Tasks(_ context.Context, _ string) ([]domain.Task, error) {
-	return nil, nil
-}
-func (m *mockProvider) Task(_ context.Context, _, _ string) (*domain.Task, error) {
-	return nil, nil
-}
-func (m *mockProvider) VMSnapshots(_ context.Context, _ string, _ int) ([]domain.Snapshot, error) {
-	return nil, nil
-}
-func (m *mockProvider) ContainerSnapshots(_ context.Context, _ string, _ int) ([]domain.Snapshot, error) {
-	return nil, nil
-}
-func (m *mockProvider) Events(_ context.Context) ([]domain.Event, error) {
-	return nil, nil
-}
-func (m *mockProvider) Syslog(_ context.Context, _ string) ([]domain.SyslogEntry, error) {
-	return nil, nil
-}
-func (m *mockProvider) Backups(_ context.Context, _ string) ([]domain.Backup, error) {
-	return nil, nil
-}
-func (m *mockProvider) FirewallRules(_ context.Context) ([]domain.FirewallRule, error) {
-	return nil, nil
-}
-func (m *mockProvider) HAResources(_ context.Context) ([]domain.HAResource, error) {
-	return nil, nil
-}
-func (m *mockProvider) HAGroups(_ context.Context) ([]domain.HAGroup, error) {
-	return nil, nil
-}
 
 func TestRegisterAndGet(t *testing.T) {
 	factory := func() domain.Provider { return &mockProvider{name: "test-provider"} }

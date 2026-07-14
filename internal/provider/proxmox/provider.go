@@ -62,6 +62,15 @@ func (p *Provider) Close() error {
 	return nil
 }
 
+// Health returns nil if the provider is connected and the endpoint responds.
+func (p *Provider) Health(ctx context.Context) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	_, err := p.client.Version(ctx)
+	return err
+}
+
 // Capabilities returns the list of capabilities this provider supports.
 func (p *Provider) Capabilities() []domain.Capability {
 	return []domain.Capability{
