@@ -1,10 +1,10 @@
-# Nodex
+# NodeX
 
-Nodex is a secure, predictable, all-in-one CLI for understanding and operating self-hosted infrastructure—Proxmox-first, inspection-led, management-capable, and automation-friendly.
+NodeX is a secure, predictable, all-in-one CLI for understanding and operating self-hosted infrastructure—Proxmox-first, inspection-led, management-capable, and automation-friendly.
 
-Nodex runs on Linux, macOS, and Windows as a single local binary. It connects directly to your Proxmox VE endpoints over HTTPS. There is no daemon, no agent, no telemetry, and no hidden network connections.
+NodeX runs on Linux, macOS, and Windows as a single local binary. It connects directly to your Proxmox VE endpoints over HTTPS. There is no daemon, no agent, no telemetry, and no hidden network connections.
 
-## What Nodex does
+## What NodeX does
 
 - **Inspect.** List and show nodes, VMs, containers, storage, tasks, events, snapshots, firewall rules, HA resources, backup content, SDN zones, Ceph state, pools, cluster logs, and more.
 - **Diagnose.** Run `nodex doctor` to check configuration and connectivity across all your profiles.
@@ -66,7 +66,7 @@ Non-interactive sessions fail closed when confirmation is required.
 
 ## Credentials
 
-Nodex supports four credential backends:
+NodeX supports four credential backends:
 
 - **Environment variables** (`env:profilename`) — good for CI and scripts
 - **JSON files** (`file:name`) — stored under `~/.nodex/credentials/`
@@ -116,7 +116,7 @@ Global flags go before the command name: `nodex --output json node list`.
 
 ## Documentation
 
-- [Product principles](docs/product-principles.md) — what Nodex is and how capability decisions are made
+- [Product principles](docs/product-principles.md) — what NodeX is and how capability decisions are made
 - [CLI reference](docs/cli-reference.md) — every command, flag, exit code, and safety classification
 - [Configuration reference](docs/configuration.md) — profiles, credentials, TLS, paths
 - [Architecture](docs/architecture.md) — package layout, provider model, transport, task lifecycle
@@ -136,4 +136,4 @@ CI builds and tests on Ubuntu, macOS (Apple Silicon and Intel), and Windows.
 
 ## License
 
-Nodex is licensed under the [GNU General Public License v3.0](LICENSE).
+NodeX is licensed under the [GNU General Public License v3.0](LICENSE).
