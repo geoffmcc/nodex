@@ -77,8 +77,9 @@ func runProfileImport(_ context.Context, cmdCtx *Context, args []string) error {
 		)
 	}
 
-	// Read JSON from stdin.
-	data, err := io.ReadAll(stdinReader)
+	// Read JSON from stdin with a reasonable size bound.
+	limited := io.LimitReader(stdinReader, 1*1024*1024) // 1 MiB
+	data, err := io.ReadAll(limited)
 	if err != nil {
 		return app.NewExitError(
 			fmt.Errorf("read stdin: %w", err),
