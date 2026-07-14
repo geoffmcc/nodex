@@ -7,14 +7,16 @@ import (
 	"github.com/geoffmcc/nodex/internal/redact"
 )
 
-// WriteJSON marshals data as indented JSON and writes it through redaction.
+// WriteJSON sanitizes data with type-based redaction, marshals it as
+// indented JSON, applies regex defense-in-depth, and writes the result.
 func WriteJSON(w io.Writer, data any) error {
-	raw, err := json.MarshalIndent(data, "", "  ")
+	sanitized := redact.Sanitize(data)
+	raw, err := json.MarshalIndent(sanitized, "", "  ")
 	if err != nil {
 		return err
 	}
-	redacted := redact.Bytes(raw)
-	_, err = w.Write(redacted)
+	clean := redact.Bytes(raw)
+	_, err = w.Write(clean)
 	if err != nil {
 		return err
 	}
