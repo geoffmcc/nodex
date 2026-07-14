@@ -15,20 +15,20 @@ import (
 type Scope string
 
 const (
-	ScopeCluster   Scope = "cluster"
-	ScopeNode      Scope = "node"
-	ScopeGuest     Scope = "guest"
-	ScopeStorage   Scope = "storage"
-	ScopeProfile   Scope = "profile"
-	ScopeSystem    Scope = "system"
-	ScopeFirewall  Scope = "firewall"
-	ScopeNetwork   Scope = "network"
-	ScopeAccess    Scope = "access"
-	ScopeSDN       Scope = "sdn"
-	ScopeCeph      Scope = "ceph"
-	ScopeBackup    Scope = "backup"
-	ScopeHA        Scope = "ha"
-	ScopeRepl      Scope = "replication"
+	ScopeCluster  Scope = "cluster"
+	ScopeNode     Scope = "node"
+	ScopeGuest    Scope = "guest"
+	ScopeStorage  Scope = "storage"
+	ScopeProfile  Scope = "profile"
+	ScopeSystem   Scope = "system"
+	ScopeFirewall Scope = "firewall"
+	ScopeNetwork  Scope = "network"
+	ScopeAccess   Scope = "access"
+	ScopeSDN      Scope = "sdn"
+	ScopeCeph     Scope = "ceph"
+	ScopeBackup   Scope = "backup"
+	ScopeHA       Scope = "ha"
+	ScopeRepl     Scope = "replication"
 )
 
 // RiskDimension describes a specific risk axis independent of safety tier.
@@ -167,7 +167,7 @@ func buildRegistry() []OperationMeta {
 		Path: "profile set-credentials", Description: "Set profile credentials",
 		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
 		SecuritySensitivity: SecCredentials,
-		OutputModes:          []string{"table"}, HandlerFunc: "runProfileSetCredentials",
+		OutputModes:         []string{"table"}, HandlerFunc: "runProfileSetCredentials",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "profile use", Description: "Set the current profile",
@@ -278,8 +278,8 @@ func buildRegistry() []OperationMeta {
 			Path: v.op, Description: v.desc,
 			Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
 			RiskDimensions: []RiskDimension{RiskServiceDown},
-			Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-			OutputModes: []string{"table", "json", "yaml"},
+			Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+			OutputModes:         []string{"table", "json", "yaml"},
 			CapabilityInterface: "LifecycleProvider", HandlerFunc: "run" + toHandler(v.op),
 		})
 	}
@@ -294,8 +294,8 @@ func buildRegistry() []OperationMeta {
 			Path: v.op, Description: v.desc,
 			Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDisruptive,
 			RiskDimensions: []RiskDimension{RiskServiceDown},
-			Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-			OutputModes: []string{"table", "json", "yaml"},
+			Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+			OutputModes:         []string{"table", "json", "yaml"},
 			CapabilityInterface: "LifecycleProvider", HandlerFunc: "run" + toHandler(v.op),
 		})
 	}
@@ -305,15 +305,15 @@ func buildRegistry() []OperationMeta {
 		Path: "vm update", Description: "Update VM configuration",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
 		RiskDimensions: []RiskDimension{RiskServiceDown},
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "ConfigProvider", HandlerFunc: "runVMUpdate",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "vm cloud-init", Description: "Regenerate cloud-init config",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
 		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "CloudInitProvider", HandlerFunc: "runVMCloudInit",
 	})
 
@@ -321,10 +321,10 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "vm delete", Description: "Delete a VM (destructive)",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDestructive,
-		RiskDimensions: []RiskDimension{RiskDataLoss},
+		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "DeleteProvider", HandlerFunc: "runVMDelete",
 	})
 
@@ -344,8 +344,8 @@ func buildRegistry() []OperationMeta {
 			Path: v.op, Description: v.desc,
 			Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDisruptive,
 			RiskDimensions: v.risks,
-			Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-			OutputModes: []string{"table", "json", "yaml"},
+			Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+			OutputModes:         []string{"table", "json", "yaml"},
 			CapabilityInterface: v.capIface, HandlerFunc: v.handler,
 		})
 	}
@@ -355,24 +355,24 @@ func buildRegistry() []OperationMeta {
 		Path: "vm snapshot create", Description: "Create a VM snapshot",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
 		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "SnapshotMutationProvider", HandlerFunc: "runVMSnapshotCreate",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "vm snapshot delete", Description: "Delete a VM snapshot",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDestructive,
-		RiskDimensions: []RiskDimension{RiskDataLoss},
+		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "SnapshotMutationProvider", HandlerFunc: "runVMSnapshotDelete",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "vm snapshot rollback", Description: "Rollback to a VM snapshot",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDisruptive,
 		RiskDimensions: []RiskDimension{RiskDataLoss, RiskServiceDown},
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "SnapshotMutationProvider", HandlerFunc: "runVMSnapshotRollback",
 	})
 
@@ -399,8 +399,8 @@ func buildRegistry() []OperationMeta {
 			Path: v.op, Description: v.desc,
 			Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
 			RiskDimensions: []RiskDimension{RiskServiceDown},
-			Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-			OutputModes: []string{"table", "json", "yaml"},
+			Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+			OutputModes:         []string{"table", "json", "yaml"},
 			CapabilityInterface: "LifecycleProvider", HandlerFunc: "run" + toHandler(v.op),
 		})
 	}
@@ -410,8 +410,8 @@ func buildRegistry() []OperationMeta {
 		Path: "container reboot", Description: "Reboot a container",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDisruptive,
 		RiskDimensions: []RiskDimension{RiskServiceDown},
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "LifecycleProvider", HandlerFunc: "runCTReboot",
 	})
 
@@ -420,8 +420,8 @@ func buildRegistry() []OperationMeta {
 		Path: "container update", Description: "Update container configuration",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
 		RiskDimensions: []RiskDimension{RiskServiceDown},
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "ConfigProvider", HandlerFunc: "runCTUpdate",
 	})
 
@@ -429,10 +429,10 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "container delete", Description: "Delete a container (destructive)",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDestructive,
-		RiskDimensions: []RiskDimension{RiskDataLoss},
+		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "DeleteProvider", HandlerFunc: "runCTDelete",
 	})
 
@@ -450,8 +450,8 @@ func buildRegistry() []OperationMeta {
 			Path: v.op, Description: v.desc,
 			Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDisruptive,
 			RiskDimensions: v.risks,
-			Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-			OutputModes: []string{"table", "json", "yaml"},
+			Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+			OutputModes:         []string{"table", "json", "yaml"},
 			CapabilityInterface: v.capIface, HandlerFunc: v.handler,
 		})
 	}
@@ -461,24 +461,24 @@ func buildRegistry() []OperationMeta {
 		Path: "container snapshot create", Description: "Create a container snapshot",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
 		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "SnapshotMutationProvider", HandlerFunc: "runCTSnapshotCreate",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "container snapshot delete", Description: "Delete a container snapshot",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDestructive,
-		RiskDimensions: []RiskDimension{RiskDataLoss},
+		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "SnapshotMutationProvider", HandlerFunc: "runCTSnapshotDelete",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "container snapshot rollback", Description: "Rollback to a container snapshot",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDisruptive,
 		RiskDimensions: []RiskDimension{RiskDataLoss, RiskServiceDown},
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "SnapshotMutationProvider", HandlerFunc: "runCTSnapshotRollback",
 	})
 
@@ -502,22 +502,22 @@ func buildRegistry() []OperationMeta {
 		Path: "storage upload", Description: "Upload a file to storage",
 		Inspection: false, Scope: ScopeStorage, SafetyTier: safety.TierDisruptive,
 		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "StorageMutationProvider", HandlerFunc: "runStorageUpload",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "storage download", Description: "Download a volume from storage",
 		Inspection: false, Scope: ScopeStorage, SafetyTier: safety.TierReversible,
-		OutputModes: []string{"table"},
+		OutputModes:         []string{"table"},
 		CapabilityInterface: "StorageMutationProvider", HandlerFunc: "runStorageDownload",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "storage delete", Description: "Delete a storage volume (destructive)",
 		Inspection: false, Scope: ScopeStorage, SafetyTier: safety.TierDestructive,
-		RiskDimensions: []RiskDimension{RiskDataLoss},
+		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "StorageMutationProvider", HandlerFunc: "runStorageDelete",
 	})
 
@@ -581,15 +581,15 @@ func buildRegistry() []OperationMeta {
 		Path: "backup create", Description: "Create a manual backup",
 		Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDisruptive,
 		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "BackupMutationProvider", HandlerFunc: "runBackupCreate",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "backup restore", Description: "Restore VM from backup archive",
 		Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDisruptive,
 		RiskDimensions: []RiskDimension{RiskDataLoss},
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
-		OutputModes: []string{"table", "json", "yaml"},
+		Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "BackupMutationProvider", HandlerFunc: "runBackupRestore",
 	})
 	// backup job subcommands
@@ -606,20 +606,20 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "backup job create", Description: "Create a backup schedule",
 		Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDisruptive,
-		OutputModes: []string{"table"},
+		OutputModes:         []string{"table"},
 		CapabilityInterface: "BackupMutationProvider", HandlerFunc: "runBackupJobCreate",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "backup job update", Description: "Update a backup schedule",
 		Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDisruptive,
-		OutputModes: []string{"table"},
+		OutputModes:         []string{"table"},
 		CapabilityInterface: "BackupMutationProvider", HandlerFunc: "runBackupJobUpdate",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "backup job delete", Description: "Delete a backup schedule (destructive)",
 		Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDestructive,
 		RequiresTypeConfirm: true,
-		OutputModes: []string{"table"},
+		OutputModes:         []string{"table"},
 		CapabilityInterface: "BackupMutationProvider", HandlerFunc: "runBackupJobDelete",
 	})
 
@@ -677,7 +677,7 @@ func buildRegistry() []OperationMeta {
 		meta := OperationMeta{
 			Path: v.op, Description: v.desc,
 			Inspection: false, Scope: ScopeFirewall, SafetyTier: v.tier,
-			OutputModes: []string{"table"},
+			OutputModes:         []string{"table"},
 			CapabilityInterface: v.capIface, HandlerFunc: v.handler,
 		}
 		if v.destructive {
@@ -727,7 +727,7 @@ func buildRegistry() []OperationMeta {
 		meta := OperationMeta{
 			Path: v.op, Description: v.desc,
 			Inspection: false, Scope: ScopeSDN, SafetyTier: tier,
-			OutputModes: []string{"table"},
+			OutputModes:         []string{"table"},
 			CapabilityInterface: "SDNMutationProvider", HandlerFunc: v.handler,
 		}
 		if v.destructive {
@@ -752,15 +752,15 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "network apply", Description: "Apply network configuration",
 		Inspection: false, Scope: ScopeNetwork, SafetyTier: safety.TierDisruptive,
-		RiskDimensions: []RiskDimension{RiskNetworkLock, RiskServiceDown},
-		OutputModes: []string{"table"},
+		RiskDimensions:      []RiskDimension{RiskNetworkLock, RiskServiceDown},
+		OutputModes:         []string{"table"},
 		CapabilityInterface: "NetworkMutationProvider", HandlerFunc: "runNetworkApply",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "network revert", Description: "Revert pending network changes",
 		Inspection: false, Scope: ScopeNetwork, SafetyTier: safety.TierDisruptive,
-		RiskDimensions: []RiskDimension{RiskNetworkLock},
-		OutputModes: []string{"table"},
+		RiskDimensions:      []RiskDimension{RiskNetworkLock},
+		OutputModes:         []string{"table"},
 		CapabilityInterface: "NetworkMutationProvider", HandlerFunc: "runNetworkRevert",
 	})
 
@@ -1018,29 +1018,29 @@ func collectCommandPaths(cmds map[string]*command, prefix string) []string {
 // These are commands that have a handler (run) but internally route to sub-ops.
 // The registry includes entries for both the dispatch and its sub-ops.
 var knownDispatchCommands = map[string][]string{
-	"vm snapshot":       {"vm snapshot create", "vm snapshot delete", "vm snapshot rollback"},
+	"vm snapshot":        {"vm snapshot create", "vm snapshot delete", "vm snapshot rollback"},
 	"container snapshot": {"container snapshot create", "container snapshot delete", "container snapshot rollback"},
-	"vm disk":           {"vm disk resize", "vm disk move"},
-	"firewall rule":     {"firewall rule create", "firewall rule update", "firewall rule delete"},
-	"firewall alias":    {"firewall alias create", "firewall alias delete"},
-	"firewall ipset":    {"firewall ipset create", "firewall ipset entry add", "firewall ipset entry remove", "firewall ipset delete"},
-	"firewall group":    {"firewall group create", "firewall group delete"},
-	"firewall options":  {"firewall options update"},
-	"backup job":        {"backup job list", "backup job show", "backup job create", "backup job update", "backup job delete"},
-	"sdn zone":          {"sdn zone create", "sdn zone delete"},
-	"sdn vnet":          {"sdn vnet create", "sdn vnet delete"},
-	"sdn subnet":        {"sdn subnet create", "sdn subnet delete"},
-	"sdn controller":    {"sdn controller create", "sdn controller delete"},
-	"ceph osd":          {"ceph osd list", "ceph osd create", "ceph osd out", "ceph osd in", "ceph osd destroy"},
-	"ceph mon":          {"ceph mon list"},
-	"ceph pool":         {"ceph pool list", "ceph pool create", "ceph pool destroy"},
-	"access user":       {"access user create", "access user delete"},
-	"access users":      {"access users list"},
-	"access groups":     {"access groups list"},
-	"access roles":      {"access roles list"},
-	"access acl":        {"access acl list", "access acl add"},
-	"access domains":    {"access domains list"},
-	"access tokens":     {"access tokens list"},
+	"vm disk":            {"vm disk resize", "vm disk move"},
+	"firewall rule":      {"firewall rule create", "firewall rule update", "firewall rule delete"},
+	"firewall alias":     {"firewall alias create", "firewall alias delete"},
+	"firewall ipset":     {"firewall ipset create", "firewall ipset entry add", "firewall ipset entry remove", "firewall ipset delete"},
+	"firewall group":     {"firewall group create", "firewall group delete"},
+	"firewall options":   {"firewall options update"},
+	"backup job":         {"backup job list", "backup job show", "backup job create", "backup job update", "backup job delete"},
+	"sdn zone":           {"sdn zone create", "sdn zone delete"},
+	"sdn vnet":           {"sdn vnet create", "sdn vnet delete"},
+	"sdn subnet":         {"sdn subnet create", "sdn subnet delete"},
+	"sdn controller":     {"sdn controller create", "sdn controller delete"},
+	"ceph osd":           {"ceph osd list", "ceph osd create", "ceph osd out", "ceph osd in", "ceph osd destroy"},
+	"ceph mon":           {"ceph mon list"},
+	"ceph pool":          {"ceph pool list", "ceph pool create", "ceph pool destroy"},
+	"access user":        {"access user create", "access user delete"},
+	"access users":       {"access users list"},
+	"access groups":      {"access groups list"},
+	"access roles":       {"access roles list"},
+	"access acl":         {"access acl list", "access acl add"},
+	"access domains":     {"access domains list"},
+	"access tokens":      {"access tokens list"},
 }
 
 // toHandler converts an operation path like "vm start" to a handler name like "VMStart".
