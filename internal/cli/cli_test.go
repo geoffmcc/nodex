@@ -1001,7 +1001,7 @@ func TestRun_VMUpdate(t *testing.T) {
 	setupE2EConfig(t)
 
 	var stdout, stderr bytes.Buffer
-	err := Run(context.Background(), []string{"--yes", "vm", "update", "e2e-node/100", "memory=4096"}, &stdout, &stderr)
+	err := Run(context.Background(), []string{"--output", "table", "--yes", "vm", "update", "e2e-node/100", "memory=4096"}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1015,7 +1015,7 @@ func TestRun_VMSnapshotCreate(t *testing.T) {
 	setupE2EConfig(t)
 
 	var stdout, stderr bytes.Buffer
-	err := Run(context.Background(), []string{"--yes", "vm", "snapshot", "create", "e2e-node/100", "snap1"}, &stdout, &stderr)
+	err := Run(context.Background(), []string{"--output", "table", "--yes", "vm", "snapshot", "create", "e2e-node/100", "snap1"}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1029,7 +1029,7 @@ func TestRun_VMCloudInit(t *testing.T) {
 	setupE2EConfig(t)
 
 	var stdout, stderr bytes.Buffer
-	err := Run(context.Background(), []string{"--yes", "vm", "cloud-init", "e2e-node/100"}, &stdout, &stderr)
+	err := Run(context.Background(), []string{"--output", "table", "--yes", "vm", "cloud-init", "e2e-node/100"}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -1148,7 +1148,7 @@ func TestTaskPollingCompletes(t *testing.T) {
 
 	t.Run("vm-stop-wait-completes", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
-		err := Run(context.Background(), []string{"--yes", "--wait", "vm", "stop", "e2e-node/100"}, &stdout, &stderr)
+		err := Run(context.Background(), []string{"--output", "table", "--yes", "--wait", "vm", "stop", "e2e-node/100"}, &stdout, &stderr)
 		if err != nil {
 			t.Fatalf("--wait with mock task failed unexpectedly: %v", err)
 		}
@@ -1167,12 +1167,12 @@ func TestCommandsWithFlagsSucceed(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"vm-start-yes", []string{"--yes", "vm", "start", "e2e-node/100"}},
-		{"vm-stop-yes", []string{"--yes", "vm", "stop", "e2e-node/100"}},
-		{"vm-shutdown-yes", []string{"--yes", "vm", "shutdown", "e2e-node/100"}},
-		{"vm-update-yes", []string{"--yes", "vm", "update", "e2e-node/100", "memory=4096"}},
-		{"vm-snapshot-create-yes", []string{"--yes", "vm", "snapshot", "create", "e2e-node/100", "snap1"}},
-		{"vm-cloud-init-yes", []string{"--yes", "vm", "cloud-init", "e2e-node/100"}},
+		{"vm-start-yes", []string{"--output", "table", "--yes", "vm", "start", "e2e-node/100"}},
+		{"vm-stop-yes", []string{"--output", "table", "--yes", "vm", "stop", "e2e-node/100"}},
+		{"vm-shutdown-yes", []string{"--output", "table", "--yes", "vm", "shutdown", "e2e-node/100"}},
+		{"vm-update-yes", []string{"--output", "table", "--yes", "vm", "update", "e2e-node/100", "memory=4096"}},
+		{"vm-snapshot-create-yes", []string{"--output", "table", "--yes", "vm", "snapshot", "create", "e2e-node/100", "snap1"}},
+		{"vm-cloud-init-yes", []string{"--output", "table", "--yes", "vm", "cloud-init", "e2e-node/100"}},
 	}
 
 	for _, tt := range tests {
@@ -1314,4 +1314,121 @@ func TestWriteAggregatedStatusNilHandling(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMutationJSONOutputIsValid verifies that mutation commands produce valid
+// JSON with the OperationResult envelope when --output json is specified.
+func TestMutationJSONOutputIsValid(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	t.Run("vm-start-json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--output", "json", "--yes", "vm", "start", "e2e-node/100"}, &stdout, &stderr)
+		if err != nil {
+			t.Fatalf("vm start: %v", err)
+		}
+		out := stdout.String()
+		for _, want := range []string{
+			`"schema":`, `"operation": "vm start"`,
+			`"provider":`, `"submitted": true`, `"success": true`,
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("JSON output missing %q: %s", want, out)
+			}
+		}
+		// JSON must be the only thing on stdout - no prompts or warnings.
+		if !strings.HasPrefix(strings.TrimSpace(out), "{") {
+			t.Errorf("JSON output should start with '{': %s", out)
+		}
+	})
+
+	t.Run("vm-start-wait-json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/100"}, &stdout, &stderr)
+		if err != nil {
+			t.Fatalf("vm start --wait: %v", err)
+		}
+		out := stdout.String()
+		for _, want := range []string{`"waited": true`, `"status": "OK"`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("JSON output missing %q: %s", want, out)
+			}
+		}
+	})
+}
+
+// TestMutationStdoutStderrSeparation verifies that prompts and warnings go
+// to stderr, and result data goes to stdout.
+func TestMutationStdoutStderrSeparation(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	t.Run("table-mode-warnings-on-stderr", func(t *testing.T) {
+		// Without --yes, the command should fail and write the prompt to stderr.
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--output", "table", "vm", "start", "e2e-node/100"}, &stdout, &stderr)
+		if err == nil {
+			t.Fatal("expected authorization error, got nil")
+		}
+		// The prompt must be on stderr, not stdout.
+		if strings.Contains(stdout.String(), "Operation on") || strings.Contains(stdout.String(), "--yes") {
+			t.Errorf("confirmation prompt leaked to stdout: %q", stdout.String())
+		}
+		if !strings.Contains(stderr.String(), "Operation") {
+			t.Errorf("confirmation prompt missing from stderr: %q", stderr.String())
+		}
+	})
+
+	t.Run("wait-progress-on-stderr", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--output", "table", "--yes", "--wait", "vm", "start", "e2e-node/100"}, &stdout, &stderr)
+		if err != nil {
+			t.Fatalf("vm start --wait: %v", err)
+		}
+		if !strings.Contains(stderr.String(), "Waiting for task") {
+			t.Errorf("wait progress missing from stderr: %q", stderr.String())
+		}
+		// Stderr must not contain the result data.
+		if strings.Contains(stderr.String(), "completed OK") {
+			t.Errorf("result data leaked to stderr: %q", stderr.String())
+		}
+	})
+}
+
+// TestMultiProfileExitCodes verifies that --all commands return the
+// correct exit codes for partial and total failures.
+func TestMultiProfileExitCodes(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	t.Run("all-success-exit-zero", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--all", "node", "list"}, &stdout, &stderr)
+		if err != nil {
+			t.Errorf("expected nil error for all-success, got: %v", err)
+		}
+	})
+
+	// TestPartialFailureAggregate verifies the aggregateError helper function
+	// returns the correct exit codes for various failure scenarios.
+	t.Run("partial-failure-aggregate", func(t *testing.T) {
+		names := []string{"a", "b", "c"}
+		// No failures -> nil
+		if err := aggregateError(names, 0); err != nil {
+			t.Errorf("0 failures should return nil, got: %v", err)
+		}
+		// Partial -> ExitPartialFailure
+		if err := aggregateError(names, 1); err == nil {
+			t.Error("1/3 failures should return error, got nil")
+		} else if code := app.ExitCodeFromError(err); code != app.ExitPartialFailure {
+			t.Errorf("1/3 failures: expected ExitPartialFailure (11), got %d", code)
+		}
+		// All fail -> ExitPartialFailure
+		if err := aggregateError(names, 3); err == nil {
+			t.Error("3/3 failures should return error, got nil")
+		} else if code := app.ExitCodeFromError(err); code != app.ExitPartialFailure {
+			t.Errorf("3/3 failures: expected ExitPartialFailure (11), got %d", code)
+		}
+	})
 }

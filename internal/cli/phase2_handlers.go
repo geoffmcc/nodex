@@ -8,6 +8,7 @@ import (
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/safety"
 	"github.com/geoffmcc/nodex/internal/task"
 )
@@ -111,10 +112,17 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 		return fmt.Errorf("%s %s %s/%d: %w", resourceType, operation, node, vmid, err)
 	}
 
-	// If not waiting, just print UPID and exit.
+	profileName, _ := resolveProfileName(cmdCtx)
+	opResult := output.NewOperationResult(resourceType+" "+operation, prov.Name(), profileName)
+	opResult.Target = fmt.Sprintf("%s/%d", node, vmid)
+	opResult.Safety = tier.String()
+	opResult.UPID = upid
+	opResult.Submitted = true
+	opResult.Success = true
+
+	// If not waiting, write result and exit.
 	if !cmdCtx.Opts.Wait {
-		fmt.Fprintf(cmdCtx.Writer, "%s\n", upid)
-		return nil
+		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
 	}
 
 	// Wait for task to complete.
@@ -122,20 +130,36 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 	adapter := &taskStatusAdapter{prov: prov}
 	poller := task.NewPoller(adapter)
 	tr := poller.Wait(ctx, node, upid)
+
+	opResult.Waited = true
 	if tr.Error != nil {
+		opResult.Success = false
+		opResult.Error = &output.ResultError{
+			Class:  "provider",
+			Exit:   app.ExitProvider,
+			Detail: tr.Error.Error(),
+		}
+		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
 		return app.NewExitError(
 			fmt.Errorf("task %s failed: %w", upid, tr.Error),
 			app.ExitProvider,
 		)
 	}
-	if tr.OK {
-		fmt.Fprintf(cmdCtx.Writer, "%s (completed OK)\n", upid)
-		return nil
+	if !tr.OK {
+		opResult.Success = false
+		opResult.Error = &output.ResultError{
+			Class:  "provider",
+			Exit:   app.ExitProvider,
+			Detail: fmt.Sprintf("task failed with status %q", tr.State),
+		}
+		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
+		return app.NewExitError(
+			fmt.Errorf("task %s failed with status %q", upid, tr.State),
+			app.ExitProvider,
+		)
 	}
-	return app.NewExitError(
-		fmt.Errorf("task %s failed with status %q", upid, tr.State),
-		app.ExitProvider,
-	)
+	opResult.Status = "OK"
+	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
 }
 
 // executeLifecycleOp calls the appropriate lifecycle method.

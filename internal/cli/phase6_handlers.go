@@ -250,7 +250,7 @@ func runCephOSDCreate(ctx context.Context, cmdCtx *Context, args []string) error
 		return fmt.Errorf("create ceph osd: %w", err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "ceph osd create", node, "disruptive")
 }
 
 // nodex ceph osd out <node> <id>
@@ -368,7 +368,7 @@ func runCephOSDDestroy(ctx context.Context, cmdCtx *Context, args []string) erro
 		return fmt.Errorf("destroy ceph osd: %w", err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "ceph osd destroy", fmt.Sprintf("osd.%d", osdid), "destructive")
 }
 
 // nodex ceph pool create <node> <name> [key=value...]
@@ -412,7 +412,7 @@ func runCephPoolCreate(ctx context.Context, cmdCtx *Context, args []string) erro
 		return fmt.Errorf("create ceph pool: %w", err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "ceph pool create", fmt.Sprintf("%s/%s", node, name), "disruptive")
 }
 
 // nodex ceph pool destroy <node> <name>
@@ -448,7 +448,7 @@ func runCephPoolDestroy(ctx context.Context, cmdCtx *Context, args []string) err
 		return fmt.Errorf("destroy ceph pool: %w", err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid)
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "ceph pool destroy", fmt.Sprintf("%s/%s", node, name), "destructive")
 }
 
 // --- SDN mutation handlers ---
