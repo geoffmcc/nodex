@@ -71,28 +71,32 @@ func requireDisk(prov domain.Provider) (domain.DiskProvider, error) {
 	return p, nil
 }
 
-// confirmDisruptive checks Tier 2 safety. Returns nil if confirmed, or an error to abort.
-func confirmDisruptive(cmdCtx *Context, desc string) error {
+// checkDisruptive verifies Tier 2 authorization. Returns nil if authorized.
+// If not authorized, returns a descriptive error. Prints warnings and prompts
+// to stderr when interactive confirmation is required but not provided.
+func checkDisruptive(cmdCtx *Context, desc string) error {
 	policy := safety.ConfirmationPolicy{
 		Tier:                safety.TierDisruptive,
 		ResourceDescription: desc,
 	}
 	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+	if !result.ConfirmationRequired {
+		return nil // Authorized via flags.
 	}
-	return nil
+	if cmdCtx.Opts.NonInteractive {
+		return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
+	}
+	if result.Warning != "" {
+		fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
+	}
+	fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
+	return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 }
 
-// confirmDestructiveType checks Tier 3 safety with type-in confirmation.
-func confirmDestructiveType(cmdCtx *Context, desc, target string) error {
+// checkDestructive verifies Tier 3 authorization with type-in confirmation.
+// Returns nil if authorized. If --yes --force are provided but type-in is needed,
+// reads confirmation from cmdCtx.Stdin. Returns error if not authorized.
+func checkDestructive(cmdCtx *Context, desc, target string) error {
 	policy := safety.ConfirmationPolicy{
 		Tier:                safety.TierDestructive,
 		ResourceDescription: desc,
@@ -100,33 +104,35 @@ func confirmDestructiveType(cmdCtx *Context, desc, target string) error {
 		TypeConfirmTarget:   target,
 	}
 	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		if result.TypeConfirmRequired && !result.DoubleConfirmRequired && cmdCtx.Opts.Yes && cmdCtx.Opts.Force {
-			fmt.Fprintf(cmdCtx.ErrW, "%s", result.Message)
-			reader := bufio.NewReader(os.Stdin)
-			typed, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("read confirmation: %w", err)
-			}
-			typed = strings.TrimSpace(typed)
-			if typed != target {
-				return app.NewExitError(
-					fmt.Errorf("typed %q does not match target %q — operation cancelled", typed, target),
-					app.ExitUsage,
-				)
-			}
-		} else {
-			fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-			return nil
-		}
+	if !result.ConfirmationRequired {
+		return nil // Authorized (all conditions met).
 	}
-	return nil
+	if cmdCtx.Opts.NonInteractive {
+		return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
+	}
+	if result.Warning != "" {
+		fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
+	}
+	if result.TypeConfirmRequired && !result.DoubleConfirmRequired {
+		// --yes --force passed, now need type-in confirmation.
+		fmt.Fprintf(cmdCtx.ErrW, "%s", result.Message)
+		reader := bufio.NewReader(cmdCtx.Stdin)
+		typed, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("read confirmation: %w", err)
+		}
+		typed = strings.TrimSpace(typed)
+		if typed != target {
+			return app.NewExitError(
+				fmt.Errorf("%w: typed %q does not match target %q", safety.ErrTypeConfirmMismatch, typed, target),
+				app.ExitUsage,
+			)
+		}
+		return nil // Type-in confirmed.
+	}
+	// Confirmation required but flags not provided.
+	fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
+	return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 }
 
 // --- Backup Create (Tier 2: disruptive) ---
@@ -160,13 +166,8 @@ func runBackupCreate(ctx context.Context, cmdCtx *Context, args []string) error 
 	}
 
 	desc := fmt.Sprintf("backup VM %s/%d to storage %s (mode: %s)", node, vmid, storage, mode)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-
-	// confirmDisruptive returns nil when rejected (not confirmed) — that means we should stop
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := bp.CreateBackup(ctx, node, vmid, storage, mode)
@@ -213,11 +214,8 @@ func runBackupRestore(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 
 	desc := fmt.Sprintf("restore VM %d from archive %s on node %s", vmid, archive, node)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := bp.RestoreVM(ctx, node, vmid, archive, storage)
@@ -316,11 +314,8 @@ func runBackupJobCreate(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 
 	desc := fmt.Sprintf("backup job on storage %s (mode: %s, start: %s)", params.Storage, params.Mode, params.Starttime)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := bp.CreateBackupSchedule(ctx, params)
@@ -362,11 +357,8 @@ func runBackupJobUpdate(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 
 	desc := fmt.Sprintf("backup job %s", id)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	if err := bp.UpdateBackupSchedule(ctx, id, params); err != nil {
@@ -402,13 +394,10 @@ func runBackupJobDelete(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 
 	desc := fmt.Sprintf("backup job %s", id)
-	if err := confirmDestructiveType(cmdCtx, desc, id); err != nil {
+	if err := checkDestructive(cmdCtx, desc, id); err != nil {
 		return err
 	}
 	// Check if confirmation was obtained
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
-	}
 
 	if err := bp.DeleteBackupSchedule(ctx, id); err != nil {
 		return fmt.Errorf("delete backup schedule %s: %w", id, err)
@@ -477,11 +466,8 @@ func runStorageUpload(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 
 	desc := fmt.Sprintf("upload %s to %s/%s", localPath, node, storage)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := sp.UploadContent(ctx, node, storage, localPath)
@@ -566,11 +552,8 @@ func runStorageDelete(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 
 	desc := fmt.Sprintf("storage volume %s/%s/%s", node, storage, volumeID)
-	if err := confirmDestructiveType(cmdCtx, desc, volumeID); err != nil {
+	if err := checkDestructive(cmdCtx, desc, volumeID); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := sp.DeleteContent(ctx, node, storage, volumeID)
@@ -621,11 +604,8 @@ func runVMMigrate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	desc := fmt.Sprintf("VM %s/%d -> %s", node, vmid, target)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := mp.VMMigrate(ctx, node, vmid, target, online)
@@ -669,11 +649,8 @@ func runCTMigrate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	desc := fmt.Sprintf("container %s/%d -> %s", node, vmid, target)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := mp.CTMigrate(ctx, node, vmid, target)
@@ -720,11 +697,8 @@ func runVMClone(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	desc := fmt.Sprintf("VM %s/%d clone to VM %d", node, vmid, newVmid)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := cp.VMClone(ctx, node, vmid, newVmid, name, storage)
@@ -771,11 +745,8 @@ func runCTClone(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	desc := fmt.Sprintf("container %s/%d clone to %d", node, vmid, newVmid)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := cp.CTClone(ctx, node, vmid, newVmid, hostname, storage)
@@ -818,11 +789,8 @@ func runVMDiskResize(ctx context.Context, cmdCtx *Context, args []string) error 
 	}
 
 	desc := fmt.Sprintf("VM %s/%d disk %s resize to %s", node, vmid, disk, size)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := dp.VMDiskResize(ctx, node, vmid, disk, size)
@@ -865,11 +833,8 @@ func runVMDiskMove(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	desc := fmt.Sprintf("VM %s/%d disk %s move to %s", node, vmid, disk, storage)
-	if err := confirmDisruptive(cmdCtx, desc); err != nil {
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
-	}
-	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
-		return nil
 	}
 
 	upid, err := dp.VMDiskMove(ctx, node, vmid, disk, storage)

@@ -2,7 +2,29 @@
 // and dry-run support for Nodex operations.
 package safety
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// Sentinel errors for safety authorization outcomes.
+var (
+	// ErrAuthorizationRequired is returned when interactive confirmation
+	// is required but has not been provided.
+	ErrAuthorizationRequired = errors.New("authorization required")
+
+	// ErrNonInteractiveRequired is returned when interactive confirmation
+	// is needed but the session is non-interactive.
+	ErrNonInteractiveRequired = errors.New("interactive confirmation required in non-interactive mode")
+
+	// ErrExpertRequired is returned when a Tier 4 (SecurityAdmin) operation
+	// is attempted without the --expert flag.
+	ErrExpertRequired = errors.New("expert mode required for security administration")
+
+	// ErrTypeConfirmMismatch is returned when the user's typed confirmation
+	// does not match the required target.
+	ErrTypeConfirmMismatch = errors.New("type confirmation mismatch")
+)
 
 // Tier classifies the risk level of an operation.
 type Tier int

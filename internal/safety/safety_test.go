@@ -221,3 +221,77 @@ func contains(s, substr string) bool {
 			return false
 		}())
 }
+
+// TestSentinelErrors verifies all sentinel error values exist and are distinct.
+func TestSentinelErrors(t *testing.T) {
+	errors := []error{
+		ErrAuthorizationRequired,
+		ErrNonInteractiveRequired,
+		ErrExpertRequired,
+		ErrTypeConfirmMismatch,
+	}
+	for i, e1 := range errors {
+		for j, e2 := range errors {
+			if i != j && e1 == e2 {
+				t.Errorf("sentinel errors at [%d] and [%d] are identical", i, j)
+			}
+		}
+		if e1.Error() == "" {
+			t.Errorf("sentinel error [%d] has empty message", i)
+		}
+	}
+}
+
+// TestCheckReturnsConfirmationRequired verifies that Check correctly identifies
+// when confirmation is needed for each tier.
+func TestCheckReturnsConfirmationRequired(t *testing.T) {
+	tests := []struct {
+		name     string
+		policy   ConfirmationPolicy
+		yes      bool
+		force    bool
+		wantConf bool
+	}{
+		{name: "observation never needs confirmation", policy: ConfirmationPolicy{Tier: TierObservation}, wantConf: false},
+		{name: "reversible without yes needs confirmation", policy: ConfirmationPolicy{Tier: TierReversible}, wantConf: true},
+		{name: "reversible with yes is authorized", policy: ConfirmationPolicy{Tier: TierReversible}, yes: true, wantConf: false},
+		{name: "disruptive without flags needs confirmation", policy: ConfirmationPolicy{Tier: TierDisruptive}, wantConf: true},
+		{name: "disruptive with yes only needs confirmation", policy: ConfirmationPolicy{Tier: TierDisruptive}, yes: true, wantConf: true},
+		{name: "disruptive with yes+force is authorized", policy: ConfirmationPolicy{Tier: TierDisruptive}, yes: true, force: true, wantConf: false},
+		{name: "destructive type-confirm always needs confirmation", policy: ConfirmationPolicy{Tier: TierDestructive, RequiresTypeConfirm: true, TypeConfirmTarget: "t"}, yes: true, force: true, wantConf: true},
+		{name: "destructive no type-confirm with flags authorized", policy: ConfirmationPolicy{Tier: TierDestructive}, yes: true, force: true, wantConf: false},
+		{name: "security admin without flags needs confirmation", policy: ConfirmationPolicy{Tier: TierSecurityAdmin}, wantConf: true},
+		{name: "security admin with flags authorized", policy: ConfirmationPolicy{Tier: TierSecurityAdmin}, yes: true, force: true, wantConf: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.policy.Check(tt.yes, tt.force, false)
+			if result.ConfirmationRequired != tt.wantConf {
+				t.Errorf("ConfirmationRequired = %v, want %v", result.ConfirmationRequired, tt.wantConf)
+			}
+		})
+	}
+}
+
+// TestNonInteractiveBlocksAllTiers verifies non-interactive mode blocks all tiers.
+func TestNonInteractiveBlocksAllTiers(t *testing.T) {
+	policies := []struct {
+		name   string
+		policy ConfirmationPolicy
+		yes    bool
+		force  bool
+	}{
+		{name: "reversible without yes", policy: ConfirmationPolicy{Tier: TierReversible}},
+		{name: "disruptive without force", policy: ConfirmationPolicy{Tier: TierDisruptive}, yes: true},
+		{name: "destructive type-confirm", policy: ConfirmationPolicy{Tier: TierDestructive, RequiresTypeConfirm: true, TypeConfirmTarget: "t"}, yes: true, force: true},
+		{name: "security admin without flags", policy: ConfirmationPolicy{Tier: TierSecurityAdmin}},
+	}
+	for _, tt := range policies {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.policy.Check(tt.yes, tt.force, true)
+			if !result.ConfirmationRequired {
+				t.Error("non-interactive should require confirmation when flags insufficient")
+			}
+		})
+	}
+}

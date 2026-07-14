@@ -1,10 +1,8 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/geoffmcc/nodex/internal/app"
@@ -94,6 +92,7 @@ func requireCloudInit(prov domain.Provider) (domain.CloudInitProvider, error) {
 }
 
 // runMutationWithPolling executes a mutation, prints the UPID, and optionally polls the task.
+// Returns an error if the task fails or polling encounters a timeout/cancellation.
 func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Provider, node, upid string) error {
 	if !cmdCtx.Opts.Wait {
 		fmt.Fprintf(cmdCtx.Writer, "%s\n", upid)
@@ -105,14 +104,19 @@ func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Pr
 	poller := task.NewPoller(adapter)
 	tr := poller.Wait(ctx, node, upid)
 	if tr.Error != nil {
-		fmt.Fprintf(cmdCtx.ErrW, "Task %s: %v\n", upid, tr.Error)
+		return app.NewExitError(
+			fmt.Errorf("task %s failed: %w", upid, tr.Error),
+			app.ExitProvider,
+		)
 	}
 	if tr.OK {
 		fmt.Fprintf(cmdCtx.Writer, "%s (completed OK)\n", upid)
-	} else {
-		fmt.Fprintf(cmdCtx.Writer, "%s (status: %s)\n", upid, tr.State)
+		return nil
 	}
-	return nil
+	return app.NewExitError(
+		fmt.Errorf("task %s failed with status %q", upid, tr.State),
+		app.ExitProvider,
+	)
 }
 
 // --- VM Config Update ---
@@ -157,7 +161,7 @@ func runVMUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
 	upid, err := cp.VMConfigUpdate(ctx, node, vmid, params)
@@ -210,7 +214,7 @@ func runCTUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
 	upid, err := cp.CTConfigUpdate(ctx, node, vmid, params)
@@ -264,7 +268,7 @@ func runVMSnapshotCreate(ctx context.Context, cmdCtx *Context, args []string) er
 			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
 	upid, err := sp.VMSnapshotCreate(ctx, node, vmid, name, description)
@@ -302,40 +306,8 @@ func runVMSnapshotDelete(ctx context.Context, cmdCtx *Context, args []string) er
 
 	targetID := fmt.Sprintf("%s/%d", node, vmid)
 	desc := fmt.Sprintf("VM %s snapshot %q", targetID, name)
-	policy := safety.ConfirmationPolicy{
-		Tier:                safety.TierDestructive,
-		ResourceDescription: desc,
-		RequiresTypeConfirm: true,
-		TypeConfirmTarget:   name,
-	}
-	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		if result.TypeConfirmRequired && !result.DoubleConfirmRequired && cmdCtx.Opts.Yes && cmdCtx.Opts.Force {
-			// Already passed --yes --force, now need type-in confirmation.
-			fmt.Fprintf(cmdCtx.ErrW, "%s", result.Message)
-			reader := bufio.NewReader(os.Stdin)
-			typed, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("read confirmation: %w", err)
-			}
-			typed = strings.TrimSpace(typed)
-			if typed != name {
-				return app.NewExitError(
-					fmt.Errorf("typed %q does not match snapshot name %q — operation cancelled", typed, name),
-					app.ExitUsage,
-				)
-			}
-			// Confirmed via type-in.
-		} else {
-			fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-			return nil
-		}
+	if err := checkDestructive(cmdCtx, desc, name); err != nil {
+		return err
 	}
 
 	upid, err := sp.VMSnapshotDelete(ctx, node, vmid, name)
@@ -372,20 +344,8 @@ func runVMSnapshotRollback(ctx context.Context, cmdCtx *Context, args []string) 
 	}
 
 	desc := fmt.Sprintf("VM %s/%d rollback to snapshot %q", node, vmid, name)
-	policy := safety.ConfirmationPolicy{
-		Tier:                safety.TierDisruptive,
-		ResourceDescription: desc,
-	}
-	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
+		return err
 	}
 
 	upid, err := sp.VMSnapshotRollback(ctx, node, vmid, name)
@@ -439,7 +399,7 @@ func runCTSnapshotCreate(ctx context.Context, cmdCtx *Context, args []string) er
 			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
 	upid, err := sp.CTSnapshotCreate(ctx, node, vmid, name, description)
@@ -476,38 +436,8 @@ func runCTSnapshotDelete(ctx context.Context, cmdCtx *Context, args []string) er
 	}
 
 	desc := fmt.Sprintf("container %s/%d snapshot %q", node, vmid, name)
-	policy := safety.ConfirmationPolicy{
-		Tier:                safety.TierDestructive,
-		ResourceDescription: desc,
-		RequiresTypeConfirm: true,
-		TypeConfirmTarget:   name,
-	}
-	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		if result.TypeConfirmRequired && !result.DoubleConfirmRequired && cmdCtx.Opts.Yes && cmdCtx.Opts.Force {
-			fmt.Fprintf(cmdCtx.ErrW, "%s", result.Message)
-			reader := bufio.NewReader(os.Stdin)
-			typed, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("read confirmation: %w", err)
-			}
-			typed = strings.TrimSpace(typed)
-			if typed != name {
-				return app.NewExitError(
-					fmt.Errorf("typed %q does not match snapshot name %q — operation cancelled", typed, name),
-					app.ExitUsage,
-				)
-			}
-		} else {
-			fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-			return nil
-		}
+	if err := checkDestructive(cmdCtx, desc, name); err != nil {
+		return err
 	}
 
 	upid, err := sp.CTSnapshotDelete(ctx, node, vmid, name)
@@ -544,20 +474,8 @@ func runCTSnapshotRollback(ctx context.Context, cmdCtx *Context, args []string) 
 	}
 
 	desc := fmt.Sprintf("container %s/%d rollback to snapshot %q", node, vmid, name)
-	policy := safety.ConfirmationPolicy{
-		Tier:                safety.TierDisruptive,
-		ResourceDescription: desc,
-	}
-	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
+		return err
 	}
 
 	upid, err := sp.CTSnapshotRollback(ctx, node, vmid, name)
@@ -593,40 +511,8 @@ func runVMDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 
 	targetID := fmt.Sprintf("%s/%d", node, vmid)
 	desc := fmt.Sprintf("VM %s", targetID)
-	policy := safety.ConfirmationPolicy{
-		Tier:                safety.TierDestructive,
-		ResourceDescription: desc,
-		RequiresTypeConfirm: true,
-		TypeConfirmTarget:   targetID,
-	}
-	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		if result.TypeConfirmRequired && !result.DoubleConfirmRequired && cmdCtx.Opts.Yes && cmdCtx.Opts.Force {
-			// Already passed --yes --force, now need type-in confirmation.
-			fmt.Fprintf(cmdCtx.ErrW, "%s", result.Message)
-			reader := bufio.NewReader(os.Stdin)
-			typed, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("read confirmation: %w", err)
-			}
-			typed = strings.TrimSpace(typed)
-			if typed != targetID {
-				return app.NewExitError(
-					fmt.Errorf("typed %q does not match target %q — operation cancelled", typed, targetID),
-					app.ExitUsage,
-				)
-			}
-			// Confirmed via type-in.
-		} else {
-			fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-			return nil
-		}
+	if err := checkDestructive(cmdCtx, desc, targetID); err != nil {
+		return err
 	}
 
 	upid, err := dp.VMDelete(ctx, node, vmid)
@@ -662,38 +548,8 @@ func runCTDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 
 	targetID := fmt.Sprintf("%s/%d", node, vmid)
 	desc := fmt.Sprintf("container %s", targetID)
-	policy := safety.ConfirmationPolicy{
-		Tier:                safety.TierDestructive,
-		ResourceDescription: desc,
-		RequiresTypeConfirm: true,
-		TypeConfirmTarget:   targetID,
-	}
-	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		if result.TypeConfirmRequired && !result.DoubleConfirmRequired && cmdCtx.Opts.Yes && cmdCtx.Opts.Force {
-			fmt.Fprintf(cmdCtx.ErrW, "%s", result.Message)
-			reader := bufio.NewReader(os.Stdin)
-			typed, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("read confirmation: %w", err)
-			}
-			typed = strings.TrimSpace(typed)
-			if typed != targetID {
-				return app.NewExitError(
-					fmt.Errorf("typed %q does not match target %q — operation cancelled", typed, targetID),
-					app.ExitUsage,
-				)
-			}
-		} else {
-			fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-			return nil
-		}
+	if err := checkDestructive(cmdCtx, desc, targetID); err != nil {
+		return err
 	}
 
 	upid, err := dp.CTDelete(ctx, node, vmid)
@@ -738,7 +594,7 @@ func runVMCloudInit(ctx context.Context, cmdCtx *Context, args []string) error {
 			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
 	upid, err := cp.VMCloudInit(ctx, node, vmid)
@@ -773,20 +629,8 @@ func runVMTemplate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	desc := fmt.Sprintf("VM %s/%d -> template", node, vmid)
-	policy := safety.ConfirmationPolicy{
-		Tier:                safety.TierDisruptive,
-		ResourceDescription: desc,
-	}
-	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
+		return err
 	}
 
 	upid, err := tp.VMTemplate(ctx, node, vmid)
@@ -821,20 +665,8 @@ func runCTTemplate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	desc := fmt.Sprintf("container %s/%d -> template", node, vmid)
-	policy := safety.ConfirmationPolicy{
-		Tier:                safety.TierDisruptive,
-		ResourceDescription: desc,
-	}
-	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if result.ConfirmationRequired {
-		if cmdCtx.Opts.NonInteractive {
-			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-		}
-		if result.Warning != "" {
-			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-		}
-		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-		return nil
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
+		return err
 	}
 
 	upid, err := tp.CTTemplate(ctx, node, vmid)

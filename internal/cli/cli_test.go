@@ -951,40 +951,47 @@ func TestPhase3SafetyTiers(t *testing.T) {
 	isolateConfigAndHome(t)
 	setupE2EConfig(t)
 
-	tests := []struct {
+	// Tier 1: without --yes, should return an error (fail-closed)
+	tier1 := []struct {
 		name string
 		args []string
 	}{
-		// Tier 1: should require --yes
 		{name: "vm-update-needs-yes", args: []string{"vm", "update", "e2e-node/100", "memory=4096"}},
 		{name: "vm-cloud-init-needs-yes", args: []string{"vm", "cloud-init", "e2e-node/100"}},
 		{name: "vm-snapshot-create-needs-yes", args: []string{"vm", "snapshot", "create", "e2e-node/100", "snap1"}},
 	}
-	for _, tt := range tests {
+	for _, tt := range tier1 {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			err := Run(context.Background(), tt.args, &stdout, &stderr)
-			if err != nil {
-				t.Fatalf("Run(%v): %v", tt.args, err)
+			if err == nil {
+				t.Fatal("expected confirmation error (fail-closed), got nil")
 			}
-			// Should print confirmation message, not execute
+			// Error should mention authorization or confirmation
+			if !strings.Contains(err.Error(), "authorization") && !strings.Contains(err.Error(), "Operation") {
+				t.Fatalf("expected authorization error, got: %v", err)
+			}
+			// Warning should be on stderr
 			out := stderr.String()
 			if !strings.Contains(out, "--yes") && !strings.Contains(out, "confirm") && !strings.Contains(out, "Operation") {
-				t.Fatalf("expected confirmation prompt, got: %q", out)
+				t.Fatalf("expected confirmation prompt on stderr, got: %q", out)
 			}
 		})
 	}
 
-	// Tier 2: should require --yes --force
+	// Tier 2: with --yes but not --force, should also return error (fail-closed)
 	t.Run("vm-template-needs-force", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := Run(context.Background(), []string{"--yes", "vm", "template", "e2e-node/100"}, &stdout, &stderr)
-		if err != nil {
-			t.Fatalf("Run: %v", err)
+		if err == nil {
+			t.Fatal("expected double-confirmation error (fail-closed), got nil")
+		}
+		if !strings.Contains(err.Error(), "authorization") && !strings.Contains(err.Error(), "Operation") {
+			t.Fatalf("expected authorization error, got: %v", err)
 		}
 		out := stderr.String()
 		if !strings.Contains(out, "--force") {
-			t.Fatalf("expected double confirmation prompt, got: %q", out)
+			t.Fatalf("expected double confirmation prompt on stderr, got: %q", out)
 		}
 	})
 }
@@ -1053,6 +1060,132 @@ func TestWriteEmptyResourceListsAsStructuredArrays(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestFailClosedConfirmation verifies that mutation commands return errors
+// (not nil) when confirmation has not been granted.
+func TestFailClosedConfirmation(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	// Each entry: (name, args with no confirmation flags)
+	mutations := []struct {
+		name string
+		args []string
+	}{
+		// VM lifecycle (Tier 1)
+		{"vm-start", []string{"vm", "start", "e2e-node/100"}},
+		{"vm-stop", []string{"vm", "stop", "e2e-node/100"}},
+		{"vm-shutdown", []string{"vm", "shutdown", "e2e-node/100"}},
+		// VM lifecycle (Tier 2)
+		{"vm-reset", []string{"vm", "reset", "e2e-node/100"}},
+		{"vm-reboot", []string{"vm", "reboot", "e2e-node/100"}},
+		// Container lifecycle (Tier 1)
+		{"ct-start", []string{"container", "start", "e2e-node/100"}},
+		// Config (Tier 1)
+		{"vm-update", []string{"vm", "update", "e2e-node/100", "memory=4096"}},
+		// Snapshots (Tier 1)
+		{"vm-snapshot-create", []string{"vm", "snapshot", "create", "e2e-node/100", "snap1"}},
+		// Cloud-init (Tier 1)
+		{"vm-cloud-init", []string{"vm", "cloud-init", "e2e-node/100"}},
+	}
+
+	for _, tt := range mutations {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err == nil {
+				t.Fatalf("%s without confirmation returned nil (fail-open)", tt.name)
+			}
+			if !strings.Contains(err.Error(), "authorization") && !strings.Contains(err.Error(), "Operation") {
+				t.Errorf("%s: expected authorization error, got: %v", tt.name, err)
+			}
+		})
+	}
+}
+
+// TestFailClosedDisruptive verifies Tier 2 operations return error without --yes --force.
+func TestFailClosedDisruptive(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	// With --yes only, Tier 2 should still fail because --force is also needed.
+	t.Run("vm-template-needs-force", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--yes", "vm", "template", "e2e-node/100"}, &stdout, &stderr)
+		if err == nil {
+			t.Fatal("Tier 2 with --yes only returned nil (fail-open)")
+		}
+	})
+}
+
+// TestFailClosedSecurityAdmin verifies Tier 4 operations return error without --expert.
+func TestFailClosedSecurityAdmin(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	// The e2e mock provider does not implement AccessProvider, so the command
+	// fails with "unsupported capability" before reaching the --expert check.
+	// This test verifies the command fails closed regardless; the safety layer
+	// itself is tested in the safety package.
+	t.Run("access-user-create-fails-closed", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--yes", "--force", "--expert", "access", "user", "create", "testuser@pve", "password=test"}, &stdout, &stderr)
+		if err == nil {
+			t.Fatal("access command with unsupported provider returned nil (fail-open)")
+		}
+	})
+}
+
+// TestTaskFailureReturnsError is a structural test: the task package correctly returns
+// errors on failure, and runMutationWithPolling wraps them. The e2e mock always
+// returns task status "OK", so full integration is tested at the task unit level.
+// This test verifies task polling exists and completes without error in the mock.
+func TestTaskPollingCompletes(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	t.Run("vm-stop-wait-completes", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--yes", "--wait", "vm", "stop", "e2e-node/100"}, &stdout, &stderr)
+		if err != nil {
+			t.Fatalf("--wait with mock task failed unexpectedly: %v", err)
+		}
+		if !strings.Contains(stdout.String(), "completed OK") {
+			t.Errorf("expected task completion message, got: %s", stdout.String())
+		}
+	})
+}
+
+// TestCommandsWithFlagsSucceed verifies that mutation commands with proper flags succeed.
+func TestCommandsWithFlagsSucceed(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"vm-start-yes", []string{"--yes", "vm", "start", "e2e-node/100"}},
+		{"vm-stop-yes", []string{"--yes", "vm", "stop", "e2e-node/100"}},
+		{"vm-shutdown-yes", []string{"--yes", "vm", "shutdown", "e2e-node/100"}},
+		{"vm-update-yes", []string{"--yes", "vm", "update", "e2e-node/100", "memory=4096"}},
+		{"vm-snapshot-create-yes", []string{"--yes", "vm", "snapshot", "create", "e2e-node/100", "snap1"}},
+		{"vm-cloud-init-yes", []string{"--yes", "vm", "cloud-init", "e2e-node/100"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err != nil {
+				t.Fatalf("%s with proper flags: %v", tt.name, err)
+			}
+			if !strings.Contains(stdout.String(), "UPID:") {
+				t.Errorf("%s: expected UPID in output, got: %s", tt.name, stdout.String())
+			}
+		})
 	}
 }
 
