@@ -107,7 +107,7 @@ func TestGoldenJSON(t *testing.T) {
 		t.Fatalf("create golden dir: %v", err)
 	}
 
-		for _, tt := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			if err := Run(context.Background(), tt.args, &stdout, &stderr); err != nil {
