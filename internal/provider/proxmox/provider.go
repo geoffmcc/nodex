@@ -92,6 +92,10 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilityNetworkMutation,
 		domain.CapabilityFirewallMutation,
 		domain.CapabilityAccess,
+		domain.CapabilityCeph,
+		domain.CapabilityCephMutation,
+		domain.CapabilitySDNMutation,
+		domain.CapabilityReplication,
 	}
 }
 
@@ -1051,6 +1055,335 @@ func (p *Provider) SDNVNets(ctx context.Context) ([]domain.SDNVNet, error) {
 		})
 	}
 	return result, nil
+}
+
+// --- Phase 6: Ceph, SDN Mutation, Replication ---
+
+// CephStatus returns Ceph cluster health status.
+func (p *Provider) CephStatus(ctx context.Context, node string) (*domain.CephStatus, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	health, err := p.client.GetCephStatus(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get ceph status: %w", err)
+	}
+	return &domain.CephStatus{Health: health}, nil
+}
+
+// CephOSDs returns Ceph OSD inventory.
+func (p *Provider) CephOSDs(ctx context.Context, node string) ([]domain.CephOSD, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	resp, err := p.client.GetCephOSDs(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get ceph osds: %w", err)
+	}
+	return flattenOSDs(resp.Data.Root.Children), nil
+}
+
+// flattenOSDs recursively extracts OSD leaves from the tree.
+func flattenOSDs(nodes []client.CephOSDTreeNode) []domain.CephOSD {
+	var result []domain.CephOSD
+	for _, n := range nodes {
+		if n.Leaf == 1 && n.Type == "osd" {
+			result = append(result, domain.CephOSD{
+				ID:          n.ID,
+				Name:        n.Name,
+				Type:        n.Type,
+				Status:      n.Status,
+				In:          n.In,
+				Host:        n.Host,
+				DeviceClass: n.DeviceClass,
+				TotalSpace:  n.TotalSpace,
+				BytesUsed:   n.BytesUsed,
+				PercentUsed: n.PercentUsed,
+			})
+		}
+		if n.Children != nil {
+			for i := range n.Children {
+				n.Children[i].Host = n.Name
+			}
+			result = append(result, flattenOSDs(n.Children)...)
+		}
+	}
+	return result
+}
+
+// CephMONs returns Ceph monitor status.
+func (p *Provider) CephMONs(ctx context.Context, node string) ([]domain.CephMON, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetCephMONs(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get ceph mons: %w", err)
+	}
+	result := make([]domain.CephMON, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.CephMON{
+			Name:    item.Name,
+			Host:    item.Host,
+			Quorum:  item.Quorum != 0,
+			State:   item.State,
+			Rank:    item.Rank,
+			Version: item.CephVersionShort,
+		})
+	}
+	return result, nil
+}
+
+// CephPools returns Ceph pool listing.
+func (p *Provider) CephPools(ctx context.Context, node string) ([]domain.CephPool, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetCephPools(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get ceph pools: %w", err)
+	}
+	result := make([]domain.CephPool, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.CephPool{
+			ID:              item.Pool,
+			Name:            item.PoolName,
+			Size:            item.Size,
+			MinSize:         item.MinSize,
+			PGNum:           item.PGNum,
+			CrushRule:       item.CrushRule,
+			CrushRuleName:   item.CrushRuleName,
+			Type:            item.Type,
+			PGNumFinal:      item.PGNumFinal,
+			PercentUsed:     item.PercentUsed,
+			BytesUsed:       item.BytesUsed,
+			PGAutoscaleMode: item.PGAutoscaleMode,
+		})
+	}
+	return result, nil
+}
+
+// CephCreateOSD creates a new Ceph OSD and returns the task UPID.
+func (p *Provider) CephCreateOSD(ctx context.Context, node, dev string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CreateOSD(ctx, node, dev)
+}
+
+// CephOSDOut marks an OSD as out.
+func (p *Provider) CephOSDOut(ctx context.Context, node string, osdid int) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.OSDOut(ctx, node, osdid)
+}
+
+// CephOSDIn marks an OSD as in.
+func (p *Provider) CephOSDIn(ctx context.Context, node string, osdid int) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.OSDIn(ctx, node, osdid)
+}
+
+// CephDestroyOSD destroys a Ceph OSD and returns the task UPID.
+func (p *Provider) CephDestroyOSD(ctx context.Context, node string, osdid int) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.DestroyOSD(ctx, node, osdid)
+}
+
+// CephCreatePool creates a new Ceph pool and returns the task UPID.
+func (p *Provider) CephCreatePool(ctx context.Context, node, name string, params map[string]string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	body := url.Values{}
+	body.Set("name", name)
+	for k, v := range params {
+		body.Set(k, v)
+	}
+	return p.client.CreatePool(ctx, node, body)
+}
+
+// CephDestroyPool destroys a Ceph pool and returns the task UPID.
+func (p *Provider) CephDestroyPool(ctx context.Context, node, name string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.DestroyPool(ctx, node, name)
+}
+
+// --- SDN Mutation ---
+
+// SDNCreateZone creates an SDN zone.
+func (p *Provider) SDNCreateZone(ctx context.Context, zoneType, zone string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.CreateSDNZone(ctx, zoneType, zone)
+}
+
+// SDNDeleteZone deletes an SDN zone.
+func (p *Provider) SDNDeleteZone(ctx context.Context, zone string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteSDNZone(ctx, zone)
+}
+
+// SDNCreateVNet creates an SDN virtual network.
+func (p *Provider) SDNCreateVNet(ctx context.Context, vnet, zone string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.CreateSDNVNet(ctx, vnet, zone)
+}
+
+// SDNDeleteVNet deletes an SDN virtual network.
+func (p *Provider) SDNDeleteVNet(ctx context.Context, vnet string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteSDNVNet(ctx, vnet)
+}
+
+// SDNCreateSubnet creates an SDN subnet.
+func (p *Provider) SDNCreateSubnet(ctx context.Context, vnet, cidr, gateway string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.CreateSDNSubnet(ctx, vnet, cidr, gateway)
+}
+
+// SDNDeleteSubnet deletes an SDN subnet.
+func (p *Provider) SDNDeleteSubnet(ctx context.Context, vnet, subnet string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteSDNSubnet(ctx, vnet, subnet)
+}
+
+// SDNCreateController creates an SDN controller.
+func (p *Provider) SDNCreateController(ctx context.Context, ctrl string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.CreateSDNController(ctx, ctrl)
+}
+
+// SDNDeleteController deletes an SDN controller.
+func (p *Provider) SDNDeleteController(ctx context.Context, ctrl string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteSDNController(ctx, ctrl)
+}
+
+// --- Replication ---
+
+// ReplicationList returns all replication jobs.
+func (p *Provider) ReplicationList(ctx context.Context) ([]domain.ReplicationJob, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetReplicationJobs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get replication jobs: %w", err)
+	}
+	result := make([]domain.ReplicationJob, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.ReplicationJob{
+			ID:        item.ID,
+			Guest:     item.Guest,
+			Type:      item.Type,
+			Source:    item.Source,
+			Target:    item.Target,
+			Schedule:  item.Schedule,
+			Comment:   item.Comment,
+			Enabled:   1 - item.Disable,
+			Rate:      item.Rate,
+			JobNum:    item.JobNum,
+			LastSync:  item.LastSync,
+			FailCount: item.FailCount,
+		})
+	}
+	return result, nil
+}
+
+// ReplicationGet returns a single replication job.
+func (p *Provider) ReplicationGet(ctx context.Context, id string) (*domain.ReplicationJob, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	item, err := p.client.GetReplicationJob(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get replication job: %w", err)
+	}
+	return &domain.ReplicationJob{
+		ID:        item.ID,
+		Guest:     item.Guest,
+		Type:      item.Type,
+		Source:    item.Source,
+		Target:    item.Target,
+		Schedule:  item.Schedule,
+		Comment:   item.Comment,
+		Enabled:   1 - item.Disable,
+		Rate:      item.Rate,
+		JobNum:    item.JobNum,
+		LastSync:  item.LastSync,
+		FailCount: item.FailCount,
+	}, nil
+}
+
+// ReplicationCreate creates a new replication job.
+func (p *Provider) ReplicationCreate(ctx context.Context, params domain.ReplicationCreateInput) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.CreateReplication(ctx, client.ReplicationCreateRequest{
+		ID:       params.ID,
+		Guest:    params.Guest,
+		Type:     params.Type,
+		Target:   params.Target,
+		Schedule: params.Schedule,
+		Comment:  params.Comment,
+		Rate:     params.Rate,
+		Source:   params.Source,
+	})
+}
+
+// ReplicationUpdate updates a replication job.
+func (p *Provider) ReplicationUpdate(ctx context.Context, id string, params domain.ReplicationUpdateInput) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.UpdateReplication(ctx, id, client.ReplicationUpdateRequest{
+		Target:   params.Target,
+		Schedule: params.Schedule,
+		Comment:  params.Comment,
+		Rate:     params.Rate,
+		Source:   params.Source,
+		Delete:   params.Delete,
+	})
+}
+
+// ReplicationDelete deletes a replication job.
+func (p *Provider) ReplicationDelete(ctx context.Context, id string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.DeleteReplication(ctx, id)
+}
+
+// ReplicationSchedule schedules a replication job to run now.
+func (p *Provider) ReplicationSchedule(ctx context.Context, node, id string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.ScheduleReplication(ctx, node, id)
 }
 
 // VMSnapshotConfig returns configuration for a specific VM snapshot.

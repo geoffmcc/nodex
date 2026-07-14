@@ -193,6 +193,10 @@ func init() {
 	register("sdn", "Manage SDN", nil,
 		&command{name: "zones", short: "List SDN zones", run: runSDNZones},
 		&command{name: "vnets", short: "List SDN VNets", run: runSDNVNets},
+		&command{name: "zone", short: "Manage SDN zones", run: runSDNZoneDispatch},
+		&command{name: "vnet", short: "Manage SDN VNets", run: runSDNVNetDispatch},
+		&command{name: "subnet", short: "Manage SDN subnets", run: runSDNSubnetDispatch},
+		&command{name: "controller", short: "Manage SDN controllers", run: runSDNControllerDispatch},
 	)
 	register("pools", "Manage resource pools", nil,
 		&command{name: "list", short: "List all resource pools", run: runPoolsList},
@@ -210,6 +214,20 @@ func init() {
 		&command{name: "domains", short: "Manage authentication domains", run: runAccessDomainsDispatch},
 		&command{name: "tokens", short: "Manage API tokens", run: runAccessTokensDispatch},
 		&command{name: "user", short: "Manage individual users", run: runAccessUserDispatch},
+	)
+	register("ceph", "Manage Ceph storage", nil,
+		&command{name: "status", short: "Show Ceph cluster status", run: runCephStatus},
+		&command{name: "osd", short: "Manage Ceph OSDs", run: runCephOSDDispatch},
+		&command{name: "mon", short: "Manage Ceph monitors", run: runCephMonDispatch},
+		&command{name: "pool", short: "Manage Ceph pools", run: runCephPoolDispatch},
+	)
+	register("replication", "Manage replication jobs", nil,
+		&command{name: "list", short: "List replication jobs", run: runReplicationList},
+		&command{name: "show", short: "Show replication job details", run: runReplicationShow},
+		&command{name: "create", short: "Create a replication job", run: runReplicationCreate},
+		&command{name: "update", short: "Update a replication job", run: runReplicationUpdate},
+		&command{name: "delete", short: "Delete a replication job", run: runReplicationDelete},
+		&command{name: "schedule", short: "Schedule replication job now", run: runReplicationSchedule},
 	)
 }
 
