@@ -29,6 +29,7 @@ type Options struct {
 	Force          bool
 	Wait           bool
 	Expert         bool
+	All            bool
 }
 
 // Context carries global state through command execution.
@@ -79,6 +80,8 @@ func init() {
 		&command{name: "current", short: "Show the current profile", run: runProfileCurrent},
 		&command{name: "test", short: "Test profile connectivity", run: runProfileTest},
 		&command{name: "remove", short: "Remove a profile", run: runProfileRemove},
+		&command{name: "export", short: "Export a profile (sanitized)", run: runProfileExport},
+		&command{name: "import", short: "Import a profile from stdin", run: runProfileImport},
 	)
 	register("provider", "Manage providers", nil,
 		&command{name: "list", short: "List available providers", run: runProviderList},
@@ -329,6 +332,7 @@ func parseGlobal(args []string) (Options, []string, error) {
 	fs.BoolVar(&opts.Force, "force", false, "")
 	fs.BoolVar(&opts.Wait, "wait", false, "")
 	fs.BoolVar(&opts.Expert, "expert", false, "")
+	fs.BoolVar(&opts.All, "all", false, "")
 
 	if err := fs.Parse(args); err != nil {
 		return opts, nil, err
@@ -388,6 +392,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --output <format>    Output format: table, json, yaml (default: table/tty, json/non-tty)")
 	fmt.Fprintln(w, "  --timeout <duration> Request timeout (default: 30s)")
 	fmt.Fprintln(w, "  --limit <n>          Limit output to n items (0 = no limit)")
+	fmt.Fprintln(w, "  --all                Aggregate across all configured profiles")
 	fmt.Fprintln(w, "  --no-color           Disable color output")
 	fmt.Fprintln(w, "  --non-interactive    Disable interactive prompts")
 	fmt.Fprintln(w, "  --quiet              Suppress non-essential output")

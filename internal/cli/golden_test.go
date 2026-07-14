@@ -24,6 +24,11 @@ func TestGoldenJSON(t *testing.T) {
 		Endpoint:      "https://e2e.example.invalid",
 		CredentialRef: "env:e2e",
 	}
+	cfg.Profiles["lab"] = config.Profile{
+		Provider:      e2eMockProviderName,
+		Endpoint:      "https://e2e.example.invalid",
+		CredentialRef: "env:e2e",
+	}
 	path, err := config.ConfigPath()
 	if err != nil {
 		t.Fatalf("ConfigPath: %v", err)
@@ -84,6 +89,11 @@ func TestGoldenJSON(t *testing.T) {
 		{name: "container_snapshot_config", args: []string{"--output", "json", "container", "snapshot-config", "e2e-node/200", "snap2"}},
 		{name: "pools_list", args: []string{"--output", "json", "pools", "list"}},
 		{name: "cluster_log", args: []string{"--output", "json", "cluster", "log"}},
+		// Phase 7: --all aggregation
+		{name: "status_all", args: []string{"--output", "json", "--all", "status"}},
+		{name: "nodes_all", args: []string{"--output", "json", "--all", "node", "list"}},
+		{name: "vms_all", args: []string{"--output", "json", "--all", "vm", "list"}},
+		{name: "containers_all", args: []string{"--output", "json", "--all", "container", "list"}},
 	}
 
 	goldenDir := filepath.Join("testdata", "golden")

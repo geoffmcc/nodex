@@ -1,0 +1,16 @@
+[
+  {
+    "profile": "e2e",
+    "endpoint": "https://e2e.example.invalid",
+    "version": "test",
+    "nodes": 1,
+    "vms": 1
+  },
+  {
+    "profile": "lab",
+    "endpoint": "https://e2e.example.invalid",
+    "version": "test",
+    "nodes": 1,
+    "vms": 1
+  }
+]
