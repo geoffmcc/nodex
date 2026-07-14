@@ -141,14 +141,14 @@ List snapshots for a VM.
 Show snapshot configuration for a VM.
 .SS nodex vm start \fIID\fR [\-\-yes]
 Start a VM. Safety: Tier 1 (Reversible).
+.SS nodex vm stop \fIID\fR [\-\-yes]
+Stop a VM (force). Safety: Tier 1 (Reversible).
 .SS nodex vm shutdown \fIID\fR [\-\-yes]
 Graceful VM shutdown. Safety: Tier 1.
-.SS nodex vm stop \fIID\fR [\-\-yes \-\-force]
-Force\-stop a VM. Safety: Tier 2 (Disruptive).
 .SS nodex vm reset \fIID\fR [\-\-yes \-\-force]
-Hard reset a VM. Safety: Tier 2.
-.SS nodex vm reboot \fIID\fR [\-\-yes]
-Reboot a VM. Safety: Tier 1.
+Hard reset a VM. Safety: Tier 2 (Disruptive).
+.SS nodex vm reboot \fIID\fR [\-\-yes \-\-force]
+Reboot a VM. Safety: Tier 2 (Disruptive).
 .SS nodex vm suspend \fIID\fR [\-\-yes]
 Suspend a VM to disk. Safety: Tier 1.
 .SS nodex vm resume \fIID\fR [\-\-yes]
@@ -191,12 +191,12 @@ List container snapshots.
 Show snapshot configuration for a container.
 .SS nodex container start \fIID\fR [\-\-yes]
 Start a container. Safety: Tier 1.
+.SS nodex container stop \fIID\fR [\-\-yes]
+Stop a container (force). Safety: Tier 1 (Reversible).
 .SS nodex container shutdown \fIID\fR [\-\-yes]
 Graceful container shutdown. Safety: Tier 1.
-.SS nodex container stop \fIID\fR [\-\-yes \-\-force]
-Force\-stop a container. Safety: Tier 2.
-.SS nodex container reboot \fIID\fR [\-\-yes]
-Reboot a container. Safety: Tier 1.
+.SS nodex container reboot \fIID\fR [\-\-yes \-\-force]
+Reboot a container. Safety: Tier 2 (Disruptive).
 .SS nodex container suspend \fIID\fR [\-\-yes]
 Suspend a container. Safety: Tier 1.
 .SS nodex container resume \fIID\fR [\-\-yes]
@@ -425,6 +425,33 @@ Partial failure (\-\-all)
 .TP
 .B 12
 Provider error
+.TP
+.B 13
+Not found
+.TP
+.B 14
+Timeout
+.TP
+.B 15
+Cancellation
+.TP
+.B 16
+Task failure
+.TP
+.B 17
+Validation error
+.TP
+.B 18
+Ambiguous outcome
+.TP
+.B 19
+Rate limit
+.TP
+.B 20
+Output error
+.TP
+.B 21
+Conflict
 .TP
 .B 130
 Interrupted (SIGINT)

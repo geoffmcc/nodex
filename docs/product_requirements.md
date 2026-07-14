@@ -194,6 +194,15 @@ For profile `lab`: `NODEX_LAB_TOKEN_ID`, `NODEX_LAB_TOKEN_SECRET`, `NODEX_LAB_TO
 | 10 | UnsupportedCap | Capability not supported by provider |
 | 11 | PartialFailure | Partial failure in multi-profile `--all` |
 | 12 | Provider | Provider-specific error |
+| 13 | NotFound | Resource not found |
+| 14 | Timeout | Request or task timed out |
+| 15 | Cancellation | Operation cancelled (context) |
+| 16 | TaskFailure | Provider task completed with failure |
+| 17 | ValidationError | Request validation failure |
+| 18 | AmbiguousOutcome | Outcome uncertain (UPID returned, status unknown) |
+| 19 | RateLimit | Rate limited by provider |
+| 20 | OutputError | Error writing output |
+| 21 | Conflict | Resource conflict |
 | 130 | Interrupted | SIGINT (Ctrl+C) |
 | 143 | SIGTERM | SIGTERM |
 
@@ -229,7 +238,7 @@ Nodex is explicitly NOT:
 ## Roadmap
 
 ### Completed — Phases 1-3
-- Safety and execution integrity (safety tiers, confirmation gates, dry-run support)
+- Safety and execution integrity (safety tiers, confirmation gates)
 - Output and automation contracts (OperationResult envelope, structured JSON/YAML, exit codes)
 - Secret and transfer hardening (password-stdin, redaction, streaming uploads, temp-file downloads)
 

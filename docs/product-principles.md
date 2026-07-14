@@ -59,12 +59,11 @@ Every capability proposed for Nodex must answer these questions:
 7. **Exit-code behavior.** What exit codes are possible and what do they mean?
 8. **Idempotency.** Is the operation safe to repeat?
 9. **Cancellation.** What happens on SIGINT or timeout?
-10. **Dry-run support.** Can the user preview the operation without side effects?
-11. **Non-interactive behavior.** Does this work in scripts without a terminal?
-12. **Credentials.** What credential types are needed?
-13. **Multi-profile.** Does `--all` make sense for this command?
-14. **Risk of cluster lockout.** Could this operation break cluster membership or Corosync?
-15. **Alternatives considered.** Why is this the right approach?
+10. **Non-interactive behavior.** Does this work in scripts without a terminal?
+11. **Credentials.** What credential types are needed?
+12. **Multi-profile.** Does `--all` make sense for this command?
+13. **Risk of cluster lockout.** Could this operation break cluster membership or Corosync?
+14. **Alternatives considered.** Why is this the right approach?
 
 ## Safety Model
 

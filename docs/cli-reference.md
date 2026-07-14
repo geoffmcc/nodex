@@ -1,6 +1,6 @@
 # Nodex CLI Reference
 
-This reference describes the commands implemented by the `nodex` CLI as verified against the current source code (`internal/cli/root.go`).
+This reference describes the commands implemented by the `nodex` CLI as verified against the canonical operation registry (`internal/cli/operations.go`) and the command tree (`internal/cli/root.go`).
 
 ## Syntax
 
@@ -174,8 +174,8 @@ Inspect and operate virtual machines.
 | Command | Description |
 |---------|-------------|
 | `vm start <id>` | Start a VM |
+| `vm stop <id>` | Stop a VM (force) |
 | `vm shutdown <id>` | Graceful VM shutdown (60s timeout) |
-| `vm reboot <id>` | Reboot a VM |
 | `vm suspend <id>` | Suspend a VM to disk |
 | `vm resume <id>` | Resume a suspended VM |
 | `vm pause <id>` | Pause (freeze) a VM |
@@ -185,8 +185,8 @@ Inspect and operate virtual machines.
 
 | Command | Description |
 |---------|-------------|
-| `vm stop <id>` | Stop a VM (force) |
 | `vm reset <id>` | Hard reset a VM |
+| `vm reboot <id>` | Reboot a VM |
 | `vm migrate <id> --target <node>` | Migrate VM to another node |
 
 **Destructive commands** (Tier 3, requires type-in confirmation):
@@ -225,8 +225,8 @@ Inspect and operate containers.
 | Command | Description |
 |---------|-------------|
 | `container start <id>` | Start a container |
+| `container stop <id>` | Stop a container (force) |
 | `container shutdown <id>` | Graceful container shutdown |
-| `container reboot <id>` | Reboot a container |
 | `container suspend <id>` | Suspend a container |
 | `container resume <id>` | Resume a suspended container |
 
@@ -234,7 +234,7 @@ Inspect and operate containers.
 
 | Command | Description |
 |---------|-------------|
-| `container stop <id>` | Stop a container (force) |
+| `container reboot <id>` | Reboot a container |
 | `container migrate <id> --target <node>` | Migrate container |
 
 **Destructive commands** (Tier 3, requires type-in confirmation):
@@ -360,7 +360,6 @@ Inspect and manage firewall rules.
 | `firewall ipsets` | List firewall IP sets |
 | `firewall ipset <name>` | Show IP set entries |
 | `firewall security-groups` | List firewall security groups |
-| `firewall group <name>` | Show security group rules |
 | `firewall options` | Show firewall options |
 | `firewall node-rules <node>` | List node-level firewall rules |
 | `firewall vm-rules <node> <vmid>` | List VM-level firewall rules |
@@ -375,8 +374,8 @@ Inspect and manage firewall rules.
 | `firewall alias create <name> <cidr>` | Create a firewall alias |
 | `firewall alias delete <name>` | Delete a firewall alias |
 | `firewall ipset create <name>` | Create an IP set |
-| `firewall ipset add <name> <cidr>` | Add IP set entry |
-| `firewall ipset remove <name> <cidr>` | Remove IP set entry |
+| `firewall ipset entry add <name> <cidr>` | Add IP set entry |
+| `firewall ipset entry remove <name> <cidr>` | Remove IP set entry |
 | `firewall ipset delete <name>` | Delete an IP set |
 | `firewall group create <name>` | Create a security group |
 | `firewall group delete <name>` | Delete a security group |
@@ -553,6 +552,15 @@ See the [configuration reference](configuration.md) for credential backends, env
 | 10 | Unsupported capability |
 | 11 | Partial failure (`--all`) |
 | 12 | Provider error |
+| 13 | Not found |
+| 14 | Timeout |
+| 15 | Cancellation |
+| 16 | Task failure |
+| 17 | Validation error |
+| 18 | Ambiguous outcome |
+| 19 | Rate limit |
+| 20 | Output error |
+| 21 | Conflict |
 | 130 | Interrupted (SIGINT) |
 | 143 | Terminated (SIGTERM) |
 

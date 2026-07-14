@@ -37,7 +37,7 @@ For suspected vulnerabilities, follow the [security policy](SECURITY.md). Do not
   - Mutation operations through the five-tier safety model (lifecycle, config updates, snapshots, backups, storage, migration, clone, firewall, SDN, Ceph, replication, access)
 - **Configuration** via YAML schema v1
 - **Credential management** through file, keyring, environment, and stdin backends
-- **API token authentication** (recommended) and password authentication
+- **API token authentication** (supported) for provider connections
 - **TLS 1.2+** with certificate verification and custom CA support
 - **Output formats** — table, JSON, and YAML
 - **Shell completion** for bash, zsh, and fish

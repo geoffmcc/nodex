@@ -31,7 +31,9 @@ Nodex supports four credential backends:
 - **File.** JSON credential files under `~/.nodex/credentials/`. Written with restricted permissions (mode `0600`) through atomic temporary-file rename.
 - **Keyring.** OS keyring via `github.com/zalando/go-keyring` (macOS Keychain, Linux Secret Service, Windows Credential Manager).
 - **Environment variables.** `NODEX_<PROFILE>_TOKEN_ID` and `NODEX_<PROFILE>_TOKEN_SECRET`. Suitable for CI and scripts. Environment variables may be visible in process listings.
-- **Stdin.** Interactive prompt, not stored. Use `--password-stdin` for scripted password input.
+- **Stdin.** Interactive prompt, not stored. Use `--password-stdin` for scripted password input (used by commands like `access user create`, not for provider authentication).
+
+The Proxmox provider authenticates with API tokens (`PVEAPIToken` scheme). Password-based authentication is not supported for connecting to Proxmox endpoints.
 
 ## Secret Handling Rules
 
@@ -68,7 +70,6 @@ Additional protections:
 
 - **Non-interactive fail-closed.** When `--non-interactive` is set and confirmation is required, the command fails instead of proceeding silently.
 - **No generic bypass.** There is no `--skip-safety` or equivalent flag. Each tier requires its specific gate.
-- **Dry-run support.** Operations can be previewed without side effects where supported, but dry runs never send mutations to the provider.
 
 ## Read-Only Token Support
 

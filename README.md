@@ -73,7 +73,7 @@ Nodex supports four credential backends:
 - **OS keyring** (`keyring:name`) — macOS Keychain, Linux Secret Service, Windows Credential Manager
 - **Stdin** — read at prompt time, not stored
 
-Proxmox API tokens are the recommended credential type. Password authentication is also supported.
+Proxmox API tokens are the recommended and supported credential type. Passwords may be used through `--password-stdin` for commands like `access user create` but are not supported for Proxmox provider authentication.
 
 ## Output modes
 
