@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -495,6 +496,25 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		return app.NewExitError(fmt.Errorf("all arguments are required"), app.ExitUsage)
 	}
 
+	// Check for overwrite safety.
+	if !cmdCtx.Opts.Force {
+		if info, err := os.Stat(localPath); err == nil {
+			if info.Mode().IsRegular() {
+				return app.NewExitError(
+					fmt.Errorf("destination %s already exists; use --force to overwrite", localPath),
+					app.ExitUsage,
+				)
+			}
+			// Non-regular existing path (dir, symlink, etc.) — refuse regardless.
+			return app.NewExitError(
+				fmt.Errorf("destination %s exists and is not a regular file", localPath),
+				app.ExitUsage,
+			)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("stat destination: %w", err)
+		}
+	}
+
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -506,18 +526,46 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		return err
 	}
 
-	// Write to local file
-	f, err := os.Create(localPath)
-	if err != nil {
-		return fmt.Errorf("create local file %s: %w", localPath, err)
+	// Write to a temporary file in the destination directory, then atomically rename.
+	// This ensures no partial or corrupt file is left at the final path.
+	dir := filepath.Dir(localPath)
+	if dir == "" {
+		dir = "."
 	}
-	defer f.Close()
+	tmp, err := os.CreateTemp(dir, ".nodex-tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temporary file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanupTmp := func() {
+		tmp.Close()
+		os.Remove(tmpPath)
+	}
 
-	if err := sp.DownloadContentBody(ctx, node, storage, volumeID, f); err != nil {
-		// Clean up partial file on error
-		f.Close()
-		os.Remove(localPath)
+	if err := sp.DownloadContentBody(ctx, node, storage, volumeID, tmp); err != nil {
+		cleanupTmp()
 		return fmt.Errorf("download %s/%s/%s: %w", node, storage, volumeID, err)
+	}
+	if err := tmp.Close(); err != nil {
+		cleanupTmp()
+		return fmt.Errorf("close temporary file: %w", err)
+	}
+
+	// On Windows, os.Rename fails if the target exists and is open, so remove target first.
+	if cmdCtx.Opts.Force {
+		if info, err := os.Stat(localPath); err == nil {
+			if info.Mode().IsRegular() {
+				if err := os.Remove(localPath); err != nil {
+					cleanupTmp()
+					return fmt.Errorf("remove existing file %s: %w", localPath, err)
+				}
+			}
+		}
+	}
+
+	if err := os.Rename(tmpPath, localPath); err != nil {
+		cleanupTmp()
+		return fmt.Errorf("finalize download: %w", err)
 	}
 
 	fmt.Fprintf(cmdCtx.Writer, "Downloaded %s/%s/%s to %s\n", node, storage, volumeID, localPath)

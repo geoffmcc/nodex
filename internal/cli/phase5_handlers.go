@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -1082,12 +1084,12 @@ func checkSecurityAdmin(cmdCtx *Context, desc string) error {
 func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) < 1 {
 		return app.NewExitError(fmt.Errorf(
-			"usage: nodex access user create <userid> [password=<p>] [email=<e>] [firstname=<f>] [lastname=<l>] [comment=<c>]"),
+			"usage: nodex access user create <userid> [--password-stdin] [email=<e>] [firstname=<f>] [lastname=<l>] [comment=<c>]"),
 			app.ExitUsage)
 	}
 
 	userid := args[0]
-	var password, email, firstname, lastname, comment string
+	var email, firstname, lastname, comment string
 	for _, arg := range args[1:] {
 		parts := strings.SplitN(arg, "=", 2)
 		if len(parts) != 2 {
@@ -1095,7 +1097,9 @@ func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) er
 		}
 		switch parts[0] {
 		case "password":
-			password = parts[1]
+			return app.NewExitError(fmt.Errorf(
+				"passwords must not be passed as command arguments; use --password-stdin or interactive prompt"),
+				app.ExitUsage)
 		case "email":
 			email = parts[1]
 		case "firstname":
@@ -1111,6 +1115,23 @@ func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) er
 
 	if userid == "" {
 		return app.NewExitError(fmt.Errorf("userid is required"), app.ExitUsage)
+	}
+
+	// Secure password collection.
+	var password string
+	if cmdCtx.Opts.PasswordStdin {
+		data, err := io.ReadAll(cmdCtx.Stdin)
+		if err != nil {
+			return fmt.Errorf("read password from stdin: %w", err)
+		}
+		password = strings.TrimSpace(string(data))
+	} else if !cmdCtx.Opts.NonInteractive {
+		reader := bufio.NewReader(os.Stdin)
+		pw, err := promptSecret(cmdCtx, reader, "Password: ")
+		if err != nil {
+			return fmt.Errorf("read password: %w", err)
+		}
+		password = pw
 	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
@@ -1587,9 +1608,11 @@ func runAccessTokensDispatch(ctx context.Context, cmdCtx *Context, args []string
 func runAccessUserDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) == 0 {
 		fmt.Fprintln(cmdCtx.Writer, "Usage: nodex access user <create|delete> [args]")
-		fmt.Fprintln(cmdCtx.Writer, "  create <userid> [password=<p>] [email=<e>] [firstname=<f>] [lastname=<l>] [comment=<c>]")
+		fmt.Fprintln(cmdCtx.Writer, "  create <userid> [--password-stdin] [email=<e>] [firstname=<f>] [lastname=<l>] [comment=<c>]")
 		fmt.Fprintln(cmdCtx.Writer, "  delete <userid>")
 		fmt.Fprintln(cmdCtx.Writer)
+		fmt.Fprintln(cmdCtx.Writer, "Passwords are never accepted as command arguments.")
+		fmt.Fprintln(cmdCtx.Writer, "Use --password-stdin for scripting or interactive prompt by default.")
 		fmt.Fprintln(cmdCtx.Writer, "Identity operations require --expert flag (Tier 4)")
 		return nil
 	}
