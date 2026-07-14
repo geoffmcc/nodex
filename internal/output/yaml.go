@@ -8,14 +8,16 @@ import (
 	"github.com/geoffmcc/nodex/internal/redact"
 )
 
-// WriteYAML marshals data as YAML and writes it through redaction.
+// WriteYAML sanitizes data with type-based redaction, marshals it as YAML,
+// applies regex defense-in-depth, and writes the result.
 func WriteYAML(w io.Writer, data any) error {
-	raw, err := yaml.Marshal(data)
+	sanitized := redact.Sanitize(data)
+	raw, err := yaml.Marshal(sanitized)
 	if err != nil {
 		return err
 	}
-	redacted := redact.Bytes(raw)
-	_, err = w.Write(redacted)
+	clean := redact.Bytes(raw)
+	_, err = w.Write(clean)
 	return err
 }
 

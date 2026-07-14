@@ -52,6 +52,24 @@ type Credentials struct {
 	TokenSecret string
 }
 
+// Redacted returns a copy of the credentials with every secret field
+// replaced by the [REDACTED] marker.  It implements the redact.Redactable
+// interface without importing the redact package (duck-typed).
+func (c *Credentials) Redacted() any {
+	if c == nil {
+		return nil
+	}
+	const marker = "[REDACTED]"
+	return &Credentials{
+		Type:        c.Type,
+		Token:       marker,
+		Username:    c.Username,
+		Password:    marker,
+		TokenID:     c.TokenID,
+		TokenSecret: marker,
+	}
+}
+
 // Capability represents a provider capability.
 type Capability string
 

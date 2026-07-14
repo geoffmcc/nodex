@@ -14,19 +14,20 @@ type APIError struct {
 	Exit   int    `json:"exit"`
 }
 
-// WriteErrorJSON writes a structured error response to w.
+// WriteErrorJSON writes a structured, sanitized error response to w.
 func WriteErrorJSON(w io.Writer, msg string, detail string, exitCode int) error {
 	e := APIError{
 		Error:  msg,
 		Detail: detail,
 		Exit:   exitCode,
 	}
-	raw, err := json.MarshalIndent(e, "", "  ")
+	sanitized := redact.Sanitize(e)
+	raw, err := json.MarshalIndent(sanitized, "", "  ")
 	if err != nil {
 		return err
 	}
-	redacted := redact.Bytes(raw)
-	_, err = w.Write(redacted)
+	clean := redact.Bytes(raw)
+	_, err = w.Write(clean)
 	if err != nil {
 		return err
 	}
