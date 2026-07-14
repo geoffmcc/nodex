@@ -108,6 +108,17 @@ func writeToUnlocked(cfg *Config, path string) error {
 	}
 	tmpPath := tmp.Name()
 
+	// Ensure config file is not world-readable (defense-in-depth; Go's
+	// os.CreateTemp uses 0600 on Unix, but this makes the intent explicit
+	// and protects against platforms where the default differs).
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return app.NewExitError(
+			fmt.Errorf("%w: secure temp file: %w", app.ErrConfigWrite, err),
+			app.ExitConfig,
+		)
+	}
+
 	// Clean up temp file on error.
 	success := false
 	defer func() {

@@ -758,6 +758,11 @@ func TestVMDeletePath(t *testing.T) {
 		if r.URL.Path != "/nodes/pve1/qemu/100" {
 			t.Errorf("path = %s, want /nodes/pve1/qemu/100", r.URL.Path)
 		}
+		// purge=1 is sent as a query parameter since DELETE bodies are not
+		// reliably forwarded by all proxies.
+		if got := r.URL.Query().Get("purge"); got != "1" {
+			t.Errorf("purge query param = %q, want \"1\"", got)
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000304A:0023A45B:"}`))
 	}))

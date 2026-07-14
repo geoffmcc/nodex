@@ -808,6 +808,8 @@ func (c *Client) CTConfigUpdate(ctx context.Context, node string, vmid int, para
 }
 
 // VMDelete deletes a VM and returns the task UPID.
+// The purge=1 parameter ensures all HA, firewall, and backup configurations
+// referencing this VMID are also removed.
 func (c *Client) VMDelete(ctx context.Context, node string, vmid int) (string, error) {
 	if node == "" {
 		return "", fmt.Errorf("node name is required")
@@ -816,9 +818,7 @@ func (c *Client) VMDelete(ctx context.Context, node string, vmid int) (string, e
 		return "", fmt.Errorf("VMID is required")
 	}
 	var resp TaskResponse
-	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid)
-	body := url.Values{}
-	body.Set("purge", "1")
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "?purge=1"
 	if err := c.del(ctx, path, &resp); err != nil {
 		return "", err
 	}
@@ -1270,11 +1270,11 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 	}
 
 	filename := filepath.Base(localPath)
-	file, err := os.Open(localPath)
+	file, err := os.Open(localPath) // #nosec G304 -- localPath validated by os.Lstat + IsRegular above.
 	if err != nil {
 		return "", fmt.Errorf("open local file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	pr, pw := io.Pipe()
 	writer := multipart.NewWriter(pw)
@@ -1282,7 +1282,7 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 	// Write the multipart body in a goroutine so the HTTP client can stream it.
 	pipeDone := make(chan error, 1)
 	go func() {
-		defer pw.Close()
+		defer func() { _ = pw.Close() }()
 		part, err := writer.CreateFormFile("content", filename)
 		if err != nil {
 			pipeDone <- fmt.Errorf("create multipart form: %w", err)
