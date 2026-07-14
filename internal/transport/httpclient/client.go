@@ -5,6 +5,7 @@ import (
 	cryptorand "crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -36,6 +37,50 @@ const (
 	JitterFraction = 0.25
 )
 
+// RetryPolicy controls which HTTP methods are eligible for automatic retry.
+type RetryPolicy int
+
+const (
+	// RetryIdempotent retries only safe idempotent methods (GET, HEAD).
+	// This is the default for the retrying Do path.
+	RetryIdempotent RetryPolicy = iota
+
+	// RetryNone disables all automatic retries. Every error is returned
+	// immediately. Use for non-idempotent mutations (POST).
+	RetryNone
+
+	// RetrySafe retries idempotent operations including PUT and DELETE
+	// in addition to GET and HEAD. Use when the server guarantees
+	// idempotency for those methods.
+	RetrySafe
+)
+
+// isRetryableMethod reports whether the given HTTP method is eligible for
+// retry under the specified policy.
+func isRetryableMethod(method string, policy RetryPolicy) bool {
+	switch policy {
+	case RetryNone:
+		return false
+	case RetrySafe:
+		return method == http.MethodGet || method == http.MethodHead ||
+			method == http.MethodPut || method == http.MethodDelete
+	default: // RetryIdempotent
+		return method == http.MethodGet || method == http.MethodHead
+	}
+}
+
+var (
+	// ErrHTTPSDowngrade is returned when a redirect would downgrade from
+	// HTTPS to HTTP, which could expose credentials and data to
+	// interception.
+	ErrHTTPSDowngrade = errors.New("redirect blocked: HTTPS to HTTP downgrade")
+
+	// ErrCrossOriginRedirect is returned when a redirect would follow to
+	// a different host than the original request, which could leak
+	// authorization credentials to an unintended destination.
+	ErrCrossOriginRedirect = errors.New("redirect blocked: cross-origin redirect to different host")
+)
+
 // Client is a minimal HTTP client with TLS, timeout, retry, and jitter.
 type Client struct {
 	httpClient       *http.Client
@@ -44,6 +89,7 @@ type Client struct {
 	maxRetries       int
 	baseDelay        time.Duration
 	maxDelay         time.Duration
+	retryPolicy      RetryPolicy
 }
 
 // Option configures the Client.
@@ -117,6 +163,14 @@ func WithRetryDelays(base, max time.Duration) Option {
 	}
 }
 
+// WithRetryPolicy sets the retry policy that controls which HTTP methods
+// are eligible for automatic retry in the Do method.
+func WithRetryPolicy(policy RetryPolicy) Option {
+	return func(c *Client) {
+		c.retryPolicy = policy
+	}
+}
+
 // New creates a new Client with the given options.
 func New(opts ...Option) *Client {
 	c := &Client{
@@ -137,14 +191,48 @@ func New(opts ...Option) *Client {
 	for _, opt := range opts {
 		opt(c)
 	}
+	c.httpClient.CheckRedirect = c.checkRedirect
 	return c
 }
 
+// checkRedirect is the CheckRedirect function for the underlying http.Client.
+// It enforces two safety invariants:
+//   - HTTPS-to-HTTP downgrades are forbidden (prevents credential/data leakage).
+//   - Cross-origin redirects to a different host are forbidden (prevents
+//     authorization forwarding to an unintended destination).
+func (c *Client) checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) == 0 {
+		return nil
+	}
+
+	original := via[0]
+
+	// Block HTTPS → HTTP downgrade.
+	if original.URL.Scheme == "https" && req.URL.Scheme == "http" {
+		return fmt.Errorf("%w: %s -> %s", ErrHTTPSDowngrade, original.URL.Redacted(), req.URL.Redacted())
+	}
+
+	// Block redirect to a different host.
+	if !strings.EqualFold(original.URL.Host, req.URL.Host) {
+		return fmt.Errorf("%w: %s -> %s", ErrCrossOriginRedirect, original.URL.Host, req.URL.Host)
+	}
+
+	return nil
+}
+
 // Do executes an HTTP request with retry and jitter.
+// Retry eligibility is controlled by the client's RetryPolicy: by default
+// only GET and HEAD are retried; POST never retries; use WithRetryPolicy
+// to override.
 func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
+	retryable := isRetryableMethod(req.Method, c.retryPolicy)
+
 	var lastErr error
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		if attempt > 0 {
+			if !retryable {
+				return nil, fmt.Errorf("non-retryable method %s: %w", req.Method, lastErr)
+			}
 			delay := c.jitteredDelay(attempt)
 			select {
 			case <-ctx.Done():

@@ -149,6 +149,7 @@ type Poller struct {
 	maxInterval  time.Duration
 	maxWait      time.Duration
 	backoff      float64
+	endpoint     string // Proxmox API endpoint, used in UnknownOutcome diagnostics
 }
 
 // PollerOption configures a Poller.
@@ -175,6 +176,14 @@ func WithMaxWait(d time.Duration) PollerOption {
 	}
 }
 
+// WithEndpoint sets the Proxmox API endpoint for diagnostic context in
+// UnknownOutcome errors. This is optional and used only for diagnostics.
+func WithEndpoint(endpoint string) PollerOption {
+	return func(p *Poller) {
+		p.endpoint = endpoint
+	}
+}
+
 // NewPoller creates a new task Poller.
 func NewPoller(client TaskStatusClient, opts ...PollerOption) *Poller {
 	p := &Poller{
@@ -191,28 +200,34 @@ func NewPoller(client TaskStatusClient, opts ...PollerOption) *Poller {
 }
 
 // Wait polls the task until completion, timeout, or context cancellation.
-// Returns the final TaskResult. On timeout or cancellation, the UPID
-// is preserved in the result so callers can follow up manually.
+// Returns the final TaskResult.
+//
+// On deadline exceeded (poller maxWait or context deadline), the Error
+// field contains an *UnknownOutcome: the task may still be running and
+// the caller MUST NOT assume success or failure.
+//
+// On context cancellation, the Error field contains a plain cancellation
+// error — the caller chose to stop waiting.
+//
+// The UPID is always preserved in the result so callers can follow up
+// manually.
 func (p *Poller) Wait(ctx context.Context, node, upid string) *TaskResult {
 	deadline := time.Now().Add(p.maxWait)
 	interval := p.pollInterval
 
 	for {
-		// Check overall timeout.
+		// Check overall timeout (poller's own maxWait).
 		if time.Now().After(deadline) {
 			return &TaskResult{
 				UPID:  upid,
-				Error: fmt.Errorf("task %s did not complete within %v", upid, p.maxWait),
+				Error: newUnknownOutcome(upid, node, p.endpoint),
 			}
 		}
 
-		// Check context cancellation.
+		// Check context cancellation or deadline.
 		select {
 		case <-ctx.Done():
-			return &TaskResult{
-				UPID:  upid,
-				Error: fmt.Errorf("task polling cancelled: %w", ctx.Err()),
-			}
+			return p.classifyCtxDone(upid, node, ctx)
 		default:
 		}
 
@@ -222,10 +237,7 @@ func (p *Poller) Wait(ctx context.Context, node, upid string) *TaskResult {
 			// Transient failures: back off and retry.
 			select {
 			case <-ctx.Done():
-				return &TaskResult{
-					UPID:  upid,
-					Error: fmt.Errorf("task polling cancelled after query error: %w", ctx.Err()),
-				}
+				return p.classifyCtxDone(upid, node, ctx)
 			case <-time.After(interval):
 				interval = p.nextInterval(interval)
 				continue
@@ -247,13 +259,26 @@ func (p *Poller) Wait(ctx context.Context, node, upid string) *TaskResult {
 		// Still running — wait and increase interval.
 		select {
 		case <-ctx.Done():
-			return &TaskResult{
-				UPID:  upid,
-				Error: fmt.Errorf("task polling cancelled while task is running: %w", ctx.Err()),
-			}
+			return p.classifyCtxDone(upid, node, ctx)
 		case <-time.After(interval):
 			interval = p.nextInterval(interval)
 		}
+	}
+}
+
+// classifyCtxDone returns the appropriate error for a context Done signal.
+// DeadlineExceeded produces an UnknownOutcome (the task may still be running);
+// explicit cancellation produces a plain error (the caller chose to stop).
+func (p *Poller) classifyCtxDone(upid, node string, ctx context.Context) *TaskResult {
+	if ctx.Err() == context.DeadlineExceeded {
+		return &TaskResult{
+			UPID:  upid,
+			Error: newUnknownOutcomeFromErr(upid, node, p.endpoint, ctx.Err()),
+		}
+	}
+	return &TaskResult{
+		UPID:  upid,
+		Error: fmt.Errorf("task polling cancelled: %w", ctx.Err()),
 	}
 }
 

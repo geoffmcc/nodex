@@ -3,13 +3,16 @@ package client
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/transport/httpclient"
 )
 
@@ -779,5 +782,287 @@ func TestProviderError_MockHTTPServer_RedactsSecrets(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), secret) {
 		t.Errorf("error leaked secret: %s", err.Error())
+	}
+}
+
+// --- CR-001: Endpoint host validation tests ---
+
+func TestValidateEndpoint_MatchingHost_SamePort(t *testing.T) {
+	c := &Client{endpointHost: "pve.example.com"}
+	reqURL, _ := url.Parse("https://pve.example.com:8006/api2/json/nodes")
+	if err := c.validateEndpoint(reqURL); err != nil {
+		t.Fatalf("validateEndpoint: unexpected error: %v", err)
+	}
+}
+
+func TestValidateEndpoint_MatchingHost_DifferentPort(t *testing.T) {
+	c := &Client{endpointHost: "pve.example.com"}
+	reqURL, _ := url.Parse("https://pve.example.com:9006/api2/json/nodes")
+	if err := c.validateEndpoint(reqURL); err != nil {
+		t.Fatalf("validateEndpoint: port should be ignored, got: %v", err)
+	}
+}
+
+func TestValidateEndpoint_MatchingHost_NoPort(t *testing.T) {
+	c := &Client{endpointHost: "pve.example.com"}
+	reqURL, _ := url.Parse("https://pve.example.com/api2/json/nodes")
+	if err := c.validateEndpoint(reqURL); err != nil {
+		t.Fatalf("validateEndpoint: unexpected error: %v", err)
+	}
+}
+
+func TestValidateEndpoint_CaseInsensitive(t *testing.T) {
+	c := &Client{endpointHost: "pve.example.com"}
+	reqURL, _ := url.Parse("https://PVE.EXAMPLE.COM:8006/api2/json/nodes")
+	if err := c.validateEndpoint(reqURL); err != nil {
+		t.Fatalf("validateEndpoint: DNS names are case-insensitive, got: %v", err)
+	}
+}
+
+func TestValidateEndpoint_DifferentHost(t *testing.T) {
+	c := &Client{endpointHost: "pve.example.com"}
+	reqURL, _ := url.Parse("https://evil.attacker.com:8006/api2/json/nodes")
+	err := c.validateEndpoint(reqURL)
+	if err == nil {
+		t.Fatal("validateEndpoint: expected error for different host")
+	}
+	if !errors.Is(err, ErrEndpointMismatch) {
+		t.Fatalf("validateEndpoint: error = %v, want ErrEndpointMismatch", err)
+	}
+	if !strings.Contains(err.Error(), "evil.attacker.com") {
+		t.Fatalf("validateEndpoint: error should contain request host, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "pve.example.com") {
+		t.Fatalf("validateEndpoint: error should contain configured host, got: %v", err)
+	}
+}
+
+func TestValidateEndpoint_DifferentHost_SameBaseDomain(t *testing.T) {
+	c := &Client{endpointHost: "pve.example.com"}
+	reqURL, _ := url.Parse("https://admin.pve.example.com:8006/api2/json/nodes")
+	err := c.validateEndpoint(reqURL)
+	if err == nil {
+		t.Fatal("validateEndpoint: expected error for subdomain mismatch")
+	}
+	if !errors.Is(err, ErrEndpointMismatch) {
+		t.Fatalf("validateEndpoint: error = %v, want ErrEndpointMismatch", err)
+	}
+}
+
+func TestValidateEndpoint_EmptyRequestHost(t *testing.T) {
+	c := &Client{endpointHost: "pve.example.com"}
+	reqURL := &url.URL{Scheme: "https", Path: "/api2/json"}
+	err := c.validateEndpoint(reqURL)
+	if err == nil {
+		t.Fatal("validateEndpoint: expected error for empty request host")
+	}
+	if !errors.Is(err, ErrEndpointMismatch) {
+		t.Fatalf("validateEndpoint: error = %v, want ErrEndpointMismatch", err)
+	}
+}
+
+func TestValidateEndpoint_NilURL(t *testing.T) {
+	c := &Client{endpointHost: "pve.example.com"}
+	err := c.validateEndpoint(nil)
+	if err == nil {
+		t.Fatal("validateEndpoint: expected error for nil URL")
+	}
+	if !errors.Is(err, ErrEndpointMismatch) {
+		t.Fatalf("validateEndpoint: error = %v, want ErrEndpointMismatch", err)
+	}
+}
+
+func TestValidateEndpoint_EmptyEndpointHost_SkipsValidation(t *testing.T) {
+	// Test-only clients constructed without New() have empty endpointHost;
+	// validation is skipped so existing tests remain functional.
+	c := &Client{endpointHost: ""}
+	reqURL, _ := url.Parse("https://evil.attacker.com:8006/api2/json/nodes")
+	if err := c.validateEndpoint(reqURL); err != nil {
+		t.Fatalf("validateEndpoint: empty endpointHost should skip validation, got: %v", err)
+	}
+}
+
+func TestValidateEndpoint_IPAddress_Matches(t *testing.T) {
+	c := &Client{endpointHost: "192.168.1.100"}
+	reqURL, _ := url.Parse("https://192.168.1.100:8006/api2/json/nodes")
+	if err := c.validateEndpoint(reqURL); err != nil {
+		t.Fatalf("validateEndpoint: IP address match should succeed, got: %v", err)
+	}
+}
+
+func TestValidateEndpoint_IPAddress_Different(t *testing.T) {
+	c := &Client{endpointHost: "192.168.1.100"}
+	reqURL, _ := url.Parse("https://10.0.0.1:8006/api2/json/nodes")
+	err := c.validateEndpoint(reqURL)
+	if err == nil {
+		t.Fatal("validateEndpoint: expected error for different IP address")
+	}
+	if !errors.Is(err, ErrEndpointMismatch) {
+		t.Fatalf("validateEndpoint: error = %v, want ErrEndpointMismatch", err)
+	}
+}
+
+func TestValidateEndpoint_IPv6_Matches(t *testing.T) {
+	c := &Client{endpointHost: "::1"}
+	reqURL, _ := url.Parse("https://[::1]:8006/api2/json/nodes")
+	if err := c.validateEndpoint(reqURL); err != nil {
+		t.Fatalf("validateEndpoint: IPv6 match should succeed, got: %v", err)
+	}
+}
+
+func TestSendMutation_BlocksWrongHost(t *testing.T) {
+	// Create a test server that should NOT receive any request.
+	var received int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"ok"}`))
+	}))
+	defer s.Close()
+
+	// Create a client pointing at a DIFFERENT endpoint host.
+	// The test server's URL host won't match endpointHost.
+	c := &Client{
+		endpointHost: "wrong-host.example.com",
+		baseURL:      s.URL,
+		client:       httpclient.New(),
+	}
+	var result map[string]interface{}
+	err := c.post(context.Background(), "/test", url.Values{}, &result)
+	if err == nil {
+		t.Fatal("sendMutation: expected error for wrong host")
+	}
+	if !errors.Is(err, ErrEndpointMismatch) {
+		t.Fatalf("sendMutation: error = %v, want ErrEndpointMismatch", err)
+	}
+	if received > 0 {
+		t.Fatalf("sendMutation: request reached server despite wrong host (received=%d)", received)
+	}
+}
+
+func TestSendMutation_AllowsCorrectHost(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"ok"}`))
+	}))
+	defer s.Close()
+
+	// Parse the test server URL to extract its host for endpointHost.
+	sURL, _ := url.Parse(s.URL)
+	c := &Client{
+		endpointHost: sURL.Hostname(),
+		baseURL:      s.URL,
+		client:       httpclient.New(),
+	}
+	var result map[string]interface{}
+	err := c.post(context.Background(), "/test", url.Values{}, &result)
+	if err != nil {
+		t.Fatalf("sendMutation: unexpected error for correct host: %v", err)
+	}
+}
+
+func TestPutMutation_BlocksWrongHost(t *testing.T) {
+	var received int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"ok"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{
+		endpointHost: "wrong-host.example.com",
+		baseURL:      s.URL,
+		client:       httpclient.New(),
+	}
+	var result map[string]interface{}
+	err := c.put(context.Background(), "/test", url.Values{}, &result)
+	if err == nil {
+		t.Fatal("sendMutation: expected error for wrong host")
+	}
+	if !errors.Is(err, ErrEndpointMismatch) {
+		t.Fatalf("sendMutation: error = %v, want ErrEndpointMismatch", err)
+	}
+	if received > 0 {
+		t.Fatalf("sendMutation: PUT request reached server despite wrong host")
+	}
+}
+
+func TestDelMutation_BlocksWrongHost(t *testing.T) {
+	var received int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":"ok"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{
+		endpointHost: "wrong-host.example.com",
+		baseURL:      s.URL,
+		client:       httpclient.New(),
+	}
+	var result map[string]interface{}
+	err := c.del(context.Background(), "/test", &result)
+	if err == nil {
+		t.Fatal("sendMutation: expected error for wrong host")
+	}
+	if !errors.Is(err, ErrEndpointMismatch) {
+		t.Fatalf("sendMutation: error = %v, want ErrEndpointMismatch", err)
+	}
+	if received > 0 {
+		t.Fatalf("sendMutation: DELETE request reached server despite wrong host")
+	}
+}
+
+func TestGet_NotBlockedByEndpointGuard(t *testing.T) {
+	// GET requests should NOT be subject to endpoint validation.
+	var received int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"version":"8.2"}}`))
+	}))
+	defer s.Close()
+
+	// Client with a wrong endpointHost should still allow GET.
+	c := &Client{
+		endpointHost: "wrong-host.example.com",
+		baseURL:      s.URL,
+		client:       httpclient.New(),
+	}
+	var out VersionResponse
+	err := c.get(context.Background(), "/version", &out)
+	if err != nil {
+		t.Fatalf("get: should not be blocked by endpoint guard, got: %v", err)
+	}
+	if received != 1 {
+		t.Fatalf("get: expected request to reach server, received=%d", received)
+	}
+}
+
+func TestNewClient_SetsEndpointHost(t *testing.T) {
+	c, err := New("https://pve.example.com:8006", &domain.Credentials{
+		TokenID:     "user@pam!tok",
+		TokenSecret: "secret",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if c.endpointHost != "pve.example.com" {
+		t.Fatalf("endpointHost = %q, want %q", c.endpointHost, "pve.example.com")
+	}
+}
+
+func TestNewClient_IPAddress_EndpointHost(t *testing.T) {
+	c, err := New("https://10.0.0.1:8006", &domain.Credentials{
+		TokenID:     "user@pam!tok",
+		TokenSecret: "secret",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if c.endpointHost != "10.0.0.1" {
+		t.Fatalf("endpointHost = %q, want %q", c.endpointHost, "10.0.0.1")
 	}
 }

@@ -39,11 +39,12 @@ const (
 
 // Client is a Proxmox API client.
 type Client struct {
-	endpoint string
-	baseURL  string
-	client   *httpclient.Client
-	token    string
-	version  *VersionData
+	endpoint     string
+	endpointHost string // hostname only (no port), extracted from endpoint at construction
+	baseURL      string
+	client       *httpclient.Client
+	token        string
+	version      *VersionData
 }
 
 // New creates a new Proxmox API client.
@@ -52,6 +53,13 @@ func New(endpoint string, creds *domain.Credentials, opts ...httpclient.Option) 
 	if err != nil {
 		return nil, err
 	}
+
+	// Parse the normalized endpoint to extract the hostname for endpoint validation.
+	parsed, err := url.Parse(normalized)
+	if err != nil {
+		return nil, fmt.Errorf("parse endpoint: %w", err)
+	}
+
 	c := httpclient.New(opts...)
 	base := strings.TrimRight(normalized, "/") + DefaultAPIPath
 
@@ -61,10 +69,11 @@ func New(endpoint string, creds *domain.Credentials, opts ...httpclient.Option) 
 	}
 
 	return &Client{
-		endpoint: normalized,
-		baseURL:  base,
-		client:   c,
-		token:    token,
+		endpoint:     normalized,
+		endpointHost: parsed.Hostname(),
+		baseURL:      base,
+		client:       c,
+		token:        token,
 	}, nil
 }
 
@@ -88,6 +97,36 @@ func NormalizeEndpoint(endpoint string) (string, error) {
 	}
 	u.Path, u.RawPath, u.RawQuery, u.Fragment = "", "", "", ""
 	return strings.TrimRight(u.String(), "/"), nil
+}
+
+// ErrEndpointMismatch is returned when a mutating request targets a host
+// that does not match the configured Proxmox endpoint.
+var ErrEndpointMismatch = fmt.Errorf("request host does not match configured endpoint")
+
+// validateEndpoint checks that the request URL's host matches the configured
+// endpoint host, ignoring port. This prevents mutating requests from being
+// sent to an unintended host due to redirect, misconfiguration, or SSRF.
+//
+// When endpointHost is empty (test-only clients constructed without New()),
+// the check is skipped. Production clients created via New() always have
+// endpointHost populated.
+func (c *Client) validateEndpoint(reqURL *url.URL) error {
+	if c.endpointHost == "" {
+		return nil // No configured endpoint to validate against (test-only client).
+	}
+	if reqURL == nil {
+		return fmt.Errorf("%w: request URL is nil", ErrEndpointMismatch)
+	}
+	reqHost := reqURL.Hostname()
+	if reqHost == "" {
+		return fmt.Errorf("%w: request URL has no host", ErrEndpointMismatch)
+	}
+	cfgHost := c.endpointHost
+	if !strings.EqualFold(reqHost, cfgHost) {
+		return fmt.Errorf("%w: request host %q does not match configured endpoint host %q",
+			ErrEndpointMismatch, reqHost, cfgHost)
+	}
+	return nil
 }
 
 // Version returns the Proxmox version.
@@ -1269,6 +1308,10 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
+	// CR-001: Block mutating requests targeting a host other than the configured endpoint.
+	if err := c.validateEndpoint(req.URL); err != nil {
+		return "", err
+	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	if c.token != "" {
 		req.Header.Set("Authorization", "PVEAPIToken="+c.token)
@@ -2385,6 +2428,10 @@ func (c *Client) sendMutation(ctx context.Context, method, path string, body url
 	req, err := http.NewRequestWithContext(ctx, method, u, bodyReader)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
+	}
+	// CR-001: Block mutating requests targeting a host other than the configured endpoint.
+	if err := c.validateEndpoint(req.URL); err != nil {
+		return err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
