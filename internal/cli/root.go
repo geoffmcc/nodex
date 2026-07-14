@@ -294,9 +294,15 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if len(args) > 0 {
 			subName := args[0]
 			if sub, ok := cmd.sub[subName]; ok {
+				if err := checkAllSupported(cmdCtx.Opts.All, name, subName); err != nil {
+					return err
+				}
 				return sub.run(ctx, cmdCtx, args[1:])
 			}
 			if cmd.run != nil {
+				if err := checkAllSupported(cmdCtx.Opts.All, name); err != nil {
+					return err
+				}
 				return cmd.run(ctx, cmdCtx, args)
 			}
 			return app.NewExitError(
@@ -305,6 +311,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			)
 		}
 		if cmd.run != nil {
+			if err := checkAllSupported(cmdCtx.Opts.All, name); err != nil {
+				return err
+			}
 			return cmd.run(ctx, cmdCtx, args)
 		}
 		printSubcommandUsage(stdout, cmd)
@@ -312,10 +321,32 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 
 	if cmd.run != nil {
+		if err := checkAllSupported(cmdCtx.Opts.All, name); err != nil {
+			return err
+		}
 		return cmd.run(ctx, cmdCtx, args)
 	}
 
 	return nil
+}
+
+// checkAllSupported returns an error when --all is used with a command that
+// does not support multi-profile aggregation.  Only a small, explicit set of
+// read-only inspection commands fan out across profiles.  Mutations and other
+// operations require explicit design before --all is enabled.
+func checkAllSupported(all bool, path ...string) error {
+	if !all {
+		return nil
+	}
+	key := strings.Join(path, " ")
+	switch key {
+	case "status", "node list", "vm list", "container list":
+		return nil
+	}
+	return app.NewExitError(
+		fmt.Errorf("--all is not supported for %q; --all works with inspection commands: status, node list, vm list, container list", key),
+		app.ExitUsage,
+	)
 }
 
 func parseGlobal(args []string) (Options, []string, error) {

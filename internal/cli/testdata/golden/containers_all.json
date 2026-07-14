@@ -1,22 +1,42 @@
-[
-  {
-    "profile": "e2e",
-    "id": "e2e-node/200",
-    "name": "e2e-ct",
-    "status": "running",
-    "node": "e2e-node",
-    "os": "debian",
-    "memory": 512,
-    "disk": 1024
-  },
-  {
-    "profile": "lab",
-    "id": "e2e-node/200",
-    "name": "e2e-ct",
-    "status": "running",
-    "node": "e2e-node",
-    "os": "debian",
-    "memory": 512,
-    "disk": 1024
+{
+  "schema": 1,
+  "results": [
+    {
+      "profile": "e2e",
+      "success": true,
+      "data": [
+        {
+          "id": "e2e-node/200",
+          "name": "e2e-ct",
+          "status": "running",
+          "node": "e2e-node",
+          "os": "debian",
+          "memory": 512,
+          "disk": 1024
+        }
+      ],
+      "duration": "0s"
+    },
+    {
+      "profile": "lab",
+      "success": true,
+      "data": [
+        {
+          "id": "e2e-node/200",
+          "name": "e2e-ct",
+          "status": "running",
+          "node": "e2e-node",
+          "os": "debian",
+          "memory": 512,
+          "disk": 1024
+        }
+      ],
+      "duration": "0s"
+    }
+  ],
+  "summary": {
+    "total": 2,
+    "success": 2,
+    "failed": 0
   }
-]
+}
