@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestDoRetriesOn5xx(t *testing.T) {
@@ -480,6 +481,28 @@ func TestDoAllowsRedirectToSameHost(t *testing.T) {
 	_ = resp.Body.Close()
 	if atomic.LoadInt32(&calls) != 2 {
 		t.Errorf("calls = %d, want 2 (initial + redirect)", calls)
+	}
+}
+
+func TestDoCapsSameOriginRedirectsAtTenHops(t *testing.T) {
+	var calls int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := atomic.AddInt32(&calls, 1)
+		http.Redirect(w, r, fmt.Sprintf("/redirect-%d", call), http.StatusFound)
+	}))
+	defer s.Close()
+
+	c := New(WithMaxRetries(0), WithTimeout(2*time.Second))
+	req, _ := http.NewRequest(http.MethodGet, s.URL+"/redirect-0", nil)
+	_, err := c.Do(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected redirect cap error")
+	}
+	if !strings.Contains(err.Error(), "stopped after 10 redirects") {
+		t.Fatalf("error = %q, want redirect cap", err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 10 {
+		t.Fatalf("calls = %d, want exactly 10 before redirect cap", got)
 	}
 }
 
