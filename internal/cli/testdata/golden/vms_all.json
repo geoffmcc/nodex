@@ -1,0 +1,22 @@
+[
+  {
+    "profile": "e2e",
+    "id": "e2e-node/100",
+    "name": "e2e-vm",
+    "status": "running",
+    "node": "e2e-node",
+    "cpu": 2,
+    "memory": 1024,
+    "disk": 2048
+  },
+  {
+    "profile": "lab",
+    "id": "e2e-node/100",
+    "name": "e2e-vm",
+    "status": "running",
+    "node": "e2e-node",
+    "cpu": 2,
+    "memory": 1024,
+    "disk": 2048
+  }
+]

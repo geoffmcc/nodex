@@ -13,6 +13,9 @@ import (
 )
 
 func runNodeList(ctx context.Context, cmdCtx *Context, args []string) error {
+	if cmdCtx.Opts.All {
+		return runNodesAll(ctx, cmdCtx, args)
+	}
 	if len(args) != 0 {
 		return app.NewExitError(fmt.Errorf("usage: nodex node list"), app.ExitUsage)
 	}
@@ -187,6 +190,9 @@ func writeNodes(cmdCtx *Context, nodes []domain.Node) error {
 }
 
 func runVMList(ctx context.Context, cmdCtx *Context, args []string) error {
+	if cmdCtx.Opts.All {
+		return runVMsAll(ctx, cmdCtx, args)
+	}
 	if len(args) != 0 {
 		return app.NewExitError(fmt.Errorf("usage: nodex vm list"), app.ExitUsage)
 	}
@@ -285,6 +291,9 @@ func writeVMs(cmdCtx *Context, vms []domain.VM) error {
 }
 
 func runContainerList(ctx context.Context, cmdCtx *Context, args []string) error {
+	if cmdCtx.Opts.All {
+		return runContainersAll(ctx, cmdCtx, args)
+	}
 	if len(args) != 0 {
 		return app.NewExitError(fmt.Errorf("usage: nodex container list"), app.ExitUsage)
 	}
@@ -834,6 +843,9 @@ type statusStorage struct {
 }
 
 func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
+	if cmdCtx.Opts.All {
+		return runStatusAll(ctx, cmdCtx, args)
+	}
 	if len(args) != 0 {
 		return app.NewExitError(fmt.Errorf("usage: nodex status"), app.ExitUsage)
 	}

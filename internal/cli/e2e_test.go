@@ -446,3 +446,265 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		})
 	}
 }
+
+// Phase 7: Multi-Cluster
+
+func TestRunProfileExport(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"profile", "export", "e2e"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("profile export: %v stderr=%q", err, stderr.String())
+	}
+	out := stdout.String()
+	// Sanitized export should not include credential_ref.
+	if strings.Contains(out, "credential_ref") || strings.Contains(out, "env:e2e") {
+		t.Fatalf("profile export leaked credential_ref: %s", out)
+	}
+	if !strings.Contains(out, `"name": "e2e"`) {
+		t.Fatalf("profile export missing name: %s", out)
+	}
+	if !strings.Contains(out, `"provider": "nodex-e2e-mock"`) {
+		t.Fatalf("profile export missing provider: %s", out)
+	}
+}
+
+func TestRunProfileImport(t *testing.T) {
+	isolateConfigAndHome(t)
+
+	// Seed config with one existing profile.
+	seed := config.DefaultConfig()
+	seed.Profiles["existing"] = config.Profile{Provider: "proxmox"}
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := config.WriteTo(seed, path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	// Simulate stdin for import.
+	importJSON := `{"provider": "proxmox", "endpoint": "https://pve2.example.invalid:8006", "ca_file": "/etc/ssl/ca.pem"}`
+	oldStdin := stdinReader
+	stdinReader = strings.NewReader(importJSON)
+	t.Cleanup(func() { stdinReader = oldStdin })
+
+	var stdout, stderr bytes.Buffer
+	err = Run(context.Background(), []string{"profile", "import", "lab2"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("profile import: %v stderr=%q", err, stderr.String())
+	}
+
+	cfg, err := config.Read()
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	p, ok := cfg.Profiles["lab2"]
+	if !ok {
+		t.Fatal("imported profile not found")
+	}
+	if p.Provider != "proxmox" {
+		t.Fatalf("provider = %q, want proxmox", p.Provider)
+	}
+	if p.Endpoint != "https://pve2.example.invalid:8006" {
+		t.Fatalf("endpoint = %q", p.Endpoint)
+	}
+	if p.CAFile != "/etc/ssl/ca.pem" {
+		t.Fatalf("ca_file = %q", p.CAFile)
+	}
+}
+
+func TestRunProfileImportAlreadyExists(t *testing.T) {
+	isolateConfigAndHome(t)
+
+	seed := config.DefaultConfig()
+	seed.Profiles["lab2"] = config.Profile{Provider: "proxmox"}
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := config.WriteTo(seed, path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	importJSON := `{"provider": "proxmox", "endpoint": "https://pve.example.invalid:8006"}`
+	oldStdin := stdinReader
+	stdinReader = strings.NewReader(importJSON)
+	t.Cleanup(func() { stdinReader = oldStdin })
+
+	var stdout, stderr bytes.Buffer
+	err = Run(context.Background(), []string{"profile", "import", "lab2"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for duplicate profile import")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected 'already exists' error, got: %v", err)
+	}
+}
+
+func TestRunProfileExportNotFound(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"profile", "export", "nonexistent"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for nonexistent profile")
+	}
+}
+
+func TestRunProfileExportNoArgs(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"profile", "export"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing name")
+	}
+}
+
+func TestRunProfileImportNoArgs(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"profile", "import"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing name")
+	}
+}
+
+func TestRunStatusAll(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--output", "json", "--all", "status"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("status --all: %v stderr=%q", err, stderr.String())
+	}
+	out := stdout.String()
+	// Should have entries for both profiles.
+	if !strings.Contains(out, `"profile": "e2e"`) {
+		t.Fatalf("status --all missing e2e profile: %s", out)
+	}
+	if !strings.Contains(out, `"profile": "lab"`) {
+		t.Fatalf("status --all missing lab profile: %s", out)
+	}
+}
+
+func TestRunNodesAll(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--output", "json", "--all", "node", "list"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("nodes --all: %v stderr=%q", err, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"profile": "e2e"`) {
+		t.Fatalf("nodes --all missing e2e profile: %s", out)
+	}
+	if !strings.Contains(out, `"profile": "lab"`) {
+		t.Fatalf("nodes --all missing lab profile: %s", out)
+	}
+	if !strings.Contains(out, `"name": "e2e-node"`) {
+		t.Fatalf("nodes --all missing node: %s", out)
+	}
+}
+
+func TestRunVMsAll(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--output", "json", "--all", "vm", "list"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("vms --all: %v stderr=%q", err, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"profile": "e2e"`) {
+		t.Fatalf("vms --all missing e2e profile: %s", out)
+	}
+	if !strings.Contains(out, `"profile": "lab"`) {
+		t.Fatalf("vms --all missing lab profile: %s", out)
+	}
+	if !strings.Contains(out, `"id": "e2e-node/100"`) {
+		t.Fatalf("vms --all missing VM: %s", out)
+	}
+}
+
+func TestRunContainersAll(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--output", "json", "--all", "container", "list"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("containers --all: %v stderr=%q", err, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"profile": "e2e"`) {
+		t.Fatalf("containers --all missing e2e profile: %s", out)
+	}
+	if !strings.Contains(out, `"profile": "lab"`) {
+		t.Fatalf("containers --all missing lab profile: %s", out)
+	}
+	if !strings.Contains(out, `"id": "e2e-node/200"`) {
+		t.Fatalf("containers --all missing container: %s", out)
+	}
+}
+
+func TestRunAllTableOutput(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "status_all_table", args: []string{"--output", "table", "--all", "status"}, want: []string{"PROFILE", "ENDPOINT", "VERSION", "NODES", "VMS"}},
+		{name: "nodes_all_table", args: []string{"--output", "table", "--all", "node", "list"}, want: []string{"PROFILE", "NAME", "STATUS"}},
+		{name: "vms_all_table", args: []string{"--output", "table", "--all", "vm", "list"}, want: []string{"PROFILE", "ID", "NAME", "STATUS"}},
+		{name: "containers_all_table", args: []string{"--output", "table", "--all", "container", "list"}, want: []string{"PROFILE", "ID", "NAME", "STATUS"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err != nil {
+				t.Fatalf("Run(%v): %v stderr=%q", tt.args, err, stderr.String())
+			}
+			out := stdout.String()
+			for _, w := range tt.want {
+				if !strings.Contains(out, w) {
+					t.Fatalf("output missing %q:\n%s", w, out)
+				}
+			}
+		})
+	}
+}
+
+func setupMultiProfileConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("NODEX_E2E_TOKEN", "e2e-token")
+	cfg := config.DefaultConfig()
+	cfg.CurrentProfile = "e2e"
+	cfg.Profiles["e2e"] = config.Profile{
+		Provider:      e2eMockProviderName,
+		Endpoint:      "https://e2e.example.invalid",
+		CredentialRef: "env:e2e",
+	}
+	cfg.Profiles["lab"] = config.Profile{
+		Provider:      e2eMockProviderName,
+		Endpoint:      "https://e2e.example.invalid",
+		CredentialRef: "env:e2e",
+	}
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := config.WriteTo(cfg, path); err != nil {
+		t.Fatalf("seed multi-profile config: %v", err)
+	}
+}

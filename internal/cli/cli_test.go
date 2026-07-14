@@ -1055,3 +1055,130 @@ func TestWriteEmptyResourceListsAsStructuredArrays(t *testing.T) {
 		}
 	}
 }
+
+// Phase 7: Multi-Cluster tests
+
+func TestPhase7ProfileSubcommandsRegistered(t *testing.T) {
+	cmd, ok := GetCommand("profile")
+	if !ok {
+		t.Fatal("profile command not registered")
+	}
+	for _, subName := range []string{"export", "import"} {
+		if _, ok := cmd.sub[subName]; !ok {
+			t.Fatalf("profile command missing %s subcommand", subName)
+		}
+	}
+}
+
+func TestPhase7ProfileSubcommandsRejectWrongArgCount(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "export-no-name", args: []string{"profile", "export"}},
+		{name: "export-extra", args: []string{"profile", "export", "name", "extra"}},
+		{name: "import-no-name", args: []string{"profile", "import"}},
+		{name: "import-extra", args: []string{"profile", "import", "name", "extra"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err == nil {
+				t.Fatal("expected usage error")
+			}
+			var exitCode *app.ExitCoder
+			if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+				t.Fatalf("error = %v, want ExitUsage", err)
+			}
+		})
+	}
+}
+
+func TestAllFlagRejectsNoProfiles(t *testing.T) {
+	isolateConfigAndHome(t)
+	// Write empty config.
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := config.WriteTo(config.DefaultConfig(), path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	for _, args := range [][]string{
+		{"--all", "status"},
+		{"--all", "node", "list"},
+		{"--all", "vm", "list"},
+		{"--all", "container", "list"},
+	} {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), args, &stdout, &stderr)
+		if err == nil {
+			t.Fatalf("expected error for --all with no profiles: %v", args)
+		}
+		if !strings.Contains(err.Error(), "no profiles") {
+			t.Fatalf("expected 'no profiles' error, got: %v", err)
+		}
+	}
+}
+
+func TestWriteNodesAllNilHandling(t *testing.T) {
+	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+		t.Run(string(format), func(t *testing.T) {
+			var stdout bytes.Buffer
+			cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: format}}
+			if err := writeNodesAll(cmdCtx, nil); err != nil {
+				t.Fatalf("writeNodesAll nil: %v", err)
+			}
+			if got := strings.TrimSpace(stdout.String()); got != "[]" {
+				t.Fatalf("writeNodesAll nil = %q, want []", got)
+			}
+		})
+	}
+}
+
+func TestWriteVMsAllNilHandling(t *testing.T) {
+	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+		t.Run(string(format), func(t *testing.T) {
+			var stdout bytes.Buffer
+			cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: format}}
+			if err := writeVMsAll(cmdCtx, nil); err != nil {
+				t.Fatalf("writeVMsAll nil: %v", err)
+			}
+			if got := strings.TrimSpace(stdout.String()); got != "[]" {
+				t.Fatalf("writeVMsAll nil = %q, want []", got)
+			}
+		})
+	}
+}
+
+func TestWriteContainersAllNilHandling(t *testing.T) {
+	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+		t.Run(string(format), func(t *testing.T) {
+			var stdout bytes.Buffer
+			cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: format}}
+			if err := writeContainersAll(cmdCtx, nil); err != nil {
+				t.Fatalf("writeContainersAll nil: %v", err)
+			}
+			if got := strings.TrimSpace(stdout.String()); got != "[]" {
+				t.Fatalf("writeContainersAll nil = %q, want []", got)
+			}
+		})
+	}
+}
+
+func TestWriteAggregatedStatusNilHandling(t *testing.T) {
+	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+		t.Run(string(format), func(t *testing.T) {
+			var stdout bytes.Buffer
+			cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: format}}
+			if err := writeAggregatedStatus(cmdCtx, nil); err != nil {
+				t.Fatalf("writeAggregatedStatus nil: %v", err)
+			}
+			if got := strings.TrimSpace(stdout.String()); got != "[]" && got != "null" {
+				t.Fatalf("writeAggregatedStatus nil = %q, want [] or null", got)
+			}
+		})
+	}
+}
