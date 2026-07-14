@@ -39,7 +39,7 @@ internal/provider/                 Provider registry and capability helpers
 internal/provider/proxmox/         Proxmox provider implementation and resource mapping
 internal/provider/proxmox/client/  Typed Proxmox HTTP API client
 internal/redact/                   Secret redaction helpers
-internal/safety/                   Mutation safety classification, confirmation policy, dry-run support
+internal/safety/                   Mutation safety classification and confirmation policy
 internal/task/                     UPID parsing and exponential-backoff task polling
 internal/transport/httpclient/     HTTP client with TLS, timeout, retry, DoMutation, body limits
 internal/version/                  Build metadata resolution
@@ -98,9 +98,7 @@ Mutation flags:
 
 Each operation declares a `ConfirmationPolicy` with its tier, resource description, and optional type-confirm target. The `Check` method evaluates flags and interactivity mode to produce a `ConfirmationResult`.
 
-### Dry-run support
-
-The safety package provides a `DryRun` context marker. Dry-run operations are always Tier 0 (Observation). A dry run must never send a mutation to the provider.
+Non-interactive sessions fail closed when confirmation is required.
 
 ## Provider registry
 
@@ -112,7 +110,7 @@ provider.Register("proxmox", func() domain.Provider { return &proxmox.Provider{}
 
 ## Provider interface
 
-The base `domain.Provider` interface defines:
+The base `domain.Provider` interface defines six lifecycle and discovery methods:
 
 | Method | Purpose |
 |--------|---------|
@@ -120,25 +118,10 @@ The base `domain.Provider` interface defines:
 | `Version()` | Provider version |
 | `Connect()` | Initialize with endpoint and credentials |
 | `Close()` | Release resources |
+| `Health()` | Provider responsiveness check |
 | `Capabilities()` | List supported capabilities |
-| `Nodes()` | List all nodes |
-| `VMs()` | List all VMs |
-| `Containers()` | List all containers |
-| `Storage()` | List all storage pools |
-| `Cluster()` | Get cluster information |
-| `VMConfig()` | Get VM configuration |
-| `ContainerConfig()` | Get container configuration |
-| `StorageContent()` | List storage content |
-| `Tasks()` | List tasks for a node |
-| `Task()` | Get task details by UPID |
-| `VMSnapshots()` | List VM snapshots |
-| `ContainerSnapshots()` | List container snapshots |
-| `Events()` | List cluster events |
-| `Syslog()` | Get node syslog |
-| `Backups()` | List backup tasks |
-| `FirewallRules()` | List cluster firewall rules |
-| `HAResources()` | List HA resources |
-| `HAGroups()` | List HA groups |
+
+Resource inspection methods (listing nodes, VMs, containers, storage, cluster info, tasks, snapshots, events, syslog, backups, firewall rules, HA resources) live in narrow **inspector interfaces** (e.g., `NodeInspector`, `VMInspector`, `ContainerInspector`). A provider implements only the inspectors for the resource families it supports.
 
 ### Optional capability interfaces
 

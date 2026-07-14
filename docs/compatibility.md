@@ -41,7 +41,7 @@ nested resources. This convention is considered stable.
 
 ### Tier 2 — Config schema
 
-The config file format (JSON in the XDG config directory) and the profile
+The config file format (YAML in the platform-specific config directory) and the profile
 schema (`provider`, `endpoint`, `ca_file`, `credential_ref`) are additive.
 New fields may appear. Existing fields will not be removed or renamed
 without a deprecation period.
@@ -146,6 +146,15 @@ stable.
 | 10   | UnsupportedCap     | Capability not supported by provider.    |
 | 11   | PartialFailure     | Partial failure in multi-profile --all.  |
 | 12   | Provider           | Provider-specific error.                 |
+| 13   | NotFound           | Resource not found.                      |
+| 14   | Timeout            | Request or task timed out.               |
+| 15   | Cancellation       | Operation cancelled (context).           |
+| 16   | TaskFailure        | Provider task completed with failure.    |
+| 17   | ValidationError    | Request validation failure.              |
+| 18   | AmbiguousOutcome   | Outcome uncertain (UPID returned, status unknown). |
+| 19   | RateLimit          | Rate limited by provider.                |
+| 20   | OutputError        | Error writing output.                    |
+| 21   | Conflict           | Resource conflict.                       |
 | 130  | Interrupted        | SIGINT (Ctrl+C).                         |
 | 143  | SIGTERM            | SIGTERM.                                 |
 
