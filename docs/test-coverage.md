@@ -2,11 +2,16 @@
 
 Generated from `internal/cli/operations.go` — the canonical operation registry.
 
-**Legend:**
-- ✅ = Covered
-- ❌ = Not covered / not applicable
-- 🔶 = Partially covered
-- N/A = Not applicable for this category
+**Cell values:** `yes` = covered, `no` = not covered, `partial` = partly covered,
+`n/a` = not applicable for that test type.
+
+**Coverage columns:**
+
+- `Unit`: direct unit tests for command parsing, validation, safety gates, or provider calls.
+- `E2E/Mock`: CLI-level tests against mocked providers or end-to-end harnesses.
+- `Golden`: snapshot-style CLI output tests.
+- `Fuzz`: fuzz coverage for untrusted parsing or validation boundaries.
+- `Negative`: tests for invalid input, provider errors, or safety failures.
 
 ---
 
@@ -15,217 +20,217 @@ Generated from `internal/cli/operations.go` — the canonical operation registry
 | Operation Path | Tier | Unit | E2E/Mock | Golden | Fuzz | Negative |
 |---|---|---|---|---|---|---|
 | **Version & System** | | | | | | |
-| `version` | Observation | ✅ | ✅ | ❌ | N/A | ❌ |
-| `version compare` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `version parse` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `init` | Reversible | ❌ | ❌ | ❌ | N/A | ❌ |
-| `completion` | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `doctor` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
+| `version` | Observation | yes | yes | no | n/a | no |
+| `version compare` | Observation | yes | yes | no | n/a | yes |
+| `version parse` | Observation | yes | yes | no | n/a | yes |
+| `init` | Reversible | no | no | no | n/a | no |
+| `completion` | Observation | yes | no | no | n/a | no |
+| `doctor` | Observation | yes | yes | no | n/a | yes |
 | **Profile Management** | | | | | | |
-| `profile add` | Reversible | ✅ | ❌ | ❌ | N/A | ❌ |
-| `profile list` | Observation | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `profile show` | Observation | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `profile set-credentials` | Reversible | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `profile use` | Reversible | ✅ | ❌ | ❌ | N/A | ❌ |
-| `profile current` | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `profile test` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `profile remove` | Reversible | ✅ | ❌ | ❌ | N/A | ❌ |
-| `profile export` | Observation | ❌ | ✅ | ❌ | N/A | ✅ |
-| `profile import` | Reversible | ❌ | ✅ | ❌ | N/A | ✅ |
+| `profile add` | Reversible | yes | no | no | n/a | no |
+| `profile list` | Observation | yes | no | no | no | no |
+| `profile show` | Observation | yes | no | no | no | no |
+| `profile set-credentials` | Reversible | yes | yes | no | no | no |
+| `profile use` | Reversible | yes | no | no | n/a | no |
+| `profile current` | Observation | yes | no | no | n/a | no |
+| `profile test` | Observation | no | no | no | n/a | no |
+| `profile remove` | Reversible | yes | no | no | n/a | no |
+| `profile export` | Observation | no | yes | no | n/a | yes |
+| `profile import` | Reversible | no | yes | no | n/a | yes |
 | **Provider** | | | | | | |
-| `provider list` | Observation | ✅ | ✅ | ❌ | N/A | ❌ |
-| `provider capabilities` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
+| `provider list` | Observation | yes | yes | no | n/a | no |
+| `provider capabilities` | Observation | yes | yes | no | n/a | yes |
 | **Status** | | | | | | |
-| `status` | Observation | ❌ | ✅ | ❌ | N/A | ❌ |
+| `status` | Observation | no | yes | no | n/a | no |
 | **Node** | | | | | | |
-| `node list` | Observation | ✅ | ✅ | ❌ | N/A | ❌ |
-| `node show` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `node status` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `node services` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `node network` | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `node dns` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `node time` | Observation | ✅ | ❌ | ❌ | N/A | ✅ |
-| `node disks` | Observation | ✅ | ❌ | ❌ | N/A | ✅ |
-| `node certificates` | Observation | ✅ | ❌ | ❌ | N/A | ✅ |
-| `node subscription` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `node updates` | Observation | ✅ | ❌ | ❌ | N/A | ✅ |
+| `node list` | Observation | yes | yes | no | n/a | no |
+| `node show` | Observation | yes | yes | no | n/a | yes |
+| `node status` | Observation | no | no | no | n/a | no |
+| `node services` | Observation | yes | yes | no | n/a | yes |
+| `node network` | Observation | yes | no | no | n/a | no |
+| `node dns` | Observation | yes | yes | no | n/a | yes |
+| `node time` | Observation | yes | no | no | n/a | yes |
+| `node disks` | Observation | yes | no | no | n/a | yes |
+| `node certificates` | Observation | yes | no | no | n/a | yes |
+| `node subscription` | Observation | yes | yes | no | n/a | yes |
+| `node updates` | Observation | yes | no | no | n/a | yes |
 | **VM — Inspection** | | | | | | |
-| `vm list` | Observation | ✅ | ✅ | ❌ | N/A | ❌ |
-| `vm show` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `vm config` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `vm snapshots` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `vm snapshot-config` | Observation | ❌ | ✅ | ❌ | N/A | ✅ |
+| `vm list` | Observation | yes | yes | no | n/a | no |
+| `vm show` | Observation | yes | yes | no | n/a | yes |
+| `vm config` | Observation | no | no | no | n/a | no |
+| `vm snapshots` | Observation | no | no | no | n/a | no |
+| `vm snapshot-config` | Observation | no | yes | no | n/a | yes |
 | **VM — Lifecycle (Tier 1)** | | | | | | |
-| `vm start` | Reversible | ✅ | ✅ | ❌ | N/A | ✅ |
-| `vm stop` | Reversible | ✅ | ✅ | ❌ | N/A | ✅ |
-| `vm shutdown` | Reversible | ✅ | ✅ | ❌ | N/A | ✅ |
-| `vm suspend` | Reversible | ✅ | ❌ | ❌ | N/A | ✅ |
-| `vm resume` | Reversible | ✅ | ❌ | ❌ | N/A | ✅ |
-| `vm pause` | Reversible | ✅ | ❌ | ❌ | N/A | ✅ |
-| `vm unpause` | Reversible | ✅ | ❌ | ❌ | N/A | ✅ |
+| `vm start` | Reversible | yes | yes | no | n/a | yes |
+| `vm stop` | Reversible | yes | yes | no | n/a | yes |
+| `vm shutdown` | Reversible | yes | yes | no | n/a | yes |
+| `vm suspend` | Reversible | yes | no | no | n/a | yes |
+| `vm resume` | Reversible | yes | no | no | n/a | yes |
+| `vm pause` | Reversible | yes | no | no | n/a | yes |
+| `vm unpause` | Reversible | yes | no | no | n/a | yes |
 | **VM — Lifecycle (Tier 2)** | | | | | | |
-| `vm reset` | Disruptive | ✅ | ✅ | ❌ | N/A | ✅ |
-| `vm reboot` | Disruptive | ✅ | ✅ | ❌ | N/A | ✅ |
+| `vm reset` | Disruptive | yes | yes | no | n/a | yes |
+| `vm reboot` | Disruptive | yes | yes | no | n/a | yes |
 | **VM — Config Mutations** | | | | | | |
-| `vm update` | Reversible | ✅ | ✅ | ❌ | ❌ | ✅ |
-| `vm cloud-init` | Reversible | ✅ | ✅ | ❌ | N/A | ✅ |
+| `vm update` | Reversible | yes | yes | no | no | yes |
+| `vm cloud-init` | Reversible | yes | yes | no | n/a | yes |
 | **VM — Destructive** | | | | | | |
-| `vm delete` | Destructive | ✅ | ✅ | ❌ | N/A | ✅ |
+| `vm delete` | Destructive | yes | yes | no | n/a | yes |
 | **VM — Disruptive** | | | | | | |
-| `vm template` | Disruptive | ✅ | ✅ | ❌ | N/A | ✅ |
-| `vm migrate` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `vm clone` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `vm disk resize` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `vm disk move` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
+| `vm template` | Disruptive | yes | yes | no | n/a | yes |
+| `vm migrate` | Disruptive | yes | no | no | n/a | no |
+| `vm clone` | Disruptive | yes | no | no | n/a | no |
+| `vm disk resize` | Disruptive | yes | no | no | n/a | no |
+| `vm disk move` | Disruptive | yes | no | no | n/a | no |
 | **VM — Snapshot Mutations** | | | | | | |
-| `vm snapshot create` | Reversible | ✅ | ✅ | ❌ | N/A | ✅ |
-| `vm snapshot delete` | Destructive | ✅ | ❌ | ❌ | N/A | ✅ |
-| `vm snapshot rollback` | Disruptive | ✅ | ❌ | ❌ | N/A | ✅ |
+| `vm snapshot create` | Reversible | yes | yes | no | n/a | yes |
+| `vm snapshot delete` | Destructive | yes | no | no | n/a | yes |
+| `vm snapshot rollback` | Disruptive | yes | no | no | n/a | yes |
 | **Container — Inspection** | | | | | | |
-| `container list` | Observation | ✅ | ✅ | ❌ | N/A | ❌ |
-| `container show` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `container config` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `container snapshots` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `container snapshot-config` | Observation | ❌ | ✅ | ❌ | N/A | ✅ |
+| `container list` | Observation | yes | yes | no | n/a | no |
+| `container show` | Observation | yes | yes | no | n/a | yes |
+| `container config` | Observation | no | no | no | n/a | no |
+| `container snapshots` | Observation | no | no | no | n/a | no |
+| `container snapshot-config` | Observation | no | yes | no | n/a | yes |
 | **Container — Lifecycle (Tier 1)** | | | | | | |
-| `container start` | Reversible | ✅ | ✅ | ❌ | N/A | ✅ |
-| `container stop` | Reversible | ✅ | ❌ | ❌ | N/A | ✅ |
-| `container shutdown` | Reversible | ✅ | ❌ | ❌ | N/A | ✅ |
-| `container suspend` | Reversible | ✅ | ❌ | ❌ | N/A | ✅ |
-| `container resume` | Reversible | ✅ | ❌ | ❌ | N/A | ✅ |
+| `container start` | Reversible | yes | yes | no | n/a | yes |
+| `container stop` | Reversible | yes | no | no | n/a | yes |
+| `container shutdown` | Reversible | yes | no | no | n/a | yes |
+| `container suspend` | Reversible | yes | no | no | n/a | yes |
+| `container resume` | Reversible | yes | no | no | n/a | yes |
 | **Container — Lifecycle (Tier 2)** | | | | | | |
-| `container reboot` | Disruptive | ✅ | ❌ | ❌ | N/A | ✅ |
+| `container reboot` | Disruptive | yes | no | no | n/a | yes |
 | **Container — Config** | | | | | | |
-| `container update` | Reversible | ✅ | ✅ | ❌ | ❌ | ✅ |
+| `container update` | Reversible | yes | yes | no | no | yes |
 | **Container — Destructive** | | | | | | |
-| `container delete` | Destructive | ✅ | ✅ | ❌ | N/A | ✅ |
+| `container delete` | Destructive | yes | yes | no | n/a | yes |
 | **Container — Disruptive** | | | | | | |
-| `container template` | Disruptive | ✅ | ✅ | ❌ | N/A | ✅ |
-| `container migrate` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `container clone` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
+| `container template` | Disruptive | yes | yes | no | n/a | yes |
+| `container migrate` | Disruptive | yes | no | no | n/a | no |
+| `container clone` | Disruptive | yes | no | no | n/a | no |
 | **Container — Snapshot Mutations** | | | | | | |
-| `container snapshot create` | Reversible | ✅ | ❌ | ❌ | N/A | ✅ |
-| `container snapshot delete` | Destructive | ✅ | ❌ | ❌ | N/A | ✅ |
-| `container snapshot rollback` | Disruptive | ✅ | ❌ | ❌ | N/A | ✅ |
+| `container snapshot create` | Reversible | yes | no | no | n/a | yes |
+| `container snapshot delete` | Destructive | yes | no | no | n/a | yes |
+| `container snapshot rollback` | Disruptive | yes | no | no | n/a | yes |
 | **Storage** | | | | | | |
-| `storage list` | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `storage show` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `storage content` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `storage upload` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `storage download` | Reversible | ❌ | ❌ | ❌ | N/A | ❌ |
-| `storage delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
+| `storage list` | Observation | yes | no | no | n/a | no |
+| `storage show` | Observation | yes | yes | no | n/a | yes |
+| `storage content` | Observation | no | no | no | n/a | no |
+| `storage upload` | Disruptive | yes | no | no | n/a | no |
+| `storage download` | Reversible | no | no | no | n/a | no |
+| `storage delete` | Destructive | yes | no | no | n/a | no |
 | **Cluster** | | | | | | |
-| `cluster status` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `cluster log` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
+| `cluster status` | Observation | no | no | no | n/a | no |
+| `cluster log` | Observation | no | no | no | n/a | no |
 | **Events / Logs** | | | | | | |
-| `event list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `log` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
+| `event list` | Observation | no | no | no | n/a | no |
+| `log` | Observation | no | no | no | n/a | no |
 | **Task** | | | | | | |
-| `task list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `task show` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
+| `task list` | Observation | no | no | no | n/a | no |
+| `task show` | Observation | no | no | no | n/a | no |
 | **Backup** | | | | | | |
-| `backup list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `backup content` | Observation | ❌ | ✅ | ❌ | N/A | ✅ |
-| `backup create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `backup restore` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `backup job list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `backup job show` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `backup job create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `backup job update` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `backup job delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
+| `backup list` | Observation | no | no | no | n/a | no |
+| `backup content` | Observation | no | yes | no | n/a | yes |
+| `backup create` | Disruptive | yes | no | no | n/a | no |
+| `backup restore` | Disruptive | yes | no | no | n/a | no |
+| `backup job list` | Observation | no | no | no | n/a | no |
+| `backup job show` | Observation | no | no | no | n/a | no |
+| `backup job create` | Disruptive | yes | no | no | n/a | no |
+| `backup job update` | Disruptive | yes | no | no | n/a | no |
+| `backup job delete` | Destructive | yes | no | no | n/a | no |
 | **Firewall** | | | | | | |
-| `firewall list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `firewall aliases` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `firewall ipsets` | Observation | ✅ | ❌ | ❌ | N/A | ✅ |
-| `firewall security-groups` | Observation | ✅ | ❌ | ❌ | N/A | ✅ |
-| `firewall node-rules` | Observation | ❌ | ❌ | ❌ | N/A | ✅ |
-| `firewall vm-rules` | Observation | ❌ | ❌ | ❌ | N/A | ✅ |
-| `firewall rule create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall rule update` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall rule delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall alias create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall alias delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall ipset create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall ipset entry add` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall ipset entry remove` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall ipset delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall group create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall group delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall options update` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
+| `firewall list` | Observation | no | no | no | n/a | no |
+| `firewall aliases` | Observation | yes | yes | no | n/a | yes |
+| `firewall ipsets` | Observation | yes | no | no | n/a | yes |
+| `firewall security-groups` | Observation | yes | no | no | n/a | yes |
+| `firewall node-rules` | Observation | no | no | no | n/a | yes |
+| `firewall vm-rules` | Observation | no | no | no | n/a | yes |
+| `firewall rule create` | Disruptive | yes | no | no | n/a | no |
+| `firewall rule update` | Disruptive | yes | no | no | n/a | no |
+| `firewall rule delete` | Destructive | yes | no | no | n/a | no |
+| `firewall alias create` | Disruptive | yes | no | no | n/a | no |
+| `firewall alias delete` | Destructive | yes | no | no | n/a | no |
+| `firewall ipset create` | Disruptive | yes | no | no | n/a | no |
+| `firewall ipset entry add` | Disruptive | yes | no | no | n/a | no |
+| `firewall ipset entry remove` | Destructive | yes | no | no | n/a | no |
+| `firewall ipset delete` | Destructive | yes | no | no | n/a | no |
+| `firewall group create` | Disruptive | yes | no | no | n/a | no |
+| `firewall group delete` | Destructive | yes | no | no | n/a | no |
+| `firewall options update` | Disruptive | yes | no | no | n/a | no |
 | **HA** | | | | | | |
-| `ha list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `ha groups` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `ha status` | Observation | ❌ | ✅ | ❌ | N/A | ✅ |
-| `ha current` | Observation | ❌ | ❌ | ❌ | N/A | ✅ |
+| `ha list` | Observation | no | no | no | n/a | no |
+| `ha groups` | Observation | no | no | no | n/a | no |
+| `ha status` | Observation | no | yes | no | n/a | yes |
+| `ha current` | Observation | no | no | no | n/a | yes |
 | **SDN** | | | | | | |
-| `sdn zones` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `sdn vnets` | Observation | ✅ | ✅ | ❌ | N/A | ✅ |
-| `sdn zone create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn zone delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn vnet create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn vnet delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn subnet create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn subnet delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn controller create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn controller delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
+| `sdn zones` | Observation | yes | yes | no | n/a | yes |
+| `sdn vnets` | Observation | yes | yes | no | n/a | yes |
+| `sdn zone create` | Disruptive | yes | no | no | n/a | no |
+| `sdn zone delete` | Destructive | yes | no | no | n/a | no |
+| `sdn vnet create` | Disruptive | yes | no | no | n/a | no |
+| `sdn vnet delete` | Destructive | yes | no | no | n/a | no |
+| `sdn subnet create` | Disruptive | yes | no | no | n/a | no |
+| `sdn subnet delete` | Destructive | yes | no | no | n/a | no |
+| `sdn controller create` | Disruptive | yes | no | no | n/a | no |
+| `sdn controller delete` | Destructive | yes | no | no | n/a | no |
 | **Pools** | | | | | | |
-| `pools list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
+| `pools list` | Observation | no | no | no | n/a | no |
 | **Network** | | | | | | |
-| `network show` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `network apply` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `network revert` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
+| `network show` | Observation | no | no | no | n/a | no |
+| `network apply` | Disruptive | yes | no | no | n/a | no |
+| `network revert` | Disruptive | yes | no | no | n/a | no |
 | **Access** | | | | | | |
-| `access users list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `access groups list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `access roles list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `access acl list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `access domains list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `access tokens list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `access user create` | SecurityAdmin | ✅ | ❌ | ❌ | N/A | ✅ |
-| `access user delete` | SecurityAdmin | ✅ | ❌ | ❌ | N/A | ✅ |
-| `access acl add` | SecurityAdmin | ✅ | ❌ | ❌ | N/A | ✅ |
+| `access users list` | Observation | no | no | no | n/a | no |
+| `access groups list` | Observation | no | no | no | n/a | no |
+| `access roles list` | Observation | no | no | no | n/a | no |
+| `access acl list` | Observation | no | no | no | n/a | no |
+| `access domains list` | Observation | no | no | no | n/a | no |
+| `access tokens list` | Observation | no | no | no | n/a | no |
+| `access user create` | SecurityAdmin | yes | no | no | n/a | yes |
+| `access user delete` | SecurityAdmin | yes | no | no | n/a | yes |
+| `access acl add` | SecurityAdmin | yes | no | no | n/a | yes |
 | **Ceph** | | | | | | |
-| `ceph status` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `ceph osd list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `ceph mon list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `ceph pool list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `ceph osd create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `ceph osd out` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `ceph osd in` | Reversible | ✅ | ❌ | ❌ | N/A | ❌ |
-| `ceph osd destroy` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `ceph pool create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `ceph pool destroy` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
+| `ceph status` | Observation | no | no | no | n/a | no |
+| `ceph osd list` | Observation | no | no | no | n/a | no |
+| `ceph mon list` | Observation | no | no | no | n/a | no |
+| `ceph pool list` | Observation | no | no | no | n/a | no |
+| `ceph osd create` | Disruptive | yes | no | no | n/a | no |
+| `ceph osd out` | Disruptive | yes | no | no | n/a | no |
+| `ceph osd in` | Reversible | yes | no | no | n/a | no |
+| `ceph osd destroy` | Destructive | yes | no | no | n/a | no |
+| `ceph pool create` | Disruptive | yes | no | no | n/a | no |
+| `ceph pool destroy` | Destructive | yes | no | no | n/a | no |
 | **Replication** | | | | | | |
-| `replication list` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `replication show` | Observation | ❌ | ❌ | ❌ | N/A | ❌ |
-| `replication create` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `replication update` | Disruptive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `replication delete` | Destructive | ✅ | ❌ | ❌ | N/A | ❌ |
-| `replication schedule` | Reversible | ✅ | ❌ | ❌ | N/A | ❌ |
+| `replication list` | Observation | no | no | no | n/a | no |
+| `replication show` | Observation | no | no | no | n/a | no |
+| `replication create` | Disruptive | yes | no | no | n/a | no |
+| `replication update` | Disruptive | yes | no | no | n/a | no |
+| `replication delete` | Destructive | yes | no | no | n/a | no |
+| `replication schedule` | Reversible | yes | no | no | n/a | no |
 | **Dispatch Commands** | | | | | | |
-| `vm snapshot` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `vm disk` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `container snapshot` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall rule` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall alias` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall ipset` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall group` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `firewall options` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `backup job` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn zone` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn vnet` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn subnet` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `sdn controller` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `ceph osd` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `ceph mon` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `ceph pool` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `access user` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `access users` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `access groups` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `access roles` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `access acl` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `access domains` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
-| `access tokens` (route) | Observation | ✅ | ❌ | ❌ | N/A | ❌ |
+| `vm snapshot` (route) | Observation | yes | no | no | n/a | no |
+| `vm disk` (route) | Observation | yes | no | no | n/a | no |
+| `container snapshot` (route) | Observation | yes | no | no | n/a | no |
+| `firewall rule` (route) | Observation | yes | no | no | n/a | no |
+| `firewall alias` (route) | Observation | yes | no | no | n/a | no |
+| `firewall ipset` (route) | Observation | yes | no | no | n/a | no |
+| `firewall group` (route) | Observation | yes | no | no | n/a | no |
+| `firewall options` (route) | Observation | yes | no | no | n/a | no |
+| `backup job` (route) | Observation | yes | no | no | n/a | no |
+| `sdn zone` (route) | Observation | yes | no | no | n/a | no |
+| `sdn vnet` (route) | Observation | yes | no | no | n/a | no |
+| `sdn subnet` (route) | Observation | yes | no | no | n/a | no |
+| `sdn controller` (route) | Observation | yes | no | no | n/a | no |
+| `ceph osd` (route) | Observation | yes | no | no | n/a | no |
+| `ceph mon` (route) | Observation | yes | no | no | n/a | no |
+| `ceph pool` (route) | Observation | yes | no | no | n/a | no |
+| `access user` (route) | Observation | yes | no | no | n/a | no |
+| `access users` (route) | Observation | yes | no | no | n/a | no |
+| `access groups` (route) | Observation | yes | no | no | n/a | no |
+| `access roles` (route) | Observation | yes | no | no | n/a | no |
+| `access acl` (route) | Observation | yes | no | no | n/a | no |
+| `access domains` (route) | Observation | yes | no | no | n/a | no |
+| `access tokens` (route) | Observation | yes | no | no | n/a | no |
 
 ---
 
@@ -233,22 +238,22 @@ Generated from `internal/cli/operations.go` — the canonical operation registry
 
 | Category | Coverage | Details |
 |---|---|---|
-| **Safety tiers** | ✅ | All 5 tiers tested in `internal/safety/safety_test.go` |
-| **Confirmation policy** | ✅ | Tier 1-4 checks, non-interactive mode, double confirm, type confirm |
-| **Exit codes** | ✅ | All 21 exit codes covered in `internal/app/errors_test.go` |
-| **Provider errors** | ✅ | Typed classification for all HTTP status codes |
-| **Redaction** | ✅ | String, bytes, struct, JSON, YAML, nested, secret types |
-| **UPID parsing** | ✅ | Full, colon, slash formats, empty, invalid |
-| **Task polling** | ✅ | Success, failure, cancellation, timeout, transient recovery |
-| **HTTP client** | ✅ | Retry, mutation no-retry, cancellation, jitter |
-| **Config IO** | ✅ | Read, write, validate, update, lock |
-| **Path validation** | ✅ | Traversal, symlink, non-regular files |
-| **Credential backends** | ✅ | File, env, stdin, keyring |
-| **Operation registry** | ✅ | Count, tiers, uniqueness, validation |
-| **JSON/YAML output** | ✅ | Structured output for operations |
-| **Multi-profile** | ✅ | --all flag, envelopes, nil handling |
-| **Golden tests** | ✅ | CLI output snapshots in `internal/cli/golden_test.go` |
-| **Fuzz (new in WS7)** | ✅ | Endpoint, profile names, UPID, credential refs, VMID, key=value |
+| **Safety tiers** | yes | All 5 tiers tested in `internal/safety/safety_test.go` |
+| **Confirmation policy** | yes | Tier 1-4 checks, non-interactive mode, double confirm, type confirm |
+| **Exit codes** | yes | All 21 exit codes covered in `internal/app/errors_test.go` |
+| **Provider errors** | yes | Typed classification for all HTTP status codes |
+| **Redaction** | yes | String, bytes, struct, JSON, YAML, nested, secret types |
+| **UPID parsing** | yes | Full, colon, slash formats, empty, invalid |
+| **Task polling** | yes | Success, failure, cancellation, timeout, transient recovery |
+| **HTTP client** | yes | Retry, mutation no-retry, cancellation, jitter |
+| **Config IO** | yes | Read, write, validate, update, lock |
+| **Path validation** | yes | Traversal, symlink, non-regular files |
+| **Credential backends** | yes | File, env, stdin, keyring |
+| **Operation registry** | yes | Count, tiers, uniqueness, validation |
+| **JSON/YAML output** | yes | Structured output for operations |
+| **Multi-profile** | yes | --all flag, envelopes, nil handling |
+| **Golden tests** | yes | CLI output snapshots in `internal/cli/golden_test.go` |
+| **Fuzz (new in WS7)** | yes | Endpoint, profile names, UPID, credential refs, VMID, key=value |
 
 ---
 
@@ -256,10 +261,10 @@ Generated from `internal/cli/operations.go` — the canonical operation registry
 
 | Target | Status |
 |---|---|
-| `GOOS=linux GOARCH=amd64` | ✅ Builds |
-| `GOOS=windows GOARCH=amd64` | ✅ Builds |
-| `GOOS=darwin GOARCH=amd64` | ✅ Builds |
-| `GOOS=darwin GOARCH=arm64` | ✅ Builds |
+| `GOOS=linux GOARCH=amd64` | Builds |
+| `GOOS=windows GOARCH=amd64` | Builds |
+| `GOOS=darwin GOARCH=amd64` | Builds |
+| `GOOS=darwin GOARCH=arm64` | Builds |
 
 ---
 
@@ -274,7 +279,7 @@ Generated from `internal/cli/operations.go` — the canonical operation registry
 | E2E/Mock tested operations | ~55 |
 | Operations with negative tests | ~70 |
 | Operations with fuzz targets | 6 (targeted trust boundaries) |
-| Cross-platform build targets | 4/4 ✅ |
+| Cross-platform build targets | 4/4 |
 
 ---
 
@@ -287,3 +292,5 @@ Generated from `internal/cli/operations.go` — the canonical operation registry
 3. **Fuzz targets** focus on trust boundaries where untrusted input enters the system: endpoint URLs, UPID strings, credential refs, VMID parsing, and key=value argument parsing. These complement the existing unit tests for the same functions.
 
 4. **Golden tests** capture CLI output for `version`, `provider list`, `profile list`, `node list`, `vm list`, and similar read-only commands. They are stored in `internal/cli/golden_test.go`.
+
+5. **Live Proxmox tests** are not part of the default suite. Destructive live testing requires explicit opt-in, disposable resources, endpoint identity checks, and cleanup verification.
