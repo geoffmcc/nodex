@@ -109,6 +109,43 @@ func TestGetRejectsTrailingJSON(t *testing.T) {
 	}
 }
 
+func TestMutationAcceptsNilResult(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/cluster/firewall/aliases" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":null}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	if err := c.CreateFirewallAlias(context.Background(), "NodexTest", "198.51.100.10", ""); err != nil {
+		t.Fatalf("CreateFirewallAlias: %v", err)
+	}
+}
+
+func TestCreateFirewallGroupUsesGroupField(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/cluster/firewall/groups" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		if got := r.Form.Get("group"); got != "nodexgroup" {
+			t.Fatalf("group = %q, want nodexgroup", got)
+		}
+		if got := r.Form.Get("name"); got != "" {
+			t.Fatalf("name = %q, want empty", got)
+		}
+		_, _ = fmt.Fprint(w, `{"data":null}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	if err := c.CreateFirewallGroup(context.Background(), "nodexgroup", "test group"); err != nil {
+		t.Fatalf("CreateFirewallGroup: %v", err)
+	}
+}
+
 func TestNodesDecodesProxmoxNodeFields(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprint(w, `{"data":[{"id":"node/proxmox","node":"proxmox","status":"online","type":"node"},{"id":"node/backup","node":"backup","status":"offline","type":"node","uptime":42}]}`)
@@ -187,6 +224,42 @@ func TestGetNodeStatusDecodesProxmoxNodeStatusFields(t *testing.T) {
 	}
 	if len(status.LoadAvg) != 3 || status.LoadAvg[0] != 0.12 || status.LoadAvg[1] != 0.34 || status.LoadAvg[2] != 0.56 {
 		t.Fatalf("loadavg = %v", status.LoadAvg)
+	}
+}
+
+func TestGetNodeStatusDecodesStringLoadAverage(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/status" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":{"cpu":0.1,"maxcpu":4,"mem":1,"maxmem":2,"disk":3,"maxdisk":4,"uptime":5,"node":"proxmox","type":"node","status":"online","loadavg":["0.12","0.34","0.56"]}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	status, err := c.GetNodeStatus(context.Background(), "proxmox")
+	if err != nil {
+		t.Fatalf("GetNodeStatus: %v", err)
+	}
+	if len(status.LoadAvg) != 3 || status.LoadAvg[0] != 0.12 || status.LoadAvg[1] != 0.34 || status.LoadAvg[2] != 0.56 {
+		t.Fatalf("loadavg = %v", status.LoadAvg)
+	}
+}
+
+func TestGetNodeStatusDecodesObjectKSM(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/status" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":{"cpu":0.1,"maxcpu":4,"mem":1,"maxmem":2,"disk":3,"maxdisk":4,"uptime":5,"node":"proxmox","type":"node","status":"online","ksm":{"shared":0}}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	status, err := c.GetNodeStatus(context.Background(), "proxmox")
+	if err != nil {
+		t.Fatalf("GetNodeStatus: %v", err)
+	}
+	if status.Ksm != 0 {
+		t.Fatalf("ksm = %d, want zero for object response", status.Ksm)
 	}
 }
 
@@ -294,6 +367,24 @@ func TestGetVMConfigDecodesConfigFields(t *testing.T) {
 	}
 }
 
+func TestGetVMConfigDecodesStringNumericFields(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/qemu/100/config" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":{"vmid":"100","name":"test-vm","cores":"2","memory":"2048","onboot":"1","agent":"1","numa":"0","protection":"1"}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	config, err := c.GetVMConfig(context.Background(), "proxmox", 100)
+	if err != nil {
+		t.Fatalf("GetVMConfig: %v", err)
+	}
+	if config.VMID != 100 || config.CPU != 2 || config.Memory != 2048 || config.OnBoot != 1 || config.Agent != 1 || config.Protection != 1 {
+		t.Fatalf("config = %+v", config)
+	}
+}
+
 func TestGetVMConfigRejectsEmptyNode(t *testing.T) {
 	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
 	_, err := c.GetVMConfig(context.Background(), "", 100)
@@ -307,6 +398,42 @@ func TestGetVMConfigRejectsZeroVMID(t *testing.T) {
 	_, err := c.GetVMConfig(context.Background(), "proxmox", 0)
 	if err == nil || !strings.Contains(err.Error(), "VMID is required") {
 		t.Fatalf("GetVMConfig(0) error = %v, want VMID required", err)
+	}
+}
+
+func TestGetNodeTimeDecodesNumericLocalTime(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/time" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":{"timezone":"America/New_York","epoch":1784073342,"localtime":1784073342}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	got, err := c.GetNodeTime(context.Background(), "proxmox")
+	if err != nil {
+		t.Fatalf("GetNodeTime: %v", err)
+	}
+	if got.TimeZone != "America/New_York" || got.Epoch != 1784073342 || got.Local != "1784073342" {
+		t.Fatalf("node time = %+v", got)
+	}
+}
+
+func TestGetHAStatusDecodesArrayResponse(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cluster/ha/status" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"id":"vm:100","type":"service","state":"started","node":"proxmox"}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	got, err := c.GetHAStatus(context.Background())
+	if err != nil {
+		t.Fatalf("GetHAStatus: %v", err)
+	}
+	if got.Status != "ok" || got.Quorum != 1 {
+		t.Fatalf("HA status = %+v", got)
 	}
 }
 

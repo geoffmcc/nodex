@@ -735,11 +735,14 @@ func TestVMConfigUpdatePathAndBody(t *testing.T) {
 
 func TestCTConfigUpdatePath(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
 		if r.URL.Path != "/nodes/pve1/lxc/200/config" {
 			t.Errorf("path = %s, want /nodes/pve1/lxc/200/config", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003049:0023A45B:"}`))
+		_, _ = w.Write([]byte(`{"data":null}`))
 	}))
 	defer s.Close()
 
@@ -944,14 +947,14 @@ func TestCTSnapshotRollbackPath(t *testing.T) {
 
 func TestVMCloudInitPath(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("method = %s, want POST", r.Method)
-		}
 		if r.URL.Path != "/nodes/pve1/qemu/100/cloudinit" {
 			t.Errorf("path = %s, want /nodes/pve1/qemu/100/cloudinit", r.URL.Path)
 		}
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003053:0023A45B:"}`))
+		_, _ = w.Write([]byte(`{"data":null}`))
 	}))
 	defer s.Close()
 
@@ -960,8 +963,8 @@ func TestVMCloudInitPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VMCloudInit: %v", err)
 	}
-	if upid != "UPID:pve1:00003053:0023A45B:" {
-		t.Errorf("upid = %q, want UPID:pve1:00003053:0023A45B:", upid)
+	if upid != "" {
+		t.Errorf("upid = %q, want empty", upid)
 	}
 }
 

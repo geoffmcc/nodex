@@ -1,6 +1,9 @@
 package client
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strconv"
+)
 
 // APIResponse wraps a Proxmox API response.
 type APIResponse struct {
@@ -113,6 +116,58 @@ type NodeStatusData struct {
 	IOMax          float64   `json:"io,omitempty"`
 }
 
+func (d *NodeStatusData) UnmarshalJSON(data []byte) error {
+	type rawNodeStatusData struct {
+		CPU            float64         `json:"cpu"`
+		MaxCPU         int             `json:"maxcpu"`
+		Mem            int64           `json:"mem"`
+		MaxMem         int64           `json:"maxmem"`
+		Disk           int64           `json:"disk"`
+		MaxDisk        int64           `json:"maxdisk"`
+		Uptime         int             `json:"uptime"`
+		Level          string          `json:"level"`
+		SSLFingerprint string          `json:"ssl_fingerprint,omitempty"`
+		ID             string          `json:"id"`
+		Node           string          `json:"node"`
+		Type           string          `json:"type"`
+		Status         string          `json:"status"`
+		KVersion       string          `json:"kversion,omitempty"`
+		PVEVersion     string          `json:"pveversion,omitempty"`
+		LoadAvg        json.RawMessage `json:"loadavg,omitempty"`
+		Wait           float64         `json:"wait,omitempty"`
+		Ksm            json.RawMessage `json:"ksm,omitempty"`
+		Numa           int             `json:"numa,omitempty"`
+		IOMax          float64         `json:"io,omitempty"`
+	}
+	var raw rawNodeStatusData
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*d = NodeStatusData{
+		CPU:            raw.CPU,
+		MaxCPU:         raw.MaxCPU,
+		Mem:            raw.Mem,
+		MaxMem:         raw.MaxMem,
+		Disk:           raw.Disk,
+		MaxDisk:        raw.MaxDisk,
+		Uptime:         raw.Uptime,
+		Level:          raw.Level,
+		SSLFingerprint: raw.SSLFingerprint,
+		ID:             raw.ID,
+		Node:           raw.Node,
+		Type:           raw.Type,
+		Status:         raw.Status,
+		KVersion:       raw.KVersion,
+		PVEVersion:     raw.PVEVersion,
+		LoadAvg:        decodeFloatSlice(raw.LoadAvg),
+		Wait:           raw.Wait,
+		Ksm:            decodeInt(raw.Ksm),
+		Numa:           raw.Numa,
+		IOMax:          raw.IOMax,
+	}
+	return nil
+}
+
 // NodeStatus is a convenience alias.
 type NodeStatus = NodeStatusResponse
 
@@ -173,6 +228,62 @@ type VMConfigData struct {
 	ScsiHW      string            `json:"scsihw,omitempty"`
 	Unused0     string            `json:"unused0,omitempty"`
 	Raw         map[string]string `json:"raw,omitempty"`
+}
+
+func (d *VMConfigData) UnmarshalJSON(data []byte) error {
+	type rawVMConfigData struct {
+		VMID        json.RawMessage   `json:"vmid"`
+		Name        string            `json:"name,omitempty"`
+		CPU         json.RawMessage   `json:"cores,omitempty"`
+		Memory      json.RawMessage   `json:"memory,omitempty"`
+		Net0        string            `json:"net0,omitempty"`
+		Scsi0       string            `json:"scsi0,omitempty"`
+		Boot        string            `json:"boot,omitempty"`
+		OnBoot      json.RawMessage   `json:"onboot,omitempty"`
+		Agent       json.RawMessage   `json:"agent,omitempty"`
+		SMBIOS1     string            `json:"smbios1,omitempty"`
+		Numa        json.RawMessage   `json:"numa,omitempty"`
+		OSType      string            `json:"ostype,omitempty"`
+		Description string            `json:"description,omitempty"`
+		Protection  json.RawMessage   `json:"protection,omitempty"`
+		Tags        string            `json:"tags,omitempty"`
+		VMGenID     string            `json:"vmgenid,omitempty"`
+		Args        string            `json:"args,omitempty"`
+		Bios        string            `json:"bios,omitempty"`
+		IDE2        string            `json:"ide2,omitempty"`
+		ScsiHW      string            `json:"scsihw,omitempty"`
+		Unused0     string            `json:"unused0,omitempty"`
+		Raw         map[string]string `json:"raw,omitempty"`
+	}
+	var raw rawVMConfigData
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*d = VMConfigData{
+		VMID:        decodeInt(raw.VMID),
+		Name:        raw.Name,
+		CPU:         decodeInt(raw.CPU),
+		Memory:      decodeInt(raw.Memory),
+		Net0:        raw.Net0,
+		Scsi0:       raw.Scsi0,
+		Boot:        raw.Boot,
+		OnBoot:      decodeInt(raw.OnBoot),
+		Agent:       decodeInt(raw.Agent),
+		SMBIOS1:     raw.SMBIOS1,
+		Numa:        decodeInt(raw.Numa),
+		OSType:      raw.OSType,
+		Description: raw.Description,
+		Protection:  decodeInt(raw.Protection),
+		Tags:        raw.Tags,
+		VMGenID:     raw.VMGenID,
+		Args:        raw.Args,
+		Bios:        raw.Bios,
+		IDE2:        raw.IDE2,
+		ScsiHW:      raw.ScsiHW,
+		Unused0:     raw.Unused0,
+		Raw:         raw.Raw,
+	}
+	return nil
 }
 
 // VMConfig is a convenience alias.
@@ -423,6 +534,20 @@ type NodeTimeData struct {
 	Local    string `json:"localtime,omitempty"`
 }
 
+func (d *NodeTimeData) UnmarshalJSON(data []byte) error {
+	type rawNodeTimeData struct {
+		TimeZone string          `json:"timezone"`
+		Epoch    int64           `json:"epoch"`
+		Local    json.RawMessage `json:"localtime,omitempty"`
+	}
+	var raw rawNodeTimeData
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*d = NodeTimeData{TimeZone: raw.TimeZone, Epoch: raw.Epoch, Local: decodeString(raw.Local)}
+	return nil
+}
+
 // NodeDisksResponse is the response from /nodes/{node}/disks/list.
 type NodeDisksResponse struct {
 	Data []NodeDiskItem `json:"data"`
@@ -560,10 +685,90 @@ type HAStatusResponse struct {
 	Data HAStatusData `json:"data"`
 }
 
+func (r *HAStatusResponse) UnmarshalJSON(data []byte) error {
+	type rawHAStatusResponse struct {
+		Data json.RawMessage `json:"data"`
+	}
+	var raw rawHAStatusResponse
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var status HAStatusData
+	if len(raw.Data) > 0 && string(raw.Data) != "null" {
+		if raw.Data[0] == '[' {
+			var items []HACurrentItem
+			if err := json.Unmarshal(raw.Data, &items); err != nil {
+				return err
+			}
+			status.Status = "ok"
+			status.Quorum = len(items)
+		} else if err := json.Unmarshal(raw.Data, &status); err != nil {
+			return err
+		}
+	}
+	r.Data = status
+	return nil
+}
+
 // HAStatusData holds cluster HA status.
 type HAStatusData struct {
 	Quorum int    `json:"quorum"`
 	Status string `json:"status"`
+}
+
+func decodeInt(raw json.RawMessage) int {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if n, err := strconv.Atoi(s); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
+func decodeString(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var n json.Number
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n.String()
+	}
+	return ""
+}
+
+func decodeFloatSlice(raw json.RawMessage) []float64 {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var floats []float64
+	if err := json.Unmarshal(raw, &floats); err == nil {
+		return floats
+	}
+	var strings []string
+	if err := json.Unmarshal(raw, &strings); err == nil {
+		out := make([]float64, 0, len(strings))
+		for _, s := range strings {
+			f, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				continue
+			}
+			out = append(out, f)
+		}
+		return out
+	}
+	return nil
 }
 
 // HACurrentResponse is the response from /cluster/ha/current.

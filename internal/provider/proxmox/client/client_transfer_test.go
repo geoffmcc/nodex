@@ -72,7 +72,7 @@ func TestUploadStreamingDoesNotBufferEntireFile(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	testFile := filepath.Join(dir, "testdata.bin")
+	testFile := filepath.Join(dir, "testdata.iso")
 	if err := os.WriteFile(testFile, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -82,8 +82,21 @@ func TestUploadStreamingDoesNotBufferEntireFile(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		// Consume the body to simulate Proxmox behavior.
-		_, _ = io.Copy(io.Discard, r.Body)
+		if len(r.TransferEncoding) != 0 {
+			t.Errorf("TransferEncoding = %v, want fixed Content-Length", r.TransferEncoding)
+		}
+		if r.ContentLength <= int64(len(data)) {
+			t.Errorf("ContentLength = %d, want multipart length greater than file length %d", r.ContentLength, len(data))
+		}
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			t.Errorf("ParseMultipartForm: %v", err)
+		}
+		if got := r.FormValue("content"); got != "iso" {
+			t.Errorf("content = %q, want iso", got)
+		}
+		if r.MultipartForm == nil || len(r.MultipartForm.File["filename"]) != 1 {
+			t.Errorf("filename file part missing")
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"data":"UPID:node1:00000001:00000001:00000001:upload:test:"}`))
 	}))
@@ -102,7 +115,7 @@ func TestUploadStreamingDoesNotBufferEntireFile(t *testing.T) {
 // TestUploadCancelledContext verifies that a cancelled context stops the upload.
 func TestUploadCancelledContext(t *testing.T) {
 	dir := t.TempDir()
-	testFile := filepath.Join(dir, "cancel.bin")
+	testFile := filepath.Join(dir, "cancel.iso")
 	if err := os.WriteFile(testFile, []byte("some data"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +213,7 @@ func TestDownloadContentBodyCancelledContext(t *testing.T) {
 // during the upload body transfer is properly surfaced.
 func TestUploadHandlesServerErrorDuringTransfer(t *testing.T) {
 	dir := t.TempDir()
-	testFile := filepath.Join(dir, "serverror.bin")
+	testFile := filepath.Join(dir, "serverror.iso")
 	if err := os.WriteFile(testFile, []byte(strings.Repeat("A", 1024)), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -216,6 +229,20 @@ func TestUploadHandlesServerErrorDuringTransfer(t *testing.T) {
 	_, err := c.UploadContent(context.Background(), "node1", "local", testFile)
 	if err == nil {
 		t.Fatal("expected 413 error from upload")
+	}
+}
+
+func TestUploadRejectsUnsupportedContentType(t *testing.T) {
+	dir := t.TempDir()
+	testFile := filepath.Join(dir, "upload.txt")
+	if err := os.WriteFile(testFile, []byte("not a Proxmox upload content type"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.UploadContent(context.Background(), "node1", "local", testFile)
+	if err == nil || !strings.Contains(err.Error(), "unsupported upload content type") {
+		t.Fatalf("UploadContent error = %v, want unsupported content type", err)
 	}
 }
 
@@ -293,7 +320,7 @@ func BenchmarkUploadStreaming(b *testing.B) {
 	}
 
 	dir := b.TempDir()
-	testFile := filepath.Join(dir, "bench.bin")
+	testFile := filepath.Join(dir, "bench.iso")
 	if err := os.WriteFile(testFile, data, 0o644); err != nil {
 		b.Fatal(err)
 	}
