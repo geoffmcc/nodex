@@ -346,6 +346,32 @@ func TestResourceShowRejectsWrongArgCounts(t *testing.T) {
 	}
 }
 
+func TestResourceShowRejectsInvalidGuestTargetsBeforeConnect(t *testing.T) {
+	tests := []struct {
+		name string
+		run  CommandFunc
+		arg  string
+	}{
+		{name: "vm missing slash", run: runVMShow, arg: "badformat"},
+		{name: "vm negative id", run: runVMShow, arg: "pve-test/-1"},
+		{name: "container missing slash", run: runContainerShow, arg: "badformat"},
+		{name: "container negative id", run: runContainerShow, arg: "pve-test/-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := tt.run(context.Background(), &Context{Writer: &stdout, ErrW: &stderr}, []string{tt.arg})
+			if err == nil {
+				t.Fatal("expected usage error")
+			}
+			var exitCode *app.ExitCoder
+			if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+				t.Fatalf("error = %v, want ExitUsage", err)
+			}
+		})
+	}
+}
+
 func TestWriteNodesTableShowsUnavailableFieldsHonestly(t *testing.T) {
 	var stdout bytes.Buffer
 	cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: output.FormatTable}}

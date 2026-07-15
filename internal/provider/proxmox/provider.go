@@ -36,6 +36,14 @@ func (p *Provider) Name() string { return ProviderName }
 // Version returns the provider version.
 func (p *Provider) Version() string { return ProviderVersion }
 
+// APIVersion returns the connected Proxmox API version after Health or Cluster has queried /version.
+func (p *Provider) APIVersion() string {
+	if p.client == nil || p.client.VersionData() == nil {
+		return ""
+	}
+	return p.client.VersionData().Version
+}
+
 // Connect initializes the provider with the given endpoint and credentials.
 func (p *Provider) Connect(_ context.Context, endpoint string, creds *domain.Credentials) error {
 	return p.ConnectWithOptions(endpoint, creds)

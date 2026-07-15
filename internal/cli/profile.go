@@ -459,7 +459,12 @@ func runProfileTest(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	fmt.Fprintf(cmdCtx.Writer, "Profile %q (%s): OK\n", name, p.Endpoint)
-	fmt.Fprintf(cmdCtx.Writer, "  Version: %s\n", prov.Version())
+	fmt.Fprintf(cmdCtx.Writer, "  Provider version: %s\n", prov.Version())
+	if api, ok := prov.(interface{ APIVersion() string }); ok {
+		if version := api.APIVersion(); version != "" {
+			fmt.Fprintf(cmdCtx.Writer, "  Proxmox version: %s\n", version)
+		}
+	}
 	return nil
 }
 
