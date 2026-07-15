@@ -196,6 +196,44 @@ type ClusterStatusItem struct {
 	Commit    string `json:"commit,omitempty"`
 }
 
+func (i *ClusterStatusItem) UnmarshalJSON(data []byte) error {
+	type rawClusterStatusItem struct {
+		Type      string          `json:"type"`
+		ID        string          `json:"id"`
+		Name      string          `json:"name"`
+		Status    string          `json:"status"`
+		Level     string          `json:"level,omitempty"`
+		IP        string          `json:"ip,omitempty"`
+		Localmem  int64           `json:"localmem,omitempty"`
+		Maxmem    int64           `json:"maxmem,omitempty"`
+		Localdisk int64           `json:"localdisk,omitempty"`
+		Maxdisk   int64           `json:"maxdisk,omitempty"`
+		Quorate   json.RawMessage `json:"quorate,omitempty"`
+		Version   json.RawMessage `json:"version,omitempty"`
+		Commit    string          `json:"commit,omitempty"`
+	}
+	var raw rawClusterStatusItem
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*i = ClusterStatusItem{
+		Type:      raw.Type,
+		ID:        raw.ID,
+		Name:      raw.Name,
+		Status:    raw.Status,
+		Level:     raw.Level,
+		IP:        raw.IP,
+		Localmem:  raw.Localmem,
+		Maxmem:    raw.Maxmem,
+		Localdisk: raw.Localdisk,
+		Maxdisk:   raw.Maxdisk,
+		Quorate:   decodeInt(raw.Quorate),
+		Version:   decodeInt(raw.Version),
+		Commit:    raw.Commit,
+	}
+	return nil
+}
+
 // ClusterStatus is a convenience alias.
 type ClusterStatus = ClusterStatusResponse
 
@@ -471,6 +509,11 @@ type HAGroupResponse struct {
 	Data []HAGroupItem `json:"data"`
 }
 
+// HARuleResponse is the response from /cluster/ha/rules.
+type HARuleResponse struct {
+	Data []HARuleItem `json:"data"`
+}
+
 // HAGroupItem represents a single HA group.
 type HAGroupItem struct {
 	ID         string `json:"id"`
@@ -478,6 +521,14 @@ type HAGroupItem struct {
 	Nodes      string `json:"nodes"`
 	Comment    string `json:"comment,omitempty"`
 	NoFailback int    `json:"nofailback,omitempty"`
+}
+
+// HARuleItem represents a single HA rule. Proxmox 9 migrated HA groups to rules.
+type HARuleItem struct {
+	Rule    string `json:"rule"`
+	Type    string `json:"type"`
+	Nodes   string `json:"nodes,omitempty"`
+	Comment string `json:"comment,omitempty"`
 }
 
 // NodeServicesResponse is the response from /nodes/{node}/services.
@@ -1152,6 +1203,42 @@ type CephOSDTreeNode struct {
 	PercentUsed float64           `json:"percent_used,omitempty"`
 	Leaf        int               `json:"leaf,omitempty"`
 	Children    []CephOSDTreeNode `json:"children,omitempty"`
+}
+
+func (n *CephOSDTreeNode) UnmarshalJSON(data []byte) error {
+	type rawCephOSDTreeNode struct {
+		ID          json.RawMessage   `json:"id"`
+		Name        string            `json:"name"`
+		Type        string            `json:"type,omitempty"`
+		Status      string            `json:"status,omitempty"`
+		In          json.RawMessage   `json:"in,omitempty"`
+		Host        string            `json:"host,omitempty"`
+		DeviceClass string            `json:"device_class,omitempty"`
+		TotalSpace  int64             `json:"total_space,omitempty"`
+		BytesUsed   int64             `json:"bytes_used,omitempty"`
+		PercentUsed float64           `json:"percent_used,omitempty"`
+		Leaf        json.RawMessage   `json:"leaf,omitempty"`
+		Children    []CephOSDTreeNode `json:"children,omitempty"`
+	}
+	var raw rawCephOSDTreeNode
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*n = CephOSDTreeNode{
+		ID:          decodeInt(raw.ID),
+		Name:        raw.Name,
+		Type:        raw.Type,
+		Status:      raw.Status,
+		In:          decodeInt(raw.In),
+		Host:        raw.Host,
+		DeviceClass: raw.DeviceClass,
+		TotalSpace:  raw.TotalSpace,
+		BytesUsed:   raw.BytesUsed,
+		PercentUsed: raw.PercentUsed,
+		Leaf:        decodeInt(raw.Leaf),
+		Children:    raw.Children,
+	}
+	return nil
 }
 
 // CephMONListResponse is the response from /nodes/{node}/ceph/mon.

@@ -340,6 +340,24 @@ func TestGetClusterStatusDecodesQuorumAndNodes(t *testing.T) {
 	}
 }
 
+func TestGetClusterStatusDecodesStringNumericFields(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cluster/status" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"cluster","id":"cluster/0","name":"mycluster","status":"online","quorate":"1","version":"3"}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	items, err := c.GetClusterStatus(context.Background())
+	if err != nil {
+		t.Fatalf("GetClusterStatus: %v", err)
+	}
+	if len(items) != 1 || items[0].Quorate != 1 || items[0].Version != 3 {
+		t.Fatalf("cluster items = %+v", items)
+	}
+}
+
 func TestGetVMConfigDecodesConfigFields(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/nodes/proxmox/qemu/100/config" {
@@ -473,6 +491,46 @@ func TestGetHACurrentUsesStatusCurrentPath(t *testing.T) {
 	}
 }
 
+func TestGetHAGroupsFallsBackToRulesAfterMigration(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cluster/ha/groups":
+			http.Error(w, `cannot index groups: ha groups have been migrated to rules`, http.StatusInternalServerError)
+		case "/cluster/ha/rules":
+			_, _ = fmt.Fprint(w, `{"data":[{"rule":"prefer-a","type":"node-affinity","nodes":"proxmox:1","comment":"Prefer node A"}]}`)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	groups, err := c.GetHAGroups(context.Background())
+	if err != nil {
+		t.Fatalf("GetHAGroups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].ID != "prefer-a" || groups[0].Type != "node-affinity" || groups[0].Nodes != "proxmox:1" || groups[0].Comment != "Prefer node A" {
+		t.Fatalf("HA groups = %+v", groups)
+	}
+}
+
+func TestGetHAGroupsKeepsUnrelatedServerError(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cluster/ha/groups" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		http.Error(w, `database unavailable`, http.StatusInternalServerError)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.GetHAGroups(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), "/cluster/ha/rules") {
+		t.Fatalf("unexpected fallback for unrelated error: %v", err)
+	}
+}
+
 func TestGetContainerConfigDecodesConfigFields(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/nodes/proxmox/lxc/200/config" {
@@ -553,6 +611,28 @@ func TestGetStorageContentRejectsEmptyStorage(t *testing.T) {
 	_, err := c.GetStorageContent(context.Background(), "proxmox", "")
 	if err == nil || !strings.Contains(err.Error(), "storage name is required") {
 		t.Fatalf("GetStorageContent('') error = %v, want storage name required", err)
+	}
+}
+
+func TestGetCephOSDsDecodesStringIDs(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/ceph/osd" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":{"root":{"children":[{"id":"-1","name":"default","type":"root","children":[{"id":"0","name":"osd.0","type":"osd","status":"up","in":"1","leaf":"1"}]}]}}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	osds, err := c.GetCephOSDs(context.Background(), "proxmox")
+	if err != nil {
+		t.Fatalf("GetCephOSDs: %v", err)
+	}
+	children := osds.Data.Root.Children
+	if len(children) != 1 || children[0].ID != -1 || children[0].Name != "default" {
+		t.Fatalf("root children = %+v", children)
+	}
+	if len(children[0].Children) != 1 || children[0].Children[0].ID != 0 || children[0].Children[0].In != 1 || children[0].Children[0].Leaf != 1 {
+		t.Fatalf("nested children = %+v", children[0].Children)
 	}
 }
 

@@ -7,11 +7,14 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/geoffmcc/nodex/internal/redact"
 )
 
 const (
@@ -20,6 +23,9 @@ const (
 
 	// DefaultMaxErrorBodySize is the maximum non-success response body size.
 	DefaultMaxErrorBodySize int64 = 256 * 1024
+
+	// RetryErrorBodySize is the maximum 5xx response body included in retry errors.
+	RetryErrorBodySize int64 = 1024
 
 	// DefaultTimeout is the default request timeout.
 	DefaultTimeout = 30 * time.Second
@@ -254,14 +260,39 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 		}
 
 		if resp.StatusCode >= 500 {
+			body, truncated := readRetryErrorBody(resp.Body, RetryErrorBodySize)
 			_ = resp.Body.Close()
 			lastErr = fmt.Errorf("server error: %d", resp.StatusCode)
+			if body != "" {
+				if truncated {
+					body += "... [truncated]"
+				}
+				lastErr = fmt.Errorf("server error: %d: %s", resp.StatusCode, body)
+			}
 			continue
 		}
 
 		return resp, nil
 	}
 	return nil, fmt.Errorf("max retries exceeded: %w", lastErr)
+}
+
+func readRetryErrorBody(r io.Reader, limit int64) (string, bool) {
+	body, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil || len(body) == 0 {
+		return "", false
+	}
+	truncated := int64(len(body)) > limit
+	if truncated {
+		body = body[:limit]
+	}
+	cleaned := strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r < 0x20 && r != '\n' && r != '\r' && r != '\t' {
+			return -1
+		}
+		return r
+	}, string(body)))
+	return redact.String(cleaned), truncated
 }
 
 // jitteredDelay calculates a jittered delay for the given attempt.

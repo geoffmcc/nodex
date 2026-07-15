@@ -404,9 +404,29 @@ func (c *Client) GetHAResources(ctx context.Context) ([]HAResourceItem, error) {
 func (c *Client) GetHAGroups(ctx context.Context) ([]HAGroupItem, error) {
 	var resp HAGroupResponse
 	if err := c.get(ctx, "/cluster/ha/groups", &resp); err != nil {
-		return nil, err
+		if !strings.Contains(err.Error(), "ha groups have been migrated to rules") {
+			return nil, err
+		}
+		return c.getHAGroupsFromRules(ctx)
 	}
 	return resp.Data, nil
+}
+
+func (c *Client) getHAGroupsFromRules(ctx context.Context) ([]HAGroupItem, error) {
+	var resp HARuleResponse
+	if err := c.get(ctx, "/cluster/ha/rules", &resp); err != nil {
+		return nil, err
+	}
+	groups := make([]HAGroupItem, 0, len(resp.Data))
+	for _, item := range resp.Data {
+		groups = append(groups, HAGroupItem{
+			ID:      item.Rule,
+			Type:    item.Type,
+			Nodes:   item.Nodes,
+			Comment: item.Comment,
+		})
+	}
+	return groups, nil
 }
 
 // GetNodeServices returns services running on a specific node.
