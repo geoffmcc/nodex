@@ -246,8 +246,14 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.CPU > 0 {
 		m["cores"] = c.CPU
 	}
+	if c.CPUType != "" {
+		m["cpu"] = c.CPUType
+	}
 	if c.Memory > 0 {
 		m["memory"] = c.Memory
+	}
+	if c.Balloon > 0 {
+		m["balloon"] = c.Balloon
 	}
 	if c.Net0 != "" {
 		m["net0"] = c.Net0
@@ -297,6 +303,24 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.Numa != 0 {
 		m["numa"] = c.Numa
 	}
+	if c.Machine != "" {
+		m["machine"] = c.Machine
+	}
+	if c.Hotplug != "" {
+		m["hotplug"] = c.Hotplug
+	}
+	if c.CIUser != "" {
+		m["ciuser"] = c.CIUser
+	}
+	if c.CICustom != "" {
+		m["cicustom"] = c.CICustom
+	}
+	if c.Nameserver != "" {
+		m["nameserver"] = c.Nameserver
+	}
+	if c.SearchDomain != "" {
+		m["searchdomain"] = c.SearchDomain
+	}
 	return m
 }
 
@@ -340,6 +364,9 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	if c.Tags != "" {
 		m["tags"] = c.Tags
 	}
+	if c.Unfiltered != 0 {
+		m["unfiltered"] = c.Unfiltered
+	}
 	if c.Features != "" {
 		m["features"] = c.Features
 	}
@@ -351,6 +378,15 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	}
 	if c.SearchDomain != "" {
 		m["searchdomain"] = c.SearchDomain
+	}
+	if c.Password != "" {
+		m["password"] = c.Password
+	}
+	if c.SSHKeys != "" {
+		m["sshkeys"] = c.SSHKeys
+	}
+	if c.Dev0 != "" {
+		m["dev0"] = c.Dev0
 	}
 	if c.Fstab != "" {
 		m["fstab"] = c.Fstab

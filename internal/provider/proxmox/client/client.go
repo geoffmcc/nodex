@@ -236,6 +236,10 @@ func (c *Client) GetVMConfig(ctx context.Context, node string, vmid int) (*VMCon
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
 	}
+	// Proxmox 9 config endpoint omits vmid from response body — inject from parameter.
+	if resp.Data.VMID == 0 {
+		resp.Data.VMID = vmid
+	}
 	return &resp.Data, nil
 }
 
@@ -251,6 +255,10 @@ func (c *Client) GetContainerConfig(ctx context.Context, node string, vmid int) 
 	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/config"
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
+	}
+	// Proxmox 9 config endpoint omits vmid from response body — inject from parameter.
+	if resp.Data.VMID == 0 {
+		resp.Data.VMID = vmid
 	}
 	return &resp.Data, nil
 }

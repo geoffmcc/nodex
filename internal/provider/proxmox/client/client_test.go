@@ -403,6 +403,38 @@ func TestGetVMConfigDecodesStringNumericFields(t *testing.T) {
 	}
 }
 
+func TestGetVMConfigInjectsVMIDFromParameter(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Proxmox 9 omits vmid from response body.
+		_, _ = fmt.Fprint(w, `{"data":{"name":"test-vm","cores":2,"memory":2048}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	config, err := c.GetVMConfig(context.Background(), "proxmox", 42)
+	if err != nil {
+		t.Fatalf("GetVMConfig: %v", err)
+	}
+	if config.VMID != 42 {
+		t.Errorf("VMID = %d, want 42 (injected from parameter)", config.VMID)
+	}
+}
+
+func TestGetContainerConfigInjectsVMIDFromParameter(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Proxmox 9 omits vmid from response body.
+		_, _ = fmt.Fprint(w, `{"data":{"hostname":"test-ct","cores":1,"memory":512}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	config, err := c.GetContainerConfig(context.Background(), "proxmox", 77)
+	if err != nil {
+		t.Fatalf("GetContainerConfig: %v", err)
+	}
+	if config.VMID != 77 {
+		t.Errorf("VMID = %d, want 77 (injected from parameter)", config.VMID)
+	}
+}
+
 func TestGetVMConfigRejectsEmptyNode(t *testing.T) {
 	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
 	_, err := c.GetVMConfig(context.Background(), "", 100)
