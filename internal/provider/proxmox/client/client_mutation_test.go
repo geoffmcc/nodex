@@ -1008,6 +1008,68 @@ func TestCTTemplatePath(t *testing.T) {
 	}
 }
 
+func TestDeleteSDNSubnetUsesObjectID(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", r.Method)
+		}
+		if r.URL.Path != "/cluster/sdn/vnets/ndxvnet/subnets/ndxzone-10.250.0.0-24" {
+			t.Errorf("path = %s, want object ID path", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	if err := c.DeleteSDNSubnet(context.Background(), "ndxvnet", "ndxzone-10.250.0.0-24"); err != nil {
+		t.Fatalf("DeleteSDNSubnet: %v", err)
+	}
+}
+
+func TestDeleteSDNSubnetResolvesCIDRToObjectID(t *testing.T) {
+	var requests []string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/cluster/sdn/vnets":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":[{"vnet":"ndxvnet","zone":"ndxzone"}]}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/cluster/sdn/vnets/ndxvnet/subnets/ndxzone-10.250.0.0-24":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":null}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	if err := c.DeleteSDNSubnet(context.Background(), "ndxvnet", "10.250.0.0/24"); err != nil {
+		t.Fatalf("DeleteSDNSubnet: %v", err)
+	}
+	if got, want := strings.Join(requests, ","), "GET /cluster/sdn/vnets,DELETE /cluster/sdn/vnets/ndxvnet/subnets/ndxzone-10.250.0.0-24"; got != want {
+		t.Fatalf("requests = %s, want %s", got, want)
+	}
+}
+
+func TestDeleteSDNSubnetRejectsUnresolvedCIDR(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/cluster/sdn/vnets" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[{"vnet":"other","zone":"ndxzone"}]}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	err := c.DeleteSDNSubnet(context.Background(), "ndxvnet", "10.250.0.0/24")
+	if err == nil || !strings.Contains(err.Error(), "VNet zone not found") {
+		t.Fatalf("DeleteSDNSubnet error = %v, want VNet zone not found", err)
+	}
+}
+
 // --- Phase 3: Input Validation Tests ---
 
 func TestVMConfigUpdateRejectsEmptyNode(t *testing.T) {

@@ -506,7 +506,7 @@ func (c *Client) GetNodeUpdates(ctx context.Context, node string) ([]NodeUpdateI
 		return nil, fmt.Errorf("node name is required")
 	}
 	var resp NodeUpdatesResponse
-	path := "/nodes/" + url.PathEscape(node) + "/updates"
+	path := "/nodes/" + url.PathEscape(node) + "/apt/update"
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
 	}
@@ -603,7 +603,7 @@ func (c *Client) GetHAStatus(ctx context.Context) (*HAStatusData, error) {
 // GetHACurrent returns current HA resource states.
 func (c *Client) GetHACurrent(ctx context.Context) ([]HACurrentItem, error) {
 	var resp HACurrentResponse
-	if err := c.get(ctx, "/cluster/ha/current", &resp); err != nil {
+	if err := c.get(ctx, "/cluster/ha/status/current", &resp); err != nil {
 		return nil, err
 	}
 	return resp.Data, nil
@@ -2279,7 +2279,25 @@ func (c *Client) CreateSDNSubnet(ctx context.Context, vnet, cidr, gateway string
 
 // DeleteSDNSubnet deletes an SDN subnet.
 func (c *Client) DeleteSDNSubnet(ctx context.Context, vnet, subnet string) error {
-	path := "/cluster/sdn/vnets/" + url.PathEscape(vnet) + "/subnets/" + url.PathEscape(subnet)
+	subnetID := subnet
+	if strings.Contains(subnet, "/") {
+		vnets, err := c.GetSDNVNets(ctx)
+		if err != nil {
+			return err
+		}
+		resolved := false
+		for _, item := range vnets {
+			if item.Name == vnet && item.Zone != "" {
+				subnetID = item.Zone + "-" + strings.ReplaceAll(subnet, "/", "-")
+				resolved = true
+				break
+			}
+		}
+		if !resolved {
+			return fmt.Errorf("resolve SDN subnet %s in VNet %s: VNet zone not found", subnet, vnet)
+		}
+	}
+	path := "/cluster/sdn/vnets/" + url.PathEscape(vnet) + "/subnets/" + url.PathEscape(subnetID)
 	return c.del(ctx, path, nil)
 }
 
