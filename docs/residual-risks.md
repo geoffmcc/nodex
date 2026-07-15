@@ -194,6 +194,22 @@ tests. Fuzzing will be added for critical parsing paths before v1.0.
 
 ---
 
+## Live-Test Fixture Limitations
+
+### LF1 — Guest-Agent Fixture Requires Guest-Side Setup
+
+**Status:** Documented.
+**Severity:** Low.
+**Description:** Proxmox VM configuration `agent=1` only enables the virtual
+guest-agent channel. It does not install or start `qemu-guest-agent` inside the
+guest OS. Live tests that require guest-agent behavior need a booted guest image
+with the package installed and the service running.
+**Mitigation:** Use an explicitly disposable cloud image fixture with cloud-init
+or a NoCloud seed ISO that installs and starts `qemu-guest-agent`. Verify
+`/nodes/<node>/qemu/<vmid>/agent/ping` before making guest-agent assertions.
+
+---
+
 ## Assumptions
 
 1. **The operator's machine is not compromised.** Nodex assumes the local
