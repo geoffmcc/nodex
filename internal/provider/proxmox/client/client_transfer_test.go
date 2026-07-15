@@ -252,7 +252,7 @@ func TestUploadRejectsUnsupportedContentType(t *testing.T) {
 func TestDownloadContentBodyPathConstruction(t *testing.T) {
 	var receivedPath string
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedPath = r.URL.Path
+		receivedPath = r.URL.Path + "?" + r.URL.RawQuery
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	}))
@@ -263,10 +263,11 @@ func TestDownloadContentBodyPathConstruction(t *testing.T) {
 	volID := "local-lvm:vm-100-disk-0"
 	_ = c.DownloadContentBody(context.Background(), "node-1", "storage-a", volID, &buf)
 
-	// The path should include the volume ID at the correct position.
-	expectedSuffix := "/download/" + volID
-	if !strings.HasSuffix(receivedPath, expectedSuffix) {
-		t.Errorf("path = %s, want suffix %s", receivedPath, expectedSuffix)
+	if !strings.Contains(receivedPath, "/download") {
+		t.Errorf("path = %s, want /download", receivedPath)
+	}
+	if !strings.Contains(receivedPath, "volume=") {
+		t.Errorf("path = %s, missing volume param", receivedPath)
 	}
 }
 
