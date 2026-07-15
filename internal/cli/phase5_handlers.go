@@ -768,6 +768,9 @@ func runFirewallGroupCreate(ctx context.Context, cmdCtx *Context, args []string)
 	if name == "" {
 		return app.NewExitError(fmt.Errorf("group name is required"), app.ExitUsage)
 	}
+	if len(name) > 18 {
+		return app.NewExitError(fmt.Errorf("group name %q is too long (maximum 18 characters)", name), app.ExitUsage)
+	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
@@ -801,6 +804,9 @@ func runFirewallGroupDelete(ctx context.Context, cmdCtx *Context, args []string)
 	name := args[0]
 	if name == "" {
 		return app.NewExitError(fmt.Errorf("group name is required"), app.ExitUsage)
+	}
+	if len(name) > 18 {
+		return app.NewExitError(fmt.Errorf("group name %q is too long (maximum 18 characters)", name), app.ExitUsage)
 	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)

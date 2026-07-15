@@ -77,12 +77,15 @@ func runDoctor(ctx context.Context, cmdCtx *Context, args []string) error {
 			Warn    int           `json:"warn" yaml:"warn"`
 			Results []checkResult `json:"results" yaml:"results"`
 		}
-		return output.WriteJSON(cmdCtx.Writer, doctorReport{
+		if err := output.WriteJSON(cmdCtx.Writer, doctorReport{
 			Pass:    pass,
 			Fail:    fail,
 			Warn:    warn,
 			Results: results,
-		})
+		}); err != nil {
+			return err
+		}
+		return doctorExitError(fail)
 
 	case output.FormatYAML:
 		type doctorReport struct {
@@ -91,12 +94,15 @@ func runDoctor(ctx context.Context, cmdCtx *Context, args []string) error {
 			Warn    int           `json:"warn" yaml:"warn"`
 			Results []checkResult `json:"results" yaml:"results"`
 		}
-		return output.WriteYAML(cmdCtx.Writer, doctorReport{
+		if err := output.WriteYAML(cmdCtx.Writer, doctorReport{
 			Pass:    pass,
 			Fail:    fail,
 			Warn:    warn,
 			Results: results,
-		})
+		}); err != nil {
+			return err
+		}
+		return doctorExitError(fail)
 
 	default:
 		headers := []string{"CHECK", "STATUS", "MESSAGE"}
@@ -117,11 +123,15 @@ func runDoctor(ctx context.Context, cmdCtx *Context, args []string) error {
 			return err
 		}
 		fmt.Fprintf(cmdCtx.Writer, "\n%d passed, %d failed, %d warnings\n", pass, fail, warn)
-		if fail > 0 {
-			return fmt.Errorf("doctor found %d issue(s)", fail)
-		}
-		return nil
+		return doctorExitError(fail)
 	}
+}
+
+func doctorExitError(fail int) error {
+	if fail > 0 {
+		return fmt.Errorf("doctor found %d issue(s)", fail)
+	}
+	return nil
 }
 
 func checkConfig() checkResult {

@@ -709,6 +709,7 @@ func TestDoRetrySafeNeverRetriesPOST(t *testing.T) {
 func TestDoPostNonRetryableErrorContainsMethod(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"HA groups unavailable"}`))
 	}))
 	defer s.Close()
 
@@ -723,6 +724,9 @@ func TestDoPostNonRetryableErrorContainsMethod(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "server error: 500") {
 		t.Errorf("error = %q, want wrapped 'server error: 500'", err)
+	}
+	if !strings.Contains(err.Error(), "HA groups unavailable") {
+		t.Errorf("error = %q, want response body detail", err)
 	}
 }
 
@@ -750,5 +754,26 @@ func TestDoGetRetriesWithDefaultPolicy(t *testing.T) {
 	_ = resp.Body.Close()
 	if atomic.LoadInt32(&calls) != 3 {
 		t.Errorf("calls = %d, want 3 (GET should retry under default policy)", calls)
+	}
+}
+
+func TestDoGetRetryErrorIncludesResponseBody(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"cluster not ready"}`))
+	}))
+	defer s.Close()
+
+	c := New(WithMaxRetries(1))
+	req, _ := http.NewRequest(http.MethodGet, s.URL, nil)
+	_, err := c.Do(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "max retries exceeded") {
+		t.Errorf("error = %q, want max retries exceeded", err)
+	}
+	if !strings.Contains(err.Error(), "cluster not ready") {
+		t.Errorf("error = %q, want response body detail", err)
 	}
 }

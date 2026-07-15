@@ -1688,12 +1688,65 @@ func TestRunDoctorJSON(t *testing.T) {
 	}
 }
 
+func TestRunDoctorJSONFailsWhenChecksFail(t *testing.T) {
+	isolateConfigAndHome(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--output", "json", "doctor"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected doctor to fail when checks fail")
+	}
+	if code := app.ExitCodeFromError(err); code != app.ExitGeneral {
+		t.Fatalf("exit code = %d, want %d", code, app.ExitGeneral)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"fail"`) || !strings.Contains(out, `"config"`) {
+		t.Fatalf("doctor JSON missing failed config check: %q", out)
+	}
+}
+
+func TestRunDoctorYAMLFailsWhenChecksFail(t *testing.T) {
+	isolateConfigAndHome(t)
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--output", "yaml", "doctor"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected doctor to fail when checks fail")
+	}
+	if code := app.ExitCodeFromError(err); code != app.ExitGeneral {
+		t.Fatalf("exit code = %d, want %d", code, app.ExitGeneral)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "fail") || !strings.Contains(out, "config") {
+		t.Fatalf("doctor YAML missing failed config check: %q", out)
+	}
+}
+
 // TestRunDoctorRejectsExtraArgs verifies doctor rejects extra arguments.
 func TestRunDoctorRejectsExtraArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), []string{"doctor", "extra"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("expected error for extra args")
+	}
+}
+
+func TestFirewallGroupRejectsLongName(t *testing.T) {
+	for _, args := range [][]string{
+		{"firewall", "group", "create", "sidekick-nodex-audit-group"},
+		{"firewall", "group", "delete", "sidekick-nodex-audit-group"},
+	} {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), args, &stdout, &stderr)
+		if err == nil {
+			t.Fatalf("Run(%v): expected error", args)
+		}
+		if code := app.ExitCodeFromError(err); code != app.ExitUsage {
+			t.Fatalf("Run(%v) exit code = %d, want %d", args, code, app.ExitUsage)
+		}
+		if !strings.Contains(err.Error(), "maximum 18 characters") {
+			t.Fatalf("Run(%v) error = %q", args, err)
+		}
 	}
 }
 
