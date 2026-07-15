@@ -725,13 +725,14 @@ func (c *Client) VMResume(ctx context.Context, node string, vmid int) (string, e
 }
 
 // VMPause freezes a running VM and returns the task UPID.
+// VMPause is not supported on QEMU VMs in Proxmox 9+; returns an error.
 func (c *Client) VMPause(ctx context.Context, node string, vmid int) (string, error) {
-	return c.vmMutation(ctx, node, vmid, "pause", nil)
+	return "", fmt.Errorf("VM pause is not supported on QEMU virtual machines (use container pause instead)")
 }
 
-// VMUnpause unfreezes a paused VM and returns the task UPID.
+// VMUnpause is not supported on QEMU VMs in Proxmox 9+; returns an error.
 func (c *Client) VMUnpause(ctx context.Context, node string, vmid int) (string, error) {
-	return c.vmMutation(ctx, node, vmid, "unpause", nil)
+	return "", fmt.Errorf("VM unpause is not supported on QEMU virtual machines (use container unpause instead)")
 }
 
 // CTStart starts a container and returns the task UPID.
@@ -1376,7 +1377,7 @@ func (c *Client) DownloadContent(ctx context.Context, node, storage, volumeID st
 	}
 	// Return the download URL so the caller can stream the content directly.
 	// Proxmox returns raw content, not JSON, for this endpoint.
-	downloadURL := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download/" + encodeVolumeID(volumeID)
+	downloadURL := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download?volume=" + url.QueryEscape(volumeID)
 	return downloadURL, nil
 }
 
@@ -1392,7 +1393,7 @@ func (c *Client) DownloadContentBody(ctx context.Context, node, storage, volumeI
 		return fmt.Errorf("volume ID is required")
 	}
 
-	u := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download/" + encodeVolumeID(volumeID)
+	u := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download?volume=" + url.QueryEscape(volumeID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
@@ -2082,8 +2083,12 @@ type FirewallRuleCreateResponse struct {
 // firewallRuleToValues converts a FirewallRuleCreateRequest to url.Values.
 func firewallRuleToValues(rule FirewallRuleCreateRequest) url.Values {
 	v := url.Values{}
-	v.Set("type", rule.Type)
-	v.Set("action", strings.ToUpper(rule.Action))
+	if rule.Type != "" {
+		v.Set("type", rule.Type)
+	}
+	if rule.Action != "" {
+		v.Set("action", strings.ToUpper(rule.Action))
+	}
 	if rule.Enable != 0 {
 		v.Set("enable", strconv.Itoa(rule.Enable))
 	}
@@ -2121,13 +2126,6 @@ func firewallRuleToValues(rule FirewallRuleCreateRequest) url.Values {
 		v.Set("macro", rule.Macro)
 	}
 	return v
-}
-
-// encodeVolumeID URL-encodes a Proxmox volume ID for use in download URL paths.
-// Colons are encoded but forward slashes are preserved, producing a path-safe
-// representation that Proxmox 9 accepts (e.g. "local:iso/file.iso" → "local%3Aiso/file.iso").
-func encodeVolumeID(volID string) string {
-	return strings.ReplaceAll(url.QueryEscape(volID), "%2F", "/")
 }
 
 // --- Phase 6: Ceph, SDN, Replication ---
@@ -2332,6 +2330,7 @@ func (c *Client) DeleteSDNSubnet(ctx context.Context, vnet, subnet string) error
 func (c *Client) CreateSDNController(ctx context.Context, ctrl string) error {
 	body := url.Values{}
 	body.Set("controller", ctrl)
+	body.Set("type", "evpn")
 	return c.post(ctx, "/cluster/sdn/controllers", body, nil)
 }
 

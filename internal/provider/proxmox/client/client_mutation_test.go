@@ -409,20 +409,14 @@ func TestVMStopPath(t *testing.T) {
 	}
 }
 
-func TestVMPausePath(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/nodes/pve1/qemu/100/status/pause" {
-			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/pause", r.URL.Path)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000303B:0023A45B:"}`))
-	}))
-	defer s.Close()
-
-	c := &Client{baseURL: s.URL, client: httpclient.New()}
+func TestVMPauseNotSupported(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
 	_, err := c.VMPause(context.Background(), "pve1", 100)
-	if err != nil {
-		t.Fatalf("VMPause: %v", err)
+	if err == nil {
+		t.Fatal("VMPause should return error in Proxmox 9+")
+	}
+	if !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("error = %v, want 'not supported'", err)
 	}
 }
 
@@ -494,20 +488,14 @@ func TestVMSuspendPath(t *testing.T) {
 	}
 }
 
-func TestVMUnpausePath(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/nodes/pve1/qemu/100/status/unpause" {
-			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/unpause", r.URL.Path)
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00003040:0023A45B:"}`))
-	}))
-	defer s.Close()
-
-	c := &Client{baseURL: s.URL, client: httpclient.New()}
+func TestVMUnpauseNotSupported(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
 	_, err := c.VMUnpause(context.Background(), "pve1", 100)
-	if err != nil {
-		t.Fatalf("VMUnpause: %v", err)
+	if err == nil {
+		t.Fatal("VMUnpause should return error in Proxmox 9+")
+	}
+	if !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("error = %v, want 'not supported'", err)
 	}
 }
 
