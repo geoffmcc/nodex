@@ -1376,7 +1376,7 @@ func (c *Client) DownloadContent(ctx context.Context, node, storage, volumeID st
 	}
 	// Return the download URL so the caller can stream the content directly.
 	// Proxmox returns raw content, not JSON, for this endpoint.
-	downloadURL := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download/" + url.PathEscape(volumeID)
+	downloadURL := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download/" + encodeVolumeID(volumeID)
 	return downloadURL, nil
 }
 
@@ -1392,7 +1392,7 @@ func (c *Client) DownloadContentBody(ctx context.Context, node, storage, volumeI
 		return fmt.Errorf("volume ID is required")
 	}
 
-	u := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download/" + url.PathEscape(volumeID)
+	u := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download/" + encodeVolumeID(volumeID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
@@ -2083,7 +2083,7 @@ type FirewallRuleCreateResponse struct {
 func firewallRuleToValues(rule FirewallRuleCreateRequest) url.Values {
 	v := url.Values{}
 	v.Set("type", rule.Type)
-	v.Set("action", rule.Action)
+	v.Set("action", strings.ToUpper(rule.Action))
 	if rule.Enable != 0 {
 		v.Set("enable", strconv.Itoa(rule.Enable))
 	}
@@ -2121,6 +2121,13 @@ func firewallRuleToValues(rule FirewallRuleCreateRequest) url.Values {
 		v.Set("macro", rule.Macro)
 	}
 	return v
+}
+
+// encodeVolumeID URL-encodes a Proxmox volume ID for use in download URL paths.
+// Colons are encoded but forward slashes are preserved, producing a path-safe
+// representation that Proxmox 9 accepts (e.g. "local:iso/file.iso" → "local%3Aiso/file.iso").
+func encodeVolumeID(volID string) string {
+	return strings.ReplaceAll(url.QueryEscape(volID), "%2F", "/")
 }
 
 // --- Phase 6: Ceph, SDN, Replication ---
