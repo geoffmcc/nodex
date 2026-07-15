@@ -1,3 +1,3 @@
-N  MESSAGE
-1  starting cluster services
-2  node e2e-node joined quorum
+TIME        NODE      MESSAGE
+1700000000  e2e-node  starting cluster services
+1700000001  e2e-node  node e2e-node joined quorum

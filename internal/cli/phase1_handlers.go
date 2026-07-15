@@ -84,11 +84,12 @@ func writeClusterLog(cmdCtx *Context, entries []domain.ClusterLogEntry) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, entries)
 	default:
-		headers := []string{"N", "MESSAGE"}
+		headers := []string{"TIME", "NODE", "MESSAGE"}
 		rows := make([][]string, 0, len(entries))
 		for _, e := range entries {
 			rows = append(rows, []string{
-				fmt.Sprintf("%d", e.N),
+				fmt.Sprintf("%d", e.Time),
+				e.Node,
 				e.Message,
 			})
 		}

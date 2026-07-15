@@ -105,11 +105,10 @@ type Event struct {
 }
 
 // SyslogEntry represents a syslog line.
+// Proxmox 9 /nodes/{node}/syslog returns entries with n (line number) and t (log text).
 type SyslogEntry struct {
-	Time    int64  `json:"time" yaml:"time"`
-	Node    string `json:"node,omitempty" yaml:"node,omitempty"`
-	Level   string `json:"level,omitempty" yaml:"level,omitempty"`
-	Message string `json:"message,omitempty" yaml:"message,omitempty"`
+	N    int64  `json:"n" yaml:"n"`
+	Text string `json:"t" yaml:"t"`
 }
 
 // Backup represents a backup task.
@@ -167,9 +166,16 @@ type Pool struct {
 }
 
 // ClusterLogEntry represents a cluster log entry from /cluster/log.
+// Proxmox 9 returns task log entries with time, node, msg, etc.
 type ClusterLogEntry struct {
-	N       int64  `json:"n" yaml:"n"`
-	Message string `json:"t" yaml:"t"`
+	Time    int64  `json:"time" yaml:"time"`
+	Node    string `json:"node,omitempty" yaml:"node,omitempty"`
+	ID      string `json:"id,omitempty" yaml:"id,omitempty"`
+	Tag     string `json:"tag,omitempty" yaml:"tag,omitempty"`
+	Message string `json:"message,omitempty" yaml:"message,omitempty"`
+	User    string `json:"user,omitempty" yaml:"user,omitempty"`
+	Pri     int    `json:"pri,omitempty" yaml:"pri,omitempty"`
+	PID     int    `json:"pid,omitempty" yaml:"pid,omitempty"`
 }
 
 // ClusterStatusDetail represents an item from /cluster/status.
