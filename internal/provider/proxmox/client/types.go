@@ -589,7 +589,7 @@ type NodeSubscriptionData struct {
 	Expires string `json:"enddate,omitempty"`
 }
 
-// NodeUpdatesResponse is the response from /nodes/{node}/updates.
+// NodeUpdatesResponse is the response from /nodes/{node}/apt/update.
 type NodeUpdatesResponse struct {
 	Data []NodeUpdateItem `json:"data"`
 }

@@ -419,6 +419,24 @@ func TestGetNodeTimeDecodesNumericLocalTime(t *testing.T) {
 	}
 }
 
+func TestGetNodeUpdatesUsesAptUpdatePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/apt/update" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"package":"pve-manager","version":"9.2.2"}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	updates, err := c.GetNodeUpdates(context.Background(), "proxmox")
+	if err != nil {
+		t.Fatalf("GetNodeUpdates: %v", err)
+	}
+	if len(updates) != 1 || updates[0].Package != "pve-manager" || updates[0].Version != "9.2.2" {
+		t.Fatalf("updates = %+v", updates)
+	}
+}
+
 func TestGetHAStatusDecodesArrayResponse(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/cluster/ha/status" {
@@ -434,6 +452,24 @@ func TestGetHAStatusDecodesArrayResponse(t *testing.T) {
 	}
 	if got.Status != "ok" || got.Quorum != 1 {
 		t.Fatalf("HA status = %+v", got)
+	}
+}
+
+func TestGetHACurrentUsesStatusCurrentPath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cluster/ha/status/current" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"sid":"vm:100","type":"service","state":"started","node":"proxmox"}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	items, err := c.GetHACurrent(context.Background())
+	if err != nil {
+		t.Fatalf("GetHACurrent: %v", err)
+	}
+	if len(items) != 1 || items[0].State != "started" || items[0].Node != "proxmox" {
+		t.Fatalf("HA current = %+v", items)
 	}
 }
 
