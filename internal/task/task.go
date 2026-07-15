@@ -250,7 +250,7 @@ func (p *Poller) Wait(ctx context.Context, node, upid string) *TaskResult {
 				UPID:   upid,
 				State:  StateStopped,
 				Status: status.Status,
-				OK:     status.Status == "OK",
+				OK:     status.Status == "OK" || strings.HasPrefix(status.Status, "WARNINGS:"),
 			}
 			return result
 		}

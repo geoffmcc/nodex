@@ -808,7 +808,7 @@ func (c *Client) CTConfigUpdate(ctx context.Context, node string, vmid int, para
 	}
 	var resp TaskResponse
 	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/config"
-	if err := c.post(ctx, path, params, &resp); err != nil {
+	if err := c.put(ctx, path, params, &resp); err != nil {
 		return "", err
 	}
 	return resp.Data, nil
@@ -982,7 +982,7 @@ func (c *Client) VMCloudInit(ctx context.Context, node string, vmid int) (string
 	}
 	var resp TaskResponse
 	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/cloudinit"
-	if err := c.post(ctx, path, nil, &resp); err != nil {
+	if err := c.put(ctx, path, nil, &resp); err != nil {
 		return "", err
 	}
 	return resp.Data, nil
@@ -1252,7 +1252,7 @@ func (c *Client) DeleteBackupSchedule(ctx context.Context, id string) error {
 }
 
 // UploadContent uploads a file to storage via POST /nodes/{node}/storage/{storage}/upload.
-// Uses streaming multipart construction to avoid buffering the entire file in memory.
+// Proxmox rejects chunked uploads, so the multipart body is streamed with a known Content-Length.
 // Only regular files are accepted; symlinks, directories, and special files are rejected.
 func (c *Client) UploadContent(ctx context.Context, node, storage, localPath string) (string, error) {
 	if node == "" {
@@ -1277,41 +1277,32 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 	}
 
 	filename := filepath.Base(localPath)
+	contentType := inferUploadContentType(filename)
+	if contentType == "" {
+		return "", fmt.Errorf("unsupported upload content type for %s (supported extensions: .iso, .qcow2, .raw, .vmdk, .tar, .tar.gz, .tgz, .tar.xz, .tar.zst)", filename)
+	}
 	file, err := os.Open(localPath) // #nosec G304 -- localPath validated by os.Lstat + IsRegular above.
 	if err != nil {
 		return "", fmt.Errorf("open local file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
-	pr, pw := io.Pipe()
-	writer := multipart.NewWriter(pw)
-
-	// Write the multipart body in a goroutine so the HTTP client can stream it.
-	pipeDone := make(chan error, 1)
-	go func() {
-		defer func() { _ = pw.Close() }()
-		part, err := writer.CreateFormFile("content", filename)
-		if err != nil {
-			pipeDone <- fmt.Errorf("create multipart form: %w", err)
-			return
-		}
-		if _, err := io.Copy(part, file); err != nil {
-			pipeDone <- fmt.Errorf("read local file: %w", err)
-			return
-		}
-		if err := writer.WriteField("filename", filename); err != nil {
-			pipeDone <- fmt.Errorf("write filename field: %w", err)
-			return
-		}
-		if err := writer.Close(); err != nil {
-			pipeDone <- fmt.Errorf("close multipart writer: %w", err)
-			return
-		}
-		pipeDone <- nil
-	}()
+	var prefix bytes.Buffer
+	writer := multipart.NewWriter(&prefix)
+	if err := writer.WriteField("content", contentType); err != nil {
+		return "", fmt.Errorf("write content field: %w", err)
+	}
+	if _, err := writer.CreateFormFile("filename", filename); err != nil {
+		return "", fmt.Errorf("create multipart form: %w", err)
+	}
+	boundary := writer.Boundary()
+	var suffix bytes.Buffer
+	fmt.Fprintf(&suffix, "\r\n--%s--\r\n", boundary)
+	body := io.MultiReader(&prefix, file, &suffix)
+	contentLength := int64(prefix.Len()) + info.Size() + int64(suffix.Len())
 
 	u := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/upload"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, pr)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, body)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
@@ -1320,30 +1311,36 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 		return "", err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.ContentLength = contentLength
 	if c.token != "" {
 		req.Header.Set("Authorization", "PVEAPIToken="+c.token)
 	}
 
 	resp, err := c.client.DoMutation(ctx, req)
 	if err != nil {
-		// Wait for the pipe writer goroutine to finish and check for local read errors.
-		if pwErr := <-pipeDone; pwErr != nil {
-			return "", fmt.Errorf("%v: %w", pwErr, err)
-		}
 		return "", fmt.Errorf("execute request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	// Verify the pipe writer completed without errors.
-	if pwErr := <-pipeDone; pwErr != nil {
-		return "", pwErr
-	}
 
 	var taskResp TaskResponse
 	if err := c.decodeResponse(resp, &taskResp); err != nil {
 		return "", err
 	}
 	return taskResp.Data, nil
+}
+
+func inferUploadContentType(filename string) string {
+	lower := strings.ToLower(filename)
+	switch {
+	case strings.HasSuffix(lower, ".iso"):
+		return "iso"
+	case strings.HasSuffix(lower, ".qcow2"), strings.HasSuffix(lower, ".raw"), strings.HasSuffix(lower, ".vmdk"):
+		return "import"
+	case strings.HasSuffix(lower, ".tar"), strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".tgz"), strings.HasSuffix(lower, ".tar.xz"), strings.HasSuffix(lower, ".tar.zst"):
+		return "vztmpl"
+	default:
+		return ""
+	}
 }
 
 // DownloadContent returns the raw bytes of a storage volume via GET /nodes/{node}/storage/{storage}/download.
@@ -1895,7 +1892,7 @@ func (c *Client) CreateFirewallGroup(ctx context.Context, name, comment string) 
 		return fmt.Errorf("group name is required")
 	}
 	body := url.Values{}
-	body.Set("name", name)
+	body.Set("group", name)
 	if comment != "" {
 		body.Set("comment", comment)
 	}
@@ -2470,6 +2467,9 @@ func (c *Client) decodeResponse(resp *http.Response, result any) error {
 	body, truncated := readLimited(resp.Body, c.client.MaxBodySize())
 	if truncated {
 		return fmt.Errorf("response body exceeds %d bytes", c.client.MaxBodySize())
+	}
+	if result == nil {
+		return nil
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))
 	if err := dec.Decode(result); err != nil {

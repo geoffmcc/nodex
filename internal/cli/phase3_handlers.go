@@ -107,6 +107,11 @@ func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Pr
 	if !cmdCtx.Opts.Wait {
 		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 	}
+	if upid == "" {
+		result.Status = "OK"
+		result.Warnings = append(result.Warnings, "provider returned no task ID; nothing to poll")
+		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
+	}
 
 	fmt.Fprintf(cmdCtx.ErrW, "Waiting for task %s...\n", upid)
 	ti, ok := prov.(domain.TaskInspector)

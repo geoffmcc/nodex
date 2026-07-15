@@ -154,6 +154,28 @@ func TestPollerSuccess(t *testing.T) {
 	}
 }
 
+func TestPollerWarningIsSuccess(t *testing.T) {
+	mock := &mockTaskClient{
+		statuses: []*TaskStatus{
+			{UPID: "UPID:pve1/100/0", State: StateStopped, Status: "WARNINGS: 1"},
+		},
+	}
+	poller := NewPoller(mock,
+		WithPollInterval(1*time.Millisecond),
+		WithMaxWait(5*time.Second),
+	)
+	result := poller.Wait(context.Background(), "pve1", "UPID:pve1/100/0")
+	if result.Error != nil {
+		t.Fatalf("unexpected polling error: %v", result.Error)
+	}
+	if !result.OK {
+		t.Error("expected warnings result to be OK")
+	}
+	if result.Status != "WARNINGS: 1" {
+		t.Errorf("Status = %q, want WARNINGS: 1", result.Status)
+	}
+}
+
 func TestPollerTaskFailure(t *testing.T) {
 	mock := &mockTaskClient{
 		statuses: []*TaskStatus{
