@@ -283,6 +283,8 @@ type EventItem struct {
 	Node    string `json:"node,omitempty"`
 	ID      string `json:"id,omitempty"`
 	Message string `json:"message,omitempty"`
+	Msg     string `json:"msg,omitempty"`
+	Tag     string `json:"tag,omitempty"`
 }
 
 // SyslogResponse is the response from /nodes/{node}/syslog.
@@ -387,9 +389,13 @@ type NodeNetworkResponse struct {
 // NodeNetworkItem represents a network interface on a node.
 type NodeNetworkItem struct {
 	Name   string `json:"name"`
+	Iface  string `json:"iface,omitempty"`
 	Type   string `json:"type"`
 	Status string `json:"status"`
+	Active int    `json:"active,omitempty"`
+	Method string `json:"method,omitempty"`
 	IP     string `json:"ip,omitempty"`
+	CIDR   string `json:"cidr,omitempty"`
 	MAC    string `json:"mac,omitempty"`
 }
 

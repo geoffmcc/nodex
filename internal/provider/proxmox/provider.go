@@ -483,12 +483,20 @@ func (p *Provider) Events(ctx context.Context) ([]domain.Event, error) {
 	}
 	result := make([]domain.Event, 0, len(items))
 	for _, item := range items {
+		message := item.Message
+		if message == "" {
+			message = item.Msg
+		}
+		typeName := item.Type
+		if typeName == "" {
+			typeName = item.Tag
+		}
 		result = append(result, domain.Event{
-			Type:    item.Type,
+			Type:    typeName,
 			Time:    item.Time,
 			Node:    item.Node,
 			ID:      item.ID,
-			Message: item.Message,
+			Message: message,
 		})
 	}
 	return result, nil
@@ -680,15 +688,35 @@ func (p *Provider) NodeNetwork(ctx context.Context, node string) ([]domain.NodeN
 	}
 	result := make([]domain.NodeNetwork, 0, len(items))
 	for _, item := range items {
-		result = append(result, domain.NodeNetwork{
-			Name:   item.Name,
-			Type:   item.Type,
-			Status: item.Status,
-			IP:     item.IP,
-			MAC:    item.MAC,
-		})
+		result = append(result, mapNodeNetwork(item))
 	}
 	return result, nil
+}
+
+func mapNodeNetwork(item client.NodeNetworkItem) domain.NodeNetwork {
+	name := item.Name
+	if name == "" {
+		name = item.Iface
+	}
+	status := item.Status
+	if status == "" {
+		if item.Active == 1 {
+			status = "active"
+		} else {
+			status = item.Method
+		}
+	}
+	ip := item.IP
+	if ip == "" {
+		ip = item.CIDR
+	}
+	return domain.NodeNetwork{
+		Name:   name,
+		Type:   item.Type,
+		Status: status,
+		IP:     ip,
+		MAC:    item.MAC,
+	}
 }
 
 // NodeDNS returns DNS configuration for a specific node.
