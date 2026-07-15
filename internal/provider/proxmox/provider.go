@@ -522,10 +522,8 @@ func (p *Provider) Syslog(ctx context.Context, node string) ([]domain.SyslogEntr
 	result := make([]domain.SyslogEntry, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.SyslogEntry{
-			Time:    item.Time,
-			Node:    item.Node,
-			Level:   item.SyslogLevel,
-			Message: item.Message,
+			N:    item.N,
+			Text: item.T,
 		})
 	}
 	return result, nil
@@ -770,9 +768,13 @@ func (p *Provider) NodeDisks(ctx context.Context, node string) ([]domain.NodeDis
 	}
 	result := make([]domain.NodeDisk, 0, len(items))
 	for _, item := range items {
+		name := item.DevPath
+		if name == "" {
+			name = item.Serial
+		}
 		result = append(result, domain.NodeDisk{
-			Name:   item.Name,
-			Path:   item.Path,
+			Name:   name,
+			Path:   item.DevPath,
 			Size:   item.Size,
 			Type:   item.Type,
 			Model:  item.Model,
@@ -794,11 +796,7 @@ func (p *Provider) NodeCertificates(ctx context.Context, node string) ([]domain.
 	result := make([]domain.NodeCertificate, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.NodeCertificate{
-			Fingerprint: item.Fingerprint,
-			Subject:     item.Subject,
-			Issuer:      item.Issuer,
-			NotBefore:   item.NotBefore,
-			NotAfter:    item.NotAfter,
+			Name: item.Name,
 		})
 	}
 	return result, nil
@@ -1496,8 +1494,14 @@ func (p *Provider) ClusterLog(ctx context.Context) ([]domain.ClusterLogEntry, er
 	result := make([]domain.ClusterLogEntry, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.ClusterLogEntry{
-			N:       item.N,
-			Message: item.T,
+			Time:    item.Time,
+			Node:    item.Node,
+			ID:      item.ID,
+			Tag:     item.Tag,
+			Message: item.Message,
+			User:    item.User,
+			Pri:     item.Pri,
+			PID:     item.PID,
 		})
 	}
 	return result, nil

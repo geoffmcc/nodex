@@ -1,14 +1,10 @@
 [
   {
-    "time": 1700000000,
-    "node": "e2e-node",
-    "level": "info",
-    "message": "system startup"
+    "n": 1,
+    "t": "system startup"
   },
   {
-    "time": 1700000001,
-    "node": "e2e-node",
-    "level": "err",
-    "message": "disk failure"
+    "n": 2,
+    "t": "disk failure"
   }
 ]

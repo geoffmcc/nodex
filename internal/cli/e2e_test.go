@@ -123,8 +123,8 @@ func (p *e2eMockProvider) Events(_ context.Context) ([]domain.Event, error) {
 }
 func (p *e2eMockProvider) Syslog(_ context.Context, node string) ([]domain.SyslogEntry, error) {
 	return []domain.SyslogEntry{
-		{Time: 1700000000, Node: node, Level: "info", Message: "system startup"},
-		{Time: 1700000001, Node: node, Level: "err", Message: "disk failure"},
+		{N: 1, Text: "system startup"},
+		{N: 2, Text: "disk failure"},
 	}, nil
 }
 func (p *e2eMockProvider) Backups(_ context.Context, node string) ([]domain.Backup, error) {
@@ -245,8 +245,8 @@ func (p *e2eMockProvider) Pools(_ context.Context) ([]domain.Pool, error) {
 
 func (p *e2eMockProvider) ClusterLog(_ context.Context) ([]domain.ClusterLogEntry, error) {
 	return []domain.ClusterLogEntry{
-		{N: 1, Message: "starting cluster services"},
-		{N: 2, Message: "node e2e-node joined quorum"},
+		{Time: 1700000000, Tag: "pvedaemon", Node: "e2e-node", ID: "1:e2e-node", Message: "starting cluster services", User: "root@pam", Pri: 6},
+		{Time: 1700000001, Tag: "pvedaemon", Node: "e2e-node", ID: "2:e2e-node", Message: "node e2e-node joined quorum", User: "root@pam", Pri: 6},
 	}, nil
 }
 
@@ -396,13 +396,13 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "container snapshots", args: []string{"--output", "json", "container", "snapshots", "e2e-node/200"}, want: []string{`"name": "clean"`, `"vmid": 200`}},
 		{name: "status", args: []string{"--output", "json", "status"}, want: []string{`"cluster": "e2e"`, `"nodes": 1`, `"vms_running": 1`}},
 		{name: "event list", args: []string{"--output", "json", "event", "list"}, want: []string{`"type": "node"`, `"message": "node online"`, `"id": "node/e2e-node"`}},
-		{name: "log", args: []string{"--output", "json", "log", "e2e-node"}, want: []string{`"level": "info"`, `"message": "system startup"`, `"node": "e2e-node"`}},
+		{name: "log", args: []string{"--output", "json", "log", "e2e-node"}, want: []string{`"n": 1`, `"t": "system startup"`, `"n": 2`}},
 		{name: "backup list", args: []string{"--output", "json", "backup", "list", "e2e-node"}, want: []string{`"type": "vzdump"`, `"state": "stopped"`, `"node": "e2e-node"`}},
 		{name: "firewall list", args: []string{"--output", "json", "firewall", "list"}, want: []string{`"action": "ACCEPT"`, `"dport": "22"`, `"comment": "SSH"`}},
 		{name: "ha list", args: []string{"--output", "json", "ha", "list"}, want: []string{`"type": "vm"`, `"state": "started"`, `"group": "default"`}},
 		{name: "ha groups", args: []string{"--output", "json", "ha", "groups"}, want: []string{`"id": "default"`, `"nodes": "e2e-node"`, `"comment": "Default HA group"`}},
 		{name: "pools list", args: []string{"--output", "json", "pools", "list"}, want: []string{`"poolid": "admins"`, `"comment": "Admin resources"`, `"qemu/100"`}},
-		{name: "cluster log", args: []string{"--output", "json", "cluster", "log"}, want: []string{`"n": 1`, `"t": "starting cluster services"`, `"n": 2`}},
+		{name: "cluster log", args: []string{"--output", "json", "cluster", "log"}, want: []string{`"time": 1700000000`, `"tag": "pvedaemon"`, `"message": "starting cluster services"`, `"node": "e2e-node"`}},
 		{name: "status with ha", args: []string{"--output", "json", "status"}, want: []string{`"quorum": 3`, `"ha":`, `"status": "online"`}},
 		// Lifecycle commands (Tier 1, need --yes)
 		{name: "vm start", args: []string{"--yes", "vm", "start", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},

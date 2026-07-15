@@ -832,7 +832,7 @@ func TestGetSyslogDecodesEntries(t *testing.T) {
 		if r.URL.Path != "/nodes/proxmox/syslog" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		_, _ = fmt.Fprint(w, `{"data":[{"time":1700000000,"node":"proxmox","sysloglevel":"info","message":"system startup"},{"time":1700000001,"node":"proxm01","sysloglevel":"err","message":"disk failure"}]}`)
+		_, _ = fmt.Fprint(w, `{"data":[{"n":1,"t":"Jul 14 18:09:13 pve-test kernel: Linux version"},{"n":2,"t":"Jul 14 18:09:14 pve-test kernel: Command line"}]}`)
 	}))
 	defer s.Close()
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
@@ -843,10 +843,10 @@ func TestGetSyslogDecodesEntries(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("len(entries) = %d, want 2", len(entries))
 	}
-	if entries[0].SyslogLevel != "info" || entries[0].Message != "system startup" {
+	if entries[0].N != 1 || entries[0].T == "" {
 		t.Fatalf("first entry = %+v", entries[0])
 	}
-	if entries[1].SyslogLevel != "err" || entries[1].Message != "disk failure" {
+	if entries[1].N != 2 || entries[1].T == "" {
 		t.Fatalf("second entry = %+v", entries[1])
 	}
 }

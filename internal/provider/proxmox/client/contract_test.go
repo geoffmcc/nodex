@@ -439,20 +439,18 @@ func TestEventItemContract(t *testing.T) {
 
 func TestSyslogItemContract(t *testing.T) {
 	raw := `{
-		"time": 1700000000,
-		"node": "pve1",
-		"sysloglevel": "info",
-		"message": "system startup"
+		"n": 1,
+		"t": "Jul 14 18:09:13 pve-test kernel: Linux version 7.0.2-6-pve"
 	}`
 	var item SyslogItem
 	if err := json.Unmarshal([]byte(raw), &item); err != nil {
 		t.Fatalf("unmarshal SyslogItem: %v", err)
 	}
-	if item.SyslogLevel != "info" {
-		t.Errorf("SyslogLevel = %q, want info", item.SyslogLevel)
+	if item.N != 1 {
+		t.Errorf("N = %d, want 1", item.N)
 	}
-	if item.Message != "system startup" {
-		t.Errorf("Message = %q, want system startup", item.Message)
+	if item.T == "" {
+		t.Error("T is empty")
 	}
 }
 

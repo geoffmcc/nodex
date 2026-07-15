@@ -119,18 +119,18 @@ type NodeStatusData struct {
 func (d *NodeStatusData) UnmarshalJSON(data []byte) error {
 	type rawNodeStatusData struct {
 		CPU            float64         `json:"cpu"`
-		MaxCPU         int             `json:"maxcpu"`
-		Mem            int64           `json:"mem"`
-		MaxMem         int64           `json:"maxmem"`
-		Disk           int64           `json:"disk"`
-		MaxDisk        int64           `json:"maxdisk"`
+		MaxCPU         json.RawMessage `json:"maxcpu,omitempty"`
+		Mem            json.RawMessage `json:"mem,omitempty"`
+		MaxMem         json.RawMessage `json:"maxmem,omitempty"`
+		Disk           json.RawMessage `json:"disk,omitempty"`
+		MaxDisk        json.RawMessage `json:"maxdisk,omitempty"`
 		Uptime         int             `json:"uptime"`
-		Level          string          `json:"level"`
+		Level          string          `json:"level,omitempty"`
 		SSLFingerprint string          `json:"ssl_fingerprint,omitempty"`
-		ID             string          `json:"id"`
-		Node           string          `json:"node"`
-		Type           string          `json:"type"`
-		Status         string          `json:"status"`
+		ID             string          `json:"id,omitempty"`
+		Node           string          `json:"node,omitempty"`
+		Type           string          `json:"type,omitempty"`
+		Status         string          `json:"status,omitempty"`
 		KVersion       string          `json:"kversion,omitempty"`
 		PVEVersion     string          `json:"pveversion,omitempty"`
 		LoadAvg        json.RawMessage `json:"loadavg,omitempty"`
@@ -138,18 +138,62 @@ func (d *NodeStatusData) UnmarshalJSON(data []byte) error {
 		Ksm            json.RawMessage `json:"ksm,omitempty"`
 		Numa           int             `json:"numa,omitempty"`
 		IOMax          float64         `json:"io,omitempty"`
+		Memory         json.RawMessage `json:"memory,omitempty"`
+		RootFS         json.RawMessage `json:"rootfs,omitempty"`
+		CPUInfo        json.RawMessage `json:"cpuinfo,omitempty"`
+		Idle           float64         `json:"idle,omitempty"`
 	}
 	var raw rawNodeStatusData
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+
+	maxCPU := decodeInt(raw.MaxCPU)
+	if maxCPU == 0 {
+		type cpuInfo struct {
+			Cpus int `json:"cpus"`
+		}
+		var ci cpuInfo
+		if json.Unmarshal(raw.CPUInfo, &ci) == nil && ci.Cpus > 0 {
+			maxCPU = ci.Cpus
+		}
+	}
+
+	mem := decodeInt64(raw.Mem)
+	maxMem := decodeInt64(raw.MaxMem)
+	if mem == 0 && maxMem == 0 {
+		type memInfo struct {
+			Used  int64 `json:"used"`
+			Total int64 `json:"total"`
+		}
+		var mi memInfo
+		if json.Unmarshal(raw.Memory, &mi) == nil {
+			mem = mi.Used
+			maxMem = mi.Total
+		}
+	}
+
+	disk := decodeInt64(raw.Disk)
+	maxDisk := decodeInt64(raw.MaxDisk)
+	if disk == 0 && maxDisk == 0 {
+		type diskInfo struct {
+			Used  int64 `json:"used"`
+			Total int64 `json:"total"`
+		}
+		var di diskInfo
+		if json.Unmarshal(raw.RootFS, &di) == nil {
+			disk = di.Used
+			maxDisk = di.Total
+		}
+	}
+
 	*d = NodeStatusData{
 		CPU:            raw.CPU,
-		MaxCPU:         raw.MaxCPU,
-		Mem:            raw.Mem,
-		MaxMem:         raw.MaxMem,
-		Disk:           raw.Disk,
-		MaxDisk:        raw.MaxDisk,
+		MaxCPU:         maxCPU,
+		Mem:            mem,
+		MaxMem:         maxMem,
+		Disk:           disk,
+		MaxDisk:        maxDisk,
 		Uptime:         raw.Uptime,
 		Level:          raw.Level,
 		SSLFingerprint: raw.SSLFingerprint,
@@ -442,11 +486,10 @@ type SyslogResponse struct {
 }
 
 // SyslogItem represents a single syslog entry.
+// Proxmox 9 /nodes/{node}/syslog returns entries with n (line number) and t (log text).
 type SyslogItem struct {
-	Time        int64  `json:"time"`
-	Node        string `json:"node,omitempty"`
-	SyslogLevel string `json:"sysloglevel,omitempty"`
-	Message     string `json:"message,omitempty"`
+	N int64  `json:"n"`
+	T string `json:"t"`
 }
 
 // BackupStatusResponse is the response from /nodes/{node}/storage/{storage}/content for backup tasks.
@@ -605,13 +648,16 @@ type NodeDisksResponse struct {
 }
 
 // NodeDiskItem represents a physical disk on a node.
+// Proxmox 9 returns devpath, size, vendor, model, etc.
 type NodeDiskItem struct {
-	Name   string `json:"name"`
-	Path   string `json:"path"`
-	Size   int64  `json:"size"`
-	Type   string `json:"type,omitempty"`
-	Model  string `json:"model,omitempty"`
-	Health string `json:"health,omitempty"`
+	DevPath string `json:"devpath,omitempty"`
+	Size    int64  `json:"size"`
+	Type    string `json:"type,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Health  string `json:"health,omitempty"`
+	Serial  string `json:"serial,omitempty"`
+	Vendor  string `json:"vendor,omitempty"`
+	WWN     string `json:"wwn,omitempty"`
 }
 
 // NodeCertificatesResponse is the response from /nodes/{node}/certificates.
@@ -619,13 +665,11 @@ type NodeCertificatesResponse struct {
 	Data []NodeCertificateItem `json:"data"`
 }
 
-// NodeCertificateItem represents a TLS certificate on a node.
+// NodeCertificateItem represents a TLS certificate category on a node.
+// Proxmox 9 /nodes/{node}/certificates returns certificate categories with a name field.
+// Individual certificate details (fingerprint, etc.) are available under .../certificates/{name}.
 type NodeCertificateItem struct {
-	Fingerprint string `json:"fingerprint"`
-	Subject     string `json:"subject"`
-	Issuer      string `json:"issuer,omitempty"`
-	NotBefore   string `json:"notbefore,omitempty"`
-	NotAfter    string `json:"notafter,omitempty"`
+	Name string `json:"name"`
 }
 
 // NodeSubscriptionResponse is the response from /nodes/{node}/subscription.
@@ -784,6 +828,23 @@ func decodeInt(raw json.RawMessage) int {
 	return 0
 }
 
+func decodeInt64(raw json.RawMessage) int64 {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0
+	}
+	var n int64
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
 func decodeString(raw json.RawMessage) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		return ""
@@ -896,9 +957,16 @@ type ClusterLogResponse struct {
 }
 
 // ClusterLogItem represents a single cluster log entry.
+// Proxmox 9 /cluster/log returns task log entries with time, node, msg, etc.
 type ClusterLogItem struct {
-	N int64  `json:"n"`
-	T string `json:"t"`
+	Time    int64  `json:"time"`
+	Tag     string `json:"tag,omitempty"`
+	Node    string `json:"node,omitempty"`
+	ID      string `json:"id,omitempty"`
+	Message string `json:"msg,omitempty"`
+	User    string `json:"user,omitempty"`
+	Pri     int    `json:"pri,omitempty"`
+	PID     int    `json:"pid,omitempty"`
 }
 
 // BackupScheduleListResponse is the response from GET /cluster/backup.

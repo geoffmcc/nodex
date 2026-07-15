@@ -1,10 +1,20 @@
 [
   {
-    "n": 1,
-    "t": "starting cluster services"
+    "time": 1700000000,
+    "node": "e2e-node",
+    "id": "1:e2e-node",
+    "tag": "pvedaemon",
+    "message": "starting cluster services",
+    "user": "root@pam",
+    "pri": 6
   },
   {
-    "n": 2,
-    "t": "node e2e-node joined quorum"
+    "time": 1700000001,
+    "node": "e2e-node",
+    "id": "2:e2e-node",
+    "tag": "pvedaemon",
+    "message": "node e2e-node joined quorum",
+    "user": "root@pam",
+    "pri": 6
   }
 ]

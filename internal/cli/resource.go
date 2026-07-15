@@ -1130,14 +1130,12 @@ func writeSyslog(cmdCtx *Context, entries []domain.SyslogEntry) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, entries)
 	default:
-		headers := []string{"TIME", "LEVEL", "NODE", "MESSAGE"}
+		headers := []string{"N", "TEXT"}
 		rows := make([][]string, 0, len(entries))
 		for _, e := range entries {
 			rows = append(rows, []string{
-				fmt.Sprintf("%d", e.Time),
-				e.Level,
-				e.Node,
-				e.Message,
+				fmt.Sprintf("%d", e.N),
+				e.Text,
 			})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
