@@ -225,6 +225,9 @@ func runVMShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) != 1 {
 		return app.NewExitError(fmt.Errorf("usage: nodex vm show <id>"), app.ExitUsage)
 	}
+	if _, _, err := parseNodeVMID(args[0]); err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -333,6 +336,9 @@ func runContainerList(ctx context.Context, cmdCtx *Context, args []string) error
 func runContainerShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) != 1 {
 		return app.NewExitError(fmt.Errorf("usage: nodex container show <id>"), app.ExitUsage)
+	}
+	if _, _, err := parseNodeVMID(args[0]); err != nil {
+		return app.NewExitError(err, app.ExitUsage)
 	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
