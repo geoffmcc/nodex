@@ -288,82 +288,106 @@ type VMConfigResponse struct {
 
 // VMConfigData holds VM configuration information.
 type VMConfigData struct {
-	VMID        int               `json:"vmid"`
-	Name        string            `json:"name,omitempty"`
-	CPU         int               `json:"cores,omitempty"`
-	Memory      int               `json:"memory,omitempty"`
-	Net0        string            `json:"net0,omitempty"`
-	Scsi0       string            `json:"scsi0,omitempty"`
-	Boot        string            `json:"boot,omitempty"`
-	OnBoot      int               `json:"onboot,omitempty"`
-	Agent       int               `json:"agent,omitempty"`
-	SMBIOS1     string            `json:"smbios1,omitempty"`
-	Numa        int               `json:"numa,omitempty"`
-	OSType      string            `json:"ostype,omitempty"`
-	Description string            `json:"description,omitempty"`
-	Protection  int               `json:"protection,omitempty"`
-	Tags        string            `json:"tags,omitempty"`
-	VMGenID     string            `json:"vmgenid,omitempty"`
-	Args        string            `json:"args,omitempty"`
-	Bios        string            `json:"bios,omitempty"`
-	IDE2        string            `json:"ide2,omitempty"`
-	ScsiHW      string            `json:"scsihw,omitempty"`
-	Unused0     string            `json:"unused0,omitempty"`
-	Raw         map[string]string `json:"raw,omitempty"`
+	VMID         int               `json:"vmid"`
+	Name         string            `json:"name,omitempty"`
+	CPU          int               `json:"cores,omitempty"`
+	CPUType      string            `json:"cpu,omitempty"`
+	Memory       int               `json:"memory,omitempty"`
+	Balloon      int               `json:"balloon,omitempty"`
+	Net0         string            `json:"net0,omitempty"`
+	Scsi0        string            `json:"scsi0,omitempty"`
+	Boot         string            `json:"boot,omitempty"`
+	OnBoot       int               `json:"onboot,omitempty"`
+	Agent        int               `json:"agent,omitempty"`
+	SMBIOS1      string            `json:"smbios1,omitempty"`
+	Numa         int               `json:"numa,omitempty"`
+	OSType       string            `json:"ostype,omitempty"`
+	Description  string            `json:"description,omitempty"`
+	Protection   int               `json:"protection,omitempty"`
+	Tags         string            `json:"tags,omitempty"`
+	VMGenID      string            `json:"vmgenid,omitempty"`
+	Args         string            `json:"args,omitempty"`
+	Bios         string            `json:"bios,omitempty"`
+	IDE2         string            `json:"ide2,omitempty"`
+	ScsiHW       string            `json:"scsihw,omitempty"`
+	Machine      string            `json:"machine,omitempty"`
+	Hotplug      string            `json:"hotplug,omitempty"`
+	CIUser       string            `json:"ciuser,omitempty"`
+	CICustom     string            `json:"cicustom,omitempty"`
+	Nameserver   string            `json:"nameserver,omitempty"`
+	SearchDomain string            `json:"searchdomain,omitempty"`
+	Unused0      string            `json:"unused0,omitempty"`
+	Raw          map[string]string `json:"raw,omitempty"`
 }
 
 func (d *VMConfigData) UnmarshalJSON(data []byte) error {
 	type rawVMConfigData struct {
-		VMID        json.RawMessage   `json:"vmid"`
-		Name        string            `json:"name,omitempty"`
-		CPU         json.RawMessage   `json:"cores,omitempty"`
-		Memory      json.RawMessage   `json:"memory,omitempty"`
-		Net0        string            `json:"net0,omitempty"`
-		Scsi0       string            `json:"scsi0,omitempty"`
-		Boot        string            `json:"boot,omitempty"`
-		OnBoot      json.RawMessage   `json:"onboot,omitempty"`
-		Agent       json.RawMessage   `json:"agent,omitempty"`
-		SMBIOS1     string            `json:"smbios1,omitempty"`
-		Numa        json.RawMessage   `json:"numa,omitempty"`
-		OSType      string            `json:"ostype,omitempty"`
-		Description string            `json:"description,omitempty"`
-		Protection  json.RawMessage   `json:"protection,omitempty"`
-		Tags        string            `json:"tags,omitempty"`
-		VMGenID     string            `json:"vmgenid,omitempty"`
-		Args        string            `json:"args,omitempty"`
-		Bios        string            `json:"bios,omitempty"`
-		IDE2        string            `json:"ide2,omitempty"`
-		ScsiHW      string            `json:"scsihw,omitempty"`
-		Unused0     string            `json:"unused0,omitempty"`
-		Raw         map[string]string `json:"raw,omitempty"`
+		VMID         json.RawMessage   `json:"vmid"`
+		Name         string            `json:"name,omitempty"`
+		CPU          json.RawMessage   `json:"cores,omitempty"`
+		CPUType      string            `json:"cpu,omitempty"`
+		Memory       json.RawMessage   `json:"memory,omitempty"`
+		Balloon      json.RawMessage   `json:"balloon,omitempty"`
+		Net0         string            `json:"net0,omitempty"`
+		Scsi0        string            `json:"scsi0,omitempty"`
+		Boot         string            `json:"boot,omitempty"`
+		OnBoot       json.RawMessage   `json:"onboot,omitempty"`
+		Agent        json.RawMessage   `json:"agent,omitempty"`
+		SMBIOS1      string            `json:"smbios1,omitempty"`
+		Numa         json.RawMessage   `json:"numa,omitempty"`
+		OSType       string            `json:"ostype,omitempty"`
+		Description  string            `json:"description,omitempty"`
+		Protection   json.RawMessage   `json:"protection,omitempty"`
+		Tags         string            `json:"tags,omitempty"`
+		VMGenID      string            `json:"vmgenid,omitempty"`
+		Args         string            `json:"args,omitempty"`
+		Bios         string            `json:"bios,omitempty"`
+		IDE2         string            `json:"ide2,omitempty"`
+		ScsiHW       string            `json:"scsihw,omitempty"`
+		Machine      string            `json:"machine,omitempty"`
+		Hotplug      string            `json:"hotplug,omitempty"`
+		CIUser       string            `json:"ciuser,omitempty"`
+		CICustom     string            `json:"cicustom,omitempty"`
+		Nameserver   string            `json:"nameserver,omitempty"`
+		SearchDomain string            `json:"searchdomain,omitempty"`
+		Unused0      string            `json:"unused0,omitempty"`
+		Raw          map[string]string `json:"raw,omitempty"`
 	}
 	var raw rawVMConfigData
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 	*d = VMConfigData{
-		VMID:        decodeInt(raw.VMID),
-		Name:        raw.Name,
-		CPU:         decodeInt(raw.CPU),
-		Memory:      decodeInt(raw.Memory),
-		Net0:        raw.Net0,
-		Scsi0:       raw.Scsi0,
-		Boot:        raw.Boot,
-		OnBoot:      decodeInt(raw.OnBoot),
-		Agent:       decodeInt(raw.Agent),
-		SMBIOS1:     raw.SMBIOS1,
-		Numa:        decodeInt(raw.Numa),
-		OSType:      raw.OSType,
-		Description: raw.Description,
-		Protection:  decodeInt(raw.Protection),
-		Tags:        raw.Tags,
-		VMGenID:     raw.VMGenID,
-		Args:        raw.Args,
-		Bios:        raw.Bios,
-		IDE2:        raw.IDE2,
-		ScsiHW:      raw.ScsiHW,
-		Unused0:     raw.Unused0,
-		Raw:         raw.Raw,
+		VMID:         decodeInt(raw.VMID),
+		Name:         raw.Name,
+		CPU:          decodeInt(raw.CPU),
+		CPUType:      raw.CPUType,
+		Memory:       decodeInt(raw.Memory),
+		Balloon:      decodeInt(raw.Balloon),
+		Net0:         raw.Net0,
+		Scsi0:        raw.Scsi0,
+		Boot:         raw.Boot,
+		OnBoot:       decodeInt(raw.OnBoot),
+		Agent:        decodeInt(raw.Agent),
+		SMBIOS1:      raw.SMBIOS1,
+		Numa:         decodeInt(raw.Numa),
+		OSType:       raw.OSType,
+		Description:  raw.Description,
+		Protection:   decodeInt(raw.Protection),
+		Tags:         raw.Tags,
+		VMGenID:      raw.VMGenID,
+		Args:         raw.Args,
+		Bios:         raw.Bios,
+		IDE2:         raw.IDE2,
+		ScsiHW:       raw.ScsiHW,
+		Machine:      raw.Machine,
+		Hotplug:      raw.Hotplug,
+		CIUser:       raw.CIUser,
+		CICustom:     raw.CICustom,
+		Nameserver:   raw.Nameserver,
+		SearchDomain: raw.SearchDomain,
+		Unused0:      raw.Unused0,
+		Raw:          raw.Raw,
 	}
 	return nil
 }
@@ -396,6 +420,8 @@ type ContainerConfigData struct {
 	Architecture string            `json:"architecture,omitempty"`
 	Nameserver   string            `json:"nameserver,omitempty"`
 	SearchDomain string            `json:"searchdomain,omitempty"`
+	Password     string            `json:"password,omitempty"`
+	SSHKeys      string            `json:"sshkeys,omitempty"`
 	Dev0         string            `json:"dev0,omitempty"`
 	Fstab        string            `json:"fstab,omitempty"`
 	Hookscript   string            `json:"hookscript,omitempty"`

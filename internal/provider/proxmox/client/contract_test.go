@@ -225,7 +225,9 @@ func TestVMConfigDataContract(t *testing.T) {
 		"vmid": 100,
 		"name": "web-server",
 		"cores": 4,
+		"cpu": "host",
 		"memory": 8192,
+		"balloon": 4096,
 		"net0": "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0",
 		"scsi0": "local-lvm:vm-100-disk-0,size=50G",
 		"boot": "order=scsi0;net0",
@@ -238,7 +240,11 @@ func TestVMConfigDataContract(t *testing.T) {
 		"scsihw": "virtio-scsi-pci",
 		"bios": "seabios",
 		"ide2": "none,media=cdrom",
-		"vmgenid": "some-uuid"
+		"vmgenid": "some-uuid",
+		"machine": "q35",
+		"hotplug": "network,disk",
+		"ciuser": "root",
+		"cicustom": "user=local:ci-user.yaml"
 	}`
 	var d VMConfigData
 	if err := json.Unmarshal([]byte(raw), &d); err != nil {
@@ -253,8 +259,14 @@ func TestVMConfigDataContract(t *testing.T) {
 	if d.CPU != 4 {
 		t.Errorf("CPU = %d, want 4", d.CPU)
 	}
+	if d.CPUType != "host" {
+		t.Errorf("CPUType = %q, want host", d.CPUType)
+	}
 	if d.Memory != 8192 {
 		t.Errorf("Memory = %d, want 8192", d.Memory)
+	}
+	if d.Balloon != 4096 {
+		t.Errorf("Balloon = %d, want 4096", d.Balloon)
 	}
 	if d.Net0 != "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0" {
 		t.Errorf("Net0 = %q, want expected value", d.Net0)
@@ -267,6 +279,18 @@ func TestVMConfigDataContract(t *testing.T) {
 	}
 	if d.Bios != "seabios" {
 		t.Errorf("Bios = %q, want seabios", d.Bios)
+	}
+	if d.Machine != "q35" {
+		t.Errorf("Machine = %q, want q35", d.Machine)
+	}
+	if d.Hotplug != "network,disk" {
+		t.Errorf("Hotplug = %q, want network,disk", d.Hotplug)
+	}
+	if d.CIUser != "root" {
+		t.Errorf("CIUser = %q, want root", d.CIUser)
+	}
+	if d.CICustom != "user=local:ci-user.yaml" {
+		t.Errorf("CICustom = %q, want user=local:ci-user.yaml", d.CICustom)
 	}
 }
 
@@ -286,7 +310,9 @@ func TestContainerConfigDataContract(t *testing.T) {
 		"features": "nesting=1",
 		"architecture": "amd64",
 		"nameserver": "8.8.8.8",
-		"searchdomain": "example.com"
+		"searchdomain": "example.com",
+		"sshkeys": "ssh-rsa AAAA...",
+		"dev0": "mountpoint=/opt/data,backup=0"
 	}`
 	var d ContainerConfigData
 	if err := json.Unmarshal([]byte(raw), &d); err != nil {
@@ -312,6 +338,12 @@ func TestContainerConfigDataContract(t *testing.T) {
 	}
 	if d.Nameserver != "8.8.8.8" {
 		t.Errorf("Nameserver = %q, want 8.8.8.8", d.Nameserver)
+	}
+	if d.SSHKeys != "ssh-rsa AAAA..." {
+		t.Errorf("SSHKeys = %q, want expected value", d.SSHKeys)
+	}
+	if d.Dev0 != "mountpoint=/opt/data,backup=0" {
+		t.Errorf("Dev0 = %q, want expected value", d.Dev0)
 	}
 }
 
