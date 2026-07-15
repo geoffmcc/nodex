@@ -336,7 +336,14 @@ func (c *Client) GetContainerSnapshots(ctx context.Context, node string, vmid in
 func (c *Client) GetEvents(ctx context.Context) ([]EventItem, error) {
 	var resp EventListResponse
 	if err := c.get(ctx, "/cluster/events", &resp); err != nil {
-		return nil, err
+		if app.HTTPStatusFromError(err) != http.StatusNotImplemented && !strings.Contains(err.Error(), "server error: 501") {
+			return nil, err
+		}
+		var fallback EventListResponse
+		if fallbackErr := c.get(ctx, "/cluster/log", &fallback); fallbackErr != nil {
+			return nil, err
+		}
+		return fallback.Data, nil
 	}
 	return resp.Data, nil
 }

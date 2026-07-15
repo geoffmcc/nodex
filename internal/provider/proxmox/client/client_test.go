@@ -557,6 +557,33 @@ func TestGetEventsDecodesEventList(t *testing.T) {
 	}
 }
 
+func TestGetEventsFallsBackToClusterLog(t *testing.T) {
+	var paths []string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Path {
+		case "/cluster/events":
+			http.Error(w, `{"data":null,"message":"Method not implemented"}`, http.StatusNotImplemented)
+		case "/cluster/log":
+			_, _ = fmt.Fprint(w, `{"data":[{"time":1784073342,"node":"pve-test","id":"162:pve-test","tag":"pvedaemon","msg":"successful auth for user 'root@pam'"}]}`)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	events, err := c.GetEvents(context.Background())
+	if err != nil {
+		t.Fatalf("GetEvents: %v", err)
+	}
+	if len(paths) < 2 || paths[0] != "/cluster/events" || paths[len(paths)-1] != "/cluster/log" {
+		t.Fatalf("paths = %v", paths)
+	}
+	if len(events) != 1 || events[0].Msg == "" || events[0].Tag != "pvedaemon" {
+		t.Fatalf("events = %+v", events)
+	}
+}
+
 func TestGetSyslogDecodesEntries(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/nodes/proxmox/syslog" {
