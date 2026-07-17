@@ -42,7 +42,7 @@ Nodex enforces these rules for all credential operations:
 - **No CLI arguments for passwords.** Passwords and token secrets are never accepted as command-line arguments (which would appear in shell history and process listings).
 - **Hidden prompts.** Interactive password prompts do not echo input.
 - **`--password-stdin`.** Passwords may be piped from stdin for automation.
-- **Redaction.** Authorization headers, `PVEAPIToken` values, cookie headers, CSRF tokens, and password fields are redacted from debug output, error messages, and logs before printing.
+- **Redaction.** Authorization headers, `PVEAPIToken` and `PBSAPIToken` values, cookie headers, CSRF tokens, and password fields are redacted from debug output, error messages, and logs before printing.
 - **No secret logging.** Debug mode (`--debug`) passes all output through the redaction pipeline.
 - **Terminal sanitization.** All output is sanitized for escape sequences to prevent terminal injection.
 
@@ -102,7 +102,7 @@ Nodex redacts these patterns from all output before printing:
 - `Authorization: ...` headers
 - `Cookie: ...` headers
 - `CSRFPreventionToken: ...` values
-- `PVEAPIToken=...` values
+- `PVEAPIToken=...` and `PBSAPIToken=...` values
 - API token secrets in request bodies
 - Password fields in request bodies
 

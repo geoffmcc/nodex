@@ -21,20 +21,23 @@ import (
 var credentialPrompter = promptCredentials
 
 func runProfileAdd(_ context.Context, cmdCtx *Context, args []string) error {
-	if len(args) < 1 {
-		return app.NewExitError(
-			fmt.Errorf("usage: nodex profile add <name>"),
-			app.ExitUsage,
-		)
-	}
-	if len(args) != 1 {
-		return app.NewExitError(fmt.Errorf("usage: nodex profile add <name>"), app.ExitUsage)
+	name, provider, err := parseProfileAddArgs(args)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
 	}
 
-	name := args[0]
 	if !config.ProfileRegex.MatchString(name) {
 		return app.NewExitError(
 			fmt.Errorf("invalid profile name %q (must match %s)", name, config.ProfileRegex),
+			app.ExitUsage,
+		)
+	}
+
+	provider = config.NormalizeProvider(provider)
+	if !config.IsKnownProvider(provider) {
+		return app.NewExitError(
+			fmt.Errorf("unknown provider %q (known providers: %s)",
+				provider, strings.Join(config.KnownProviders(), ", ")),
 			app.ExitUsage,
 		)
 	}
@@ -46,7 +49,7 @@ func runProfileAdd(_ context.Context, cmdCtx *Context, args []string) error {
 		if len(cfg.Profiles) == 0 {
 			cfg.CurrentProfile = name
 		}
-		cfg.Profiles[name] = config.Profile{Provider: "proxmox"}
+		cfg.Profiles[name] = config.Profile{Provider: provider}
 		return nil
 	}); err != nil {
 		return err
@@ -56,6 +59,38 @@ func runProfileAdd(_ context.Context, cmdCtx *Context, args []string) error {
 		fmt.Fprintf(cmdCtx.Writer, "Profile %q added.\n", name)
 	}
 	return nil
+}
+
+func parseProfileAddArgs(args []string) (name, provider string, err error) {
+	provider = config.ProviderProxmox
+	usage := fmt.Errorf("usage: nodex profile add <name> [--provider %s]", strings.Join(config.KnownProviders(), "|"))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--provider":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return "", "", usage
+			}
+			provider = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--provider="):
+			provider = strings.TrimPrefix(arg, "--provider=")
+			if provider == "" {
+				return "", "", usage
+			}
+		case strings.HasPrefix(arg, "--"):
+			return "", "", usage
+		default:
+			if name != "" {
+				return "", "", usage
+			}
+			name = arg
+		}
+	}
+	if name == "" {
+		return "", "", usage
+	}
+	return name, provider, nil
 }
 
 func runProfileList(_ context.Context, cmdCtx *Context, args []string) error {

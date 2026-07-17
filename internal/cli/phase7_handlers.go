@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
@@ -97,9 +98,16 @@ func runProfileImport(_ context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	if imp.Provider == "" {
-		imp.Provider = "proxmox"
+		imp.Provider = config.ProviderProxmox
 	}
 	provider := config.NormalizeProvider(imp.Provider)
+	if !config.IsKnownProvider(provider) {
+		return app.NewExitError(
+			fmt.Errorf("unknown provider %q (known providers: %s)",
+				provider, strings.Join(config.KnownProviders(), ", ")),
+			app.ExitUsage,
+		)
+	}
 
 	if imp.Endpoint != "" {
 		if err := config.ValidateEndpoint(imp.Endpoint); err != nil {

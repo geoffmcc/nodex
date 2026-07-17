@@ -124,7 +124,7 @@ Subcommands:
 
 | Command | Description |
 |---------|-------------|
-| `profile add <name>` | Add a new profile |
+| `profile add <name> [--provider proxmox\|pbs]` | Add a new profile (default provider: `proxmox`) |
 | `profile list` | List all configured profiles |
 | `profile show <name>` | Show profile details |
 | `profile set-credentials <name>` | Set profile credentials (prompts for token) |

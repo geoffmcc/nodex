@@ -12,30 +12,58 @@ Nodex uses a local YAML configuration file plus optional credential backends. Co
 
 `nodex init` creates the configuration file. Interactive mode prompts for provider, endpoint, credential reference, and profile name. Non-interactive mode creates a minimal `default` profile with provider `proxmox` and no endpoint.
 
-## Schema Version 1
+## Schema Versions
+
+Nodex reads schema versions 1 and 2. New configurations are written as
+version 2. Version 1 files keep loading with unchanged semantics, and Nodex
+never silently rewrites a file to a newer schema version: reading a config
+never writes it, and commands that modify the config (`profile add`,
+`profile use`, ...) preserve the file's existing version. A config whose
+version is newer than the running binary supports is rejected with an error
+asking you to upgrade Nodex.
+
+Version 2 is the multi-provider schema: profiles may use any known provider
+(`proxmox` for Proxmox VE, `pbs` for Proxmox Backup Server), and future
+optional sections (environments, inventory, monitoring) attach to version 2.
+Versions 1 and 2 are structurally identical for the fields below.
 
 ```yaml
-version: 1
-current_profile: lab
+version: 2
+current_profile: production-pve
 profiles:
-  lab:
+  production-pve:
     provider: proxmox
     endpoint: https://pve.example.com:8006
-    credential_ref: file:lab
+    credential_ref: keyring:production-pve
     ca_file: /home/alex/.config/nodex/lab-ca.pem
+  production-pbs:
+    provider: pbs
+    endpoint: https://pbs.example.com:8007
+    credential_ref: keyring:production-pbs
 ```
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `version` | int | yes | 1 from `init` | Schema version. Only 1 is supported. |
+| `version` | int | yes | 2 from `init` | Schema version. 1 and 2 are supported. |
 | `current_profile` | string | no | empty, or first profile | Profile used when `--profile` is not provided. Must match a key in `profiles`. |
 | `profiles` | map | yes | empty map | Named provider connection profiles. |
-| `profiles.<name>.provider` | string | yes | `proxmox` from `init` and `profile add` | Provider name. Normalized to lowercase. |
+| `profiles.<name>.provider` | string | yes | `proxmox` from `init` and `profile add` | Provider name (`proxmox` or `pbs`). Normalized to lowercase. |
 | `profiles.<name>.endpoint` | string | required for live commands | empty | HTTPS provider endpoint. |
 | `profiles.<name>.credential_ref` | string | no | empty | Credential backend reference. |
 | `profiles.<name>.ca_file` | string | no | empty | PEM CA certificate file to add to the system trust pool. |
 
 Profile names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`.
+
+`nodex init`, `nodex profile add --provider <name>`, and `nodex profile
+import` accept only known provider names (`proxmox`, `pbs`). A config file
+containing an unknown but well-formed provider name still loads — so a file
+written by a newer Nodex does not invalidate your other profiles — but any
+command that uses such a profile fails with an unknown-provider error. The
+`pbs` provider name is reserved by the fleet-operations roadmap
+(`docs/roadmap.md`); PBS commands ship in a later phase. Endpoint, TLS, and
+credential rules below apply identically to every provider: PVE and PBS
+credentials are always separate credential-store entries, and there is no
+insecure TLS option for any provider.
 
 ## Endpoint Rules
 

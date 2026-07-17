@@ -192,10 +192,17 @@ func Validate(cfg *Config) error {
 		)
 	}
 
-	if cfg.Version != CurrentSchemaVersion {
+	if cfg.Version > CurrentSchemaVersion {
 		return app.NewExitError(
-			fmt.Errorf("%w: unsupported schema version %d (expected %d)",
+			fmt.Errorf("%w: schema version %d is newer than this nodex supports (maximum %d); upgrade nodex",
 				app.ErrConfigInvalid, cfg.Version, CurrentSchemaVersion),
+			app.ExitConfig,
+		)
+	}
+	if cfg.Version < MinSupportedSchemaVersion {
+		return app.NewExitError(
+			fmt.Errorf("%w: unsupported schema version %d (supported: %d-%d)",
+				app.ErrConfigInvalid, cfg.Version, MinSupportedSchemaVersion, CurrentSchemaVersion),
 			app.ExitConfig,
 		)
 	}
@@ -213,15 +220,26 @@ func Validate(cfg *Config) error {
 			)
 		}
 
-		provider := strings.TrimSpace(strings.ToLower(p.Provider))
+		provider := NormalizeProvider(p.Provider)
 		if provider == "" {
 			return app.NewExitError(
 				fmt.Errorf("%w: profile %q missing provider", app.ErrProfileInvalid, name),
 				app.ExitConfig,
 			)
 		}
+		// Shape-only validation: unknown provider names stay loadable so a
+		// config written by a newer Nodex does not brick every profile here;
+		// provider existence is enforced when a command uses the profile.
+		if !ProviderRegex.MatchString(provider) {
+			return app.NewExitError(
+				fmt.Errorf("%w: profile %q invalid provider name %q (must match %s)",
+					app.ErrProfileInvalid, name, provider, ProviderRegex.String()),
+				app.ExitConfig,
+			)
+		}
 		if p.Provider != provider {
-			cfg.Profiles[name] = Profile{Provider: provider, Endpoint: p.Endpoint, CredentialRef: p.CredentialRef, CAFile: p.CAFile}
+			p.Provider = provider
+			cfg.Profiles[name] = p
 		}
 		if p.Endpoint != "" {
 			if err := ValidateEndpoint(p.Endpoint); err != nil {

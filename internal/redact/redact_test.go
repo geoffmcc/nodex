@@ -35,6 +35,16 @@ func TestStringRedactsSecrets(t *testing.T) {
 			contains: "",
 		},
 		{
+			name:     "PBS API token in header",
+			input:    "Authorization: PBSAPIToken=root@pbs!monitor:abc12345-1234-1234-1234-123456789abc",
+			contains: "",
+		},
+		{
+			name:     "PBS API token lowercase scheme",
+			input:    "pbsapitoken=backup@pbs!reader:11111111-2222-3333-4444-555555555555",
+			contains: "",
+		},
+		{
 			name:     "bearer token",
 			input:    "Bearer eyJhbGciOiJIUzI1NiIs",
 			contains: "",
@@ -92,6 +102,16 @@ func TestStringRedactsSecrets(t *testing.T) {
 		{
 			name:     "Proxmox token format bare",
 			input:    "root@pam!test=aaaa-bbbb-cccc-dddd",
+			contains: "",
+		},
+		{
+			name:     "PBS token format bare with colon separator",
+			input:    "root@pbs!test:aaaa-bbbb-cccc-dddd",
+			contains: "",
+		},
+		{
+			name:     "PBSAuthCookie",
+			input:    "PBSAuthCookie=some-session-value",
 			contains: "",
 		},
 		{

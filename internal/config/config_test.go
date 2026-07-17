@@ -3,14 +3,15 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Version != 1 {
-		t.Errorf("expected version 1, got %d", cfg.Version)
+	if cfg.Version != CurrentSchemaVersion {
+		t.Errorf("expected version %d, got %d", CurrentSchemaVersion, cfg.Version)
 	}
 	if cfg.Profiles == nil {
 		t.Error("expected non-nil profiles map")
@@ -25,10 +26,40 @@ func TestValidateNil(t *testing.T) {
 }
 
 func TestValidateVersion(t *testing.T) {
-	cfg := &Config{Version: 99}
+	tests := []struct {
+		name    string
+		version int
+		valid   bool
+	}{
+		{"v1 supported", 1, true},
+		{"v2 supported", 2, true},
+		{"v0 rejected", 0, false},
+		{"negative rejected", -1, false},
+		{"newer than supported rejected", 3, false},
+		{"far future rejected", 99, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Version: tt.version, Profiles: map[string]Profile{}}
+			err := Validate(cfg)
+			if tt.valid && err != nil {
+				t.Errorf("expected version %d valid, got error: %v", tt.version, err)
+			}
+			if !tt.valid && err == nil {
+				t.Errorf("expected version %d rejected, got nil error", tt.version)
+			}
+		})
+	}
+}
+
+func TestValidateNewerVersionErrorMentionsUpgrade(t *testing.T) {
+	cfg := &Config{Version: CurrentSchemaVersion + 1, Profiles: map[string]Profile{}}
 	err := Validate(cfg)
 	if err == nil {
-		t.Error("expected error for wrong version")
+		t.Fatal("expected error for newer schema version")
+	}
+	if !strings.Contains(err.Error(), "upgrade nodex") {
+		t.Errorf("expected error to advise upgrading nodex, got: %v", err)
 	}
 }
 

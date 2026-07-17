@@ -32,7 +32,7 @@ nodex --output json provider capabilities proxmox
 Connect to Proxmox by editing the configuration file and adding a profile:
 
 ```yaml
-version: 1
+version: 2
 current_profile: lab
 profiles:
   lab:
@@ -122,6 +122,7 @@ Global flags go before the command name: `nodex --output json node list`.
 - [Architecture](docs/architecture.md) — package layout, provider model, transport, task lifecycle
 - [Product requirements](docs/product_requirements.md) — implemented scope, contracts, limitations
 - [Compatibility policy](docs/compatibility.md) — what is stable and what may change
+- [Fleet-operations roadmap](docs/roadmap.md) and [ADR 0001](docs/adr/0001-fleet-operations-architecture.md) — the phased PBS, inventory, maintenance, and monitoring expansion
 - [Security policy](SECURITY.md) — threat model, reporting, protections
 - [Support](SUPPORT.md) — what is supported, how to get help
 - [Contributing](CONTRIBUTING.md) — development setup, PR requirements
