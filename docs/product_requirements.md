@@ -133,10 +133,15 @@ When `--wait` is used, Nodex polls the provider task with:
 | macOS | `~/Library/Application Support/Nodex/config.yaml` |
 | Windows | `%AppData%\Nodex\config.yaml` |
 
-### Schema v1
+### Schema
+
+Versions 1 and 2 are read; new configurations are written as version 2. A
+file's declared version is preserved by config-modifying commands (no silent
+migration). Known providers are `proxmox` (Proxmox VE) and `pbs` (reserved
+for Proxmox Backup Server; see `docs/roadmap.md`).
 
 ```yaml
-version: 1
+version: 2
 current_profile: lab
 profiles:
   lab:

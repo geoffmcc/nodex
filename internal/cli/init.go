@@ -40,10 +40,18 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 	cfg := config.DefaultConfig()
 
 	if !cmdCtx.Opts.NonInteractive {
-		fmt.Fprint(cmdCtx.ErrW, "Provider (e.g. proxmox): ")
+		fmt.Fprintf(cmdCtx.ErrW, "Provider (%s) [proxmox]: ", strings.Join(config.KnownProviders(), "|"))
 		provider := prompt()
 		if provider == "" {
-			provider = "proxmox"
+			provider = config.ProviderProxmox
+		}
+		provider = config.NormalizeProvider(provider)
+		if !config.IsKnownProvider(provider) {
+			return app.NewExitError(
+				fmt.Errorf("unknown provider %q (known providers: %s)",
+					provider, strings.Join(config.KnownProviders(), ", ")),
+				app.ExitUsage,
+			)
 		}
 
 		fmt.Fprint(cmdCtx.ErrW, "Endpoint URL: ")
@@ -77,7 +85,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 
 		profile := config.Profile{
-			Provider:      config.NormalizeProvider(provider),
+			Provider:      provider,
 			Endpoint:      endpoint,
 			CredentialRef: credRef,
 		}
@@ -91,7 +99,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		// Non-interactive: create minimal config.
 		cfg.CurrentProfile = "default"
 		cfg.Profiles["default"] = config.Profile{
-			Provider: "proxmox",
+			Provider: config.ProviderProxmox,
 		}
 	}
 

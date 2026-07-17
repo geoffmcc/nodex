@@ -30,7 +30,7 @@ flowchart TD
 cmd/nodex/                         Process entry point and signal handling
 internal/app/                      Shared application errors and exit codes
 internal/cli/                      Command registration, global flags, handlers, shell completion
-internal/config/                   YAML schema v1, config paths, validation, atomic writes, locking
+internal/config/                   YAML schema (v1-v2), config paths, validation, atomic writes, locking
 internal/credentials/              Credential backends (file, keyring, env, stdin) and resolution
 internal/domain/                   Provider interface, capability interfaces, shared resource types
 internal/logging/                  Stderr logger and log levels
@@ -107,6 +107,13 @@ Providers are registered by name through `internal/provider.Register`. The Proxm
 ```go
 provider.Register("proxmox", func() domain.Provider { return &proxmox.Provider{} })
 ```
+
+Provider naming is stable: `proxmox` is Proxmox VE, and `pbs` is reserved for
+the Proxmox Backup Server provider planned in
+[ADR 0001](adr/0001-fleet-operations-architecture.md) and tracked in the
+[fleet-operations roadmap](roadmap.md). Each provider is its own package with
+its own typed client; providers share transport, credential, redaction,
+safety, and task infrastructure but never each other's client code.
 
 ## Provider interface
 
@@ -233,7 +240,10 @@ Proxmox API token credentials use `token_id` and `token_secret`. Password creden
 ## Configuration
 
 `internal/config` owns:
-- YAML schema v1 validation
+- YAML schema validation (versions 1 and 2 read; version 2 written for new
+  configs; a file's declared version is preserved on read-modify-write)
+- Known-provider validation (`proxmox`, `pbs`) with shape-only tolerance for
+  unknown provider names until a command uses the profile
 - Platform-specific paths (XDG on Linux, Application Support on macOS, AppData on Windows)
 - Atomic writes via temporary file + rename
 - Read-modify-write locking

@@ -199,8 +199,10 @@ var patterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(token|secret|password|passwd|pwd|credential)\s*[:=]\s*\S+`),
 	// PVE API token format in Authorization header or standalone: PVEAPIToken=user@realm!id=uuid
 	regexp.MustCompile(`(?i)PVEAPIToken=\S+`),
-	// Proxmox token ID format: user@realm!tokenid=uuid
-	regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=\S+`),
+	// PBS API token format in Authorization header or standalone: PBSAPIToken=user@realm!id:uuid
+	regexp.MustCompile(`(?i)PBSAPIToken=\S+`),
+	// Proxmox token grammar: user@realm!tokenid=uuid (PVE) or user@realm!tokenid:uuid (PBS)
+	regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+[=:]\S+`),
 	// JSON/YAML field patterns: "password": "value", "token_secret": "value"
 	regexp.MustCompile(`(?i)"(token[_-]?(id|secret|value)?|password|secret|credential)"\s*:\s*"[^"]*"`),
 	regexp.MustCompile(`(?i)'(token[_-]?(id|secret|value)?|password|secret|credential)'\s*:\s*'[^']*'`),
@@ -212,8 +214,8 @@ var patterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)"?credential[_-]?ref"?\s*[:=]\s*"?file:\S+`),
 	// Environment variable patterns: NODEX_*_TOKEN_SECRET=..., NODEX_*_PASSWORD=...
 	regexp.MustCompile(`(?i)(NODEX|TOKEN|PASSWORD|SECRET|CREDENTIAL)_[A-Za-z0-9_]*=\S+`),
-	// CSRF and session tokens: PVEAuthCookie, CSRFPreventionToken
-	regexp.MustCompile(`(?i)(PVEAuthCookie|CSRFPreventionToken)=\S+`),
+	// CSRF and session tokens: PVEAuthCookie, PBSAuthCookie, CSRFPreventionToken
+	regexp.MustCompile(`(?i)(PVEAuthCookie|PBSAuthCookie|CSRFPreventionToken)=\S+`),
 	// PEM-encoded private key content.
 	regexp.MustCompile(`-----BEGIN\s+[A-Z\s]*PRIVATE KEY-----`),
 }

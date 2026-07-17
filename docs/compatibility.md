@@ -46,6 +46,17 @@ schema (`provider`, `endpoint`, `ca_file`, `credential_ref`) are additive.
 New fields may appear. Existing fields will not be removed or renamed
 without a deprecation period.
 
+Nodex reads config schema versions 1 and 2 and writes version 2 for new
+configurations. Version 1 files load with unchanged semantics and keep their
+declared version across read-modify-write commands; Nodex never silently
+migrates a file to a newer schema version. Configs declaring a version newer
+than the binary supports are rejected with an upgrade error instead of being
+partially interpreted. Known provider names are stable: `proxmox` is Proxmox
+VE and `pbs` is reserved for Proxmox Backup Server. Unknown but well-formed
+provider names in a config file remain loadable (failing only when used) so
+newer configs do not invalidate older binaries' access to their other
+profiles.
+
 ### Tier 2 — Profile import/export
 
 The exported profile JSON shape (`name`, `provider`, `endpoint`, `ca_file`)
