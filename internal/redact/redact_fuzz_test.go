@@ -6,14 +6,17 @@ import (
 )
 
 // FuzzStringNeverLeaksPVEToken verifies that a PVE API token secret embedded
-// in arbitrary surrounding text never survives redaction.
+// in arbitrary surrounding text never survives redaction. The secret is a
+// deliberately low-entropy synthetic value built at runtime so secret
+// scanners do not mistake it for a real credential; length and shape still
+// exercise the long-token redaction path.
 func FuzzStringNeverLeaksPVEToken(f *testing.F) {
 	f.Add("", "")
 	f.Add("Authorization: ", "\nnext line")
 	f.Add("error from server: ", " (status 401)")
 	f.Add("prefix\x00binary", "\x1b[31msuffix")
 	f.Fuzz(func(t *testing.T, prefix, suffix string) {
-		const secret = "eefc7031-1111-2222-3333-fuzzsecretval" // #nosec G101 -- fictional test value
+		secret := strings.Repeat("synthetic-pve-secret-", 3)
 		input := prefix + " PVEAPIToken=root@pam!monitor=" + secret + suffix
 		out := String(input)
 		if strings.Contains(out, secret) {
@@ -30,7 +33,7 @@ func FuzzStringNeverLeaksPBSToken(f *testing.F) {
 	f.Add("error from server: ", " (status 401)")
 	f.Add("prefix\x00binary", "\x1b[31msuffix")
 	f.Fuzz(func(t *testing.T, prefix, suffix string) {
-		const secret = "aa1b9535-4444-5555-6666-fuzzsecretval" // #nosec G101 -- fictional test value
+		secret := strings.Repeat("synthetic-pbs-secret-", 3)
 		input := prefix + " PBSAPIToken=backup@pbs!reader:" + secret + suffix
 		out := String(input)
 		if strings.Contains(out, secret) {
@@ -50,7 +53,7 @@ func FuzzStringNeverLeaksBareProxmoxToken(f *testing.F) {
 		if sep != "=" && sep != ":" {
 			t.Skip()
 		}
-		const secret = "0badc0de-7777-8888-9999-fuzzsecretval" // #nosec G101 -- fictional test value
+		secret := strings.Repeat("synthetic-bare-secret-", 3)
 		input := prefix + " automation@pve!maint" + sep + secret + suffix
 		out := String(input)
 		if strings.Contains(out, secret) {
