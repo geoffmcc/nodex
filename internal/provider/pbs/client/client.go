@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -332,6 +333,122 @@ func (c *Client) Certificates(ctx context.Context) ([]CertificateInfo, error) {
 	return resp.Data, nil
 }
 
+// ErrEndpointMismatch is returned when a mutating request targets a host
+// that does not match the configured PBS endpoint.
+var ErrEndpointMismatch = fmt.Errorf("request host does not match configured endpoint")
+
+// validateEndpoint checks that a mutating request URL's host matches the
+// configured endpoint host, ignoring port. When endpointHost is empty
+// (test-only clients constructed without New()), the check is skipped.
+func (c *Client) validateEndpoint(reqURL *url.URL) error {
+	if c.endpointHost == "" {
+		return nil
+	}
+	if reqURL == nil {
+		return fmt.Errorf("%w: request URL is nil", ErrEndpointMismatch)
+	}
+	reqHost := reqURL.Hostname()
+	if reqHost == "" {
+		return fmt.Errorf("%w: request URL has no host", ErrEndpointMismatch)
+	}
+	if !strings.EqualFold(reqHost, c.endpointHost) {
+		return fmt.Errorf("%w: request host %q does not match configured endpoint host %q",
+			ErrEndpointMismatch, reqHost, c.endpointHost)
+	}
+	return nil
+}
+
+// upidResponse decodes mutation responses. PBS mutation endpoints return the
+// started task's UPID in "data"; some job-run endpoints are declared as
+// returning null in the API schema, so the field is decoded tolerantly.
+type upidResponse struct {
+	Data *string `json:"data"`
+}
+
+func (r *upidResponse) upid() string {
+	if r.Data == nil {
+		return ""
+	}
+	return *r.Data
+}
+
+// jobIDPattern matches valid PBS job and datastore identifiers.
+var jobIDPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{2,31}$`)
+
+// ValidateJobID checks a job or datastore identifier before embedding it in
+// a request path.
+func ValidateJobID(id string) error {
+	if !jobIDPattern.MatchString(id) {
+		return fmt.Errorf("invalid identifier %q (expected 3-32 chars of [A-Za-z0-9._-], not starting with '.' or '-')", id)
+	}
+	return nil
+}
+
+// RunVerifyJob starts a configured verification job
+// (POST /admin/verify/{id}/run). Returns the task UPID.
+func (c *Client) RunVerifyJob(ctx context.Context, id string) (string, error) {
+	if err := ValidateJobID(id); err != nil {
+		return "", err
+	}
+	var resp upidResponse
+	if err := c.post(ctx, "/admin/verify/"+url.PathEscape(id)+"/run", &resp); err != nil {
+		return "", err
+	}
+	return resp.upid(), nil
+}
+
+// VerifyDatastore starts verification of a whole datastore
+// (POST /admin/datastore/{store}/verify). Returns the task UPID.
+func (c *Client) VerifyDatastore(ctx context.Context, store string) (string, error) {
+	if err := ValidateJobID(store); err != nil {
+		return "", err
+	}
+	var resp upidResponse
+	if err := c.post(ctx, "/admin/datastore/"+url.PathEscape(store)+"/verify", &resp); err != nil {
+		return "", err
+	}
+	return resp.upid(), nil
+}
+
+// RunSyncJob starts a configured sync job (POST /admin/sync/{id}/run).
+// Returns the task UPID.
+func (c *Client) RunSyncJob(ctx context.Context, id string) (string, error) {
+	if err := ValidateJobID(id); err != nil {
+		return "", err
+	}
+	var resp upidResponse
+	if err := c.post(ctx, "/admin/sync/"+url.PathEscape(id)+"/run", &resp); err != nil {
+		return "", err
+	}
+	return resp.upid(), nil
+}
+
+// RunPruneJob starts a configured prune job (POST /admin/prune/{id}/run).
+// Returns the task UPID.
+func (c *Client) RunPruneJob(ctx context.Context, id string) (string, error) {
+	if err := ValidateJobID(id); err != nil {
+		return "", err
+	}
+	var resp upidResponse
+	if err := c.post(ctx, "/admin/prune/"+url.PathEscape(id)+"/run", &resp); err != nil {
+		return "", err
+	}
+	return resp.upid(), nil
+}
+
+// RunGarbageCollection starts garbage collection on a datastore
+// (POST /admin/datastore/{store}/gc). Returns the task UPID.
+func (c *Client) RunGarbageCollection(ctx context.Context, store string) (string, error) {
+	if err := ValidateJobID(store); err != nil {
+		return "", err
+	}
+	var resp upidResponse
+	if err := c.post(ctx, "/admin/datastore/"+url.PathEscape(store)+"/gc", &resp); err != nil {
+		return "", err
+	}
+	return resp.upid(), nil
+}
+
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil
@@ -348,6 +465,31 @@ func (c *Client) get(ctx context.Context, path string, result any) error {
 	}
 
 	resp, err := c.client.Do(ctx, req)
+	if err != nil {
+		return &app.ProviderError{StatusCode: 0, Detail: fmt.Sprintf("execute request: %v", err), Err: err}
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	return c.decodeResponse(resp, result)
+}
+
+// post executes a bodyless POST request. Mutations use DoMutation (exactly
+// once, no automatic retry) and are host-pinned to the configured endpoint.
+// A body parameter can be added when a future mutation needs one.
+func (c *Client) post(ctx context.Context, path string, result any) error {
+	u := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	if err := c.validateEndpoint(req.URL); err != nil {
+		return err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "PBSAPIToken="+c.token)
+	}
+
+	resp, err := c.client.DoMutation(ctx, req)
 	if err != nil {
 		return &app.ProviderError{StatusCode: 0, Detail: fmt.Sprintf("execute request: %v", err), Err: err}
 	}

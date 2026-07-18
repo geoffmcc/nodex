@@ -435,6 +435,10 @@ nodex pbs verify list
 nodex pbs prune list
 nodex pbs sync list
 nodex pbs garbage-collection status [--datastore <store>]
+nodex pbs verify run <job-id> | --datastore <store>
+nodex pbs sync run <job-id>
+nodex pbs prune run <job-id>
+nodex pbs garbage-collection run <datastore>
 ```
 
 | Command | Description |
@@ -454,7 +458,20 @@ nodex pbs garbage-collection status [--datastore <store>]
 | `pbs sync list` | Sync job configurations |
 | `pbs garbage-collection status` | Garbage-collection status for all datastores, or one with `--datastore` |
 
-All `pbs` commands are read-only (safety tier: observation) and support `--output table|json|yaml`. Empty listings produce stable empty results (`[]` in JSON). PBS mutations (verify/sync/prune/GC runs) are planned as separately gated operations; see `docs/roadmap.md`.
+The inspection commands above are read-only (safety tier: observation) and support `--output table|json|yaml`. Empty listings produce stable empty results (`[]` in JSON).
+
+#### Guarded PBS mutations
+
+The four `run` commands start provider-native maintenance tasks. Each returns the task UPID in the standard `OperationResult` envelope, supports `--wait` for task polling, refuses to start while a conflicting PBS task (backup, GC, prune, sync, or verify) is running on the same datastore (exit code 21), and fails closed with `--non-interactive` when its confirmation is not satisfied by flags:
+
+| Command | Tier | Confirmation | Rationale |
+|---------|------|--------------|-----------|
+| `pbs verify run <job-id>` / `--datastore <store>` | reversible | `--yes` | Integrity check; writes only verification metadata, removes nothing |
+| `pbs sync run <job-id>` | disruptive | `--yes --force` | Executes the admin-configured sync job. When the job has `remove-vanished` enabled, Nodex warns and escalates to typed confirmation of the job ID, because snapshots missing on the source are deleted locally |
+| `pbs prune run <job-id>` | destructive | `--yes --force` + type the job ID | Permanently removes backup snapshots per the job's keep policy |
+| `pbs garbage-collection run <datastore>` | disruptive | `--yes --force` | Permanently frees chunks unreferenced by any backup index; restorable snapshots are unaffected, freed data is unrecoverable |
+
+Job-based runs validate that the job exists first (`ExitNotFound` otherwise). There is no bulk or `--all` form, and no flag weakens these gates.
 
 ### `nodex pools`
 

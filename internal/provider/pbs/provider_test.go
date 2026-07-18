@@ -33,6 +33,10 @@ func TestProviderCapabilities(t *testing.T) {
 		domain.CapabilityPBSTasks:      false,
 		domain.CapabilityPBSJobs:       false,
 		domain.CapabilityPBSGC:         false,
+		domain.CapabilityPBSVerifyRun:  false,
+		domain.CapabilityPBSSyncRun:    false,
+		domain.CapabilityPBSPruneRun:   false,
+		domain.CapabilityPBSGCRun:      false,
 	}
 	for _, c := range caps {
 		if _, ok := want[c]; !ok {
@@ -46,15 +50,37 @@ func TestProviderCapabilities(t *testing.T) {
 			t.Errorf("missing capability %q", c)
 		}
 	}
-	meta := domain.CapabilityMetadata()
 	for _, c := range caps {
-		m, ok := meta[c]
-		if !ok {
+		if _, ok := domain.CapabilityMetadata()[c]; !ok {
 			t.Errorf("capability %q missing from CapabilityMetadata", c)
+		}
+	}
+}
+
+// TestPBSMutationSafetyTiers pins the product decision gate outcomes: each
+// guarded PBS mutation carries the safety tier the gate assigned.
+func TestPBSMutationSafetyTiers(t *testing.T) {
+	meta := domain.CapabilityMetadata()
+	tests := []struct {
+		cap  domain.Capability
+		tier domain.SafetyTier
+	}{
+		{domain.CapabilityPBSVerifyRun, domain.TierReversible},
+		{domain.CapabilityPBSSyncRun, domain.TierDisruptive},
+		{domain.CapabilityPBSPruneRun, domain.TierDestructive},
+		{domain.CapabilityPBSGCRun, domain.TierDisruptive},
+	}
+	for _, tt := range tests {
+		m, ok := meta[tt.cap]
+		if !ok {
+			t.Errorf("capability %q missing from metadata", tt.cap)
 			continue
 		}
-		if m.Category != domain.CapInspection {
-			t.Errorf("capability %q must be inspection-only in the read-only foundation", c)
+		if m.Category != domain.CapMutation {
+			t.Errorf("capability %q must be a mutation", tt.cap)
+		}
+		if m.Safety != tt.tier {
+			t.Errorf("capability %q tier = %q, want %q", tt.cap, m.Safety, tt.tier)
 		}
 	}
 }
@@ -71,6 +97,10 @@ func TestProviderImplementsDeclaredInterfaces(t *testing.T) {
 	_, checks["PBSTaskInspector"] = prov.(domain.PBSTaskInspector)
 	_, checks["PBSJobInspector"] = prov.(domain.PBSJobInspector)
 	_, checks["PBSGCInspector"] = prov.(domain.PBSGCInspector)
+	_, checks["PBSVerifyRunner"] = prov.(domain.PBSVerifyRunner)
+	_, checks["PBSSyncRunner"] = prov.(domain.PBSSyncRunner)
+	_, checks["PBSPruneRunner"] = prov.(domain.PBSPruneRunner)
+	_, checks["PBSGCRunner"] = prov.(domain.PBSGCRunner)
 
 	meta := domain.CapabilityMetadata()
 	for _, c := range prov.Capabilities() {

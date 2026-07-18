@@ -148,10 +148,19 @@ func (p *pbsE2EMockProvider) PBSTasks(_ context.Context, filter domain.PBSTaskFi
 			StartTime: 1752000000, EndTime: 1752000300, Status: "OK",
 		},
 		{
-			UPID: "UPID:pbs-e2e:0000AAAA:0000BBBB:00000002:65f00001:verificationjob:backups:automation@pbs!nodex:",
-			Node: "pbs-e2e", WorkerType: "verificationjob", WorkerID: "backups",
+			// Running task on an unrelated datastore so mutation conflict
+			// preflights against "backups" pass by default.
+			UPID: "UPID:pbs-e2e:0000AAAA:0000BBBB:00000002:65f00001:verificationjob:unrelated-store:automation@pbs!nodex:",
+			Node: "pbs-e2e", WorkerType: "verificationjob", WorkerID: "unrelated-store",
 			User: "automation@pbs!nodex", StartTime: 1752001000, Status: "running",
 		},
+	}
+	if pbsE2EConflictMode {
+		tasks = append(tasks, domain.PBSTask{
+			UPID: "UPID:pbs-e2e:0000AB00:0000CD00:00000005:65f00004:garbage_collection:backups:automation@pbs!nodex:",
+			Node: "pbs-e2e", WorkerType: "garbage_collection", WorkerID: "backups",
+			User: "automation@pbs!nodex", StartTime: 1752002000, Status: "running",
+		})
 	}
 	if filter.Running {
 		var out []domain.PBSTask

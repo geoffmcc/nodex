@@ -192,13 +192,19 @@ collection) rather than PVE shapes.
   custom CA, no insecure mode
 - Treats PBS task UPIDs as opaque validated identifiers; the PBS UPID wire
   format differs from PVE's (it ends with the authenticating `authid`)
-- Advertises 6 read-only capabilities: `pbs_system`, `pbs_datastores`,
-  `pbs_snapshots`, `pbs_tasks`, `pbs_jobs`, `pbs_gc`, backed by the
+- Advertises 6 read-only capabilities (`pbs_system`, `pbs_datastores`,
+  `pbs_snapshots`, `pbs_tasks`, `pbs_jobs`, `pbs_gc`) backed by the
   `PBSSystemInspector`, `PBSDatastoreInspector`, `PBSSnapshotInspector`,
   `PBSTaskInspector`, `PBSJobInspector`, and `PBSGCInspector` interfaces in
   `internal/domain`
-- PBS mutations (verify/sync/prune/GC runs) are deliberately absent from this
-  foundation and arrive as separately gated operations (`docs/roadmap.md`)
+- Advertises 4 guarded mutation capabilities (`pbs_verify_run` reversible,
+  `pbs_sync_run` disruptive, `pbs_prune_run` destructive, `pbs_gc_run`
+  disruptive) backed by the `PBSVerifyRunner`, `PBSSyncRunner`,
+  `PBSPruneRunner`, and `PBSGCRunner` interfaces. Mutations POST through
+  `DoMutation` (exactly once, no automatic retry), are host-pinned to the
+  configured endpoint, validate job/datastore identifiers before building
+  paths, and return task UPIDs; the CLI layer adds confirmation gates and a
+  conflicting-task preflight
 
 ## HTTP transport
 

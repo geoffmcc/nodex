@@ -407,3 +407,51 @@ func requirePBSGC(prov domain.Provider) (domain.PBSGCInspector, error) {
 	}
 	return p, nil
 }
+
+// requirePBSVerifyRun checks if the provider supports PBSVerifyRunner.
+func requirePBSVerifyRun(prov domain.Provider) (domain.PBSVerifyRunner, error) {
+	p, ok := prov.(domain.PBSVerifyRunner)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs verify run not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requirePBSSyncRun checks if the provider supports PBSSyncRunner.
+func requirePBSSyncRun(prov domain.Provider) (domain.PBSSyncRunner, error) {
+	p, ok := prov.(domain.PBSSyncRunner)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs sync run not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requirePBSPruneRun checks if the provider supports PBSPruneRunner.
+func requirePBSPruneRun(prov domain.Provider) (domain.PBSPruneRunner, error) {
+	p, ok := prov.(domain.PBSPruneRunner)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs prune run not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requirePBSGCRun checks if the provider supports PBSGCRunner.
+func requirePBSGCRun(prov domain.Provider) (domain.PBSGCRunner, error) {
+	p, ok := prov.(domain.PBSGCRunner)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs garbage-collection run not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}

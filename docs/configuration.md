@@ -196,15 +196,23 @@ by separate profiles. Never reuse a PVE token for PBS or vice versa.
 
 ### PBS API token least privilege
 
-The Phase 2 `pbs` command set is read-only. Create a dedicated API token
-whose user or token ACL grants only audit-level roles, for example:
+Create a dedicated API token for Nodex and grant only what the commands you
+use need:
 
-- `Audit` on `/` (or, narrower, `Datastore.Audit` on `/datastore` plus
-  `Sys.Audit` on `/system`)
+- **Inspection only** (`pbs status/version/datastore/snapshot/task/...`):
+  audit-level roles are sufficient — `Audit` on `/` (or, narrower,
+  `Datastore.Audit` on `/datastore` plus `Sys.Audit` on `/system`).
+- **Guarded maintenance runs** (`pbs verify run`, `pbs sync run`,
+  `pbs prune run`, `pbs garbage-collection run`): additionally require the
+  corresponding datastore privileges on the datastores involved —
+  verification and GC need `Datastore.Verify`/`Datastore.Modify`-level
+  rights, prune needs `Datastore.Prune`/`Datastore.Modify`, and sync jobs
+  need the privileges PBS documents for the job's direction (typically
+  `Remote.Read` plus `Datastore.Backup`/`Datastore.Prune` on the local
+  store). Scope them to `/datastore/<name>` rather than `/` where possible.
 
-Do not grant `DatastoreAdmin`, `DatastorePowerUser`, `Admin`, or any Modify
-privilege to the token Nodex uses for inspection. When PBS mutations land in
-a later phase, they will document their own, separately scoped privileges.
+Do not grant `Admin`, and keep a separate audit-only token if you script
+inspection separately from maintenance. Never reuse the PVE token.
 
 ## File Credentials
 

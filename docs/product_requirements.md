@@ -32,11 +32,15 @@ Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infras
 - Ceph status, OSDs, monitors, pools
 - Replication job listing
 - Access control: users, groups, roles, ACLs, domains, tokens
-- Proxmox Backup Server (`provider: pbs`, read-only): host status, version,
+- Proxmox Backup Server (`provider: pbs`): host status, version,
   subscription, certificates, datastore configuration and usage, backup
   snapshots (with namespace/type/ID filters and verification state), tasks
   (list/status/log), verify/prune/sync job configurations, and
-  garbage-collection status
+  garbage-collection status. Guarded maintenance mutations: verify run
+  (reversible), sync run (disruptive; typed confirmation when the job has
+  remove-vanished), prune run (destructive, typed confirmation),
+  garbage-collection run (disruptive) — all with conflicting-task preflight
+  and `--wait` task polling
 
 ### Mutation commands
 
