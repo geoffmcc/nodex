@@ -33,7 +33,7 @@ Nodex supports four credential backends:
 - **Environment variables.** `NODEX_<PROFILE>_TOKEN_ID` and `NODEX_<PROFILE>_TOKEN_SECRET`. Suitable for CI and scripts. Environment variables may be visible in process listings.
 - **Stdin.** Interactive prompt, not stored. Use `--password-stdin` for scripted password input (used by commands like `access user create`, not for provider authentication).
 
-The Proxmox provider authenticates with API tokens (`PVEAPIToken` scheme). Password-based authentication is not supported for connecting to Proxmox endpoints.
+The Proxmox VE provider authenticates with API tokens (`PVEAPIToken` scheme); the Proxmox Backup Server provider authenticates with PBS API tokens (`PBSAPIToken` scheme, `user@realm!tokenname:secret`). Password-based authentication is not supported for connecting to PVE or PBS endpoints. PVE and PBS credentials are separate credential-store entries; Nodex never sends a PVE token to a PBS endpoint or vice versa.
 
 ## Secret Handling Rules
 

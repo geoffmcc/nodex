@@ -11,7 +11,7 @@ started.
 
 ## Phase 1 — Architecture, configuration schema v2, provider foundation
 
-Status: active (this branch)
+Status: done (merged 2026-07-17, PR #64)
 
 - ADR 0001 and this roadmap.
 - Configuration schema version 2 with a backward-compatible loader:
@@ -33,7 +33,8 @@ command (lands with the first version-2-only section); any PBS commands.
 
 ## Phase 2 — Proxmox Backup Server provider
 
-Status: planned
+Status: active — read-only foundation on this branch; guarded mutations follow
+in a separate PR after the foundation merges.
 
 - `internal/provider/pbs/` with its own typed client (`/api2/json`, port 8007
   default), `PBSAPIToken` authorization, provider registration as `pbs`.

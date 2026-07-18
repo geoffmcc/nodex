@@ -797,6 +797,32 @@ func CapabilityMetadata() map[Capability]CapabilityMeta {
 			Interfaces: []string{"ReplicationProvider"},
 		},
 
+		// --- PBS inspection ---
+		CapabilityPBSSystem: {
+			Name: "PBS System", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"PBSSystemInspector"},
+		},
+		CapabilityPBSDatastores: {
+			Name: "PBS Datastores", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"PBSDatastoreInspector"},
+		},
+		CapabilityPBSSnapshots: {
+			Name: "PBS Snapshots", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"PBSSnapshotInspector"},
+		},
+		CapabilityPBSTasks: {
+			Name: "PBS Tasks", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"PBSTaskInspector"},
+		},
+		CapabilityPBSJobs: {
+			Name: "PBS Jobs", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"PBSJobInspector"},
+		},
+		CapabilityPBSGC: {
+			Name: "PBS Garbage Collection", Category: CapInspection, Safety: TierObservation,
+			Interfaces: []string{"PBSGCInspector"},
+		},
+
 		// --- Mutation: reversible ---
 		CapabilityLifecycle: {
 			Name: "Lifecycle", Category: CapMutation, Safety: TierReversible,

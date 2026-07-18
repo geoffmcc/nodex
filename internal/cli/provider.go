@@ -11,6 +11,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/provider"
+	_ "github.com/geoffmcc/nodex/internal/provider/pbs"     // register provider
 	_ "github.com/geoffmcc/nodex/internal/provider/proxmox" // register provider
 	"github.com/geoffmcc/nodex/internal/transport/httpclient"
 )
