@@ -85,14 +85,32 @@ func TestStringRedactsSecrets(t *testing.T) {
 			contains: "",
 		},
 		{
-			name:     "JSON token_id field",
+			// Token IDs are identifiers PVE displays; they are not redacted
+			// (the paired secret is).
+			name:     "JSON token_id field preserved",
 			input:    `"token_id": "my-token-id"`,
-			contains: "",
+			contains: `"token_id": "my-token-id"`,
+		},
+		{
+			name:     "JSON tokenid field preserved",
+			input:    `"tokenid": "monitor"`,
+			contains: `"tokenid": "monitor"`,
 		},
 		{
 			name:     "JSON token_secret field",
 			input:    `"token_secret": "abc-secret-123"`,
 			contains: "",
+		},
+		{
+			// Structured redaction must keep the document parseable.
+			name:     "JSON token_secret structure preserved",
+			input:    `{"token_secret": "abc-secret-123", "comment": "x"}`,
+			contains: `{"token_secret": "[REDACTED]", "comment": "x"}`,
+		},
+		{
+			name:     "YAML quoted password structure preserved",
+			input:    `'password': 'hunter2'`,
+			contains: `'password': '[REDACTED]'`,
 		},
 		{
 			name:     "JSON credential field",
@@ -766,5 +784,38 @@ func TestTypeBasedRedactionDefenseInDepth(t *testing.T) {
 	redacted := String(raw)
 	if strings.Contains(redacted, "some-uuid-val") {
 		t.Errorf("regex defense-in-depth failed to redact: %q", redacted)
+	}
+}
+
+// TestAccessTokensListJSONStaysValid reproduces the PVE 9 oracle failure:
+// `access tokens list --output json` output must remain valid JSON after
+// regex redaction, with token IDs (identifiers) preserved and any secret
+// fields redacted in place.
+func TestAccessTokensListJSONStaysValid(t *testing.T) {
+	input := `[
+  {
+    "tokenid": "monitor",
+    "comment": "read-only monitoring",
+    "expire": 0,
+    "privsep": 1
+  },
+  {
+    "tokenid": "automation",
+    "token_secret": "aaaa1111-2222-3333-4444-555566667777",
+    "privsep": 1
+  }
+]`
+	out := String(input)
+	if !json.Valid([]byte(out)) {
+		t.Fatalf("redacted output is not valid JSON:\n%s", out)
+	}
+	if !strings.Contains(out, `"tokenid": "monitor"`) || !strings.Contains(out, `"tokenid": "automation"`) {
+		t.Errorf("token IDs must be preserved:\n%s", out)
+	}
+	if strings.Contains(out, "aaaa1111-2222-3333-4444-555566667777") {
+		t.Errorf("token secret leaked:\n%s", out)
+	}
+	if !strings.Contains(out, `"token_secret": "[REDACTED]"`) {
+		t.Errorf("secret must be redacted in place:\n%s", out)
 	}
 }

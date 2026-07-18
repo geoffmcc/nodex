@@ -750,9 +750,10 @@ func buildRegistry() []OperationMeta {
 		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNetworkShow",
 	})
 	ops = append(ops, OperationMeta{
-		Path: "network apply", Description: "Apply network configuration",
+		Path: "network apply", Description: "Apply (reload) pending network configuration",
 		Inspection: false, Scope: ScopeNetwork, SafetyTier: safety.TierDisruptive,
 		RiskDimensions:      []RiskDimension{RiskNetworkLock, RiskServiceDown},
+		ProducesUPID:        true,
 		OutputModes:         []string{"table"},
 		CapabilityInterface: "NetworkMutationProvider", HandlerFunc: "runNetworkApply",
 	})

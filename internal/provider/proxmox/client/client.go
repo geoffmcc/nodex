@@ -1624,28 +1624,44 @@ func (c *Client) GetClusterLog(ctx context.Context) ([]ClusterLogItem, error) {
 
 // --- Phase 5: Network mutations ---
 
-// ApplyNodeNetwork applies network configuration on a node via PUT /nodes/{node}/network.
-// The Proxmox API returns {"data": null} on success (no task UPID).
-func (c *Client) ApplyNodeNetwork(ctx context.Context, node string, config map[string]interface{}) error {
-	if node == "" {
-		return fmt.Errorf("node name is required")
-	}
-	path := "/nodes/" + url.PathEscape(node) + "/network"
-	body := url.Values{}
-	for key, val := range config {
-		body.Set(key, fmt.Sprintf("%v", val))
-	}
-	return c.put(ctx, path, body, nil)
+// networkReloadResponse decodes PUT /nodes/{node}/network. Proxmox returns
+// the reload task UPID in "data"; older versions may return null.
+type networkReloadResponse struct {
+	Data *string `json:"data"`
 }
 
-// RevertNodeNetwork reverts pending network changes on a node via POST /nodes/{node}/network.
-// The Proxmox API returns {"data": null} on success (no task UPID).
+// ApplyNodeNetwork applies (reloads) the node's pending network
+// configuration via a bodyless PUT /nodes/{node}/network and returns the
+// reload task UPID when the API provides one.
+//
+// The node-level endpoint takes no interface parameters: since Proxmox 9
+// its schema rejects any (interface definitions belong to the
+// per-interface endpoints, which Nodex does not currently expose). Pending
+// changes are staged out of band and this call makes them live.
+func (c *Client) ApplyNodeNetwork(ctx context.Context, node string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/network"
+	var resp networkReloadResponse
+	if err := c.put(ctx, path, nil, &resp); err != nil {
+		return "", err
+	}
+	if resp.Data == nil {
+		return "", nil
+	}
+	return *resp.Data, nil
+}
+
+// RevertNodeNetwork discards pending network changes on a node via
+// DELETE /nodes/{node}/network. (POST on this path creates an interface —
+// it is not the revert operation.)
 func (c *Client) RevertNodeNetwork(ctx context.Context, node string) error {
 	if node == "" {
 		return fmt.Errorf("node name is required")
 	}
 	path := "/nodes/" + url.PathEscape(node) + "/network"
-	return c.post(ctx, path, nil, nil)
+	return c.del(ctx, path, nil)
 }
 
 // --- Phase 5: Firewall mutations ---

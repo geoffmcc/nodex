@@ -551,7 +551,12 @@ const (
 
 // NetworkMutationProvider exposes network configuration mutation operations.
 type NetworkMutationProvider interface {
-	ApplyNodeNetwork(ctx context.Context, node string, config map[string]string) error
+	// ApplyNodeNetwork applies (reloads) the node's pending network
+	// configuration and returns the reload task UPID when the provider
+	// reports one. It takes no interface parameters: changes are staged out
+	// of band and this call makes them live.
+	ApplyNodeNetwork(ctx context.Context, node string) (string, error)
+	// RevertNodeNetwork discards the node's pending network changes.
 	RevertNodeNetwork(ctx context.Context, node string) error
 }
 

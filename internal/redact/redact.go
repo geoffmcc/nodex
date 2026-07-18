@@ -189,40 +189,54 @@ func sanitize(v any, checkRedactable bool) any {
 // Regex-based redaction (defense-in-depth for free-text output)
 // ---------------------------------------------------------------------------
 
+// pattern pairs a matching regexp with its replacement template. Most
+// patterns replace the whole match with the redaction marker; structured
+// (JSON/YAML) field patterns preserve the surrounding syntax so redacted
+// documents remain parseable.
+type pattern struct {
+	re          *regexp.Regexp
+	replacement string
+}
+
 // Patterns that indicate sensitive values.
 // These are applied to free-text output (stdout, stderr, logs, error messages)
 // AFTER type-based redaction. They serve as defense-in-depth.
-var patterns = []*regexp.Regexp{
+var patterns = []pattern{
 	// API tokens and keys in key=value or key:value form.
-	regexp.MustCompile(`(?i)(api[_-]?token|apikey|api[_-]?key|secret[_-]?key|access[_-]?key)\s*[:=]\s*\S+`),
+	{regexp.MustCompile(`(?i)(api[_-]?token|apikey|api[_-]?key|secret[_-]?key|access[_-]?key)\s*[:=]\s*\S+`), redacted},
 	// Bare token-like values after common markers.
-	regexp.MustCompile(`(?i)(token|secret|password|passwd|pwd|credential)\s*[:=]\s*\S+`),
+	{regexp.MustCompile(`(?i)(token|secret|password|passwd|pwd|credential)\s*[:=]\s*\S+`), redacted},
 	// PVE API token format in Authorization header or standalone: PVEAPIToken=user@realm!id=uuid
-	regexp.MustCompile(`(?i)PVEAPIToken=\S+`),
+	{regexp.MustCompile(`(?i)PVEAPIToken=\S+`), redacted},
 	// PBS API token format in Authorization header or standalone: PBSAPIToken=user@realm!id:uuid
-	regexp.MustCompile(`(?i)PBSAPIToken=\S+`),
+	{regexp.MustCompile(`(?i)PBSAPIToken=\S+`), redacted},
 	// Proxmox token grammar, PVE form: user@realm!tokenid=uuid
-	regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=\S+`),
+	{regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=\S+`), redacted},
 	// Proxmox token grammar, PBS form: user@realm!tokenid:uuid. The secret
 	// tail must look like one (8+ alphanumeric/hyphen chars): PVE and PBS
 	// task UPIDs legitimately end in "user@realm!tokenid:" as a field
 	// terminator, and a bare \S+ here would corrupt every UPID in output.
-	regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+:[A-Za-z0-9-]{8,}`),
-	// JSON/YAML field patterns: "password": "value", "token_secret": "value"
-	regexp.MustCompile(`(?i)"(token[_-]?(id|secret|value)?|password|secret|credential)"\s*:\s*"[^"]*"`),
-	regexp.MustCompile(`(?i)'(token[_-]?(id|secret|value)?|password|secret|credential)'\s*:\s*'[^']*'`),
+	{regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+:[A-Za-z0-9-]{8,}`), redacted},
+	// JSON/YAML field patterns: "password": "value", "token_secret": "value".
+	// The replacement keeps the key and quoting so JSON/YAML documents stay
+	// structurally valid after redaction. Plain "tokenid"/"token_id" is
+	// deliberately not matched: PVE token IDs are identifiers the API and UI
+	// display (and Nodex's own credential prompt echoes them); only secrets
+	// are hidden.
+	{regexp.MustCompile(`(?i)"(token[_-]?(?:secret|value)|password|secret|credential)"\s*:\s*"[^"]*"`), `"$1": "` + redacted + `"`},
+	{regexp.MustCompile(`(?i)'(token[_-]?(?:secret|value)|password|secret|credential)'\s*:\s*'[^']*'`), `'$1': '` + redacted + `'`},
 	// Bearer tokens: Bearer eyJ...
-	regexp.MustCompile(`(?i)bearer\s+\S+`),
+	{regexp.MustCompile(`(?i)bearer\s+\S+`), redacted},
 	// Basic auth: Basic base64string
-	regexp.MustCompile(`(?i)basic\s+[A-Za-z0-9+/=]+`),
+	{regexp.MustCompile(`(?i)basic\s+[A-Za-z0-9+/=]+`), redacted},
 	// Credential-file references: file:profile
-	regexp.MustCompile(`(?i)"?credential[_-]?ref"?\s*[:=]\s*"?file:\S+`),
+	{regexp.MustCompile(`(?i)"?credential[_-]?ref"?\s*[:=]\s*"?file:\S+`), redacted},
 	// Environment variable patterns: NODEX_*_TOKEN_SECRET=..., NODEX_*_PASSWORD=...
-	regexp.MustCompile(`(?i)(NODEX|TOKEN|PASSWORD|SECRET|CREDENTIAL)_[A-Za-z0-9_]*=\S+`),
+	{regexp.MustCompile(`(?i)(NODEX|TOKEN|PASSWORD|SECRET|CREDENTIAL)_[A-Za-z0-9_]*=\S+`), redacted},
 	// CSRF and session tokens: PVEAuthCookie, PBSAuthCookie, CSRFPreventionToken
-	regexp.MustCompile(`(?i)(PVEAuthCookie|PBSAuthCookie|CSRFPreventionToken)=\S+`),
+	{regexp.MustCompile(`(?i)(PVEAuthCookie|PBSAuthCookie|CSRFPreventionToken)=\S+`), redacted},
 	// PEM-encoded private key content.
-	regexp.MustCompile(`-----BEGIN\s+[A-Z\s]*PRIVATE KEY-----`),
+	{regexp.MustCompile(`-----BEGIN\s+[A-Z\s]*PRIVATE KEY-----`), redacted},
 }
 
 // String redacts sensitive patterns from the input.  This is defense-in-depth
@@ -231,7 +245,7 @@ var patterns = []*regexp.Regexp{
 func String(input string) string {
 	result := input
 	for _, p := range patterns {
-		result = p.ReplaceAllString(result, redacted)
+		result = p.re.ReplaceAllString(result, p.replacement)
 	}
 	return result
 }

@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1089,5 +1090,79 @@ func TestVMSnapshotDeleteRejectsEmptyName(t *testing.T) {
 	_, err := c.VMSnapshotDelete(context.Background(), "pve1", 100, "")
 	if err == nil || !strings.Contains(err.Error(), "snapshot name is required") {
 		t.Fatalf("VMSnapshotDelete('') error = %v, want snapshot name required", err)
+	}
+}
+
+// --- PVE 9 network apply/revert contract ---
+
+// TestApplyNodeNetworkBodylessPUT verifies the node-level apply sends a
+// bodyless PUT (Proxmox 9 rejects any interface parameters here) and
+// returns the reload task UPID.
+func TestApplyNodeNetworkBodylessPUT(t *testing.T) {
+	var gotMethod, gotPath, gotBody string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000AAAA:0000BBBB:65f00000:srvreload:networking:root@pam:"}`))
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+
+	upid, err := c.ApplyNodeNetwork(context.Background(), "pve1")
+	if err != nil {
+		t.Fatalf("ApplyNodeNetwork: %v", err)
+	}
+	if gotMethod != http.MethodPut {
+		t.Errorf("method = %q, want PUT", gotMethod)
+	}
+	if gotPath != "/nodes/pve1/network" {
+		t.Errorf("path = %q", gotPath)
+	}
+	if gotBody != "" {
+		t.Errorf("apply must send no body, got %q", gotBody)
+	}
+	if !strings.HasPrefix(upid, "UPID:") {
+		t.Errorf("upid = %q", upid)
+	}
+}
+
+// TestApplyNodeNetworkNullData tolerates providers that return null data.
+func TestApplyNodeNetworkNullData(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.ApplyNodeNetwork(context.Background(), "pve1")
+	if err != nil {
+		t.Fatalf("ApplyNodeNetwork: %v", err)
+	}
+	if upid != "" {
+		t.Errorf("upid = %q, want empty", upid)
+	}
+}
+
+// TestRevertNodeNetworkUsesDELETE verifies revert uses DELETE — POST on
+// this path is the create-interface endpoint, not revert.
+func TestRevertNodeNetworkUsesDELETE(t *testing.T) {
+	var gotMethod, gotPath string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+
+	if err := c.RevertNodeNetwork(context.Background(), "pve1"); err != nil {
+		t.Fatalf("RevertNodeNetwork: %v", err)
+	}
+	if gotMethod != http.MethodDelete {
+		t.Errorf("method = %q, want DELETE", gotMethod)
+	}
+	if gotPath != "/nodes/pve1/network" {
+		t.Errorf("path = %q", gotPath)
 	}
 }

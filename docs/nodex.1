@@ -353,12 +353,12 @@ Run a PBS sync job (requires \-\-yes \-\-force; jobs with remove\-vanished addit
 Run a PBS prune job; removes snapshots (requires \-\-yes \-\-force and typing the job ID).
 .SS nodex pbs garbage\-collection run \fIDATASTORE\fR
 Run PBS garbage collection on a datastore (requires \-\-yes \-\-force).
-.SS nodex network show \-\-node \fINODE\fR
+.SS nodex network show \fINODE\fR
 Show node network interfaces.
-.SS nodex network apply \-\-node \fINODE\fR \fICONFIG\fR
-Apply network configuration.
-.SS nodex network revert \-\-node \fINODE\fR
-Revert pending network changes.
+.SS nodex network apply \fINODE\fR
+Apply (reload) the node's pending network configuration (requires \-\-yes \-\-force). Interface changes are staged out of band.
+.SS nodex network revert \fINODE\fR
+Discard the node's pending network changes (requires \-\-yes \-\-force).
 .SS nodex access users
 List users.
 .SS nodex access groups

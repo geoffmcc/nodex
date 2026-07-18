@@ -18,19 +18,22 @@ import (
 // --- Network mutation handlers ---
 
 // nodex network show <node> (read-only, already existing as node network)
-// nodex network apply <node> <config-file> (Tier 2 with lockout warning)
+// nodex network apply <node> (Tier 2 with lockout warning)
 // nodex network revert <node> (Tier 2)
 
-// runNetworkApply applies network configuration from a file.
+// runNetworkApply applies (reloads) the node's pending network
+// configuration. Interface changes are staged out of band (Proxmox UI, API,
+// or /etc/network/interfaces.new); this command makes them live. The
+// node-level Proxmox endpoint accepts no interface parameters — Proxmox 9
+// rejects them at schema level — so no configuration file is taken.
 func runNetworkApply(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) != 2 {
-		return app.NewExitError(fmt.Errorf("usage: nodex network apply <node> <config-file>"), app.ExitUsage)
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex network apply <node>"), app.ExitUsage)
 	}
 
 	node := args[0]
-	configFile := args[1]
-	if node == "" || configFile == "" {
-		return app.NewExitError(fmt.Errorf("node and config-file are required"), app.ExitUsage)
+	if node == "" {
+		return app.NewExitError(fmt.Errorf("node name is required"), app.ExitUsage)
 	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
@@ -44,32 +47,8 @@ func runNetworkApply(ctx context.Context, cmdCtx *Context, args []string) error 
 		return err
 	}
 
-	// Read config file
-	data, err := os.ReadFile(configFile) // #nosec G304 -- configFile is user-specified config path, validated by caller.
-	if err != nil {
-		return fmt.Errorf("read config file %s: %w", configFile, err)
-	}
-
-	// Parse as key=value pairs (simple format)
-	config := make(map[string]string)
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			return app.NewExitError(fmt.Errorf("invalid config line: %s (expected key=value)", line), app.ExitUsage)
-		}
-		config[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-	}
-
-	if len(config) == 0 {
-		return app.NewExitError(fmt.Errorf("config file %s is empty", configFile), app.ExitUsage)
-	}
-
 	// Tier 2 safety with lockout warning
-	desc := fmt.Sprintf("network configuration on node %s", node)
+	desc := fmt.Sprintf("apply pending network configuration on node %s", node)
 	policy := safety.ConfirmationPolicy{
 		Tier:                safety.TierDisruptive,
 		ResourceDescription: desc,
@@ -79,8 +58,8 @@ func runNetworkApply(ctx context.Context, cmdCtx *Context, args []string) error 
 		if cmdCtx.Opts.NonInteractive {
 			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 		}
-		fmt.Fprintf(cmdCtx.ErrW, "WARNING: Incorrect network configuration can cause cluster lockout.\n")
-		fmt.Fprintf(cmdCtx.ErrW, "WARNING: Verify the configuration carefully before applying.\n")
+		fmt.Fprintf(cmdCtx.ErrW, "WARNING: Applying pending network changes can cause node or cluster lockout.\n")
+		fmt.Fprintf(cmdCtx.ErrW, "WARNING: Review pending changes (nodex network show %s) before applying.\n", node)
 		if result.Warning != "" {
 			fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
 		}
@@ -88,11 +67,16 @@ func runNetworkApply(ctx context.Context, cmdCtx *Context, args []string) error 
 		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
-	if err := nm.ApplyNodeNetwork(ctx, node, config); err != nil {
+	upid, err := nm.ApplyNodeNetwork(ctx, node)
+	if err != nil {
 		return fmt.Errorf("apply network config on %s: %w", node, err)
 	}
 
-	fmt.Fprintf(cmdCtx.Writer, "Network configuration applied on %s\n", node)
+	if upid != "" {
+		fmt.Fprintf(cmdCtx.Writer, "Network reload started on %s (task %s)\n", node, upid)
+	} else {
+		fmt.Fprintf(cmdCtx.Writer, "Network configuration applied on %s\n", node)
+	}
 	return nil
 }
 

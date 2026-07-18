@@ -209,7 +209,7 @@ func init() {
 	)
 	register("network", "Manage network configuration", nil,
 		&command{name: "show", short: "Show node network interfaces", run: runNetworkShow},
-		&command{name: "apply", short: "Apply network configuration", run: runNetworkApply},
+		&command{name: "apply", short: "Apply pending network configuration", run: runNetworkApply},
 		&command{name: "revert", short: "Revert pending network changes", run: runNetworkRevert},
 	)
 	register("access", "Manage access and identity", nil,
