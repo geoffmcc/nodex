@@ -910,6 +910,25 @@ func buildRegistry() []OperationMeta {
 		{Path: "pbs garbage-collection status", Description: "Show PBS garbage-collection status",
 			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
 			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSGCInspector", HandlerFunc: "runPBSGCStatus"},
+		{Path: "pbs verify run", Description: "Run a PBS verification job or verify a datastore",
+			Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierReversible,
+			Waitable: true, ProducesUPID: true, UsesOperationResult: true,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSVerifyRunner", HandlerFunc: "runPBSVerifyRun"},
+		{Path: "pbs sync run", Description: "Run a PBS sync job",
+			Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDisruptive,
+			RiskDimensions: []RiskDimension{RiskDataLoss},
+			Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSSyncRunner", HandlerFunc: "runPBSSyncRun"},
+		{Path: "pbs prune run", Description: "Run a PBS prune job (removes snapshots)",
+			Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDestructive,
+			RiskDimensions: []RiskDimension{RiskDataLoss}, RequiresTypeConfirm: true,
+			Waitable: true, ProducesUPID: true, UsesOperationResult: true,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSPruneRunner", HandlerFunc: "runPBSPruneRun"},
+		{Path: "pbs garbage-collection run", Description: "Run PBS garbage collection on a datastore",
+			Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDisruptive,
+			RiskDimensions: []RiskDimension{RiskDataLoss},
+			Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSGCRunner", HandlerFunc: "runPBSGCRun"},
 	}
 	ops = append(ops, pbsOps...)
 
@@ -1110,14 +1129,14 @@ var knownDispatchCommands = map[string][]string{
 	"access domains":     {"access domains list"},
 	"access tokens":      {"access tokens list"},
 
-	// PBS dispatchers (read-only).
+	// PBS dispatchers.
 	"pbs datastore":          {"pbs datastore list", "pbs datastore show"},
 	"pbs snapshot":           {"pbs snapshot list"},
 	"pbs task":               {"pbs task list", "pbs task show", "pbs task log"},
-	"pbs verify":             {"pbs verify list"},
-	"pbs prune":              {"pbs prune list"},
-	"pbs sync":               {"pbs sync list"},
-	"pbs garbage-collection": {"pbs garbage-collection status"},
+	"pbs verify":             {"pbs verify list", "pbs verify run"},
+	"pbs prune":              {"pbs prune list", "pbs prune run"},
+	"pbs sync":               {"pbs sync list", "pbs sync run"},
+	"pbs garbage-collection": {"pbs garbage-collection status", "pbs garbage-collection run"},
 }
 
 // toHandler converts an operation path like "vm start" to a handler name like "VMStart".

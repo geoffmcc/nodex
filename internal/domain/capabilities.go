@@ -823,6 +823,24 @@ func CapabilityMetadata() map[Capability]CapabilityMeta {
 			Interfaces: []string{"PBSGCInspector"},
 		},
 
+		// --- PBS mutation ---
+		CapabilityPBSVerifyRun: {
+			Name: "PBS Verify Run", Category: CapMutation, Safety: TierReversible,
+			Interfaces: []string{"PBSVerifyRunner"},
+		},
+		CapabilityPBSSyncRun: {
+			Name: "PBS Sync Run", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"PBSSyncRunner"},
+		},
+		CapabilityPBSPruneRun: {
+			Name: "PBS Prune Run", Category: CapMutation, Safety: TierDestructive,
+			Interfaces: []string{"PBSPruneRunner"},
+		},
+		CapabilityPBSGCRun: {
+			Name: "PBS Garbage Collection Run", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"PBSGCRunner"},
+		},
+
 		// --- Mutation: reversible ---
 		CapabilityLifecycle: {
 			Name: "Lifecycle", Category: CapMutation, Safety: TierReversible,

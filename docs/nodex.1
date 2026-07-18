@@ -333,6 +333,14 @@ List PBS prune jobs.
 List PBS sync jobs.
 .SS nodex pbs garbage\-collection status [\-\-datastore \fISTORE\fR]
 Show PBS garbage-collection status.
+.SS nodex pbs verify run \fIJOB\fR | \-\-datastore \fISTORE\fR
+Run a PBS verification job or verify a datastore (requires \-\-yes).
+.SS nodex pbs sync run \fIJOB\fR
+Run a PBS sync job (requires \-\-yes \-\-force; jobs with remove\-vanished additionally require typing the job ID).
+.SS nodex pbs prune run \fIJOB\fR
+Run a PBS prune job; removes snapshots (requires \-\-yes \-\-force and typing the job ID).
+.SS nodex pbs garbage\-collection run \fIDATASTORE\fR
+Run PBS garbage collection on a datastore (requires \-\-yes \-\-force).
 .SS nodex network show \-\-node \fINODE\fR
 Show node network interfaces.
 .SS nodex network apply \-\-node \fINODE\fR \fICONFIG\fR

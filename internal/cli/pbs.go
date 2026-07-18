@@ -570,10 +570,18 @@ func runPBSTaskLog(ctx context.Context, cmdCtx *Context, args []string) error {
 // === pbs verify / prune / sync ===
 
 func runPBSVerifyDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) < 1 || args[0] != "list" {
-		return app.NewExitError(fmt.Errorf("usage: nodex pbs verify list"), app.ExitUsage)
+	usage := fmt.Errorf("usage: nodex pbs verify <list|run> [args]")
+	if len(args) < 1 {
+		return app.NewExitError(usage, app.ExitUsage)
 	}
-	return runPBSVerifyList(ctx, cmdCtx, args[1:])
+	switch args[0] {
+	case "list":
+		return runPBSVerifyList(ctx, cmdCtx, args[1:])
+	case "run":
+		return runPBSVerifyRun(ctx, cmdCtx, args[1:])
+	default:
+		return app.NewExitError(usage, app.ExitUsage)
+	}
 }
 
 func runPBSVerifyList(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -619,10 +627,18 @@ func runPBSVerifyList(ctx context.Context, cmdCtx *Context, args []string) error
 }
 
 func runPBSPruneDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) < 1 || args[0] != "list" {
-		return app.NewExitError(fmt.Errorf("usage: nodex pbs prune list"), app.ExitUsage)
+	usage := fmt.Errorf("usage: nodex pbs prune <list|run> [args]")
+	if len(args) < 1 {
+		return app.NewExitError(usage, app.ExitUsage)
 	}
-	return runPBSPruneList(ctx, cmdCtx, args[1:])
+	switch args[0] {
+	case "list":
+		return runPBSPruneList(ctx, cmdCtx, args[1:])
+	case "run":
+		return runPBSPruneRun(ctx, cmdCtx, args[1:])
+	default:
+		return app.NewExitError(usage, app.ExitUsage)
+	}
 }
 
 func runPBSPruneList(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -685,10 +701,18 @@ func formatPruneKeep(j domain.PBSPruneJob) string {
 }
 
 func runPBSSyncDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) < 1 || args[0] != "list" {
-		return app.NewExitError(fmt.Errorf("usage: nodex pbs sync list"), app.ExitUsage)
+	usage := fmt.Errorf("usage: nodex pbs sync <list|run> [args]")
+	if len(args) < 1 {
+		return app.NewExitError(usage, app.ExitUsage)
 	}
-	return runPBSSyncList(ctx, cmdCtx, args[1:])
+	switch args[0] {
+	case "list":
+		return runPBSSyncList(ctx, cmdCtx, args[1:])
+	case "run":
+		return runPBSSyncRun(ctx, cmdCtx, args[1:])
+	default:
+		return app.NewExitError(usage, app.ExitUsage)
+	}
 }
 
 func runPBSSyncList(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -734,11 +758,18 @@ func runPBSSyncList(ctx context.Context, cmdCtx *Context, args []string) error {
 // === pbs garbage-collection ===
 
 func runPBSGCDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
-	usage := fmt.Errorf("usage: nodex pbs garbage-collection status [--datastore <store>]")
-	if len(args) < 1 || args[0] != "status" {
+	usage := fmt.Errorf("usage: nodex pbs garbage-collection <status|run> [args]")
+	if len(args) < 1 {
 		return app.NewExitError(usage, app.ExitUsage)
 	}
-	return runPBSGCStatus(ctx, cmdCtx, args[1:])
+	switch args[0] {
+	case "status":
+		return runPBSGCStatus(ctx, cmdCtx, args[1:])
+	case "run":
+		return runPBSGCRun(ctx, cmdCtx, args[1:])
+	default:
+		return app.NewExitError(usage, app.ExitUsage)
+	}
 }
 
 func runPBSGCStatus(ctx context.Context, cmdCtx *Context, args []string) error {

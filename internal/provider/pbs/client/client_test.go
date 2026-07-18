@@ -299,3 +299,162 @@ func TestEmptyListsDecodeToEmpty(t *testing.T) {
 		t.Errorf("expected empty task list, got %d items", len(tasks))
 	}
 }
+
+func TestMutationRequests(t *testing.T) {
+	var gotMethod, gotPath, gotAuth string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{"data":"UPID:pbs:00001234:00005678:00000001:65f00000:garbage_collection:backups:automation@pbs!nodex:"}`))
+	})
+	c := newTestClient(t, handler)
+	ctx := context.Background()
+
+	tests := []struct {
+		name     string
+		call     func() (string, error)
+		wantPath string
+	}{
+		{"verify job run", func() (string, error) { return c.RunVerifyJob(ctx, "v-daily") },
+			"/api2/json/admin/verify/v-daily/run"},
+		{"verify datastore", func() (string, error) { return c.VerifyDatastore(ctx, "backups") },
+			"/api2/json/admin/datastore/backups/verify"},
+		{"sync job run", func() (string, error) { return c.RunSyncJob(ctx, "s-offsite") },
+			"/api2/json/admin/sync/s-offsite/run"},
+		{"prune job run", func() (string, error) { return c.RunPruneJob(ctx, "p-daily") },
+			"/api2/json/admin/prune/p-daily/run"},
+		{"gc run", func() (string, error) { return c.RunGarbageCollection(ctx, "backups") },
+			"/api2/json/admin/datastore/backups/gc"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMethod, gotPath, gotAuth = "", "", ""
+			upid, err := tt.call()
+			if err != nil {
+				t.Fatalf("call: %v", err)
+			}
+			if gotMethod != http.MethodPost {
+				t.Errorf("method = %q, want POST", gotMethod)
+			}
+			if gotPath != tt.wantPath {
+				t.Errorf("path = %q, want %q", gotPath, tt.wantPath)
+			}
+			if !strings.HasPrefix(gotAuth, "PBSAPIToken=") {
+				t.Errorf("mutation must send PBSAPIToken auth, got %q", gotAuth)
+			}
+			if !strings.HasPrefix(upid, "UPID:") {
+				t.Errorf("upid = %q", upid)
+			}
+		})
+	}
+}
+
+// TestMutationToleratesNullData covers job-run endpoints whose schema
+// declares a null return: decoding must not fail and yields an empty UPID.
+func TestMutationToleratesNullData(t *testing.T) {
+	c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	upid, err := c.RunVerifyJob(context.Background(), "v-daily")
+	if err != nil {
+		t.Fatalf("RunVerifyJob with null data: %v", err)
+	}
+	if upid != "" {
+		t.Errorf("upid = %q, want empty", upid)
+	}
+}
+
+// TestMutationNotRetried verifies mutations execute exactly once even when
+// the server returns a retryable-looking 500.
+func TestMutationNotRetried(t *testing.T) {
+	attempts := 0
+	c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	if _, err := c.RunGarbageCollection(context.Background(), "backups"); err == nil {
+		t.Fatal("expected error for 500")
+	}
+	if attempts != 1 {
+		t.Errorf("mutation attempted %d times, want exactly 1 (no retry)", attempts)
+	}
+}
+
+// TestGetIsRetriedOn5xx contrasts the mutation path: safe GETs retry.
+func TestGetIsRetriedOn5xx(t *testing.T) {
+	attempts := 0
+	c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	if _, err := c.Datastores(context.Background()); err == nil {
+		t.Fatal("expected error for persistent 500")
+	}
+	if attempts < 2 {
+		t.Errorf("GET attempted %d times, want retries", attempts)
+	}
+}
+
+func TestValidateJobID(t *testing.T) {
+	tests := []struct {
+		id    string
+		valid bool
+	}{
+		{"backups", true},
+		{"v-daily", true},
+		{"job_1.x", true},
+		{"ab", false},                    // too short
+		{strings.Repeat("x", 33), false}, // too long
+		{"-leading", false},
+		{".leading", false},
+		{"has space", false},
+		{"path/../traversal", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		err := ValidateJobID(tt.id)
+		if tt.valid && err != nil {
+			t.Errorf("ValidateJobID(%q): %v", tt.id, err)
+		}
+		if !tt.valid && err == nil {
+			t.Errorf("ValidateJobID(%q) accepted, want rejection", tt.id)
+		}
+	}
+}
+
+// TestMutationRejectsInvalidIDWithoutRequest ensures invalid identifiers are
+// refused before any request is sent.
+func TestMutationRejectsInvalidIDWithoutRequest(t *testing.T) {
+	requested := false
+	c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = true
+	}))
+	if _, err := c.RunPruneJob(context.Background(), "bad/../id"); err == nil {
+		t.Fatal("expected invalid ID rejection")
+	}
+	if _, err := c.RunGarbageCollection(context.Background(), "x"); err == nil {
+		t.Fatal("expected too-short ID rejection")
+	}
+	if requested {
+		t.Error("invalid identifiers must not produce requests")
+	}
+}
+
+// TestMutationEndpointPinning verifies host-pinned mutations through a
+// New()-constructed client whose endpoint host differs from the request.
+func TestMutationEndpointPinning(t *testing.T) {
+	c, err := New("https://pbs.example.invalid:8007", testCredentials())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Rewrite baseURL to simulate a redirect/misconfiguration to another host.
+	c.baseURL = "https://attacker.example.invalid:8007/api2/json"
+	_, err = c.RunGarbageCollection(context.Background(), "backups")
+	if err == nil {
+		t.Fatal("expected endpoint mismatch rejection")
+	}
+	if !strings.Contains(err.Error(), "does not match configured endpoint") {
+		t.Errorf("error = %v, want endpoint mismatch", err)
+	}
+}

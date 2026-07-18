@@ -15,6 +15,23 @@ const (
 	CapabilityPBSTasks      Capability = "pbs_tasks"
 	CapabilityPBSJobs       Capability = "pbs_jobs"
 	CapabilityPBSGC         Capability = "pbs_gc"
+
+	// Guarded PBS mutations. Each ran through the product decision gate;
+	// safety tiers are declared in CapabilityMetadata:
+	//   pbs_verify_run — reversible: integrity check, writes only
+	//     verification metadata, removes nothing.
+	//   pbs_sync_run   — disruptive: executes an admin-configured sync job;
+	//     jobs with remove-vanished can delete local snapshots, which the
+	//     CLI escalates to type-in confirmation at runtime.
+	//   pbs_prune_run  — destructive: permanently removes backup snapshots
+	//     according to the job's keep policy.
+	//   pbs_gc_run     — disruptive: permanently frees chunks no longer
+	//     referenced by any backup index; restorable snapshots are not
+	//     affected, but freed data is unrecoverable.
+	CapabilityPBSVerifyRun Capability = "pbs_verify_run"
+	CapabilityPBSSyncRun   Capability = "pbs_sync_run"
+	CapabilityPBSPruneRun  Capability = "pbs_prune_run"
+	CapabilityPBSGCRun     Capability = "pbs_gc_run"
 )
 
 // PBSVersionInfo is the PBS server version (GET /version).
@@ -286,4 +303,27 @@ type PBSJobInspector interface {
 type PBSGCInspector interface {
 	PBSGCStatuses(ctx context.Context) ([]PBSGCStatus, error)
 	PBSGCStatus(ctx context.Context, store string) (*PBSGCStatus, error)
+}
+
+// PBSVerifyRunner starts verification work. Each method returns the task
+// UPID.
+type PBSVerifyRunner interface {
+	PBSRunVerifyJob(ctx context.Context, id string) (string, error)
+	PBSVerifyDatastore(ctx context.Context, store string) (string, error)
+}
+
+// PBSSyncRunner starts a configured sync job. Returns the task UPID.
+type PBSSyncRunner interface {
+	PBSRunSyncJob(ctx context.Context, id string) (string, error)
+}
+
+// PBSPruneRunner starts a configured prune job. Returns the task UPID.
+type PBSPruneRunner interface {
+	PBSRunPruneJob(ctx context.Context, id string) (string, error)
+}
+
+// PBSGCRunner starts garbage collection on a datastore. Returns the task
+// UPID.
+type PBSGCRunner interface {
+	PBSRunGarbageCollection(ctx context.Context, store string) (string, error)
 }

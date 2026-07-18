@@ -8,7 +8,7 @@ NodeX runs on Linux, macOS, and Windows as a single local binary. It connects di
 
 - **Inspect.** List and show nodes, VMs, containers, storage, tasks, events, snapshots, firewall rules, HA resources, backup content, SDN zones, Ceph state, pools, cluster logs, and more. Inspect Proxmox Backup Server datastores, backup snapshots, verify/prune/sync jobs, garbage collection, and tasks through the separate `pbs` provider.
 - **Diagnose.** Run `nodex doctor` to check configuration and connectivity across all your profiles.
-- **Operate.** Start, stop, shutdown, reboot, suspend, resume, pause, and unpause VMs and containers. Create and manage snapshots. Update VM and container configurations. Create backups. Upload and download storage content. Migrate and clone guests.
+- **Operate.** Start, stop, shutdown, reboot, suspend, resume, pause, and unpause VMs and containers. Create and manage snapshots. Update VM and container configurations. Create backups. Upload and download storage content. Migrate and clone guests. Run PBS verification, sync, prune, and garbage-collection jobs behind the same safety gates.
 - **Administer** (expert mode). Manage users, ACL entries, firewall rules, SDN topology, Ceph OSDs and pools, backup schedules, and replication jobs.
 
 Every management command is protected by a five-tier safety model. Read-only commands need no confirmation. Reversible operations need `--yes`. Disruptive operations need `--yes --force`. Destructive operations require typing the target identifier. Security administration requires `--expert`.
@@ -105,7 +105,7 @@ nodex firewall           Inspect and manage firewall rules
 nodex ha                 Inspect HA resources
 nodex sdn                Inspect and manage SDN
 nodex pools              List resource pools
-nodex pbs                Inspect Proxmox Backup Server (read-only)
+nodex pbs                Inspect Proxmox Backup Server; guarded maintenance runs
 nodex network            Inspect and manage network config
 nodex access             Inspect and manage identity (expert)
 nodex ceph               Inspect and manage Ceph

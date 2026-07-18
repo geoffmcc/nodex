@@ -33,8 +33,9 @@ command (lands with the first version-2-only section); any PBS commands.
 
 ## Phase 2 — Proxmox Backup Server provider
 
-Status: active — read-only foundation on this branch; guarded mutations follow
-in a separate PR after the foundation merges.
+Status: read-only foundation merged 2026-07-17 (PR #65); guarded mutations
+(verify/sync/prune/GC runs with safety gates and conflicting-task preflight)
+active on this branch.
 
 - `internal/provider/pbs/` with its own typed client (`/api2/json`, port 8007
   default), `PBSAPIToken` authorization, provider registration as `pbs`.

@@ -91,6 +91,10 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilityPBSTasks,
 		domain.CapabilityPBSJobs,
 		domain.CapabilityPBSGC,
+		domain.CapabilityPBSVerifyRun,
+		domain.CapabilityPBSSyncRun,
+		domain.CapabilityPBSPruneRun,
+		domain.CapabilityPBSGCRun,
 	}
 }
 
@@ -300,4 +304,64 @@ func (p *Provider) PBSGCStatus(ctx context.Context, store string) (*domain.PBSGC
 	}
 	mapped := MapGCStatus(*s)
 	return &mapped, nil
+}
+
+// PBSRunVerifyJob starts a configured verification job.
+func (p *Provider) PBSRunVerifyJob(ctx context.Context, id string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	upid, err := p.client.RunVerifyJob(ctx, id)
+	if err != nil {
+		return "", fmt.Errorf("run verify job %q: %w", id, err)
+	}
+	return upid, nil
+}
+
+// PBSVerifyDatastore starts verification of a whole datastore.
+func (p *Provider) PBSVerifyDatastore(ctx context.Context, store string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	upid, err := p.client.VerifyDatastore(ctx, store)
+	if err != nil {
+		return "", fmt.Errorf("verify datastore %q: %w", store, err)
+	}
+	return upid, nil
+}
+
+// PBSRunSyncJob starts a configured sync job.
+func (p *Provider) PBSRunSyncJob(ctx context.Context, id string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	upid, err := p.client.RunSyncJob(ctx, id)
+	if err != nil {
+		return "", fmt.Errorf("run sync job %q: %w", id, err)
+	}
+	return upid, nil
+}
+
+// PBSRunPruneJob starts a configured prune job.
+func (p *Provider) PBSRunPruneJob(ctx context.Context, id string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	upid, err := p.client.RunPruneJob(ctx, id)
+	if err != nil {
+		return "", fmt.Errorf("run prune job %q: %w", id, err)
+	}
+	return upid, nil
+}
+
+// PBSRunGarbageCollection starts garbage collection on a datastore.
+func (p *Provider) PBSRunGarbageCollection(ctx context.Context, store string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	upid, err := p.client.RunGarbageCollection(ctx, store)
+	if err != nil {
+		return "", fmt.Errorf("run garbage collection on %q: %w", store, err)
+	}
+	return upid, nil
 }
