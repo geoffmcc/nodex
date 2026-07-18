@@ -13,7 +13,7 @@ Nodex is a secure, predictable, all-in-one CLI for understanding and operating s
 
 ## Implemented Scope
 
-Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infrastructure. The built-in Proxmox provider supports both read-only inspection commands and mutation commands across 31 capabilities with a five-tier safety model. Nodex has no daemon, no background agent, no telemetry, and no mandatory server component.
+Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infrastructure. The built-in Proxmox provider supports both read-only inspection commands and mutation commands across 31 capabilities with a five-tier safety model. A separate Proxmox Backup Server provider (`pbs`) supports read-only inspection across 6 capabilities. Nodex has no daemon, no background agent, no telemetry, and no mandatory server component.
 
 ### Read-only inspection commands
 
@@ -32,6 +32,11 @@ Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infras
 - Ceph status, OSDs, monitors, pools
 - Replication job listing
 - Access control: users, groups, roles, ACLs, domains, tokens
+- Proxmox Backup Server (`provider: pbs`, read-only): host status, version,
+  subscription, certificates, datastore configuration and usage, backup
+  snapshots (with namespace/type/ID filters and verification state), tasks
+  (list/status/log), verify/prune/sync job configurations, and
+  garbage-collection status
 
 ### Mutation commands
 

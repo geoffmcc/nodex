@@ -305,6 +305,34 @@ Create an SDN VNet.
 Delete an SDN VNet.
 .SS nodex pools list
 List resource pools.
+.SS nodex pbs status
+Show Proxmox Backup Server host status (requires a profile with provider pbs).
+.SS nodex pbs version
+Show PBS server version.
+.SS nodex pbs subscription
+Show PBS subscription status.
+.SS nodex pbs certificates
+List PBS certificates.
+.SS nodex pbs datastore list
+List PBS datastore configurations.
+.SS nodex pbs datastore show \fIDATASTORE\fR
+Show one PBS datastore's configuration and usage.
+.SS nodex pbs snapshot list \-\-datastore \fISTORE\fR [\-\-namespace \fINS\fR] [\-\-backup\-type vm|ct|host] [\-\-backup\-id \fIID\fR]
+List backup snapshots in a PBS datastore.
+.SS nodex pbs task list [\-\-running] [\-\-errors]
+List PBS tasks.
+.SS nodex pbs task show \fIUPID\fR
+Show PBS task status.
+.SS nodex pbs task log \fIUPID\fR
+Show PBS task log.
+.SS nodex pbs verify list
+List PBS verification jobs.
+.SS nodex pbs prune list
+List PBS prune jobs.
+.SS nodex pbs sync list
+List PBS sync jobs.
+.SS nodex pbs garbage\-collection status [\-\-datastore \fISTORE\fR]
+Show PBS garbage-collection status.
 .SS nodex network show \-\-node \fINODE\fR
 Show node network interfaces.
 .SS nodex network apply \-\-node \fINODE\fR \fICONFIG\fR

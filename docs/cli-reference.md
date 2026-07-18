@@ -416,6 +416,46 @@ Inspect and manage SDN.
 | `sdn controller create <ctrl>` | Create an SDN controller |
 | `sdn controller delete <ctrl>` | Delete an SDN controller |
 
+### `nodex pbs`
+
+Inspect a Proxmox Backup Server (read-only). Requires a profile with `provider: pbs` (see the configuration reference). Running a `pbs` command against a non-PBS profile fails with the unsupported-capability exit code (10).
+
+```bash
+nodex pbs status
+nodex pbs version
+nodex pbs subscription
+nodex pbs certificates
+nodex pbs datastore list
+nodex pbs datastore show <datastore>
+nodex pbs snapshot list --datastore <store> [--namespace <ns>] [--backup-type vm|ct|host] [--backup-id <id>]
+nodex pbs task list [--running] [--errors]
+nodex pbs task show <upid>
+nodex pbs task log <upid>
+nodex pbs verify list
+nodex pbs prune list
+nodex pbs sync list
+nodex pbs garbage-collection status [--datastore <store>]
+```
+
+| Command | Description |
+|---------|-------------|
+| `pbs status` | PBS host status (CPU, memory, root filesystem, uptime, kernel) |
+| `pbs version` | PBS server version and repository ID |
+| `pbs subscription` | Subscription status |
+| `pbs certificates` | API certificate details, including expiry |
+| `pbs datastore list` | Datastore configurations |
+| `pbs datastore show <datastore>` | One datastore's configuration plus usage; usage errors (e.g. an unmounted removable datastore) are reported in `status_error` without failing the command |
+| `pbs snapshot list --datastore <store>` | Backup snapshots in a datastore, including owner, protection, and verification state; `--namespace`, `--backup-type`, and `--backup-id` narrow the listing |
+| `pbs task list` | Recent tasks; `--running` and `--errors` filter, global `--limit` caps the count |
+| `pbs task show <upid>` | Task status and exit state for a PBS UPID |
+| `pbs task log <upid>` | Task log lines |
+| `pbs verify list` | Verification job configurations |
+| `pbs prune list` | Prune job configurations with keep policies |
+| `pbs sync list` | Sync job configurations |
+| `pbs garbage-collection status` | Garbage-collection status for all datastores, or one with `--datastore` |
+
+All `pbs` commands are read-only (safety tier: observation) and support `--output table|json|yaml`. Empty listings produce stable empty results (`[]` in JSON). PBS mutations (verify/sync/prune/GC runs) are planned as separately gated operations; see `docs/roadmap.md`.
+
 ### `nodex pools`
 
 List resource pools. Safety: Tier 0.

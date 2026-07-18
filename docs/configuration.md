@@ -164,7 +164,47 @@ Supported variables:
 - `NODEX_<PROFILE>_USERNAME`
 - `NODEX_<PROFILE>_PASSWORD`
 
-The Proxmox provider uses API token credentials. Incomplete token or username/password pairs are rejected by credential validation.
+The Proxmox VE and PBS providers use API token credentials. Incomplete token or username/password pairs are rejected by credential validation.
+
+## Proxmox Backup Server Profiles
+
+A PBS profile uses `provider: pbs` and the PBS API port (8007 by default):
+
+```yaml
+profiles:
+  production-pbs:
+    provider: pbs
+    endpoint: https://pbs.example.com:8007
+    credential_ref: keyring:production-pbs
+```
+
+```bash
+nodex profile add production-pbs --provider pbs
+nodex profile set-credentials production-pbs --backend keyring
+```
+
+PBS authenticates with its own API-token scheme
+(`Authorization: PBSAPIToken=user@realm!tokenname:secret`). The token ID has
+the form `user@realm!tokenname` (for example `automation@pbs!nodex`); PBS
+separates the token name and secret with `:` where PVE uses `=`. Nodex builds
+the header from the same `token_id`/`token_secret` credential fields used for
+PVE — store the PBS token ID and secret exactly as PBS displays them at token
+creation.
+
+Keep PVE and PBS credentials in separate credential-store entries referenced
+by separate profiles. Never reuse a PVE token for PBS or vice versa.
+
+### PBS API token least privilege
+
+The Phase 2 `pbs` command set is read-only. Create a dedicated API token
+whose user or token ACL grants only audit-level roles, for example:
+
+- `Audit` on `/` (or, narrower, `Datastore.Audit` on `/datastore` plus
+  `Sys.Audit` on `/system`)
+
+Do not grant `DatastoreAdmin`, `DatastorePowerUser`, `Admin`, or any Modify
+privilege to the token Nodex uses for inspection. When PBS mutations land in
+a later phase, they will document their own, separately scoped privileges.
 
 ## File Credentials
 

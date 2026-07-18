@@ -335,3 +335,75 @@ func requireReplication(prov domain.Provider) (domain.ReplicationProvider, error
 	}
 	return p, nil
 }
+
+// requirePBSSystem checks if the provider supports PBSSystemInspector.
+func requirePBSSystem(prov domain.Provider) (domain.PBSSystemInspector, error) {
+	p, ok := prov.(domain.PBSSystemInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requirePBSDatastores checks if the provider supports PBSDatastoreInspector.
+func requirePBSDatastores(prov domain.Provider) (domain.PBSDatastoreInspector, error) {
+	p, ok := prov.(domain.PBSDatastoreInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs datastore commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requirePBSSnapshots checks if the provider supports PBSSnapshotInspector.
+func requirePBSSnapshots(prov domain.Provider) (domain.PBSSnapshotInspector, error) {
+	p, ok := prov.(domain.PBSSnapshotInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs snapshot commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requirePBSTasks checks if the provider supports PBSTaskInspector.
+func requirePBSTasks(prov domain.Provider) (domain.PBSTaskInspector, error) {
+	p, ok := prov.(domain.PBSTaskInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs task commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requirePBSJobs checks if the provider supports PBSJobInspector.
+func requirePBSJobs(prov domain.Provider) (domain.PBSJobInspector, error) {
+	p, ok := prov.(domain.PBSJobInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs job commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+// requirePBSGC checks if the provider supports PBSGCInspector.
+func requirePBSGC(prov domain.Provider) (domain.PBSGCInspector, error) {
+	p, ok := prov.(domain.PBSGCInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs garbage-collection commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}

@@ -36,8 +36,10 @@ internal/domain/                   Provider interface, capability interfaces, sh
 internal/logging/                  Stderr logger and log levels
 internal/output/                   Table, JSON, YAML, OperationResult envelope, redaction-aware formatting
 internal/provider/                 Provider registry and capability helpers
-internal/provider/proxmox/         Proxmox provider implementation and resource mapping
-internal/provider/proxmox/client/  Typed Proxmox HTTP API client
+internal/provider/pbs/             Proxmox Backup Server provider and resource mapping
+internal/provider/pbs/client/      Typed PBS HTTP API client
+internal/provider/proxmox/         Proxmox VE provider implementation and resource mapping
+internal/provider/proxmox/client/  Typed Proxmox VE HTTP API client
 internal/redact/                   Secret redaction helpers
 internal/safety/                   Mutation safety classification and confirmation policy
 internal/task/                     UPID parsing and exponential-backoff task polling
@@ -172,6 +174,31 @@ The Proxmox provider (`internal/provider/proxmox/`) is the built-in provider. It
 - Maps Proxmox API response fields into `internal/domain` resource types through mapper functions
 
 The provider advertises 31 capabilities covering read-only inspection, node details, firewall, HA, backups, SDN, snapshots, pools, cluster logs, lifecycle, config, snapshot mutation, delete, template, cloud-init, backup mutation, storage mutation, migration, clone, disk, network mutation, firewall mutation, access, Ceph, Ceph mutation, SDN mutation, and replication.
+
+## PBS provider
+
+The Proxmox Backup Server provider (`internal/provider/pbs/`) is a separate
+first-class provider with its own typed client
+(`internal/provider/pbs/client/`). It shares the transport, credential,
+redaction, safety, and output infrastructure with the Proxmox VE provider but
+none of its client code, and PBS resources use PBS-native domain models
+(datastores, backup snapshots, namespaces, verify/prune/sync jobs, garbage
+collection) rather than PVE shapes.
+
+- Authenticates with PBS's `PBSAPIToken` authorization scheme
+  (`PBSAPIToken=user@realm!tokenname:secret` — note the `:` separator where
+  PVE uses `=`)
+- Same endpoint policy as PVE: HTTPS only, no userinfo/path/query, additive
+  custom CA, no insecure mode
+- Treats PBS task UPIDs as opaque validated identifiers; the PBS UPID wire
+  format differs from PVE's (it ends with the authenticating `authid`)
+- Advertises 6 read-only capabilities: `pbs_system`, `pbs_datastores`,
+  `pbs_snapshots`, `pbs_tasks`, `pbs_jobs`, `pbs_gc`, backed by the
+  `PBSSystemInspector`, `PBSDatastoreInspector`, `PBSSnapshotInspector`,
+  `PBSTaskInspector`, `PBSJobInspector`, and `PBSGCInspector` interfaces in
+  `internal/domain`
+- PBS mutations (verify/sync/prune/GC runs) are deliberately absent from this
+  foundation and arrive as separately gated operations (`docs/roadmap.md`)
 
 ## HTTP transport
 

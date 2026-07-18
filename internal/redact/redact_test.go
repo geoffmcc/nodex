@@ -147,6 +147,25 @@ func TestStringRedactsSecrets(t *testing.T) {
 	}
 }
 
+// TestUPIDsNotRedacted guards against over-redaction: PVE and PBS task
+// UPIDs legitimately contain "user@realm!tokenid:" as their trailing authid
+// field and must survive redaction intact, in plain text and inside JSON.
+func TestUPIDsNotRedacted(t *testing.T) {
+	upids := []string{
+		"UPID:pbs:00001234:00005678:00000001:65f00000:garbage_collection:backups:automation@pbs!nodex:",
+		"UPID:pve1:000A1B2C:0004D2F0:65F00000:vzdump:100:automation@pve!backup:",
+	}
+	for _, upid := range upids {
+		if got := String(upid); got != upid {
+			t.Errorf("bare UPID was mangled:\n in: %q\nout: %q", upid, got)
+		}
+		jsonForm := `{"upid": "` + upid + `", "node": "pbs"}`
+		if got := String(jsonForm); got != jsonForm {
+			t.Errorf("UPID in JSON was mangled:\n in: %q\nout: %q", jsonForm, got)
+		}
+	}
+}
+
 func TestStringCleanTextUnchanged(t *testing.T) {
 	input := "Hello world, this is clean text."
 	result := String(input)

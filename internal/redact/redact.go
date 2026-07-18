@@ -201,8 +201,13 @@ var patterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)PVEAPIToken=\S+`),
 	// PBS API token format in Authorization header or standalone: PBSAPIToken=user@realm!id:uuid
 	regexp.MustCompile(`(?i)PBSAPIToken=\S+`),
-	// Proxmox token grammar: user@realm!tokenid=uuid (PVE) or user@realm!tokenid:uuid (PBS)
-	regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+[=:]\S+`),
+	// Proxmox token grammar, PVE form: user@realm!tokenid=uuid
+	regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=\S+`),
+	// Proxmox token grammar, PBS form: user@realm!tokenid:uuid. The secret
+	// tail must look like one (8+ alphanumeric/hyphen chars): PVE and PBS
+	// task UPIDs legitimately end in "user@realm!tokenid:" as a field
+	// terminator, and a bare \S+ here would corrupt every UPID in output.
+	regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+:[A-Za-z0-9-]{8,}`),
 	// JSON/YAML field patterns: "password": "value", "token_secret": "value"
 	regexp.MustCompile(`(?i)"(token[_-]?(id|secret|value)?|password|secret|credential)"\s*:\s*"[^"]*"`),
 	regexp.MustCompile(`(?i)'(token[_-]?(id|secret|value)?|password|secret|credential)'\s*:\s*'[^']*'`),

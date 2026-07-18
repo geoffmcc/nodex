@@ -845,6 +845,74 @@ func buildRegistry() []OperationMeta {
 	}
 	ops = append(ops, dispatchOps...)
 
+	// --- pbs (Proxmox Backup Server, read-only) ---
+	pbsOps := []OperationMeta{
+		{Path: "pbs status", Description: "Show PBS host status",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSSystemInspector", HandlerFunc: "runPBSStatus"},
+		{Path: "pbs version", Description: "Show PBS server version",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSSystemInspector", HandlerFunc: "runPBSVersion"},
+		{Path: "pbs subscription", Description: "Show PBS subscription status",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSSystemInspector", HandlerFunc: "runPBSSubscription"},
+		{Path: "pbs certificates", Description: "List PBS certificates",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSSystemInspector", HandlerFunc: "runPBSCertificates"},
+		{Path: "pbs datastore", Description: "Inspect PBS datastores (routing)",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table"}, HandlerFunc: "runPBSDatastoreDispatch"},
+		{Path: "pbs datastore list", Description: "List PBS datastores",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSDatastoreInspector", HandlerFunc: "runPBSDatastoreList"},
+		{Path: "pbs datastore show", Description: "Show PBS datastore configuration and usage",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSDatastoreInspector", HandlerFunc: "runPBSDatastoreShow"},
+		{Path: "pbs snapshot", Description: "Inspect PBS backup snapshots (routing)",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table"}, HandlerFunc: "runPBSSnapshotDispatch"},
+		{Path: "pbs snapshot list", Description: "List PBS backup snapshots in a datastore",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSSnapshotInspector", HandlerFunc: "runPBSSnapshotList"},
+		{Path: "pbs task", Description: "Inspect PBS tasks (routing)",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table"}, HandlerFunc: "runPBSTaskDispatch"},
+		{Path: "pbs task list", Description: "List PBS tasks",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSTaskInspector", HandlerFunc: "runPBSTaskList"},
+		{Path: "pbs task show", Description: "Show PBS task details",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSTaskInspector", HandlerFunc: "runPBSTaskShow"},
+		{Path: "pbs task log", Description: "Show PBS task log",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSTaskInspector", HandlerFunc: "runPBSTaskLog"},
+		{Path: "pbs verify", Description: "Inspect PBS verification jobs (routing)",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table"}, HandlerFunc: "runPBSVerifyDispatch"},
+		{Path: "pbs verify list", Description: "List PBS verification jobs",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSJobInspector", HandlerFunc: "runPBSVerifyList"},
+		{Path: "pbs prune", Description: "Inspect PBS prune jobs (routing)",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table"}, HandlerFunc: "runPBSPruneDispatch"},
+		{Path: "pbs prune list", Description: "List PBS prune jobs",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSJobInspector", HandlerFunc: "runPBSPruneList"},
+		{Path: "pbs sync", Description: "Inspect PBS sync jobs (routing)",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table"}, HandlerFunc: "runPBSSyncDispatch"},
+		{Path: "pbs sync list", Description: "List PBS sync jobs",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSJobInspector", HandlerFunc: "runPBSSyncList"},
+		{Path: "pbs garbage-collection", Description: "Inspect PBS garbage collection (routing)",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table"}, HandlerFunc: "runPBSGCDispatch"},
+		{Path: "pbs garbage-collection status", Description: "Show PBS garbage-collection status",
+			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSGCInspector", HandlerFunc: "runPBSGCStatus"},
+	}
+	ops = append(ops, pbsOps...)
+
 	// Sort by path for deterministic output.
 	sort.Slice(ops, func(i, j int) bool { return ops[i].Path < ops[j].Path })
 	return ops
@@ -1041,6 +1109,15 @@ var knownDispatchCommands = map[string][]string{
 	"access acl":         {"access acl list", "access acl add"},
 	"access domains":     {"access domains list"},
 	"access tokens":      {"access tokens list"},
+
+	// PBS dispatchers (read-only).
+	"pbs datastore":          {"pbs datastore list", "pbs datastore show"},
+	"pbs snapshot":           {"pbs snapshot list"},
+	"pbs task":               {"pbs task list", "pbs task show", "pbs task log"},
+	"pbs verify":             {"pbs verify list"},
+	"pbs prune":              {"pbs prune list"},
+	"pbs sync":               {"pbs sync list"},
+	"pbs garbage-collection": {"pbs garbage-collection status"},
 }
 
 // toHandler converts an operation path like "vm start" to a handler name like "VMStart".
