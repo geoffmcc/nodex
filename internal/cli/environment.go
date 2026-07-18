@@ -82,26 +82,18 @@ func runEnvironmentBackupHealth(ctx context.Context, cmdCtx *Context, args []str
 	return runEnvironmentCheck(ctx, cmdCtx, args, true, "usage: nodex environment backup-health <name>")
 }
 
-func runEnvironmentCheck(ctx context.Context, cmdCtx *Context, args []string, includeGuests bool, usage string) error {
-	if len(args) != 1 {
-		return app.NewExitError(fmt.Errorf("%s", usage), app.ExitUsage)
-	}
-	name := args[0]
-	cfg, err := config.Read()
-	if err != nil {
-		return err
-	}
+// evaluateEnvironment loads the named environment, connects its profiles
+// (connection failures become reachability findings, not command failures),
+// and returns the backup-health result. Callers own output and exit codes.
+func evaluateEnvironment(ctx context.Context, cmdCtx *Context, cfg *config.Config, name string, includeGuests bool) (*backuphealth.Result, error) {
 	env, ok := cfg.Environments[name]
 	if !ok {
-		return app.NewExitError(
+		return nil, app.NewExitError(
 			fmt.Errorf("environment %q not found in configuration", name),
 			app.ExitConfig,
 		)
 	}
 
-	// Connect each configured profile. Connection failures become
-	// reachability findings, not command failures, so one side being down
-	// never masks the other side's state.
 	var pve, pbs domain.Provider
 	var cleanups []func()
 	defer func() {
@@ -138,7 +130,23 @@ func runEnvironmentCheck(ctx context.Context, cmdCtx *Context, args []string, in
 	}
 	result, err := svc.CheckEnvironmentBackupHealth(ctx, req)
 	if err != nil {
-		return app.NewExitError(fmt.Errorf("evaluate environment %q: %w", name, err), app.ExitValidationError)
+		return nil, app.NewExitError(fmt.Errorf("evaluate environment %q: %w", name, err), app.ExitValidationError)
+	}
+	return result, nil
+}
+
+func runEnvironmentCheck(ctx context.Context, cmdCtx *Context, args []string, includeGuests bool, usage string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("%s", usage), app.ExitUsage)
+	}
+	name := args[0]
+	cfg, err := config.Read()
+	if err != nil {
+		return err
+	}
+	result, err := evaluateEnvironment(ctx, cmdCtx, cfg, name, includeGuests)
+	if err != nil {
+		return err
 	}
 
 	if err := writeEnvironmentResult(cmdCtx, result); err != nil {

@@ -227,6 +227,11 @@ func init() {
 		&command{name: "mon", short: "Manage Ceph monitors", run: runCephMonDispatch},
 		&command{name: "pool", short: "Manage Ceph pools", run: runCephPoolDispatch},
 	)
+	register("maintenance", "Fleet maintenance status and planning", nil,
+		&command{name: "inventory", short: "List enrolled maintenance hosts", run: runMaintenanceInventory},
+		&command{name: "status", short: "Read-only maintenance preflight status", run: runMaintenanceStatus},
+		&command{name: "plan", short: "Create an immutable maintenance plan", run: runMaintenancePlan},
+	)
 	register("environment", "Unified PVE/PBS environment health", nil,
 		&command{name: "list", short: "List configured environments", run: runEnvironmentList},
 		&command{name: "health", short: "Check environment infrastructure health", run: runEnvironmentHealth},

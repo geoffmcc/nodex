@@ -183,20 +183,34 @@ type HostResult struct {
 	Failed      bool   `json:"failed" yaml:"failed"`
 }
 
+// TaskOutcome is one task's result on one host, extracted from the JSON
+// callback. Fields cover the registered values Nodex's embedded playbooks
+// produce; unknown fields are ignored.
+type TaskOutcome struct {
+	Task        string   `json:"task" yaml:"task"`
+	Failed      bool     `json:"failed,omitempty" yaml:"failed,omitempty"`
+	Skipped     bool     `json:"skipped,omitempty" yaml:"skipped,omitempty"`
+	Unreachable bool     `json:"unreachable,omitempty" yaml:"unreachable,omitempty"`
+	StdoutLines []string `json:"stdout_lines,omitempty" yaml:"stdout_lines,omitempty"`
+	StatExists  *bool    `json:"stat_exists,omitempty" yaml:"stat_exists,omitempty"`
+	Message     string   `json:"msg,omitempty" yaml:"msg,omitempty"`
+}
+
 // RunResult is the complete outcome of one adapter run. Success is derived
 // from the parsed per-host statistics, never from the exit code alone.
 type RunResult struct {
-	Operation       string       `json:"operation" yaml:"operation"`
-	ExitCode        int          `json:"exit_code" yaml:"exit_code"`
-	DurationSeconds float64      `json:"duration_seconds" yaml:"duration_seconds"`
-	Hosts           []HostResult `json:"hosts" yaml:"hosts"`
-	Success         bool         `json:"success" yaml:"success"`
-	PartialFailure  bool         `json:"partial_failure" yaml:"partial_failure"`
-	ParseError      string       `json:"parse_error,omitempty" yaml:"parse_error,omitempty"`
-	Stdout          string       `json:"stdout,omitempty" yaml:"stdout,omitempty"`
-	Stderr          string       `json:"stderr,omitempty" yaml:"stderr,omitempty"`
-	StdoutTruncated bool         `json:"stdout_truncated,omitempty" yaml:"stdout_truncated,omitempty"`
-	StderrTruncated bool         `json:"stderr_truncated,omitempty" yaml:"stderr_truncated,omitempty"`
+	Operation       string                   `json:"operation" yaml:"operation"`
+	ExitCode        int                      `json:"exit_code" yaml:"exit_code"`
+	DurationSeconds float64                  `json:"duration_seconds" yaml:"duration_seconds"`
+	Hosts           []HostResult             `json:"hosts" yaml:"hosts"`
+	TaskOutcomes    map[string][]TaskOutcome `json:"task_outcomes,omitempty" yaml:"task_outcomes,omitempty"`
+	Success         bool                     `json:"success" yaml:"success"`
+	PartialFailure  bool                     `json:"partial_failure" yaml:"partial_failure"`
+	ParseError      string                   `json:"parse_error,omitempty" yaml:"parse_error,omitempty"`
+	Stdout          string                   `json:"stdout,omitempty" yaml:"stdout,omitempty"`
+	Stderr          string                   `json:"stderr,omitempty" yaml:"stderr,omitempty"`
+	StdoutTruncated bool                     `json:"stdout_truncated,omitempty" yaml:"stdout_truncated,omitempty"`
+	StderrTruncated bool                     `json:"stderr_truncated,omitempty" yaml:"stderr_truncated,omitempty"`
 }
 
 // Runner executes allowlisted operations through ansible-playbook.
@@ -356,11 +370,52 @@ func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec) {
 			Unreachable int `json:"unreachable"`
 			Skipped     int `json:"skipped"`
 		} `json:"stats"`
+		Plays []struct {
+			Tasks []struct {
+				Task struct {
+					Name string `json:"name"`
+				} `json:"task"`
+				Hosts map[string]struct {
+					Failed      bool     `json:"failed"`
+					Skipped     bool     `json:"skipped"`
+					Unreachable bool     `json:"unreachable"`
+					StdoutLines []string `json:"stdout_lines"`
+					Msg         any      `json:"msg"`
+					Stat        *struct {
+						Exists bool `json:"exists"`
+					} `json:"stat"`
+				} `json:"hosts"`
+			} `json:"tasks"`
+		} `json:"plays"`
 	}
 	if err := json.Unmarshal(stdoutRaw, &payload); err != nil || payload.Stats == nil {
 		result.ParseError = "could not parse ansible JSON output"
 		result.Success = false
 		return
+	}
+
+	// Task-level outcomes for the embedded playbooks' registered results.
+	result.TaskOutcomes = map[string][]TaskOutcome{}
+	for _, play := range payload.Plays {
+		for _, task := range play.Tasks {
+			for host, hr := range task.Hosts {
+				outcome := TaskOutcome{
+					Task:        task.Task.Name,
+					Failed:      hr.Failed,
+					Skipped:     hr.Skipped,
+					Unreachable: hr.Unreachable,
+					StdoutLines: hr.StdoutLines,
+				}
+				if hr.Stat != nil {
+					exists := hr.Stat.Exists
+					outcome.StatExists = &exists
+				}
+				if s, ok := hr.Msg.(string); ok {
+					outcome.Message = s
+				}
+				result.TaskOutcomes[host] = append(result.TaskOutcomes[host], outcome)
+			}
+		}
 	}
 
 	failedOrUnreachable := 0
