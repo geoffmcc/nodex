@@ -36,6 +36,7 @@ internal/config/                   YAML schema (v1-v2), config paths, validation
 internal/credentials/              Credential backends (file, keyring, env, stdin) and resolution
 internal/domain/                   Provider interface, capability interfaces, shared resource types
 internal/logging/                  Stderr logger and log levels
+internal/maintenance/              Preflight interpretation and immutable maintenance plans
 internal/output/                   Table, JSON, YAML, OperationResult envelope, redaction-aware formatting
 internal/provider/                 Provider registry and capability helpers
 internal/provider/pbs/             Proxmox Backup Server provider and resource mapping
@@ -261,6 +262,21 @@ identifiers:
   after a grace period.
 
 Ansible remains optional: every PVE and PBS capability works without it.
+
+## Maintenance planning
+
+`internal/maintenance` interprets adapter results (pending and security
+updates, reboot-required state, failed units, disk usage) and builds
+immutable plans: plan ID, creation and expiry timestamps, update policy,
+per-host package intent, execution ordering (standard hosts first, critical
+hosts serial, PVE/PBS/DNS roles last), batch size, reboot policy (`never`
+in this phase), backup requirements with their observed state, an
+infrastructure snapshot, warnings, blockers, and a SHA-256 digest over the
+canonical plan content. `Verify` checks schema, digest, expiry, and policy;
+any post-creation modification breaks the digest. Plans contain no secrets
+and are safe to store and display. `maintenance apply` (a later phase)
+executes exactly a verified plan and refuses stale, tampered, expired, or
+blocked plans.
 
 ## HTTP transport
 

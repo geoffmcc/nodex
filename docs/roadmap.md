@@ -70,10 +70,9 @@ Status: done (merged 2026-07-17, PR #67)
 
 ## Phase 4 — Linux fleet inventory and Ansible execution boundary
 
-Status: active (this branch) — foundation only: the inventory config
+Status: done (merged 2026-07-17, PR #68) — foundation: the inventory config
 section, the allowlisted operation registry with embedded read-only
 playbooks (check-updates, verify-host), and the shell-free Ansible adapter.
-The `maintenance` CLI surface that consumes them lands in Phase 5.
 
 - Version-2-only `inventory` section: explicit host enrollment (address,
   role, environment, profile links, SSH user/port/key-file reference,
@@ -92,7 +91,9 @@ The `maintenance` CLI surface that consumes them lands in Phase 5.
 
 ## Phase 5 — Maintenance status and immutable planning
 
-Status: planned
+Status: implemented (this PR) — `maintenance inventory|status|plan` with
+filters, Ansible-backed read-only preflight, and immutable digest-protected
+plans. `maintenance apply` and plan enforcement arrive in Phase 6.
 
 - `nodex maintenance inventory|status|plan` (read-only) with
   `--environment/--group/--host/--role` filters.

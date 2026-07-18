@@ -416,6 +416,25 @@ Inspect and manage SDN.
 | `sdn controller create <ctrl>` | Create an SDN controller |
 | `sdn controller delete <ctrl>` | Delete an SDN controller |
 
+### `nodex maintenance`
+
+Fleet maintenance status and planning (Phase 5: strictly read-only — nothing under `maintenance` modifies a managed host). Requires an `inventory` section (schema version 2) and, for `status`/`plan`, an installed `ansible-playbook` (ansible-core 2.12+); Nodex without Ansible keeps full PVE/PBS functionality.
+
+```bash
+nodex maintenance inventory [--environment <env>] [--group <group>] [--role <role>] [--host <name>]...
+nodex maintenance status    [--environment <env>] [--group <group>] [--role <role>] [--host <name>]...
+nodex maintenance plan --policy security-only|approved-full-upgrade \
+    [--expires-in <10m..24h>] [--batch-size <1..10>] [filters...]
+```
+
+| Command | Description |
+|---------|-------------|
+| `maintenance inventory` | List enrolled hosts with role, environment, group, criticality, backup requirement, and reboot policy |
+| `maintenance status` | Run the read-only `check-updates` preflight through the allowlisted Ansible boundary: pending updates, security updates, reboot-required state, failed units, root filesystem usage per host. With `--environment`, adds the environment's backup health. Exits 11 on partial failure. |
+| `maintenance plan` | Run the same preflight and emit an immutable plan: plan ID, creation/expiry timestamps (default TTL 4h), update policy, per-host package intent, execution order (standard hosts first, critical hosts serial, PVE/PBS/DNS roles last), batch size, reboot policy (always `never` in this phase), backup requirements and their observed state, infrastructure snapshot, warnings, blockers, and a SHA-256 digest over the whole plan. Save it with `--output json > plan.json`. |
+
+Plans are tamper-evident (any modification breaks the digest), expiring, deterministic for unchanged inputs, and contain no secrets. A plan created with blockers (unreachable hosts, unverifiable or unmet backup requirements, unsafe environment) is still emitted for review but the command exits 11, and the future `maintenance apply` will refuse it. Backup requirements can only be verified when `--environment` links the hosts to a PVE/PBS pair; without it, `backup_required` hosts are a blocker by design.
+
 ### `nodex environment`
 
 Unified PVE/PBS environment health (read-only). Requires an `environments` section in the configuration (schema version 2; see the configuration reference).

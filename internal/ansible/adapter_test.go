@@ -52,6 +52,34 @@ func TestHelperProcess(t *testing.T) {
 	case "missing-host":
 		delete(okStats, hosts[len(hosts)-1])
 		fmt.Println(stats(okStats))
+	case "task-detail":
+		payload := map[string]any{
+			"stats": okStats,
+			"plays": []any{map[string]any{
+				"tasks": []any{
+					map[string]any{
+						"task": map[string]any{"name": "List upgradable packages"},
+						"hosts": map[string]any{hosts[0]: map[string]any{
+							"stdout_lines": []string{"Listing...", "nano/stable 8.0-1 amd64 [upgradable from: 7.2-1]"},
+						}},
+					},
+					map[string]any{
+						"task": map[string]any{"name": "Check reboot-required marker"},
+						"hosts": map[string]any{hosts[0]: map[string]any{
+							"stat": map[string]any{"exists": true},
+						}},
+					},
+					map[string]any{
+						"task": map[string]any{"name": "List failed systemd units"},
+						"hosts": map[string]any{hosts[0]: map[string]any{
+							"stdout_lines": []string{},
+						}},
+					},
+				},
+			}},
+		}
+		b, _ := json.Marshal(payload)
+		fmt.Println(string(b))
 	case "bad-json":
 		fmt.Println("PLAY RECAP *** not json at all")
 	case "exit1-good-stats":
@@ -473,5 +501,35 @@ func TestVersionParsing(t *testing.T) {
 				t.Errorf("case %q: expectation mismatch", tt.line)
 			}
 		}
+	}
+}
+
+// TestTaskOutcomesParsed verifies task-level results reach the RunResult.
+func TestTaskOutcomesParsed(t *testing.T) {
+	hosts := testHosts()[:1]
+	r := newStubRunner(t, "task-detail", hosts)
+	res, err := r.Run(context.Background(), RunRequest{Operation: "check-updates", Hosts: hosts})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	outcomes := res.TaskOutcomes["web1"]
+	if len(outcomes) != 3 {
+		t.Fatalf("expected 3 task outcomes, got %d: %+v", len(outcomes), outcomes)
+	}
+	byName := map[string]TaskOutcome{}
+	for _, o := range outcomes {
+		byName[o.Task] = o
+	}
+	up := byName["List upgradable packages"]
+	if len(up.StdoutLines) != 2 || up.StdoutLines[1] != "nano/stable 8.0-1 amd64 [upgradable from: 7.2-1]" {
+		t.Errorf("upgradable stdout lines wrong: %+v", up)
+	}
+	rb := byName["Check reboot-required marker"]
+	if rb.StatExists == nil || !*rb.StatExists {
+		t.Errorf("reboot-required stat wrong: %+v", rb)
+	}
+	failed := byName["List failed systemd units"]
+	if len(failed.StdoutLines) != 0 {
+		t.Errorf("failed units should be empty: %+v", failed)
 	}
 }

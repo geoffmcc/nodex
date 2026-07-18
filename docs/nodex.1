@@ -305,6 +305,12 @@ Create an SDN VNet.
 Delete an SDN VNet.
 .SS nodex pools list
 List resource pools.
+.SS nodex maintenance inventory [\-\-environment \fIENV\fR] [\-\-group \fIGROUP\fR] [\-\-role \fIROLE\fR] [\-\-host \fINAME\fR]
+List enrolled maintenance hosts.
+.SS nodex maintenance status [\-\-environment \fIENV\fR] [\-\-group \fIGROUP\fR] [\-\-role \fIROLE\fR] [\-\-host \fINAME\fR]
+Read\-only maintenance preflight via the allowlisted Ansible boundary. Exits 11 on partial failure.
+.SS nodex maintenance plan \-\-policy security\-only|approved\-full\-upgrade [\-\-expires\-in \fIDUR\fR] [\-\-batch\-size \fIN\fR]
+Create an immutable, expiring, tamper\-evident maintenance plan. Makes no changes. Exits 11 when the plan has blockers.
 .SS nodex environment list
 List configured PVE/PBS environments.
 .SS nodex environment health \fINAME\fR

@@ -253,8 +253,8 @@ path.
 ## Inventory
 
 The `inventory` section (schema version 2 only) declares the Linux hosts
-Nodex may manage over SSH through the allowlisted Ansible operations
-(consumed by the `maintenance` commands as they land; see `docs/roadmap.md`).
+Nodex may manage over SSH through the allowlisted Ansible operations,
+consumed by the `maintenance` commands (see the CLI reference).
 Enrollment is always explicit: Proxmox discovery may suggest candidates, but
 a guest is never SSH-manageable until it has an inventory entry.
 

@@ -107,6 +107,7 @@ nodex sdn                Inspect and manage SDN
 nodex pools              List resource pools
 nodex pbs                Inspect Proxmox Backup Server; guarded maintenance runs
 nodex environment        Unified PVE/PBS health and backup coverage
+nodex maintenance        Fleet maintenance status and immutable planning
 nodex network            Inspect and manage network config
 nodex access             Inspect and manage identity (expert)
 nodex ceph               Inspect and manage Ceph

@@ -41,6 +41,13 @@ Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infras
   remove-vanished), prune run (destructive, typed confirmation),
   garbage-collection run (disruptive) — all with conflicting-task preflight
   and `--wait` task polling
+- Fleet maintenance (read-only): `maintenance inventory|status|plan` over
+  explicitly enrolled hosts, with `--environment/--group/--role/--host`
+  filters. Status runs the allowlisted read-only `check-updates` preflight
+  (Ansible required, otherwise clearly reported); plan emits an immutable,
+  expiring, tamper-evident (SHA-256 digest) plan with per-host package
+  intent, conservative ordering, `never` reboot policy, and explicit
+  backup-requirement blockers
 - Unified environments (`environments` config section, schema v2):
   `environment list|health|backup-health` combining PVE and PBS state —
   reachability, datastore availability/capacity thresholds, active and

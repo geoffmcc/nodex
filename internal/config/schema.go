@@ -62,25 +62,27 @@ type Inventory struct {
 	Hosts map[string]InventoryHost `yaml:"hosts"`
 }
 
-// InventoryHost is one explicitly enrolled host.
+// InventoryHost is one explicitly enrolled host. JSON tags cover CLI output
+// (e.g. `maintenance inventory --output json`); the config file itself is
+// YAML.
 type InventoryHost struct {
-	Address        string `yaml:"address"`
-	Role           string `yaml:"role"`
-	Environment    string `yaml:"environment,omitempty"`
-	PVEProfile     string `yaml:"pve_profile,omitempty"`
-	PBSProfile     string `yaml:"pbs_profile,omitempty"`
-	SSHUser        string `yaml:"ssh_user"`
-	SSHPort        int    `yaml:"ssh_port,omitempty"`
-	SSHKeyFile     string `yaml:"ssh_key_file,omitempty"`
-	KnownHostsFile string `yaml:"known_hosts_file,omitempty"`
+	Address        string `yaml:"address" json:"address"`
+	Role           string `yaml:"role" json:"role"`
+	Environment    string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	PVEProfile     string `yaml:"pve_profile,omitempty" json:"pve_profile,omitempty"`
+	PBSProfile     string `yaml:"pbs_profile,omitempty" json:"pbs_profile,omitempty"`
+	SSHUser        string `yaml:"ssh_user" json:"ssh_user"`
+	SSHPort        int    `yaml:"ssh_port,omitempty" json:"ssh_port,omitempty"`
+	SSHKeyFile     string `yaml:"ssh_key_file,omitempty" json:"ssh_key_file,omitempty"`
+	KnownHostsFile string `yaml:"known_hosts_file,omitempty" json:"known_hosts_file,omitempty"`
 
-	MaintenanceGroup string `yaml:"maintenance_group,omitempty"`
-	Criticality      string `yaml:"criticality,omitempty"`
-	BackupRequired   bool   `yaml:"backup_required,omitempty"`
+	MaintenanceGroup string `yaml:"maintenance_group,omitempty" json:"maintenance_group,omitempty"`
+	Criticality      string `yaml:"criticality,omitempty" json:"criticality,omitempty"`
+	BackupRequired   bool   `yaml:"backup_required,omitempty" json:"backup_required,omitempty"`
 
 	// AutomaticReboot must be explicitly enabled per host; the zero value
 	// (false) is the default for every role.
-	AutomaticReboot bool `yaml:"automatic_reboot,omitempty"`
+	AutomaticReboot bool `yaml:"automatic_reboot,omitempty" json:"automatic_reboot,omitempty"`
 }
 
 // Known host roles. Role is informational plus safety-relevant: pve, pbs,

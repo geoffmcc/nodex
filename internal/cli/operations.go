@@ -845,6 +845,20 @@ func buildRegistry() []OperationMeta {
 	}
 	ops = append(ops, dispatchOps...)
 
+	// --- maintenance (fleet, read-only in phase 5) ---
+	maintOps := []OperationMeta{
+		{Path: "maintenance inventory", Description: "List enrolled maintenance hosts",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceInventory"},
+		{Path: "maintenance status", Description: "Read-only maintenance preflight status",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceStatus"},
+		{Path: "maintenance plan", Description: "Create an immutable maintenance plan (makes no changes)",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenancePlan"},
+	}
+	ops = append(ops, maintOps...)
+
 	// --- environment (unified PVE/PBS health) ---
 	envOps := []OperationMeta{
 		{Path: "environment list", Description: "List configured environments",
