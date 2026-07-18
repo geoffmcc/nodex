@@ -34,7 +34,13 @@ func sanitizeTerminalValue(rv reflect.Value) any {
 
 	switch rv.Kind() {
 	case reflect.String:
-		return SanitizeTerminal(redact.String(rv.String()))
+		// Preserve named string types (e.g. status enums): rebuild the
+		// sanitized text as the original type so struct/map reassembly
+		// does not drop the field on the assignability check.
+		clean := SanitizeTerminal(redact.String(rv.String()))
+		nv := reflect.New(rv.Type()).Elem()
+		nv.SetString(clean)
+		return nv.Interface()
 	case reflect.Map:
 		if rv.IsNil() {
 			return nil

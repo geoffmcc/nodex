@@ -227,6 +227,11 @@ func init() {
 		&command{name: "mon", short: "Manage Ceph monitors", run: runCephMonDispatch},
 		&command{name: "pool", short: "Manage Ceph pools", run: runCephPoolDispatch},
 	)
+	register("environment", "Unified PVE/PBS environment health", nil,
+		&command{name: "list", short: "List configured environments", run: runEnvironmentList},
+		&command{name: "health", short: "Check environment infrastructure health", run: runEnvironmentHealth},
+		&command{name: "backup-health", short: "Check environment backup health and guest coverage", run: runEnvironmentBackupHealth},
+	)
 	register("pbs", "Inspect Proxmox Backup Server", nil,
 		&command{name: "status", short: "Show PBS host status", run: runPBSStatus},
 		&command{name: "version", short: "Show PBS server version", run: runPBSVersion},

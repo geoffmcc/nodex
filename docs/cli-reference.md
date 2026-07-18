@@ -416,6 +416,26 @@ Inspect and manage SDN.
 | `sdn controller create <ctrl>` | Create an SDN controller |
 | `sdn controller delete <ctrl>` | Delete an SDN controller |
 
+### `nodex environment`
+
+Unified PVE/PBS environment health (read-only). Requires an `environments` section in the configuration (schema version 2; see the configuration reference).
+
+```bash
+nodex environment list
+nodex environment health <name>
+nodex environment backup-health <name>
+```
+
+| Command | Description |
+|---------|-------------|
+| `environment list` | List configured environments and their profiles |
+| `environment health <name>` | Infrastructure health: PVE/PBS reachability, datastore availability and capacity, active backup-chain tasks, recent failed PVE/PBS tasks |
+| `environment backup-health <name>` | Everything in `health`, plus per-guest backup coverage: every non-excluded PVE guest's newest PBS backup, its age against the environment's thresholds, the datastore and namespace containing it, and its verification state |
+
+Check and guest statuses are `healthy`, `warning`, `blocked`, `unknown` (required data could not be retrieved), or `unsupported` (the provider or configuration cannot answer). The overall status is never healthier than the least healthy check — an evaluation with missing data reports `unknown`, not `healthy`. The result also reports `maintenance_safe` with explicit blockers (unreachable providers, unavailable or full datastores, active backup-chain tasks, stale or missing guest backups).
+
+Exit codes: `healthy` and `warning` exit 0; `blocked`, `unknown`, `unsupported`, or a partial retrieval failure exit 11 (partial failure), so schedulers and scripts can alert on degradation. One provider being down never masks the other: the reachable side is still fully evaluated.
+
 ### `nodex pbs`
 
 Inspect a Proxmox Backup Server (read-only). Requires a profile with `provider: pbs` (see the configuration reference). Running a `pbs` command against a non-PBS profile fails with the unsupported-capability exit code (10).

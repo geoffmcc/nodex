@@ -845,6 +845,20 @@ func buildRegistry() []OperationMeta {
 	}
 	ops = append(ops, dispatchOps...)
 
+	// --- environment (unified PVE/PBS health) ---
+	envOps := []OperationMeta{
+		{Path: "environment list", Description: "List configured environments",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runEnvironmentList"},
+		{Path: "environment health", Description: "Check environment infrastructure health",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runEnvironmentHealth"},
+		{Path: "environment backup-health", Description: "Check environment backup health and guest coverage",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runEnvironmentBackupHealth"},
+	}
+	ops = append(ops, envOps...)
+
 	// --- pbs (Proxmox Backup Server, read-only) ---
 	pbsOps := []OperationMeta{
 		{Path: "pbs status", Description: "Show PBS host status",

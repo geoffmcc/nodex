@@ -29,6 +29,7 @@ flowchart TD
 ```text
 cmd/nodex/                         Process entry point and signal handling
 internal/app/                      Shared application errors and exit codes
+internal/backuphealth/             Unified PVE/PBS environment health evaluation service
 internal/cli/                      Command registration, global flags, handlers, shell completion
 internal/config/                   YAML schema (v1-v2), config paths, validation, atomic writes, locking
 internal/credentials/              Credential backends (file, keyring, env, stdin) and resolution
@@ -205,6 +206,20 @@ collection) rather than PVE shapes.
   configured endpoint, validate job/datastore identifiers before building
   paths, and return task UPIDs; the CLI layer adds confirmation gates and a
   conflicting-task preflight
+
+## Backup-health service
+
+`internal/backuphealth` is a service layer above the providers. It consumes
+`domain.Provider` and the optional capability interfaces (never concrete
+clients), evaluates an environment's PVE reachability, PBS reachability,
+datastore availability and capacity, active and recently failed backup-chain
+tasks, and per-guest backup coverage/age/verification, and produces a typed
+result with per-check statuses (`healthy`, `warning`, `blocked`, `unknown`,
+`unsupported`), maintenance-safety blockers, and explicit partial-failure
+tracking. Data that cannot be retrieved yields `unknown` — never `healthy` —
+and one provider being unreachable does not stop evaluation of the other.
+The `environment` CLI command group is its only current consumer; the
+maintenance planner (roadmap Phase 5) is the next.
 
 ## HTTP transport
 

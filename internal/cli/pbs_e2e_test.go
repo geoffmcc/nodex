@@ -171,6 +171,15 @@ func (p *pbsE2EMockProvider) PBSTasks(_ context.Context, filter domain.PBSTaskFi
 		}
 		return out, nil
 	}
+	if filter.Errors {
+		var out []domain.PBSTask
+		for _, t := range tasks {
+			if t.Status != "OK" && t.Status != "running" && t.Status != "" {
+				out = append(out, t)
+			}
+		}
+		return out, nil
+	}
 	return tasks, nil
 }
 

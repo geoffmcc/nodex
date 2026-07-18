@@ -269,7 +269,126 @@ func Validate(cfg *Config) error {
 		}
 	}
 
+	if err := validateEnvironments(cfg); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// validateEnvironments checks the schema-version-2-only environments section.
+func validateEnvironments(cfg *Config) error {
+	if len(cfg.Environments) == 0 {
+		return nil
+	}
+	if cfg.Version < 2 {
+		return app.NewExitError(
+			fmt.Errorf("%w: the environments section requires schema version 2 (set \"version: 2\")",
+				app.ErrConfigInvalid),
+			app.ExitConfig,
+		)
+	}
+	for name, env := range cfg.Environments {
+		if !ProfileRegex.MatchString(name) {
+			return app.NewExitError(
+				fmt.Errorf("%w: invalid environment name %q (must match %s)",
+					app.ErrConfigInvalid, name, ProfileRegex.String()),
+				app.ExitConfig,
+			)
+		}
+		if env.PVEProfile == "" && env.PBSProfile == "" {
+			return app.NewExitError(
+				fmt.Errorf("%w: environment %q must reference at least one of pve_profile or pbs_profile",
+					app.ErrConfigInvalid, name),
+				app.ExitConfig,
+			)
+		}
+		if err := validateEnvironmentProfileRef(cfg, name, "pve_profile", env.PVEProfile, ProviderProxmox); err != nil {
+			return err
+		}
+		if err := validateEnvironmentProfileRef(cfg, name, "pbs_profile", env.PBSProfile, ProviderPBS); err != nil {
+			return err
+		}
+		for _, field := range []struct {
+			label string
+			value int
+			max   int
+		}{
+			{"backup_max_age_hours", env.BackupMaxAgeHours, 24 * 365},
+			{"verify_max_age_days", env.VerifyMaxAgeDays, 365},
+			{"datastore_usage_warn_percent", env.DatastoreWarnPercent, 100},
+			{"datastore_usage_block_percent", env.DatastoreBlockPercent, 100},
+		} {
+			if field.value < 0 || field.value > field.max {
+				return app.NewExitError(
+					fmt.Errorf("%w: environment %q %s must be between 0 and %d",
+						app.ErrConfigInvalid, name, field.label, field.max),
+					app.ExitConfig,
+				)
+			}
+		}
+		warn, block := env.DatastoreWarnPercent, env.DatastoreBlockPercent
+		if warn == 0 {
+			warn = DefaultDatastoreWarnPercent
+		}
+		if block == 0 {
+			block = DefaultDatastoreBlockPercent
+		}
+		if warn > block {
+			return app.NewExitError(
+				fmt.Errorf("%w: environment %q datastore_usage_warn_percent (%d) must not exceed datastore_usage_block_percent (%d)",
+					app.ErrConfigInvalid, name, warn, block),
+				app.ExitConfig,
+			)
+		}
+		for _, vmid := range env.ExcludeGuests {
+			if vmid <= 0 {
+				return app.NewExitError(
+					fmt.Errorf("%w: environment %q exclude_guests entries must be positive VMIDs",
+						app.ErrConfigInvalid, name),
+					app.ExitConfig,
+				)
+			}
+		}
+	}
+	return nil
+}
+
+// validateEnvironmentProfileRef checks that a referenced profile exists and
+// uses the expected provider.
+func validateEnvironmentProfileRef(cfg *Config, envName, field, profileName, wantProvider string) error {
+	if profileName == "" {
+		return nil
+	}
+	p, ok := cfg.Profiles[profileName]
+	if !ok {
+		return app.NewExitError(
+			fmt.Errorf("%w: environment %q %s references unknown profile %q",
+				app.ErrConfigInvalid, envName, field, profileName),
+			app.ExitConfig,
+		)
+	}
+	// Only known provider names are type-checked; unknown providers (e.g.
+	// from a newer Nodex) stay loadable and fail at use instead.
+	provider := NormalizeProvider(p.Provider)
+	if IsKnownProvider(provider) && provider != wantProvider {
+		return app.NewExitError(
+			fmt.Errorf("%w: environment %q %s must reference a %q profile, but %q uses provider %q",
+				app.ErrConfigInvalid, envName, field, wantProvider, profileName, p.Provider),
+			app.ExitConfig,
+		)
+	}
+	return nil
+}
+
+// EnvironmentNames returns the sorted list of environment names.
+func EnvironmentNames(cfg *Config) []string {
+	names := make([]string, 0, len(cfg.Environments))
+	for name := range cfg.Environments {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ProfileNames returns the sorted list of profile names.

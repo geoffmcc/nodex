@@ -41,6 +41,12 @@ Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infras
   remove-vanished), prune run (destructive, typed confirmation),
   garbage-collection run (disruptive) — all with conflicting-task preflight
   and `--wait` task polling
+- Unified environments (`environments` config section, schema v2):
+  `environment list|health|backup-health` combining PVE and PBS state —
+  reachability, datastore availability/capacity thresholds, active and
+  recently failed backup-chain tasks, per-guest backup coverage/age/
+  verification with configurable thresholds, maintenance-safety blockers,
+  and honest partial-failure reporting (missing data is never "healthy")
 
 ### Mutation commands
 

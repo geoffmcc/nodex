@@ -305,6 +305,12 @@ Create an SDN VNet.
 Delete an SDN VNet.
 .SS nodex pools list
 List resource pools.
+.SS nodex environment list
+List configured PVE/PBS environments.
+.SS nodex environment health \fINAME\fR
+Check environment infrastructure health (reachability, datastores, tasks). Exits 11 when blocked, unknown, or partially retrieved.
+.SS nodex environment backup\-health \fINAME\fR
+Check environment backup health including per\-guest backup coverage, age, and verification. Exits 11 when blocked, unknown, or partially retrieved.
 .SS nodex pbs status
 Show Proxmox Backup Server host status (requires a profile with provider pbs).
 .SS nodex pbs version
