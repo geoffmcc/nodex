@@ -70,10 +70,12 @@ is considered stable.  Credential data is never exported.
 
 For read-only resource listings (nodes, VMs, containers, storage, tasks,
 events, firewall rules, HA resources, backup content, SDN zones/VNets,
-pools, cluster log, and the PBS listings: datastores, snapshots, tasks,
-verify/prune/sync jobs, garbage-collection status, certificates), the JSON
-shape is additive. New fields may appear. Existing field names, types, and
-semantics will not change.
+pools, cluster log, the PBS listings: datastores, snapshots, tasks,
+verify/prune/sync jobs, garbage-collection status, certificates, and the
+environment health/backup-health result), the JSON shape is additive. New
+fields may appear. Existing field names, types, and semantics will not
+change. Environment status values (`healthy`, `warning`, `blocked`,
+`unknown`, `unsupported`) are a stable enumeration.
 
 #### Tier 2 — Operation result envelope
 

@@ -214,6 +214,42 @@ use need:
 Do not grant `Admin`, and keep a separate audit-only token if you script
 inspection separately from maintenance. Never reuse the PVE token.
 
+## Environments
+
+The `environments` section (schema version 2 only) groups a PVE profile and
+a PBS profile for `nodex environment health` and `nodex environment
+backup-health`:
+
+```yaml
+version: 2
+environments:
+  homelab:
+    pve_profile: production-pve
+    pbs_profile: production-pbs
+    backup_max_age_hours: 36
+    verify_max_age_days: 14
+    datastore_usage_warn_percent: 80
+    datastore_usage_block_percent: 95
+    namespaces: ["", "prod"]
+    exclude_guests: [900]
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `pve_profile` | — | Profile with `provider: proxmox`. At least one of the two profile fields is required. |
+| `pbs_profile` | — | Profile with `provider: pbs`. |
+| `backup_max_age_hours` | 26 | Newest-backup age beyond which a protected guest degrades to warning. |
+| `verify_max_age_days` | 8 | Snapshot age beyond which a missing verification degrades to warning. |
+| `datastore_usage_warn_percent` | 80 | Datastore usage warning threshold. |
+| `datastore_usage_block_percent` | 95 | Datastore usage blocking threshold (must be >= the warn threshold). |
+| `namespaces` | root only | PBS namespaces searched for guest backups. |
+| `exclude_guests` | none | VMIDs exempt from backup-coverage checks; every other PVE guest is treated as protected. |
+
+Referenced profiles must exist and use the matching provider type. Adding an
+`environments` section to a version-1 file is rejected with an error telling
+you to set `version: 2` — this is the explicit (never silent) migration
+path.
+
 ## File Credentials
 
 The file backend stores one JSON file per credential name under `~/.nodex/credentials/`. Files are written through a temporary file with restricted permissions and renamed into place.

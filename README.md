@@ -7,7 +7,7 @@ NodeX runs on Linux, macOS, and Windows as a single local binary. It connects di
 ## What NodeX does
 
 - **Inspect.** List and show nodes, VMs, containers, storage, tasks, events, snapshots, firewall rules, HA resources, backup content, SDN zones, Ceph state, pools, cluster logs, and more. Inspect Proxmox Backup Server datastores, backup snapshots, verify/prune/sync jobs, garbage collection, and tasks through the separate `pbs` provider.
-- **Diagnose.** Run `nodex doctor` to check configuration and connectivity across all your profiles.
+- **Diagnose.** Run `nodex doctor` to check configuration and connectivity across all your profiles. Run `nodex environment backup-health` to evaluate a paired PVE + PBS environment: reachability, datastore capacity, task failures, and every protected guest's backup age and verification state.
 - **Operate.** Start, stop, shutdown, reboot, suspend, resume, pause, and unpause VMs and containers. Create and manage snapshots. Update VM and container configurations. Create backups. Upload and download storage content. Migrate and clone guests. Run PBS verification, sync, prune, and garbage-collection jobs behind the same safety gates.
 - **Administer** (expert mode). Manage users, ACL entries, firewall rules, SDN topology, Ceph OSDs and pools, backup schedules, and replication jobs.
 
@@ -106,6 +106,7 @@ nodex ha                 Inspect HA resources
 nodex sdn                Inspect and manage SDN
 nodex pools              List resource pools
 nodex pbs                Inspect Proxmox Backup Server; guarded maintenance runs
+nodex environment        Unified PVE/PBS health and backup coverage
 nodex network            Inspect and manage network config
 nodex access             Inspect and manage identity (expert)
 nodex ceph               Inspect and manage Ceph

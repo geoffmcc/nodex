@@ -45,11 +45,51 @@ var ProfileRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 var ProviderRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 
 // Config is the top-level configuration structure (schema versions 1-2).
+// The environments section is schema-version-2-only.
 type Config struct {
-	Version        int                `yaml:"version"`
-	CurrentProfile string             `yaml:"current_profile"`
-	Profiles       map[string]Profile `yaml:"profiles"`
+	Version        int                    `yaml:"version"`
+	CurrentProfile string                 `yaml:"current_profile"`
+	Profiles       map[string]Profile     `yaml:"profiles"`
+	Environments   map[string]Environment `yaml:"environments,omitempty"`
 }
+
+// Environment groups a Proxmox VE profile and a Proxmox Backup Server
+// profile for unified health and backup-health evaluation. Threshold fields
+// use zero to mean "use the default"; defaults are exposed as constants.
+type Environment struct {
+	PVEProfile string `yaml:"pve_profile"`
+	PBSProfile string `yaml:"pbs_profile"`
+
+	// BackupMaxAgeHours is the maximum age of a protected guest's newest
+	// backup before coverage degrades to warning. Default 26 (daily backups
+	// plus slack).
+	BackupMaxAgeHours int `yaml:"backup_max_age_hours,omitempty"`
+
+	// VerifyMaxAgeDays is the maximum age of a snapshot before its missing
+	// verification degrades to warning. Default 8.
+	VerifyMaxAgeDays int `yaml:"verify_max_age_days,omitempty"`
+
+	// DatastoreWarnPercent and DatastoreBlockPercent are datastore usage
+	// thresholds. Defaults 80 and 95.
+	DatastoreWarnPercent  int `yaml:"datastore_usage_warn_percent,omitempty"`
+	DatastoreBlockPercent int `yaml:"datastore_usage_block_percent,omitempty"`
+
+	// Namespaces are the PBS namespaces searched for guest backups. Empty
+	// means the root namespace only.
+	Namespaces []string `yaml:"namespaces,omitempty"`
+
+	// ExcludeGuests lists VMIDs exempt from backup-coverage checks. All
+	// other PVE guests are treated as protected.
+	ExcludeGuests []int `yaml:"exclude_guests,omitempty"`
+}
+
+// Environment threshold defaults.
+const (
+	DefaultBackupMaxAgeHours     = 26
+	DefaultVerifyMaxAgeDays      = 8
+	DefaultDatastoreWarnPercent  = 80
+	DefaultDatastoreBlockPercent = 95
+)
 
 // Profile holds connection details for a single provider target.
 type Profile struct {
