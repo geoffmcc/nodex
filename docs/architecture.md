@@ -28,6 +28,7 @@ flowchart TD
 
 ```text
 cmd/nodex/                         Process entry point and signal handling
+internal/ansible/                  Allowlisted Ansible execution boundary (embedded playbooks, shell-free adapter)
 internal/app/                      Shared application errors and exit codes
 internal/backuphealth/             Unified PVE/PBS environment health evaluation service
 internal/cli/                      Command registration, global flags, handlers, shell completion
@@ -220,6 +221,46 @@ tracking. Data that cannot be retrieved yields `unknown` — never `healthy` —
 and one provider being unreachable does not stop evaluation of the other.
 The `environment` CLI command group is its only current consumer; the
 maintenance planner (roadmap Phase 5) is the next.
+
+## Ansible execution boundary
+
+`internal/ansible` is the only place Nodex starts external processes for
+Linux maintenance, and it accepts nothing but allowlisted operation
+identifiers:
+
+- **Allowlisted operations, embedded playbooks.** The registry maps
+  operation IDs (currently `check-updates` and `verify-host`, both
+  read-only) to playbooks embedded in the binary via `go:embed`. There is no
+  way to pass a playbook path, module, inventory script, callback plugin,
+  extra argument, or environment variable through Nodex, and the allowlist
+  grows only through code review.
+- **Shell-free process execution.** `ansible-playbook` is resolved to an
+  absolute path, rejected if world-writable (or in a world-writable,
+  non-sticky directory), version-checked (ansible-core 2.12+), and invoked
+  with `exec.CommandContext` — never a shell.
+- **Private working directory.** Each run gets a fresh `0700` temp
+  directory holding the generated inventory, the embedded playbook, a
+  pinned `ansible.cfg` (selected via `ANSIBLE_CONFIG`, so an ambient
+  `ansible.cfg` can never inject plugins or weaken settings), and Ansible's
+  local temp. The directory is removed on success, failure, and
+  cancellation.
+- **Minimal environment.** Children receive a pinned allowlist (PATH, HOME,
+  locale, and `ANSIBLE_*` safety settings including
+  `ANSIBLE_HOST_KEY_CHECKING=True`); the parent environment never leaks.
+- **Strict inventory generation.** Host fields are validated against a
+  conservative character set before being written to the generated INI
+  inventory, preventing variable-injection through addresses, users, or
+  paths.
+- **Bounded, honest results.** Stdout/stderr are size-bounded, terminal-
+  sanitized, and secret-redacted. Per-host results parse Ansible's JSON
+  callback: success requires exit code zero, every requested host present in
+  the stats, and no failures or unreachable hosts — truncated or
+  unparseable output is never reported as success, and mixed outcomes are
+  explicit partial failures.
+- **Cancellation.** Context cancellation sends SIGTERM, escalating to kill
+  after a grace period.
+
+Ansible remains optional: every PVE and PBS capability works without it.
 
 ## HTTP transport
 

@@ -54,6 +54,37 @@ Nodex enforces these rules for all credential operations:
 - **Custom CA support.** Profiles may specify a `ca_file` to add a private CA certificate to the system trust pool. The CA file is read at connection time and is not persisted beyond the session.
 - **No URL userinfo.** Endpoints containing embedded credentials (`https://user:pass@host`) are rejected.
 
+## Process Execution Policy
+
+Nodex's only external-process surface is the Ansible execution boundary
+(`internal/ansible`), and it is deliberately narrow:
+
+- **No shell, ever.** Child processes are started with `exec.CommandContext`
+  against a resolved absolute executable path. There is no `sh -c`, no
+  string-built command line, and no command execution feature of any kind
+  (`host exec`, `ssh --command`, and equivalents do not exist).
+- **Allowlisted operations only.** Users select operation identifiers that
+  map to playbooks embedded in the Nodex binary. Arbitrary playbook paths,
+  modules, inventory scripts, callback plugins, extra CLI arguments, and
+  environment variables are not accepted anywhere.
+- **Validated executable.** `ansible-playbook` must resolve to an absolute
+  path that is not world-writable and not in a world-writable, non-sticky
+  directory; its version is validated before use.
+- **Minimal child environment.** Children receive a pinned environment
+  allowlist; the parent environment (including any secrets in it) never
+  passes through. `ANSIBLE_HOST_KEY_CHECKING=True` and a Nodex-written
+  `ansible.cfg` are pinned so ambient configuration cannot weaken safety.
+- **Private working directories.** Generated files live in per-run `0700`
+  temp directories with `0600` files, removed on success, failure, and
+  cancellation.
+- **Bounded and sanitized output.** Child stdout/stderr are size-bounded,
+  stripped of terminal escape sequences, and passed through secret
+  redaction before display or storage. Success is derived from parsed
+  per-host results, never from the exit code alone; truncated or
+  unparseable output is reported as failure.
+- **SSH trust.** Inventory stores no key material or passwords — only file
+  path references. Host-key verification cannot be disabled through Nodex.
+
 ## Safety Gates
 
 All mutation commands are protected by a five-tier safety model:

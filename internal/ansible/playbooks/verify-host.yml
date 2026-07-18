@@ -1,0 +1,29 @@
+---
+# Nodex embedded playbook: verify-host (read-only).
+#
+# Confirms connectivity and reports basic host health: reboot-required
+# state, failed systemd units, and root filesystem usage. Makes no changes
+# and needs no privilege escalation.
+- name: Verify host reachability and basic health
+  hosts: all
+  gather_facts: true
+  become: false
+  tasks:
+    - name: Confirm connectivity
+      ansible.builtin.ping:
+
+    - name: Check reboot-required marker
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: nodex_reboot_required
+
+    - name: List failed systemd units
+      ansible.builtin.command: systemctl list-units --state=failed --no-legend --plain
+      register: nodex_failed_units
+      changed_when: false
+      failed_when: false
+
+    - name: Report root filesystem usage
+      ansible.builtin.command: df -P /
+      register: nodex_root_usage
+      changed_when: false

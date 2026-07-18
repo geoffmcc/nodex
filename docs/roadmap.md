@@ -57,7 +57,7 @@ preflight) merged 2026-07-17 (PR #66).
 
 ## Phase 3 — Unified PVE/PBS environment backup health
 
-Status: active (this branch)
+Status: done (merged 2026-07-17, PR #67)
 
 - Version-2-only `environments` config section grouping a PVE and a PBS
   profile.
@@ -70,7 +70,10 @@ Status: active (this branch)
 
 ## Phase 4 — Linux fleet inventory and Ansible execution boundary
 
-Status: planned
+Status: active (this branch) — foundation only: the inventory config
+section, the allowlisted operation registry with embedded read-only
+playbooks (check-updates, verify-host), and the shell-free Ansible adapter.
+The `maintenance` CLI surface that consumes them lands in Phase 5.
 
 - Version-2-only `inventory` section: explicit host enrollment (address,
   role, environment, profile links, SSH user/port/key-file reference,
