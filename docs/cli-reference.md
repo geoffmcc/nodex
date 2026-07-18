@@ -526,9 +526,9 @@ Inspect and manage network configuration.
 
 | Command | Description | Tier |
 |---------|-------------|------|
-| `network show --node <node>` | Show node network interfaces | 0 |
-| `network apply --node <node> <config>` | Apply network configuration | varies |
-| `network revert --node <node>` | Revert pending network changes | varies |
+| `network show <node>` | Show node network interfaces | 0 |
+| `network apply <node>` | Apply (reload) the node's pending network configuration; prints the reload task UPID. Interface changes are staged out of band (Proxmox UI/API) — the node-level endpoint accepts no interface parameters | 2 |
+| `network revert <node>` | Discard the node's pending network changes | 2 |
 
 ### `nodex access`
 

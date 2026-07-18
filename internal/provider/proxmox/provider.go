@@ -1978,15 +1978,11 @@ func (p *Provider) VMDiskMove(ctx context.Context, node string, vmid int, disk, 
 
 // --- NetworkMutationProvider methods ---
 
-func (p *Provider) ApplyNodeNetwork(ctx context.Context, node string, config map[string]string) error {
+func (p *Provider) ApplyNodeNetwork(ctx context.Context, node string) (string, error) {
 	if p.client == nil {
-		return errors.New(errNotConnected)
+		return "", errors.New(errNotConnected)
 	}
-	cfg := make(map[string]interface{})
-	for k, v := range config {
-		cfg[k] = v
-	}
-	return p.client.ApplyNodeNetwork(ctx, node, cfg)
+	return p.client.ApplyNodeNetwork(ctx, node)
 }
 
 func (p *Provider) RevertNodeNetwork(ctx context.Context, node string) error {
