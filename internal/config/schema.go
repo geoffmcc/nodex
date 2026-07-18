@@ -45,13 +45,58 @@ var ProfileRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 var ProviderRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 
 // Config is the top-level configuration structure (schema versions 1-2).
-// The environments section is schema-version-2-only.
+// The environments and inventory sections are schema-version-2-only.
 type Config struct {
 	Version        int                    `yaml:"version"`
 	CurrentProfile string                 `yaml:"current_profile"`
 	Profiles       map[string]Profile     `yaml:"profiles"`
 	Environments   map[string]Environment `yaml:"environments,omitempty"`
+	Inventory      *Inventory             `yaml:"inventory,omitempty"`
 }
+
+// Inventory declares the SSH-manageable Linux hosts. Hosts must be enrolled
+// explicitly — Proxmox discovery never implies SSH manageability. The
+// inventory stores no secrets: SSH authentication uses the agent or the
+// referenced key file, never embedded key material or passwords.
+type Inventory struct {
+	Hosts map[string]InventoryHost `yaml:"hosts"`
+}
+
+// InventoryHost is one explicitly enrolled host.
+type InventoryHost struct {
+	Address        string `yaml:"address"`
+	Role           string `yaml:"role"`
+	Environment    string `yaml:"environment,omitempty"`
+	PVEProfile     string `yaml:"pve_profile,omitempty"`
+	PBSProfile     string `yaml:"pbs_profile,omitempty"`
+	SSHUser        string `yaml:"ssh_user"`
+	SSHPort        int    `yaml:"ssh_port,omitempty"`
+	SSHKeyFile     string `yaml:"ssh_key_file,omitempty"`
+	KnownHostsFile string `yaml:"known_hosts_file,omitempty"`
+
+	MaintenanceGroup string `yaml:"maintenance_group,omitempty"`
+	Criticality      string `yaml:"criticality,omitempty"`
+	BackupRequired   bool   `yaml:"backup_required,omitempty"`
+
+	// AutomaticReboot must be explicitly enabled per host; the zero value
+	// (false) is the default for every role.
+	AutomaticReboot bool `yaml:"automatic_reboot,omitempty"`
+}
+
+// Known host roles. Role is informational plus safety-relevant: pve, pbs,
+// and dns hosts get extra protection in maintenance sequencing.
+const (
+	RolePVE     = "pve"
+	RolePBS     = "pbs"
+	RoleDNS     = "dns"
+	RoleGeneric = "generic"
+)
+
+// Criticality levels.
+const (
+	CriticalityCritical = "critical"
+	CriticalityStandard = "standard"
+)
 
 // Environment groups a Proxmox VE profile and a Proxmox Backup Server
 // profile for unified health and backup-health evaluation. Threshold fields

@@ -250,6 +250,57 @@ Referenced profiles must exist and use the matching provider type. Adding an
 you to set `version: 2` — this is the explicit (never silent) migration
 path.
 
+## Inventory
+
+The `inventory` section (schema version 2 only) declares the Linux hosts
+Nodex may manage over SSH through the allowlisted Ansible operations
+(consumed by the `maintenance` commands as they land; see `docs/roadmap.md`).
+Enrollment is always explicit: Proxmox discovery may suggest candidates, but
+a guest is never SSH-manageable until it has an inventory entry.
+
+```yaml
+version: 2
+inventory:
+  hosts:
+    pve-primary:
+      address: pve.example.com
+      role: pve
+      environment: homelab
+      pve_profile: production-pve
+      ssh_user: automation
+      ssh_port: 22
+      ssh_key_file: ~/.ssh/nodex_automation
+      known_hosts_file: ~/.ssh/known_hosts_nodex
+      maintenance_group: hypervisors
+      criticality: critical
+      backup_required: true
+      automatic_reboot: false
+```
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `address` | yes | — | Hostname or IP. No scheme, port, or userinfo. |
+| `role` | yes | — | Host role: `pve`, `pbs`, `dns`, `generic`, or another lowercase identifier. `pve`, `pbs`, and `dns` receive extra protection in maintenance sequencing. |
+| `environment` | no | — | Environment this host belongs to; must exist in `environments`. |
+| `pve_profile` / `pbs_profile` | no | — | Provider profile linkage for backup-aware checks. |
+| `ssh_user` | yes | — | SSH user name. |
+| `ssh_port` | no | 22 | SSH port. |
+| `ssh_key_file` | no | agent | Path to the private key file. Only a path — key material never appears in configuration. |
+| `known_hosts_file` | no | SSH default | Dedicated known_hosts file for host-key verification. |
+| `maintenance_group` | no | — | Grouping for maintenance sequencing. |
+| `criticality` | no | `standard` | `critical` or `standard`. |
+| `backup_required` | no | false | Require a recent successful PBS backup before maintenance. |
+| `automatic_reboot` | no | false | Never enabled by default, for any role. |
+
+### SSH trust model
+
+The inventory stores no secrets: no private keys, SSH passwords, vault
+passwords, or sudo passwords — only file path references. Authentication
+uses the SSH agent or the referenced key file. Host-key verification is
+always enforced (`ANSIBLE_HOST_KEY_CHECKING=True` is pinned by the
+execution boundary and cannot be disabled through Nodex); populate the
+configured `known_hosts_file` out of band before first use.
+
 ## File Credentials
 
 The file backend stores one JSON file per credential name under `~/.nodex/credentials/`. Files are written through a temporary file with restricted permissions and renamed into place.

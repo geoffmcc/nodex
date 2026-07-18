@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -273,7 +274,94 @@ func Validate(cfg *Config) error {
 		return err
 	}
 
+	if err := validateInventory(cfg); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// hostAddressRegex matches hostnames and IP literals (no scheme, no port,
+// no userinfo).
+var hostAddressRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9.:-]{0,252}[a-zA-Z0-9])?$`)
+
+// validateInventory checks the schema-version-2-only inventory section.
+func validateInventory(cfg *Config) error {
+	if cfg.Inventory == nil || len(cfg.Inventory.Hosts) == 0 {
+		return nil
+	}
+	if cfg.Version < 2 {
+		return app.NewExitError(
+			fmt.Errorf("%w: the inventory section requires schema version 2 (set \"version: 2\")",
+				app.ErrConfigInvalid),
+			app.ExitConfig,
+		)
+	}
+	for name, h := range cfg.Inventory.Hosts {
+		fail := func(format string, args ...any) error {
+			detail := fmt.Sprintf(format, args...)
+			return app.NewExitError(
+				fmt.Errorf("%w: inventory host %q: %s", app.ErrConfigInvalid, name, detail),
+				app.ExitConfig,
+			)
+		}
+		if !ProfileRegex.MatchString(name) {
+			return fail("invalid host name (must match %s)", ProfileRegex.String())
+		}
+		if h.Address == "" {
+			return fail("address is required")
+		}
+		if !hostAddressRegex.MatchString(h.Address) {
+			return fail("invalid address %q (hostname or IP, no scheme, port, or userinfo)", h.Address)
+		}
+		if h.Role == "" {
+			return fail("role is required (e.g. %s, %s, %s, %s)", RolePVE, RolePBS, RoleDNS, RoleGeneric)
+		}
+		if !ProviderRegex.MatchString(h.Role) {
+			return fail("invalid role %q", h.Role)
+		}
+		if h.SSHUser == "" {
+			return fail("ssh_user is required")
+		}
+		if strings.ContainsAny(h.SSHUser, " \t:@/\\'\"") {
+			return fail("invalid ssh_user %q", h.SSHUser)
+		}
+		if h.SSHPort < 0 || h.SSHPort > 65535 {
+			return fail("ssh_port must be between 1 and 65535")
+		}
+		if h.Criticality != "" && h.Criticality != CriticalityCritical && h.Criticality != CriticalityStandard {
+			return fail("criticality must be %q or %q", CriticalityCritical, CriticalityStandard)
+		}
+		if h.MaintenanceGroup != "" && !ProfileRegex.MatchString(h.MaintenanceGroup) {
+			return fail("invalid maintenance_group %q", h.MaintenanceGroup)
+		}
+		if h.Environment != "" {
+			if _, ok := cfg.Environments[h.Environment]; !ok {
+				return fail("references unknown environment %q", h.Environment)
+			}
+		}
+		owner := fmt.Sprintf("inventory host %q", name)
+		if err := validateProfileRef(cfg, owner, "pve_profile", h.PVEProfile, ProviderProxmox); err != nil {
+			return err
+		}
+		if err := validateProfileRef(cfg, owner, "pbs_profile", h.PBSProfile, ProviderPBS); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// InventoryHostNames returns the sorted list of inventory host names.
+func InventoryHostNames(cfg *Config) []string {
+	if cfg.Inventory == nil {
+		return nil
+	}
+	names := make([]string, 0, len(cfg.Inventory.Hosts))
+	for name := range cfg.Inventory.Hosts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // validateEnvironments checks the schema-version-2-only environments section.
@@ -303,10 +391,11 @@ func validateEnvironments(cfg *Config) error {
 				app.ExitConfig,
 			)
 		}
-		if err := validateEnvironmentProfileRef(cfg, name, "pve_profile", env.PVEProfile, ProviderProxmox); err != nil {
+		owner := fmt.Sprintf("environment %q", name)
+		if err := validateProfileRef(cfg, owner, "pve_profile", env.PVEProfile, ProviderProxmox); err != nil {
 			return err
 		}
-		if err := validateEnvironmentProfileRef(cfg, name, "pbs_profile", env.PBSProfile, ProviderPBS); err != nil {
+		if err := validateProfileRef(cfg, owner, "pbs_profile", env.PBSProfile, ProviderPBS); err != nil {
 			return err
 		}
 		for _, field := range []struct {
@@ -354,17 +443,18 @@ func validateEnvironments(cfg *Config) error {
 	return nil
 }
 
-// validateEnvironmentProfileRef checks that a referenced profile exists and
-// uses the expected provider.
-func validateEnvironmentProfileRef(cfg *Config, envName, field, profileName, wantProvider string) error {
+// validateProfileRef checks that a referenced profile exists and uses the
+// expected provider. The owner string names the referencing section entry
+// (e.g. `environment "homelab"` or `inventory host "pve-primary"`).
+func validateProfileRef(cfg *Config, owner, field, profileName, wantProvider string) error {
 	if profileName == "" {
 		return nil
 	}
 	p, ok := cfg.Profiles[profileName]
 	if !ok {
 		return app.NewExitError(
-			fmt.Errorf("%w: environment %q %s references unknown profile %q",
-				app.ErrConfigInvalid, envName, field, profileName),
+			fmt.Errorf("%w: %s %s references unknown profile %q",
+				app.ErrConfigInvalid, owner, field, profileName),
 			app.ExitConfig,
 		)
 	}
@@ -373,8 +463,8 @@ func validateEnvironmentProfileRef(cfg *Config, envName, field, profileName, wan
 	provider := NormalizeProvider(p.Provider)
 	if IsKnownProvider(provider) && provider != wantProvider {
 		return app.NewExitError(
-			fmt.Errorf("%w: environment %q %s must reference a %q profile, but %q uses provider %q",
-				app.ErrConfigInvalid, envName, field, wantProvider, profileName, p.Provider),
+			fmt.Errorf("%w: %s %s must reference a %q profile, but %q uses provider %q",
+				app.ErrConfigInvalid, owner, field, wantProvider, profileName, p.Provider),
 			app.ExitConfig,
 		)
 	}
