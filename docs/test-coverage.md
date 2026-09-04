@@ -80,6 +80,7 @@ Generated from `internal/cli/operations.go` — the canonical operation registry
 | `vm template` | Disruptive | yes | yes | no | n/a | yes |
 | `vm migrate` | Disruptive | yes | no | no | n/a | no |
 | `vm clone` | Disruptive | yes | no | no | n/a | no |
+| `vm create` | Disruptive | yes | no | no | n/a | no |
 | `vm disk resize` | Disruptive | yes | no | no | n/a | no |
 | `vm disk move` | Disruptive | yes | no | no | n/a | no |
 | **VM — Snapshot Mutations** | | | | | | |
@@ -108,6 +109,8 @@ Generated from `internal/cli/operations.go` — the canonical operation registry
 | `container template` | Disruptive | yes | yes | no | n/a | yes |
 | `container migrate` | Disruptive | yes | no | no | n/a | no |
 | `container clone` | Disruptive | yes | no | no | n/a | no |
+| `container create` | Disruptive | yes | no | no | n/a | no |
+| `container restore` | Disruptive | yes | no | no | n/a | no |
 | **Container — Snapshot Mutations** | | | | | | |
 | `container snapshot create` | Reversible | yes | no | no | n/a | yes |
 | `container snapshot delete` | Destructive | yes | no | no | n/a | yes |

@@ -18,7 +18,7 @@ Nodex exists so self-hosted infrastructure operators can:
 
 5. **Automate queries.** Use JSON and YAML output modes for scripting, monitoring, and infrastructure-as-code integration. Empty lists are `[]` not `null`. Structured output streams never mix human-readable text.
 
-6. **Perform safe operations.** Start, stop, shutdown, reboot, suspend, resume, pause, and unpause VMs and containers with tiered confirmation gates. Create and manage snapshots. Update configurations. Create manual backups and manage backup schedules. Upload and download storage content.
+6. **Perform safe operations.** Create, start, stop, shutdown, reboot, suspend, resume, pause, and unpause VMs and containers with tiered confirmation gates. Create and manage snapshots. Update configurations. Create manual backups and manage backup schedules. Upload and download storage content.
 
 7. **Work across environments.** Manage multiple Proxmox endpoints through named profiles with independent credentials. Use `--all` to aggregate results across all profiles.
 

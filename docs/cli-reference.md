@@ -46,6 +46,7 @@ Use `nodex help` for top-level help and `nodex help <command>` for per-command h
 | `--wait` | Wait for provider task to complete before exiting |
 | `--expert` | Enable expert-mode operations (Tier 4: identity, ACL changes) |
 | `--password-stdin` | Read password from stdin instead of interactive prompt |
+| `--confirm-target <text>` | Exact target text for non-interactive destructive confirmation |
 
 `--debug` takes precedence over `--verbose`. `--quiet` suppresses logger output unless a more verbose level is selected.
 
@@ -188,6 +189,7 @@ Inspect and operate virtual machines.
 | `vm reset <id>` | Hard reset a VM |
 | `vm reboot <id>` | Reboot a VM |
 | `vm migrate <id> --target <node>` | Migrate VM to another node |
+| `vm create <node> <vmid> [name] [iso] [disk-storage]` | Create a minimal VM |
 
 **Destructive commands** (Tier 3, requires type-in confirmation):
 
@@ -236,6 +238,8 @@ Inspect and operate containers.
 |---------|-------------|
 | `container reboot <id>` | Reboot a container |
 | `container migrate <id> --target <node>` | Migrate container |
+| `container create <node> <vmid> <ostemplate> [hostname] [storage]` | Create a container from an OS template |
+| `container restore <node> <vmid> <archive> [storage]` | Restore a container from a backup archive |
 
 **Destructive commands** (Tier 3, requires type-in confirmation):
 
@@ -262,7 +266,7 @@ Inspect and operate storage.
 |---------|-------------|
 | `storage list` | List all storage pools |
 | `storage show <name>` | Show storage details |
-| `storage content <name> --node <node>` | List storage content |
+| `storage content <node> <storage>` | List storage content |
 
 **Mutation commands** (varies by operation):
 
@@ -297,6 +301,10 @@ Inspect cluster state. Safety: Tier 0.
 |---------|-------------|
 | `cluster status` | Show cluster quorum and node health |
 | `cluster log` | Show cluster log entries |
+| `cluster init <name> <bind-address>` | Initialize a new PVE cluster; requires `--expert --yes --force` and typing the cluster name, or `--non-interactive --expert --yes --force --confirm-target <name>` |
+| `cluster join <node-address> <fingerprint>` | Validate a join target, then refuse execution because PVE requires the peer root password; Nodex never accepts or transports that password |
+
+Cluster initialization posts `clustername` and `link0` to `/cluster/config` and returns the provider worker UPID. It is a destructive cluster and corosync operation, not a reversible configuration change. The join endpoint `/cluster/config/join` also requires a peer root password; the existing profile API token is not equivalent, so Nodex fails closed before making a join request.
 
 ### `nodex event`
 
