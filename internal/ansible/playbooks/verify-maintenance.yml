@@ -1,0 +1,19 @@
+---
+- name: Verify maintenance postconditions
+  hosts: all
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Confirm connectivity
+      ansible.builtin.ping:
+    - name: Check reboot-required marker
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: nodex_reboot_required
+    - name: List failed systemd units
+      ansible.builtin.command: systemctl list-units --state=failed --no-legend --plain
+      changed_when: false
+      failed_when: false
+    - name: Report root filesystem usage
+      ansible.builtin.command: df -P /
+      changed_when: false

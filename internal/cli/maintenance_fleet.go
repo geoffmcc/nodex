@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,6 +36,16 @@ var runCheckUpdates = func(ctx context.Context, hosts []ansible.HostSpec) (*ansi
 	}
 	runner := &ansible.Runner{Exe: det.Path}
 	return runner.Run(ctx, ansible.RunRequest{Operation: "check-updates", Hosts: hosts})
+}
+
+// runMaintenanceOperation is the only mutation seam. The operation ID is
+// selected by the verified plan and resolved by ansible's embedded allowlist.
+var runMaintenanceOperation = func(ctx context.Context, operation string, hosts []ansible.HostSpec, packages []string) (*ansible.RunResult, error) {
+	det, err := ansible.Detect(ctx)
+	if err != nil {
+		return nil, app.NewExitError(fmt.Errorf("maintenance requires Ansible: %w", err), app.ExitIncompatibility)
+	}
+	return (&ansible.Runner{Exe: det.Path}).Run(ctx, ansible.RunRequest{Operation: operation, Hosts: hosts, Packages: packages})
 }
 
 // maintenanceFilters selects inventory hosts.
@@ -537,4 +549,230 @@ func writeMaintenancePlan(cmdCtx *Context, plan maintenance.Plan) error {
 		fmt.Fprintln(cmdCtx.Writer, "Save the full plan with: nodex --output json maintenance plan ... > plan.json")
 		return nil
 	}
+}
+
+type maintenanceReport struct {
+	PlanID     string                    `json:"plan_id" yaml:"plan_id"`
+	PlanDigest string                    `json:"plan_digest" yaml:"plan_digest"`
+	ReceiptID  string                    `json:"receipt_id" yaml:"receipt_id"`
+	State      string                    `json:"state" yaml:"state"`
+	Verified   bool                      `json:"verified" yaml:"verified"`
+	Hosts      []maintenance.HostReceipt `json:"hosts" yaml:"hosts"`
+	Error      string                    `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
+func parseMaintenanceApplyArgs(args []string) (string, string, error) {
+	planPath, receiptDir := "", ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--plan", "--receipt-dir":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return "", "", fmt.Errorf("%s requires a value", args[i])
+			}
+			if args[i] == "--plan" {
+				planPath = args[i+1]
+			} else {
+				receiptDir = args[i+1]
+			}
+			i++
+		default:
+			return "", "", fmt.Errorf("unknown maintenance apply argument %q", args[i])
+		}
+	}
+	if planPath == "" {
+		return "", "", fmt.Errorf("--plan is required")
+	}
+	if receiptDir == "" {
+		receiptDir = filepath.Join(filepath.Dir(planPath), ".nodex-receipts")
+	}
+	return planPath, receiptDir, nil
+}
+
+func runMaintenanceApply(ctx context.Context, cmdCtx *Context, args []string) error {
+	planPath, receiptDir, err := parseMaintenanceApplyArgs(args)
+	if err != nil {
+		return app.NewExitError(fmt.Errorf("usage: nodex maintenance apply --plan <file> [--receipt-dir <dir>]: %w", err), app.ExitUsage)
+	}
+	plan, err := maintenance.LoadFile(planPath, time.Now())
+	if err != nil {
+		return app.NewExitError(fmt.Errorf("load maintenance plan: %w", err), app.ExitValidationError)
+	}
+	if len(plan.Blockers) != 0 {
+		return app.NewExitError(fmt.Errorf("plan %s has %d blocker(s); apply refused", plan.PlanID, len(plan.Blockers)), app.ExitValidationError)
+	}
+	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force || cmdCtx.Opts.ConfirmTarget != plan.PlanID {
+		return app.NewExitError(fmt.Errorf("confirmation refused: apply requires --yes --force --confirm-target %s", plan.PlanID), app.ExitUsage)
+	}
+	cfg, err := config.Read()
+	if err != nil {
+		return err
+	}
+	selected := map[string]config.InventoryHost{}
+	for _, ph := range plan.Hosts {
+		h, ok := cfg.Inventory.Hosts[ph.Name]
+		if !ok || h.Address != ph.Address {
+			return app.NewExitError(fmt.Errorf("inventory changed for planned host %q; create a new plan", ph.Name), app.ExitConflict)
+		}
+		selected[ph.Name] = h
+	}
+	receipt := maintenance.NewReceipt(plan, time.Now())
+	if err := receipt.Finalize(); err != nil {
+		return app.NewExitError(err, app.ExitValidationError)
+	}
+	path := maintenance.ReceiptPath(receiptDir, plan.PlanID)
+	if _, statErr := os.Stat(path); statErr == nil {
+		if _, loadErr := maintenance.LoadReceipt(path); loadErr != nil {
+			return app.NewExitError(fmt.Errorf("existing receipt is invalid; refusing to overwrite: %w", loadErr), app.ExitValidationError)
+		}
+		return app.NewExitError(fmt.Errorf("receipt already exists at %s; refusing to rerun without operator review", path), app.ExitConflict)
+	} else if !os.IsNotExist(statErr) {
+		return fmt.Errorf("inspect receipt: %w", statErr)
+	}
+	if err := maintenance.SaveReceipt(path, receipt); err != nil {
+		return fmt.Errorf("write receipt: %w", err)
+	}
+	op := "apply-security-updates"
+	if plan.Policy == maintenance.PolicyApprovedFull {
+		op = "apply-approved-updates"
+	}
+	for _, name := range plan.HostOrder {
+		packages := []string{}
+		if op == "apply-security-updates" {
+			for _, planned := range plan.Hosts {
+				if planned.Name == name {
+					packages = planned.SecurityUpdates
+					break
+				}
+			}
+		}
+		result, runErr := runMaintenanceOperation(ctx, op, hostSpecs(map[string]config.InventoryHost{name: selected[name]}), packages)
+		h := maintenance.HostReceipt{Host: name, Operation: op, State: "failed"}
+		if runErr != nil {
+			h.State = "unknown"
+			receipt.State = "unknown"
+			receipt.Error = runErr.Error()
+		} else if result == nil || !result.Success {
+			h.State = "failed"
+			receipt.State = "failed"
+			receipt.Error = "Ansible reported an unsuccessful or unverifiable result"
+			if result != nil && len(result.Hosts) == 1 {
+				h.Changed, h.Failures, h.Unreachable = result.Hosts[0].Changed, result.Hosts[0].Failures, result.Hosts[0].Unreachable
+			}
+		} else {
+			h.State, h.Success = "succeeded", true
+			if len(result.Hosts) == 1 {
+				h.Changed = result.Hosts[0].Changed
+			}
+		}
+		receipt.Hosts = append(receipt.Hosts, h)
+		receipt.UpdatedAt = time.Now().Unix()
+		if receipt.State == "running" && h.State != "succeeded" {
+			receipt.State = h.State
+		}
+		if err := receipt.Finalize(); err != nil {
+			return err
+		}
+		if err := maintenance.SaveReceipt(path, receipt); err != nil {
+			return fmt.Errorf("checkpoint receipt: %w", err)
+		}
+		if h.State != "succeeded" {
+			return app.NewExitError(fmt.Errorf("maintenance apply stopped at host %s; receipt: %s", name, path), app.ExitAmbiguousOutcome)
+		}
+	}
+	verifyHosts := hostSpecs(selected)
+	verification, runErr := runMaintenanceOperation(ctx, "verify-maintenance", verifyHosts, nil)
+	if runErr != nil || verification == nil || !verification.Success {
+		receipt.State = "failed"
+		receipt.Error = "postcondition verification failed or was unverifiable"
+		if runErr != nil {
+			receipt.Error = runErr.Error()
+		}
+		receipt.UpdatedAt = time.Now().Unix()
+		_ = receipt.Finalize()
+		_ = maintenance.SaveReceipt(path, receipt)
+		return app.NewExitError(fmt.Errorf("maintenance verification failed; receipt: %s", path), app.ExitPartialFailure)
+	}
+	receipt.State, receipt.Error, receipt.UpdatedAt = "succeeded", "", time.Now().Unix()
+	if err := receipt.Finalize(); err != nil {
+		return err
+	}
+	if err := maintenance.SaveReceipt(path, receipt); err != nil {
+		return err
+	}
+	return writeMaintenanceReport(cmdCtx, maintenanceReport{PlanID: plan.PlanID, PlanDigest: plan.Digest, ReceiptID: receipt.ReceiptID, State: receipt.State, Verified: true, Hosts: receipt.Hosts})
+}
+
+func writeMaintenanceReport(cmdCtx *Context, r maintenanceReport) error {
+	sort.Slice(r.Hosts, func(i, j int) bool { return r.Hosts[i].Host < r.Hosts[j].Host })
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, r)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, r)
+	}
+	rows := make([][]string, 0, len(r.Hosts))
+	for _, h := range r.Hosts {
+		rows = append(rows, []string{h.Host, h.Operation, h.State, boolYes(h.Success)})
+	}
+	if err := output.WriteTable(cmdCtx.Writer, []string{"HOST", "OPERATION", "STATE", "SUCCESS"}, rows); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmdCtx.Writer, "Plan: %s\nState: %s\nVerified: %t\nReceipt: %s\n", r.PlanID, r.State, r.Verified, r.ReceiptID)
+	return nil
+}
+
+func runMaintenanceVerify(ctx context.Context, cmdCtx *Context, args []string) error {
+	for _, arg := range args {
+		if arg == "--receipt-dir" {
+			return app.NewExitError(fmt.Errorf("usage: nodex maintenance verify --plan <file>"), app.ExitUsage)
+		}
+	}
+	planPath, _, err := parseMaintenanceApplyArgs(args)
+	if err != nil {
+		return app.NewExitError(fmt.Errorf("usage: nodex maintenance verify --plan <file>: %w", err), app.ExitUsage)
+	}
+	plan, err := maintenance.LoadFile(planPath, time.Now())
+	if err != nil {
+		return app.NewExitError(err, app.ExitValidationError)
+	}
+	cfg, err := config.Read()
+	if err != nil {
+		return err
+	}
+	selected := map[string]config.InventoryHost{}
+	for _, ph := range plan.Hosts {
+		h, ok := cfg.Inventory.Hosts[ph.Name]
+		if !ok || h.Address != ph.Address {
+			return app.NewExitError(fmt.Errorf("inventory changed for planned host %q", ph.Name), app.ExitConflict)
+		}
+		selected[ph.Name] = h
+	}
+	result, runErr := runMaintenanceOperation(ctx, "verify-maintenance", hostSpecs(selected), nil)
+	r := maintenanceReport{PlanID: plan.PlanID, PlanDigest: plan.Digest, State: "failed", Verified: false}
+	if runErr == nil && result != nil && result.Success {
+		r.State, r.Verified = "succeeded", true
+	} else if runErr != nil {
+		r.Error = runErr.Error()
+	}
+	for _, h := range plan.HostOrder {
+		r.Hosts = append(r.Hosts, maintenance.HostReceipt{Host: h, Operation: "verify-maintenance", State: r.State, Success: r.Verified})
+	}
+	if err := writeMaintenanceReport(cmdCtx, r); err != nil {
+		return err
+	}
+	if !r.Verified {
+		return app.NewExitError(fmt.Errorf("postcondition verification failed"), app.ExitPartialFailure)
+	}
+	return nil
+}
+
+func runMaintenanceReport(_ context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 2 || args[0] != "--receipt" {
+		return app.NewExitError(fmt.Errorf("usage: nodex maintenance report --receipt <file>"), app.ExitUsage)
+	}
+	r, err := maintenance.LoadReceipt(args[1])
+	if err != nil {
+		return app.NewExitError(err, app.ExitValidationError)
+	}
+	return writeMaintenanceReport(cmdCtx, maintenanceReport{PlanID: r.PlanID, PlanDigest: r.PlanDigest, ReceiptID: r.ReceiptID, State: r.State, Verified: r.State == "succeeded", Hosts: r.Hosts, Error: r.Error})
 }

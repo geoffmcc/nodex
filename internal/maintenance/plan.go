@@ -6,8 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // PlanSchemaVersion versions the serialized plan shape.
@@ -168,7 +173,101 @@ func Verify(p Plan, now time.Time) error {
 	if p.RebootPolicy != RebootPolicyNever {
 		return fmt.Errorf("unsupported reboot policy %q", p.RebootPolicy)
 	}
+	if p.CreatedAt <= 0 || p.ExpiresAt <= p.CreatedAt {
+		return fmt.Errorf("invalid plan timestamps")
+	}
+	if p.BatchSize < 1 || p.SafetyClassification != "disruptive" {
+		return fmt.Errorf("invalid plan safety settings")
+	}
+	seen := map[string]bool{}
+	for _, h := range p.Hosts {
+		if h.Name == "" || h.Address == "" || seen[h.Name] {
+			return fmt.Errorf("invalid or duplicate plan host %q", h.Name)
+		}
+		seen[h.Name] = true
+	}
+	if len(p.HostOrder) != len(p.Hosts) {
+		return fmt.Errorf("host order does not cover the plan hosts")
+	}
+	for _, name := range p.HostOrder {
+		if !seen[name] {
+			return fmt.Errorf("host order contains unknown host %q", name)
+		}
+		delete(seen, name)
+	}
+	if len(seen) != 0 {
+		return fmt.Errorf("host order contains duplicate or missing hosts")
+	}
 	return nil
+}
+
+// Load decodes a plan from JSON or YAML, rejects unknown fields and verifies
+// its digest and safety invariants before returning it. The entire input is
+// bounded by the caller's reader; no plan content is executed.
+func Load(r io.Reader, format string, now time.Time) (Plan, error) {
+	if r == nil {
+		return Plan{}, fmt.Errorf("plan reader is nil")
+	}
+	var p Plan
+	if format == "" {
+		format = "json"
+	}
+	switch format {
+	case "json":
+		dec := json.NewDecoder(r)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&p); err != nil {
+			return Plan{}, fmt.Errorf("decode plan JSON: %w", err)
+		}
+		if err := ensureEOF(dec); err != nil {
+			return Plan{}, err
+		}
+	case "yaml", "yml":
+		dec := yaml.NewDecoder(r)
+		dec.KnownFields(true)
+		if err := dec.Decode(&p); err != nil {
+			return Plan{}, fmt.Errorf("decode plan YAML: %w", err)
+		}
+		var extra any
+		if err := dec.Decode(&extra); err != io.EOF {
+			if err == nil {
+				return Plan{}, fmt.Errorf("plan contains multiple YAML documents")
+			}
+			return Plan{}, fmt.Errorf("read plan YAML: %w", err)
+		}
+	default:
+		return Plan{}, fmt.Errorf("unsupported plan format %q", format)
+	}
+	if err := Verify(p, now); err != nil {
+		return Plan{}, err
+	}
+	return p, nil
+}
+
+func ensureEOF(dec *json.Decoder) error {
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("plan contains multiple JSON values")
+		}
+		return fmt.Errorf("read plan JSON: %w", err)
+	}
+	return nil
+}
+
+// LoadFile loads a plan based on its .json/.yaml extension.
+func LoadFile(path string, now time.Time) (Plan, error) {
+	f, err := os.Open(path) // #nosec G304 -- caller explicitly selected the plan file.
+	if err != nil {
+		return Plan{}, fmt.Errorf("open plan: %w", err)
+	}
+	defer f.Close()
+	ext := filepath.Ext(path)
+	format := "json"
+	if ext == ".yaml" || ext == ".yml" {
+		format = "yaml"
+	}
+	return Load(io.LimitReader(f, 8<<20), format, now)
 }
 
 // OrderHosts computes the planned execution order: standard-criticality

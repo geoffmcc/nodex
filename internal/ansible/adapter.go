@@ -170,6 +170,10 @@ type RunRequest struct {
 
 	// Hosts are the explicit targets.
 	Hosts []HostSpec
+
+	// Packages is accepted only by the fixed security-update operation. It is
+	// encoded as structured extra-vars, never interpolated into a command.
+	Packages []string
 }
 
 // HostResult is the per-host outcome parsed from Ansible's JSON callback.
@@ -258,6 +262,14 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		}
 		seen[h.Name] = true
 	}
+	if len(req.Packages) > 0 && req.Operation != "apply-security-updates" {
+		return nil, fmt.Errorf("packages are not supported for operation %q", req.Operation)
+	}
+	for _, pkg := range req.Packages {
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._:-]*$`).MatchString(pkg) {
+			return nil, fmt.Errorf("invalid package name %q", pkg)
+		}
+	}
 	if r.Exe == "" || !filepath.IsAbs(r.Exe) {
 		return nil, fmt.Errorf("runner requires an absolute ansible-playbook path (run Detect first)")
 	}
@@ -303,7 +315,12 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	args := append(append([]string{}, r.testArgsPrefix...), "-i", inventoryPath, playbookPath)
+	args := append(append([]string{}, r.testArgsPrefix...), "-i", inventoryPath)
+	if req.Operation == "apply-security-updates" {
+		vars, _ := json.Marshal(map[string][]string{"nodex_packages": req.Packages})
+		args = append(args, "--extra-vars", string(vars))
+	}
+	args = append(args, playbookPath)
 	cmd := exec.CommandContext(runCtx, r.Exe, args...) // #nosec G204 -- executable is a Detect-validated absolute path; args are generated files, never user input
 	cmd.Dir = workDir
 	cmd.Env = append(minimalEnv(map[string]string{

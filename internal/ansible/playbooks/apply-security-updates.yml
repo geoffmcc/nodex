@@ -1,0 +1,22 @@
+---
+- name: Apply approved security updates
+  hosts: all
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Verify Debian family
+      ansible.builtin.assert:
+        that: ansible_facts['os_family'] == 'Debian'
+    - name: Refresh package metadata
+      ansible.builtin.apt:
+        update_cache: true
+    - name: Install security updates
+      ansible.builtin.apt:
+        name: "{{ nodex_packages }}"
+        state: latest
+        only_upgrade: true
+      when: nodex_packages | length > 0
+      register: nodex_update_result
+    - name: Report update result
+      ansible.builtin.debug:
+        msg: "security update operation completed"

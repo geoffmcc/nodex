@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -393,4 +394,33 @@ func TestMaintenancePlanTableOutput(t *testing.T) {
 			t.Errorf("table output missing %q:\n%s", want, stdout)
 		}
 	}
+}
+
+func TestMaintenanceApplyRequiresExactConfirmation(t *testing.T) {
+	seedMaintenanceConfig(t)
+	withCannedCheckUpdates(t, func(_ context.Context, hosts []ansible.HostSpec) (*ansible.RunResult, error) {
+		return cannedHealthyResult(hosts), nil
+	})
+	stdout, _, err := runPBSCommand(t, "--output", "json", "maintenance", "plan", "--policy", "security-only", "--host", "standalone")
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	planPath := t.TempDir() + "/plan.json"
+	if err := os.WriteFile(planPath, []byte(stdout), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	withCannedMaintenanceOperation(t, func(_ context.Context, operation string, hosts []ansible.HostSpec, packages []string) (*ansible.RunResult, error) {
+		return cannedHealthyResult(hosts), nil
+	})
+	_, _, err = runPBSCommand(t, "maintenance", "apply", "--plan", planPath)
+	if err == nil || !strings.Contains(err.Error(), "confirmation refused") {
+		t.Fatalf("without confirmation error = %v", err)
+	}
+}
+
+func withCannedMaintenanceOperation(t *testing.T, fn func(context.Context, string, []ansible.HostSpec, []string) (*ansible.RunResult, error)) {
+	t.Helper()
+	prev := runMaintenanceOperation
+	runMaintenanceOperation = fn
+	t.Cleanup(func() { runMaintenanceOperation = prev })
 }
