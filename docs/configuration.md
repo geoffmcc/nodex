@@ -59,11 +59,29 @@ import` accept only known provider names (`proxmox`, `pbs`). A config file
 containing an unknown but well-formed provider name still loads — so a file
 written by a newer Nodex does not invalidate your other profiles — but any
 command that uses such a profile fails with an unknown-provider error. The
-`pbs` provider name is reserved by the fleet-operations roadmap
-(`docs/roadmap.md`); PBS commands ship in a later phase. Endpoint, TLS, and
+`pbs` provider is Proxmox Backup Server. The schema-version-2
+`monitoring.targets` map contains explicit one-shot checks. Supported target
+types are `http`, `https`, `tcp`, `tls`, and `dns`; DNS targets require an
+explicit resolver. Nodex never discovers monitoring targets. Endpoint, TLS, and
 credential rules below apply identically to every provider: PVE and PBS
 credentials are always separate credential-store entries, and there is no
 insecure TLS option for any provider.
+
+Example monitoring configuration:
+
+```yaml
+monitoring:
+  targets:
+    pve-api:
+      type: https
+      address: https://pve.example.com:8006/api2/json/version
+      environment: lab
+      timeout_seconds: 10
+    dns:
+      type: dns
+      address: pve.example.com
+      resolver: 192.0.2.53:53
+```
 
 ## Endpoint Rules
 

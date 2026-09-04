@@ -1,10 +1,10 @@
-# NodeX
+# Nodex
 
-NodeX is a secure, predictable, all-in-one CLI for understanding and operating self-hosted infrastructure—Proxmox-first, inspection-led, management-capable, and automation-friendly.
+Nodex is a secure, predictable, all-in-one CLI for understanding and operating self-hosted infrastructure—Proxmox-first, inspection-led, management-capable, and automation-friendly.
 
-NodeX runs on Linux, macOS, and Windows as a single local binary. It connects directly to your Proxmox VE endpoints over HTTPS. There is no daemon, no agent, no telemetry, and no hidden network connections.
+Nodex runs on Linux, macOS, and Windows as a single local binary. It connects directly to your Proxmox VE endpoints over HTTPS. There is no daemon, no agent, no telemetry, and no hidden network connections.
 
-## What NodeX does
+## What Nodex does
 
 - **Inspect.** List and show nodes, VMs, containers, storage, tasks, events, snapshots, firewall rules, HA resources, backup content, SDN zones, Ceph state, pools, cluster logs, and more. Inspect Proxmox Backup Server datastores, backup snapshots, verify/prune/sync jobs, garbage collection, and tasks through the separate `pbs` provider.
 - **Diagnose.** Run `nodex doctor` to check configuration and connectivity across all your profiles. Run `nodex environment backup-health` to evaluate a paired PVE + PBS environment: reachability, datastore capacity, task failures, and every protected guest's backup age and verification state.
@@ -66,7 +66,7 @@ Non-interactive sessions fail closed when confirmation is required.
 
 ## Credentials
 
-NodeX supports four credential backends:
+Nodex supports four credential backends:
 
 - **Environment variables** (`env:profilename`) — good for CI and scripts
 - **JSON files** (`file:name`) — stored under `~/.nodex/credentials/`
@@ -107,7 +107,8 @@ nodex sdn                Inspect and manage SDN
 nodex pools              List resource pools
 nodex pbs                Inspect Proxmox Backup Server; guarded maintenance runs
 nodex environment        Unified PVE/PBS health and backup coverage
-nodex maintenance        Fleet maintenance status and immutable planning
+nodex maintenance        Fleet maintenance status, planning, and guarded apply
+nodex monitor             Run configured one-shot health checks
 nodex network            Inspect and manage network config
 nodex access             Inspect and manage identity (expert)
 nodex ceph               Inspect and manage Ceph
@@ -119,7 +120,7 @@ Global flags go before the command name: `nodex --output json node list`.
 
 ## Documentation
 
-- [Product principles](docs/product-principles.md) — what NodeX is and how capability decisions are made
+- [Product principles](docs/product-principles.md) — what Nodex is and how capability decisions are made
 - [CLI reference](docs/cli-reference.md) — every command, flag, exit code, and safety classification
 - [Configuration reference](docs/configuration.md) — profiles, credentials, TLS, paths
 - [Architecture](docs/architecture.md) — package layout, provider model, transport, task lifecycle
@@ -127,12 +128,14 @@ Global flags go before the command name: `nodex --output json node list`.
 - [Compatibility policy](docs/compatibility.md) — what is stable and what may change
 - [Fleet-operations roadmap](docs/roadmap.md) and [ADR 0001](docs/adr/0001-fleet-operations-architecture.md) — the phased PBS, inventory, maintenance, and monitoring expansion
 - [Security policy](SECURITY.md) — threat model, reporting, protections
+- [Release procedure](docs/releasing.md) — reproducible artifact validation
+- [Maintenance operations](docs/maintenance.md) — plans, guarded apply, and receipts
 - [Support](SUPPORT.md) — what is supported, how to get help
 - [Contributing](CONTRIBUTING.md) — development setup, PR requirements
 
 ## Requirements
 
-- Go 1.25.12 for building from source
+- Go 1.25.13 for building from source
 - A Proxmox VE endpoint reachable over HTTPS
 - A Proxmox API token (or username/password) with appropriate permissions
 
@@ -140,4 +143,4 @@ CI builds and tests on Ubuntu, macOS (Apple Silicon and Intel), and Windows.
 
 ## License
 
-NodeX is licensed under the [GNU General Public License v3.0](LICENSE).
+Nodex is licensed under the [GNU General Public License v3.0](LICENSE).

@@ -146,6 +146,10 @@ func buildRegistry() []OperationMeta {
 		Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
 		OutputModes: []string{"table"}, HandlerFunc: "runCompletion",
 	})
+	ops = append(ops,
+		OperationMeta{Path: "monitor targets", Description: "List configured monitoring targets", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMonitorTargets"},
+		OperationMeta{Path: "monitor check", Description: "Check configured monitoring targets", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMonitorCheck"},
+	)
 
 	// --- profile ---
 	ops = append(ops, OperationMeta{
@@ -865,7 +869,7 @@ func buildRegistry() []OperationMeta {
 	}
 	ops = append(ops, dispatchOps...)
 
-	// --- maintenance (fleet, read-only in phase 5) ---
+	// --- maintenance (plan execution remains explicitly confirmation-gated) ---
 	maintOps := []OperationMeta{
 		{Path: "maintenance inventory", Description: "List enrolled maintenance hosts",
 			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
@@ -876,6 +880,15 @@ func buildRegistry() []OperationMeta {
 		{Path: "maintenance plan", Description: "Create an immutable maintenance plan (makes no changes)",
 			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
 			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenancePlan"},
+		{Path: "maintenance apply", Description: "Apply a verified maintenance plan",
+			Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierDisruptive,
+			RiskDimensions: []RiskDimension{RiskServiceDown}, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceApply"},
+		{Path: "maintenance verify", Description: "Verify maintenance postconditions",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceVerify"},
+		{Path: "maintenance report", Description: "Show a durable maintenance receipt",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceReport"},
 	}
 	ops = append(ops, maintOps...)
 

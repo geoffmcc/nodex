@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -277,7 +278,50 @@ func Validate(cfg *Config) error {
 	if err := validateInventory(cfg); err != nil {
 		return err
 	}
+	if err := validateMonitoring(cfg); err != nil {
+		return err
+	}
 
+	return nil
+}
+
+func validateMonitoring(cfg *Config) error {
+	if cfg.Monitoring == nil || len(cfg.Monitoring.Targets) == 0 {
+		return nil
+	}
+	if cfg.Version < 2 {
+		return app.NewExitError(fmt.Errorf("%w: the monitoring section requires schema version 2 (set \"version: 2\")", app.ErrConfigInvalid), app.ExitConfig)
+	}
+	for name, target := range cfg.Monitoring.Targets {
+		if !ProfileRegex.MatchString(name) {
+			return app.NewExitError(fmt.Errorf("%w: monitoring target %q has invalid name", app.ErrConfigInvalid, name), app.ExitConfig)
+		}
+		switch target.Type {
+		case "http", "https", "tcp", "tls", "dns":
+		default:
+			return app.NewExitError(fmt.Errorf("%w: monitoring target %q has unsupported type %q", app.ErrConfigInvalid, name, target.Type), app.ExitConfig)
+		}
+		if strings.TrimSpace(target.Address) == "" {
+			return app.NewExitError(fmt.Errorf("%w: monitoring target %q address is required", app.ErrConfigInvalid, name), app.ExitConfig)
+		}
+		if target.Timeout < 0 || target.Timeout > 300 {
+			return app.NewExitError(fmt.Errorf("%w: monitoring target %q timeout must be between 0 and 300 seconds", app.ErrConfigInvalid, name), app.ExitConfig)
+		}
+		if target.Type == "http" || target.Type == "https" {
+			u, err := url.Parse(target.Address)
+			if err != nil || u.User != nil || u.Host == "" || (target.Type == "https" && u.Scheme != "https") || (target.Type == "http" && u.Scheme != "http") {
+				return app.NewExitError(fmt.Errorf("%w: monitoring target %q must be a credential-free %s URL", app.ErrConfigInvalid, name, target.Type), app.ExitConfig)
+			}
+		}
+		if target.Type == "tls" {
+			if _, _, err := net.SplitHostPort(target.Address); err != nil {
+				return app.NewExitError(fmt.Errorf("%w: monitoring target %q must be host:port", app.ErrConfigInvalid, name), app.ExitConfig)
+			}
+		}
+		if target.Type == "dns" && target.Resolver == "" {
+			return app.NewExitError(fmt.Errorf("%w: monitoring target %q requires an explicit resolver", app.ErrConfigInvalid, name), app.ExitConfig)
+		}
+	}
 	return nil
 }
 

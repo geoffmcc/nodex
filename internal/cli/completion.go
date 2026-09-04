@@ -11,7 +11,7 @@ import (
 
 func runCompletion(_ context.Context, cmdCtx *Context, args []string) error {
 	if len(args) != 1 {
-		return app.NewExitError(fmt.Errorf("usage: nodex completion <bash|zsh|fish>"), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex completion <bash|zsh|fish|powershell>"), app.ExitUsage)
 	}
 
 	switch args[0] {
@@ -21,8 +21,10 @@ func runCompletion(_ context.Context, cmdCtx *Context, args []string) error {
 		writeZshCompletion(cmdCtx)
 	case "fish":
 		writeFishCompletion(cmdCtx)
+	case "powershell":
+		writePowerShellCompletion(cmdCtx)
 	default:
-		return app.NewExitError(fmt.Errorf("usage: nodex completion <bash|zsh|fish>"), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex completion <bash|zsh|fish|powershell>"), app.ExitUsage)
 	}
 	return nil
 }
@@ -120,6 +122,33 @@ func writeFishCompletion(cmdCtx *Context) {
 		}
 	}
 	fmt.Fprintln(cmdCtx.Writer, "complete -c nodex -n '__fish_use_subcommand' -a help -d 'Show help for a command'")
+}
+
+func writePowerShellCompletion(cmdCtx *Context) {
+	commandList := strings.Join(commandNames(), ", ")
+	fmt.Fprintln(cmdCtx.Writer, `# PowerShell completion for nodex
+Register-ArgumentCompleter -Native -CommandName nodex -ScriptBlock {
+  param($wordToComplete, $commandAst, $cursorPosition)
+  $commands = @("`+commandList+`")
+  $tokens = $commandAst.CommandElements | Select-Object -Skip 1
+  if ($tokens.Count -eq 0) {
+    $commands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+      [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    }
+    return
+  }
+  $parent = $tokens[0].Value
+  switch ($parent) {`)
+	for _, name := range commandNames() {
+		cmd := commands[name]
+		if len(cmd.sub) == 0 {
+			continue
+		}
+		subs := strings.Join(subcommandNames(cmd), `", "`)
+		fmt.Fprintf(cmdCtx.Writer, "    '%s' { $subs = @(\"%s\"); $subs | Where-Object { $_ -like \"$wordToComplete*\" } | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) } }\n", name, subs)
+	}
+	fmt.Fprintln(cmdCtx.Writer, `  }
+}`)
 }
 
 func commandNames() []string {

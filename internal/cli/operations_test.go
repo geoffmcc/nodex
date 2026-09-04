@@ -325,3 +325,36 @@ func TestOperations_OutputModesNotEmpty(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandTree_EveryReachableHandlerHasBoundMetadata(t *testing.T) {
+	var walk func(map[string]*command, string)
+	walk = func(nodes map[string]*command, prefix string) {
+		for _, cmd := range nodes {
+			path := cmd.name
+			if prefix != "" {
+				path = prefix + " " + cmd.name
+			}
+			if cmd.run != nil {
+				if !cmd.bound || cmd.meta == nil {
+					t.Errorf("reachable command %q is not bound to operation metadata", path)
+				}
+			}
+			if cmd.sub != nil {
+				walk(cmd.sub, path)
+			}
+		}
+	}
+	walk(commands, "")
+}
+
+func TestOperations_AliasesAndPathsAreUnique(t *testing.T) {
+	seen := make(map[string]string)
+	for _, op := range Operations() {
+		for _, path := range append([]string{op.Path}, op.Aliases...) {
+			if previous, ok := seen[path]; ok {
+				t.Errorf("operation path %q is claimed by %q and %q", path, previous, op.Path)
+			}
+			seen[path] = op.Path
+		}
+	}
+}

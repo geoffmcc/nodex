@@ -52,6 +52,22 @@ type Config struct {
 	Profiles       map[string]Profile     `yaml:"profiles"`
 	Environments   map[string]Environment `yaml:"environments,omitempty"`
 	Inventory      *Inventory             `yaml:"inventory,omitempty"`
+	Monitoring     *Monitoring            `yaml:"monitoring,omitempty"`
+}
+
+// Monitoring contains only explicitly configured one-shot checks. Nodex never
+// discovers targets or opens connections that are not represented here.
+type Monitoring struct {
+	Targets map[string]MonitorTarget `yaml:"targets"`
+}
+
+type MonitorTarget struct {
+	Type        string `yaml:"type" json:"type"`
+	Address     string `yaml:"address" json:"address"`
+	Environment string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Timeout     int    `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+	Resolver    string `yaml:"resolver,omitempty" json:"resolver,omitempty"`
+	ExpiresIn   int    `yaml:"expiry_warning_days,omitempty" json:"expiry_warning_days,omitempty"`
 }
 
 // Inventory declares the SSH-manageable Linux hosts. Hosts must be enrolled
