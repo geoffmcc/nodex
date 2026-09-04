@@ -148,19 +148,19 @@ leaks. PR review gates exist as a process control.
 
 ### DF1 — CI Tool Version Pinning
 
-**Status:** Deferred to this workstream (Workstream 6).
-**Description:** `staticcheck` and `govulncheck` are installed with `@latest`
-in CI, creating a moving-target supply chain risk.
-**Action:** Pin to specific versions (`staticcheck@v0.6.1`,
+**Status:** Completed on `origin/main`.
+**Description:** CI pins `staticcheck` and `govulncheck` to known versions,
+avoiding moving-target tool resolution.
+**Action:** Keep versions explicit (`staticcheck@v0.6.1`,
 `govulncheck@v1.6.0`).
-**Target:** Completed in this workstream.
+**Target:** Completed.
 
 ### DF2 — go.sum Verification in CI
 
-**Status:** Deferred to this workstream (Workstream 6).
-**Description:** `go mod verify` is not run as an explicit CI step.
-**Action:** Add `go mod verify` to CI workflow.
-**Target:** Completed in this workstream.
+**Status:** Completed on `origin/main`.
+**Description:** CI runs `go mod verify` before build and tests.
+**Action:** Keep the verification step.
+**Target:** Completed.
 
 ### DF3 — Dependabot / Renovate Configuration
 

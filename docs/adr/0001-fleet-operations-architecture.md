@@ -51,7 +51,7 @@ time of writing):
 PBS is implemented as its own provider package (`internal/provider/pbs/` with
 its own typed client), registered as provider name `pbs`. The existing PVE
 client gains no PBS conditionals. Provider naming is stable: `proxmox` keeps
-its current meaning (Proxmox VE); `pbs` is reserved for Proxmox Backup Server.
+its current meaning (Proxmox VE); `pbs` is Proxmox Backup Server.
 
 PBS authentication uses the `PBSAPIToken=user@realm!tokenname:secret`
 authorization scheme (note PBS separates token id and secret with `:` where

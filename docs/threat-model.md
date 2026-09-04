@@ -143,8 +143,8 @@ tampering.
 **Gaps:**
 - No required reviewer enforcement in branch protection (repository setting,
   not code).
-- CI tools installed with `@latest` — a compromised upstream release could
-  inject through `staticcheck` or `govulncheck`.
+- Release signing, SBOM generation, and provenance attestations are not yet
+  configured; the build/test workflow does not publish artifacts.
 - No workflow approval requirement for first-time contributors.
 
 ### 7. Dependency Compromise
@@ -163,9 +163,8 @@ takeover, malicious update).
 
 **Gaps:**
 - No automated dependency update tooling (Dependabot, Renovate).
-- No SBOM (Software Bill of Materials) generated.
-- No provenance attestation for builds.
-- `go.sum` is not explicitly verified as a CI step before building.
+- SBOM (Software Bill of Materials) and provenance are produced only when the
+  release workflow is added; normal CI is source verification only.
 
 ### 8. CI/CD Compromise
 The GitHub Actions workflow or runner is compromised, allowing tampering with

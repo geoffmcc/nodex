@@ -68,7 +68,7 @@ The internal Go APIs (everything under `internal/`) are not stable and may chang
 ## Building from Source
 
 Requirements:
-- Go 1.25.12
+- Go 1.25.13
 - `make` (optional; `go build` works directly)
 
 ```bash

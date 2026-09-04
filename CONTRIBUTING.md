@@ -4,7 +4,7 @@ Thank you for improving Nodex. This project is a Go CLI for inspecting and opera
 
 ## Prerequisites
 
-- Go 1.25.12
+- Go 1.25.13
 - `make` (optional; Go commands work directly)
 - Git
 

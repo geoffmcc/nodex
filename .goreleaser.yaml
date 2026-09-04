@@ -1,0 +1,45 @@
+version: 2
+
+before:
+  hooks:
+    - go mod verify
+
+builds:
+  - id: nodex
+    main: ./cmd/nodex
+    binary: nodex
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/geoffmcc/nodex/internal/version.Version={{ .Version }} -X github.com/geoffmcc/nodex/internal/version.Commit={{ .Commit }} -X github.com/geoffmcc/nodex/internal/version.BuildDate={{ .Date }} -X github.com/geoffmcc/nodex/internal/version.GoVersion={{ .Env.GOVERSION }}
+    goos: [linux, windows, darwin]
+    goarch: [amd64, arm64]
+    env:
+      - CGO_ENABLED=0
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - artifacts: archive
+
+signs:
+  - artifacts: all
+    cmd: cosign
+    args:
+      - sign-blob
+      - --yes
+      - --output-signature=${signature}
+      - --output-certificate=${certificate}
+      - ${artifact}
+
+release:
+  draft: true
+  prerelease: auto

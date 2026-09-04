@@ -113,8 +113,8 @@ Providers are registered by name through `internal/provider.Register`. The Proxm
 provider.Register("proxmox", func() domain.Provider { return &proxmox.Provider{} })
 ```
 
-Provider naming is stable: `proxmox` is Proxmox VE, and `pbs` is reserved for
-the Proxmox Backup Server provider planned in
+Provider naming is stable: `proxmox` is Proxmox VE, and `pbs` is the Proxmox
+Backup Server provider.
 [ADR 0001](adr/0001-fleet-operations-architecture.md) and tracked in the
 [fleet-operations roadmap](roadmap.md). Each provider is its own package with
 its own typed client; providers share transport, credential, redaction,
@@ -221,7 +221,7 @@ result with per-check statuses (`healthy`, `warning`, `blocked`, `unknown`,
 tracking. Data that cannot be retrieved yields `unknown` — never `healthy` —
 and one provider being unreachable does not stop evaluation of the other.
 The `environment` CLI command group is its only current consumer; the
-maintenance planner (roadmap Phase 5) is the next.
+  maintenance planner and executor consume it where configured.
 
 ## Ansible execution boundary
 
@@ -230,10 +230,12 @@ Linux maintenance, and it accepts nothing but allowlisted operation
 identifiers:
 
 - **Allowlisted operations, embedded playbooks.** The registry maps
-  operation IDs (currently `check-updates` and `verify-host`, both
-  read-only) to playbooks embedded in the binary via `go:embed`. There is no
+  operation IDs to playbooks embedded in the binary via `go:embed`. Read-only
+  and guarded update operations are separate registry entries. There is no
   way to pass a playbook path, module, inventory script, callback plugin,
-  extra argument, or environment variable through Nodex, and the allowlist
+  extra argument, or environment variable through Nodex. The security-update
+  operation accepts only validated package names as structured variables, and
+  the allowlist
   grows only through code review.
 - **Shell-free process execution.** `ansible-playbook` is resolved to an
   absolute path, rejected if world-writable (or in a world-writable,
@@ -274,9 +276,9 @@ in this phase), backup requirements with their observed state, an
 infrastructure snapshot, warnings, blockers, and a SHA-256 digest over the
 canonical plan content. `Verify` checks schema, digest, expiry, and policy;
 any post-creation modification breaks the digest. Plans contain no secrets
-and are safe to store and display. `maintenance apply` (a later phase)
-executes exactly a verified plan and refuses stale, tampered, expired, or
-blocked plans.
+and are safe to store and display. `maintenance apply` executes exactly a
+verified plan, writes atomic receipts, and refuses stale, tampered, expired,
+or blocked plans. Verification and reporting consume the durable receipt.
 
 ## HTTP transport
 
