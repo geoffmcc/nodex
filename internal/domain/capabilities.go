@@ -136,6 +136,14 @@ type ClusterStatusProvider interface {
 	ClusterStatuses(ctx context.Context) ([]ClusterStatusDetail, error)
 }
 
+// ClusterAdministrationProvider exposes guarded cluster initialization and
+// join operations. Join implementations must refuse when the provider cannot
+// safely obtain the peer's required credential.
+type ClusterAdministrationProvider interface {
+	ClusterInit(ctx context.Context, params ClusterInitParams) (string, error)
+	ClusterJoin(ctx context.Context, params ClusterJoinParams) (string, error)
+}
+
 // SnapshotDetailProvider exposes snapshot config information.
 type SnapshotDetailProvider interface {
 	VMSnapshotConfig(ctx context.Context, node string, vmid int, name string) (map[string]interface{}, error)
@@ -206,6 +214,21 @@ type CloneProvider interface {
 	CTClone(ctx context.Context, node string, vmid, newVmid int, hostname, storage string) (string, error)
 }
 
+// ContainerCreateProvider exposes native LXC creation from a template.
+type ContainerCreateProvider interface {
+	CTCreate(ctx context.Context, node string, vmid int, ostemplate, hostname, storage string) (string, error)
+}
+
+// VMCreateProvider exposes native QEMU VM creation.
+type VMCreateProvider interface {
+	VMCreate(ctx context.Context, node string, vmid int, name, iso, diskStorage string) (string, error)
+}
+
+// ContainerRestoreProvider exposes LXC restore from a backup archive.
+type ContainerRestoreProvider interface {
+	CTRestore(ctx context.Context, node string, vmid int, archive, storage string) (string, error)
+}
+
 // DiskProvider exposes VM disk resize and move operations.
 type DiskProvider interface {
 	VMDiskResize(ctx context.Context, node string, vmid int, disk, size string) (string, error)
@@ -233,6 +256,13 @@ type LifecycleProvider interface {
 	CTReboot(ctx context.Context, node string, vmid int) (string, error)
 	CTSuspend(ctx context.Context, node string, vmid int) (string, error)
 	CTResume(ctx context.Context, node string, vmid int) (string, error)
+}
+
+// ConsoleProvider provides interactive serial consoles for guests.
+// Implementations must not expose the short-lived Proxmox console ticket.
+type ConsoleProvider interface {
+	VMConsole(ctx context.Context, node string, vmid int, in io.Reader, out io.Writer) error
+	ContainerConsole(ctx context.Context, node string, vmid int, in io.Reader, out io.Writer) error
 }
 
 // --- Domain types for optional capabilities ---
@@ -539,14 +569,19 @@ const (
 	CapabilityStorageMutation  Capability = "storage_mutation"
 	CapabilityMigration        Capability = "migration"
 	CapabilityClone            Capability = "clone"
+	CapabilityContainerCreate  Capability = "container_create"
+	CapabilityVMCreate         Capability = "vm_create"
+	CapabilityContainerRestore Capability = "container_restore"
 	CapabilityDisk             Capability = "disk"
 	CapabilityNetworkMutation  Capability = "network_mutation"
 	CapabilityFirewallMutation Capability = "firewall_mutation"
 	CapabilityAccess           Capability = "access"
+	CapabilityConsole          Capability = "console"
 	CapabilityCeph             Capability = "ceph"
 	CapabilityCephMutation     Capability = "ceph_mutation"
 	CapabilitySDNMutation      Capability = "sdn_mutation"
 	CapabilityReplication      Capability = "replication"
+	CapabilityClusterAdmin     Capability = "cluster_admin"
 )
 
 // NetworkMutationProvider exposes network configuration mutation operations.
@@ -873,6 +908,18 @@ func CapabilityMetadata() map[Capability]CapabilityMeta {
 			Name: "Clone", Category: CapMutation, Safety: TierDisruptive,
 			Interfaces: []string{"CloneProvider"},
 		},
+		CapabilityContainerCreate: {
+			Name: "Container Create", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"ContainerCreateProvider"},
+		},
+		CapabilityVMCreate: {
+			Name: "VM Create", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"VMCreateProvider"},
+		},
+		CapabilityContainerRestore: {
+			Name: "Container Restore", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"ContainerRestoreProvider"},
+		},
 		CapabilityDisk: {
 			Name: "Disk", Category: CapMutation, Safety: TierDisruptive,
 			Interfaces: []string{"DiskProvider"},
@@ -916,6 +963,14 @@ func CapabilityMetadata() map[Capability]CapabilityMeta {
 		CapabilityAccess: {
 			Name: "Access", Category: CapMutation, Safety: TierSecurityAdmin,
 			Interfaces: []string{"AccessProvider"},
+		},
+		CapabilityConsole: {
+			Name: "Guest Console", Category: CapMutation, Safety: TierReversible,
+			Interfaces: []string{"ConsoleProvider"},
+		},
+		CapabilityClusterAdmin: {
+			Name: "Cluster Administration", Category: CapMutation, Safety: TierSecurityAdmin,
+			Interfaces: []string{"ClusterAdministrationProvider"},
 		},
 	}
 }

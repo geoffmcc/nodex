@@ -236,6 +236,9 @@ func runVMSnapshotConfig(ctx context.Context, cmdCtx *Context, args []string) er
 	if name == "" {
 		return app.NewExitError(fmt.Errorf("usage: nodex vm snapshot-config <node>/<vmid> <name>"), app.ExitUsage)
 	}
+	if name == "current" {
+		return app.NewExitError(fmt.Errorf("snapshot config is unavailable for the synthetic %q snapshot", name), app.ExitValidationError)
+	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -269,6 +272,9 @@ func runContainerSnapshotConfig(ctx context.Context, cmdCtx *Context, args []str
 	name := args[1]
 	if name == "" {
 		return app.NewExitError(fmt.Errorf("usage: nodex container snapshot-config <node>/<vmid> <name>"), app.ExitUsage)
+	}
+	if name == "current" {
+		return app.NewExitError(fmt.Errorf("snapshot config is unavailable for the synthetic %q snapshot", name), app.ExitValidationError)
 	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {

@@ -2,6 +2,7 @@ cluster: e2e
 version: test
 nodes: 1
 quorum: 3
+quorum_known: true
 nodes_detail:
     - name: e2e-node
       status: online
@@ -20,3 +21,4 @@ storage:
 ha:
     status: online
     quorum: 1
+    quorum_known: true

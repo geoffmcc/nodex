@@ -49,14 +49,15 @@ func MapNodes(items []client.NodeItem) []domain.Node {
 // MapVM converts a client.ClusterResource to a domain.VM.
 func MapVM(res client.ClusterResource) domain.VM {
 	return domain.VM{
-		ID:     vmID(res),
-		Name:   res.Name,
-		Status: res.Status,
-		Node:   res.Node,
-		CPU:    res.MaxCPU,
-		Memory: res.MaxMem,
-		Disk:   res.MaxDisk,
-		IP:     res.IP,
+		ID:       vmID(res),
+		Name:     res.Name,
+		Status:   res.Status,
+		Node:     res.Node,
+		CPU:      res.MaxCPU,
+		Memory:   res.MaxMem,
+		Disk:     res.MaxDisk,
+		Template: res.Template != 0,
+		IP:       res.IP,
 	}
 }
 
@@ -93,9 +94,9 @@ func MapStorage(res client.ClusterResource) domain.Storage {
 }
 
 // MapCluster converts version data to a domain.Cluster.
-func MapCluster(version *client.VersionData, nodeCount int) *domain.Cluster {
+func MapCluster(version *client.VersionData, nodeCount int, name string) *domain.Cluster {
 	return &domain.Cluster{
-		Name:    "",
+		Name:    name,
 		Version: version.Version,
 		Nodes:   nodeCount,
 	}

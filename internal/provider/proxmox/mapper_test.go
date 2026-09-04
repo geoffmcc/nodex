@@ -219,3 +219,41 @@ func TestMapClusterStatusHandlesNoClusterItem(t *testing.T) {
 		t.Fatalf("Nodes = %d, want 1", cluster.Nodes)
 	}
 }
+
+func TestMapClusterUsesProvidedName(t *testing.T) {
+	cluster := MapCluster(&client.VersionData{Version: "9.2.11"}, 1, "mycluster")
+	if cluster.Name != "mycluster" {
+		t.Fatalf("Name = %q, want mycluster", cluster.Name)
+	}
+	if cluster.Version != "9.2.11" || cluster.Nodes != 1 {
+		t.Fatalf("cluster = %+v, want version 9.2.11 and one node", cluster)
+	}
+}
+
+func TestVMConfigToMapPreservesUnusedAndRawFields(t *testing.T) {
+	got := vmConfigToMap(&client.VMConfigData{
+		VMID:    100,
+		Unused0: "local-lvm:vm-100-disk-1",
+		Raw:     map[string]string{"custom": "value"},
+	})
+	if got["unused0"] != "local-lvm:vm-100-disk-1" || got["custom"] != "value" {
+		t.Fatalf("config map = %#v", got)
+	}
+}
+
+func TestContainerConfigToMapPreservesRawFields(t *testing.T) {
+	got := containerConfigToMap(&client.ContainerConfigData{
+		VMID: 100,
+		Raw:  map[string]string{"custom": "value"},
+	})
+	if got["custom"] != "value" {
+		t.Fatalf("config map = %#v", got)
+	}
+}
+
+func TestMapVMPreservesTemplateFlag(t *testing.T) {
+	vm := MapVM(client.ClusterResource{ID: "node/100", Type: "qemu", Template: 1})
+	if !vm.Template {
+		t.Fatal("Template = false, want true")
+	}
+}

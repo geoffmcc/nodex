@@ -98,6 +98,21 @@ type Client struct {
 	retryPolicy      RetryPolicy
 }
 
+// Transport returns a clone of the configured HTTP transport for protocols
+// that must share the client's TLS trust policy, such as WebSocket consoles.
+func (c *Client) Transport() http.RoundTripper {
+	if c == nil || c.httpClient == nil || c.httpClient.Transport == nil {
+		if transport, ok := http.DefaultTransport.(*http.Transport); ok {
+			return transport.Clone()
+		}
+		return http.DefaultTransport
+	}
+	if transport, ok := c.httpClient.Transport.(*http.Transport); ok {
+		return transport.Clone()
+	}
+	return c.httpClient.Transport
+}
+
 // Option configures the Client.
 type Option func(*Client)
 

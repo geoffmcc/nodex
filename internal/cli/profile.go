@@ -104,8 +104,15 @@ func runProfileList(_ context.Context, cmdCtx *Context, args []string) error {
 
 	names := config.ProfileNames(cfg)
 	if len(names) == 0 {
-		fmt.Fprintln(cmdCtx.Writer, "No profiles configured.")
-		return nil
+		switch cmdCtx.Opts.Output {
+		case output.FormatJSON:
+			return output.WriteJSON(cmdCtx.Writer, []struct{}{})
+		case output.FormatYAML:
+			return output.WriteYAML(cmdCtx.Writer, []struct{}{})
+		default:
+			fmt.Fprintln(cmdCtx.Writer, "No profiles configured.")
+			return nil
+		}
 	}
 
 	switch cmdCtx.Opts.Output {

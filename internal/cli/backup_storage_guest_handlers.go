@@ -16,7 +16,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/safety"
 )
 
-// --- requireXxx helpers for Phase 4 ---
+// --- Backup, storage, and guest mutation helpers ---
 
 func requireBackupMutation(prov domain.Provider) (domain.BackupMutationProvider, error) {
 	p, ok := prov.(domain.BackupMutationProvider)
@@ -110,6 +110,9 @@ func checkDestructive(cmdCtx *Context, desc, target string) error {
 		return nil // Authorized (all conditions met).
 	}
 	if cmdCtx.Opts.NonInteractive {
+		if cmdCtx.Opts.Yes && cmdCtx.Opts.Force && cmdCtx.Opts.ConfirmTarget == target {
+			return nil
+		}
 		return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 	}
 	if result.Warning != "" {
@@ -775,6 +778,51 @@ func runVMClone(ctx context.Context, cmdCtx *Context, args []string) error {
 	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm clone", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
+// --- VM Create (Tier 2: disruptive) ---
+// nodex vm create <node> <vmid> [name] [iso] [disk-storage]
+
+func runVMCreate(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) < 2 || len(args) > 5 {
+		return app.NewExitError(fmt.Errorf("usage: nodex vm create <node> <vmid> [name] [iso] [disk-storage]"), app.ExitUsage)
+	}
+	node := args[0]
+	if node == "" {
+		return app.NewExitError(fmt.Errorf("node is required"), app.ExitUsage)
+	}
+	vmid, err := strconv.Atoi(args[1])
+	if err != nil || vmid <= 0 {
+		return app.NewExitError(fmt.Errorf("invalid VMID %q", args[1]), app.ExitUsage)
+	}
+	name, iso, diskStorage := "", "", ""
+	if len(args) >= 3 {
+		name = args[2]
+	}
+	if len(args) >= 4 {
+		iso = args[3]
+	}
+	if len(args) == 5 {
+		diskStorage = args[4]
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	cp, err := requireVMCreate(prov)
+	if err != nil {
+		return err
+	}
+	desc := fmt.Sprintf("create VM %s/%d", node, vmid)
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
+		return err
+	}
+	upid, err := cp.VMCreate(ctx, node, vmid, name, iso, diskStorage)
+	if err != nil {
+		return fmt.Errorf("create VM %s/%d: %w", node, vmid, err)
+	}
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm create", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+}
+
 // --- Container Clone (Tier 2: disruptive) ---
 // nodex container clone <node>/<vmid> <new-vmid> <name> [storage]
 
@@ -821,6 +869,86 @@ func runCTClone(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container clone", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+}
+
+// --- Container Create (Tier 2: disruptive) ---
+// nodex container create <node> <vmid> <ostemplate> [hostname] [storage]
+
+func runCTCreate(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) < 3 || len(args) > 5 {
+		return app.NewExitError(fmt.Errorf("usage: nodex container create <node> <vmid> <ostemplate> [hostname] [storage]"), app.ExitUsage)
+	}
+	node := args[0]
+	if node == "" {
+		return app.NewExitError(fmt.Errorf("node is required"), app.ExitUsage)
+	}
+	vmid, err := strconv.Atoi(args[1])
+	if err != nil || vmid <= 0 {
+		return app.NewExitError(fmt.Errorf("invalid VMID %q", args[1]), app.ExitUsage)
+	}
+	ostemplate := args[2]
+	hostname, storage := "", ""
+	if len(args) >= 4 {
+		hostname = args[3]
+	}
+	if len(args) == 5 {
+		storage = args[4]
+	}
+
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	cp, err := requireContainerCreate(prov)
+	if err != nil {
+		return err
+	}
+	desc := fmt.Sprintf("create container %s/%d from %s", node, vmid, ostemplate)
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
+		return err
+	}
+	upid, err := cp.CTCreate(ctx, node, vmid, ostemplate, hostname, storage)
+	if err != nil {
+		return fmt.Errorf("create container %s/%d: %w", node, vmid, err)
+	}
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container create", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+}
+
+// --- Container Restore (Tier 2: disruptive) ---
+// nodex container restore <node> <vmid> <archive> [storage]
+
+func runCTRestore(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) < 3 || len(args) > 4 {
+		return app.NewExitError(fmt.Errorf("usage: nodex container restore <node> <vmid> <archive> [storage]"), app.ExitUsage)
+	}
+	node := args[0]
+	vmid, err := strconv.Atoi(args[1])
+	if node == "" || err != nil || vmid <= 0 || args[2] == "" {
+		return app.NewExitError(fmt.Errorf("node, positive VMID, and archive are required"), app.ExitUsage)
+	}
+	storage := ""
+	if len(args) == 4 {
+		storage = args[3]
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	rp, err := requireContainerRestore(prov)
+	if err != nil {
+		return err
+	}
+	desc := fmt.Sprintf("restore container %s/%d from %s", node, vmid, args[2])
+	if err := checkDisruptive(cmdCtx, desc); err != nil {
+		return err
+	}
+	upid, err := rp.CTRestore(ctx, node, vmid, args[2], storage)
+	if err != nil {
+		return fmt.Errorf("restore container %s/%d: %w", node, vmid, err)
+	}
+	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container restore", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
 }
 
 // --- VM Disk Resize (Tier 2: disruptive) ---

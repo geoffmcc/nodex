@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -108,9 +109,17 @@ func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Pr
 		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 	}
 	if upid == "" {
-		result.Status = "OK"
-		result.Warnings = append(result.Warnings, "provider returned no task ID; nothing to poll")
-		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
+		result.Success = false
+		result.Status = "ambiguous"
+		result.Error = &output.ResultError{
+			Class:  "ambiguous_outcome",
+			Exit:   app.ExitAmbiguousOutcome,
+			Detail: "provider returned no task ID; completion cannot be verified",
+		}
+		if err := output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result); err != nil {
+			return err
+		}
+		return app.NewExitError(errors.New("provider returned no task ID; completion cannot be verified"), app.ExitAmbiguousOutcome)
 	}
 
 	fmt.Fprintf(cmdCtx.ErrW, "Waiting for task %s...\n", upid)

@@ -336,6 +336,7 @@ func buildRegistry() []OperationMeta {
 		{"vm template", "Convert VM to template", "TemplateProvider", "runVMTemplate", []RiskDimension{RiskDataLoss}},
 		{"vm migrate", "Migrate VM to another node", "MigrationProvider", "runVMMigrate", []RiskDimension{RiskServiceDown}},
 		{"vm clone", "Clone a VM", "CloneProvider", "runVMClone", nil},
+		{"vm create", "Create a VM", "VMCreateProvider", "runVMCreate", nil},
 		{"vm disk resize", "Resize VM disk", "DiskProvider", "runVMDiskResize", []RiskDimension{RiskDataLoss}},
 		{"vm disk move", "Move VM disk to another storage", "DiskProvider", "runVMDiskMove", []RiskDimension{RiskServiceDown}},
 	}
@@ -349,6 +350,12 @@ func buildRegistry() []OperationMeta {
 			CapabilityInterface: v.capIface, HandlerFunc: v.handler,
 		})
 	}
+	ops = append(ops, OperationMeta{
+		Path: "vm console", Description: "Open VM serial console",
+		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
+		RiskDimensions: []RiskDimension{RiskServiceDown},
+		OutputModes:    []string{"table"}, CapabilityInterface: "ConsoleProvider", HandlerFunc: "runVMConsole",
+	})
 
 	// --- vm snapshot mutations ---
 	ops = append(ops, OperationMeta{
@@ -444,6 +451,8 @@ func buildRegistry() []OperationMeta {
 		{"container template", "Convert container to template", "TemplateProvider", "runCTTemplate", []RiskDimension{RiskDataLoss}},
 		{"container migrate", "Migrate container to another node", "MigrationProvider", "runCTMigrate", []RiskDimension{RiskServiceDown}},
 		{"container clone", "Clone a container", "CloneProvider", "runCTClone", nil},
+		{"container create", "Create a container from a template", "ContainerCreateProvider", "runCTCreate", nil},
+		{"container restore", "Restore a container from a backup archive", "ContainerRestoreProvider", "runCTRestore", nil},
 	}
 	for _, v := range ctDisruptive {
 		ops = append(ops, OperationMeta{
@@ -455,6 +464,12 @@ func buildRegistry() []OperationMeta {
 			CapabilityInterface: v.capIface, HandlerFunc: v.handler,
 		})
 	}
+	ops = append(ops, OperationMeta{
+		Path: "container console", Description: "Open container console",
+		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
+		RiskDimensions: []RiskDimension{RiskServiceDown},
+		OutputModes:    []string{"table"}, CapabilityInterface: "ConsoleProvider", HandlerFunc: "runContainerConsole",
+	})
 
 	// --- container snapshot mutations ---
 	ops = append(ops, OperationMeta{
@@ -532,6 +547,10 @@ func buildRegistry() []OperationMeta {
 		Inspection: true, Scope: ScopeCluster, SafetyTier: safety.TierObservation,
 		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterLogProvider", HandlerFunc: "runClusterLog",
 	})
+	ops = append(ops,
+		OperationMeta{Path: "cluster init", Description: "Initialize a Proxmox cluster (destructive)", Inspection: false, Scope: ScopeCluster, SafetyTier: safety.TierSecurityAdmin, RiskDimensions: []RiskDimension{RiskDataLoss, RiskServiceDown, RiskNetworkLock}, RequiresTypeConfirm: true, RequiresExpert: true, ProducesUPID: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterAdministrationProvider", HandlerFunc: "runClusterInit"},
+		OperationMeta{Path: "cluster join", Description: "Preflight a Proxmox cluster join (execution refused without safe peer credential)", Inspection: false, Scope: ScopeCluster, SafetyTier: safety.TierSecurityAdmin, RiskDimensions: []RiskDimension{RiskServiceDown, RiskNetworkLock}, RequiresTypeConfirm: true, RequiresExpert: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterAdministrationProvider", HandlerFunc: "runClusterJoin"},
+	)
 
 	// --- event ---
 	ops = append(ops, OperationMeta{

@@ -882,6 +882,7 @@ type statusOverview struct {
 	Version     string          `json:"version" yaml:"version"`
 	Nodes       int             `json:"nodes" yaml:"nodes"`
 	Quorum      int             `json:"quorum" yaml:"quorum"`
+	QuorumKnown bool            `json:"quorum_known" yaml:"quorum_known"`
 	NodesDetail []statusNode    `json:"nodes_detail" yaml:"nodes_detail"`
 	VMs         int             `json:"vms" yaml:"vms"`
 	VMsRunning  int             `json:"vms_running" yaml:"vms_running"`
@@ -894,8 +895,9 @@ type statusOverview struct {
 }
 
 type statusHA struct {
-	Status string `json:"status" yaml:"status"`
-	Quorum int    `json:"quorum" yaml:"quorum"`
+	Status      string `json:"status" yaml:"status"`
+	Quorum      int    `json:"quorum" yaml:"quorum"`
+	QuorumKnown bool   `json:"quorum_known" yaml:"quorum_known"`
 }
 
 type statusNode struct {
@@ -993,6 +995,7 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 			for _, item := range cs {
 				if item.Type == "cluster" {
 					overview.Quorum = item.Quorate
+					overview.QuorumKnown = true
 				}
 			}
 		}
@@ -1002,8 +1005,9 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 	if hp, ok := prov.(domain.HAProvider); ok {
 		if ha, err := hp.HAStatus(ctx); err == nil && ha != nil {
 			overview.HA = &statusHA{
-				Status: ha.Status,
-				Quorum: ha.Quorum,
+				Status:      ha.Status,
+				Quorum:      ha.Quorum,
+				QuorumKnown: ha.Status != "unknown",
 			}
 		}
 	}
@@ -1020,14 +1024,20 @@ func writeStatus(cmdCtx *Context, overview *statusOverview) error {
 	default:
 		w := cmdCtx.Writer
 		fmt.Fprintf(w, "Cluster: %s  Version: %s  Nodes: %d", overview.Cluster, overview.Version, overview.Nodes)
-		if overview.Quorum > 0 {
+		if overview.QuorumKnown {
 			fmt.Fprintf(w, "  Quorum: %d", overview.Quorum)
+		} else {
+			fmt.Fprint(w, "  Quorum: unavailable")
 		}
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "VMs: %d running, %d stopped\n", overview.VMsRunning, overview.VMsStopped)
 		fmt.Fprintf(w, "Containers: %d running, %d stopped\n", overview.CTsRunning, overview.CTsStopped)
 		if overview.HA != nil {
-			fmt.Fprintf(w, "HA: %s (quorum: %d)\n", overview.HA.Status, overview.HA.Quorum)
+			if overview.HA.QuorumKnown {
+				fmt.Fprintf(w, "HA: %s (quorum: %d)\n", overview.HA.Status, overview.HA.Quorum)
+			} else {
+				fmt.Fprintf(w, "HA: %s (quorum: unavailable)\n", overview.HA.Status)
+			}
 		}
 		if len(overview.Storage) > 0 {
 			fmt.Fprintln(w, "\nStorage:")

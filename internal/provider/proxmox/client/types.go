@@ -16,6 +16,26 @@ type TaskResponse struct {
 	Data string `json:"data"`
 }
 
+// ClusterInitRequest is the body for POST /cluster/config.
+type ClusterInitRequest struct {
+	ClusterName string `json:"clustername"`
+	Link0       string `json:"link0"`
+}
+
+// ClusterJoinRequest contains only non-secret join inputs. PVE additionally
+// requires a peer root password, so this request cannot be executed by Nodex.
+type ClusterJoinRequest struct {
+	Hostname    string `json:"hostname"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+// TermProxyResponse is the short-lived endpoint returned by PVE termproxy.
+type TermProxyResponse struct {
+	Port   string `json:"port"`
+	Ticket string `json:"ticket"`
+	UPID   string `json:"upid,omitempty"`
+}
+
 // NodeListResponse is the response from /nodes.
 type NodeListResponse struct {
 	Data []NodeItem `json:"data"`
@@ -664,6 +684,12 @@ func (d *NodeTimeData) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+	if raw.Epoch == 0 && len(raw.Local) > 0 {
+		local := decodeString(raw.Local)
+		if parsed, err := strconv.ParseInt(local, 10, 64); err == nil {
+			raw.Epoch = parsed
+		}
+	}
 	*d = NodeTimeData{TimeZone: raw.TimeZone, Epoch: raw.Epoch, Local: decodeString(raw.Local)}
 	return nil
 }
@@ -821,8 +847,9 @@ func (r *HAStatusResponse) UnmarshalJSON(data []byte) error {
 			if err := json.Unmarshal(raw.Data, &items); err != nil {
 				return err
 			}
-			status.Status = "ok"
-			status.Quorum = len(items)
+			// /cluster/ha/status is an array of HA status records, not a
+			// quorum response. Do not turn its row count into a quorum value.
+			status.Status = "unknown"
 		} else if err := json.Unmarshal(raw.Data, &status); err != nil {
 			return err
 		}
@@ -1066,6 +1093,26 @@ type CTCloneRequest struct {
 	NewID    int    `json:"newid"`
 	Hostname string `json:"hostname,omitempty"`
 	Storage  string `json:"storage,omitempty"`
+}
+
+// CTCreateRequest is the body for POST /nodes/{node}/lxc.
+type CTCreateRequest struct {
+	VMID       int    `json:"vmid"`
+	OSTemplate string `json:"ostemplate"`
+	Hostname   string `json:"hostname,omitempty"`
+	Storage    string `json:"storage,omitempty"`
+}
+
+// VMCreateRequest is the minimal body for POST /nodes/{node}/qemu.
+type VMCreateRequest struct {
+	VMID         int    `json:"vmid"`
+	Name         string `json:"name,omitempty"`
+	OSType       string `json:"ostype,omitempty"`
+	Cores        int    `json:"cores,omitempty"`
+	Memory       int    `json:"memory,omitempty"`
+	IDE2         string `json:"ide2,omitempty"`
+	SCSI0        string `json:"scsi0,omitempty"`
+	SCSIHardware string `json:"scsihw,omitempty"`
 }
 
 // VMMigrateRequest is the body for POST /nodes/{node}/qemu/{vmid}/migrate.

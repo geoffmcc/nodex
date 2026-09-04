@@ -37,3 +37,17 @@ func TestMapTaskPreservesTaskListRow(t *testing.T) {
 		t.Fatalf("Status = %q, want OK", task.Status)
 	}
 }
+
+func TestMapTaskInfersStateWhenProxmoxOmitsIt(t *testing.T) {
+	task := mapTask(client.TaskListItem{
+		UPID:      "UPID:pve-test:00000002",
+		Type:      "qmstart",
+		StartTime: 100,
+		EndTime:   101,
+		Status:    "OK",
+	}, "pve-test")
+
+	if task.State != "stopped" {
+		t.Fatalf("State = %q, want stopped", task.State)
+	}
+}

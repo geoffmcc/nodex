@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -87,6 +88,15 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 	if err != nil {
 		return err
 	}
+	if resourceType == "vm" && operation == "start" {
+		if vi, ok := prov.(domain.VMInspector); ok {
+			if vms, listErr := vi.VMs(ctx); listErr == nil {
+				if vm, found := findVM(vms, fmt.Sprintf("%s/%d", node, vmid)); found && vm.Template {
+					return app.NewExitError(fmt.Errorf("cannot start VM %s/%d: it is a template", node, vmid), app.ExitValidationError)
+				}
+			}
+		}
+	}
 
 	// Safety check.
 	desc := fmt.Sprintf("%s %s/%d", resourceType, node, vmid)
@@ -123,6 +133,19 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 	// If not waiting, write result and exit.
 	if !cmdCtx.Opts.Wait {
 		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
+	}
+	if upid == "" {
+		opResult.Success = false
+		opResult.Status = "ambiguous"
+		opResult.Error = &output.ResultError{
+			Class:  "ambiguous_outcome",
+			Exit:   app.ExitAmbiguousOutcome,
+			Detail: "provider returned no task ID; completion cannot be verified",
+		}
+		if err := output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult); err != nil {
+			return err
+		}
+		return app.NewExitError(errors.New("provider returned no task ID; completion cannot be verified"), app.ExitAmbiguousOutcome)
 	}
 
 	// Wait for task to complete.

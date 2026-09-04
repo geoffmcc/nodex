@@ -91,6 +91,42 @@ func TestRun_UnknownCommand(t *testing.T) {
 	}
 }
 
+func TestRun_UnknownHelpCommandReturnsUsageError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"help", "missing"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for unknown help command")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+		t.Errorf("expected ExitUsage, got: %v", err)
+	}
+}
+
+func TestRun_MissingSubcommandReturnsUsageError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"node"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing subcommand")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+		t.Errorf("expected ExitUsage, got: %v", err)
+	}
+}
+
+func TestRun_AllRejectsUnexpectedArguments(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--all", "status", "unexpected"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for unexpected --all argument")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+		t.Errorf("expected ExitUsage, got: %v", err)
+	}
+}
+
 func TestRun_Version(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), []string{"version"}, &stdout, &stderr)
@@ -105,10 +141,14 @@ func TestRun_Version(t *testing.T) {
 func TestRun_ProviderSubcommands(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
-	// provider with no subcommand should print usage.
+	// provider with no subcommand should print usage and fail clearly.
 	err := Run(context.Background(), []string{"provider"}, &stdout, &stderr)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	if err == nil {
+		t.Fatal("expected usage error")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+		t.Errorf("expected ExitUsage, got: %v", err)
 	}
 	if !strings.Contains(stdout.String(), "Subcommands:") {
 		t.Error("expected subcommands list")
@@ -137,8 +177,12 @@ func TestRun_ProviderCapabilitiesUnknown(t *testing.T) {
 func TestRun_ProfileSubcommands(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), []string{"profile"}, &stdout, &stderr)
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+	if err == nil {
+		t.Fatal("expected usage error")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+		t.Errorf("expected ExitUsage, got: %v", err)
 	}
 	if !strings.Contains(stdout.String(), "Subcommands:") {
 		t.Error("expected subcommands list")

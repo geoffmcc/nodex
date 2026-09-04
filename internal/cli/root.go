@@ -32,6 +32,7 @@ type Options struct {
 	Expert         bool
 	All            bool
 	PasswordStdin  bool
+	ConfirmTarget  string
 }
 
 // Context carries global state through command execution.
@@ -42,6 +43,9 @@ type Context struct {
 	ErrW   io.Writer // stderr
 	Config io.Reader // optional, for testing
 	Stdin  io.Reader // injectable for testing; defaults to os.Stdin
+	// Interactive streams bypass sanitization only for TTY-gated console sessions.
+	InteractiveIn  io.Reader
+	InteractiveOut io.Writer
 }
 
 // CommandFunc is the signature for command handlers.
@@ -127,7 +131,9 @@ func init() {
 		&command{name: "snapshot", short: "Manage VM snapshots", run: runVMSnapshotDispatch},
 		&command{name: "migrate", short: "Migrate VM to another node", run: runVMMigrate},
 		&command{name: "clone", short: "Clone a VM", run: runVMClone},
+		&command{name: "create", short: "Create a VM", run: runVMCreate},
 		&command{name: "disk", short: "Manage VM disks", run: runVMDiskDispatch},
+		&command{name: "console", short: "Open VM serial console", run: runVMConsole},
 	)
 
 	register("task", "Manage tasks", nil,
@@ -152,6 +158,9 @@ func init() {
 		&command{name: "snapshot", short: "Manage container snapshots", run: runCTSnapshotDispatch},
 		&command{name: "migrate", short: "Migrate container to another node", run: runCTMigrate},
 		&command{name: "clone", short: "Clone a container", run: runCTClone},
+		&command{name: "create", short: "Create a container from a template", run: runCTCreate},
+		&command{name: "restore", short: "Restore a container from a backup archive", run: runCTRestore},
+		&command{name: "console", short: "Open container console", run: runContainerConsole},
 	)
 	register("storage", "Manage storage", nil,
 		&command{name: "list", short: "List all storage pools", run: runStorageList},
@@ -164,6 +173,8 @@ func init() {
 	register("cluster", "Manage cluster", nil,
 		&command{name: "status", short: "Show cluster status", run: runClusterStatus},
 		&command{name: "log", short: "Show cluster log entries", run: runClusterLog},
+		&command{name: "init", short: "Initialize a Proxmox cluster", run: runClusterInit},
+		&command{name: "join", short: "Preflight a Proxmox cluster join", run: runClusterJoin},
 	)
 	register("event", "Manage events", nil,
 		&command{name: "list", short: "List cluster events", run: runEventList},
@@ -279,11 +290,13 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 
 	cmdCtx := &Context{
-		Opts:   opts,
-		Logger: logging.New(safeStderr, level, opts.Debug),
-		Writer: safeStdout,
-		ErrW:   safeStderr,
-		Stdin:  osIn(),
+		Opts:           opts,
+		Logger:         logging.New(safeStderr, level, opts.Debug),
+		Writer:         safeStdout,
+		ErrW:           safeStderr,
+		Stdin:          osIn(),
+		InteractiveIn:  os.Stdin,
+		InteractiveOut: stdout,
 	}
 
 	if len(remaining) == 0 {
@@ -299,7 +312,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			return app.NewExitError(fmt.Errorf("usage: nodex help [command]"), app.ExitUsage)
 		}
 		if len(args) == 1 {
-			printCommandHelp(safeStdout, args[0])
+			if !printCommandHelp(safeStdout, args[0]) {
+				return app.NewExitError(fmt.Errorf("unknown command: %s", args[0]), app.ExitUsage)
+			}
 		} else {
 			printUsage(safeStdout)
 		}
@@ -322,6 +337,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 				if err := checkAllSupported(cmdCtx.Opts.All, name, subName); err != nil {
 					return err
 				}
+				if cmdCtx.Opts.All && len(args) > 1 {
+					return app.NewExitError(fmt.Errorf("unexpected arguments for --all: %s", strings.Join(args[1:], " ")), app.ExitUsage)
+				}
 				return sub.run(ctx, cmdCtx, args[1:])
 			}
 			if cmd.run != nil {
@@ -339,15 +357,21 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			if err := checkAllSupported(cmdCtx.Opts.All, name); err != nil {
 				return err
 			}
+			if cmdCtx.Opts.All && len(args) > 0 {
+				return app.NewExitError(fmt.Errorf("unexpected arguments for --all: %s", strings.Join(args, " ")), app.ExitUsage)
+			}
 			return cmd.run(ctx, cmdCtx, args)
 		}
 		printSubcommandUsage(safeStdout, cmd)
-		return nil
+		return app.NewExitError(fmt.Errorf("a %s subcommand is required", name), app.ExitUsage)
 	}
 
 	if cmd.run != nil {
 		if err := checkAllSupported(cmdCtx.Opts.All, name); err != nil {
 			return err
+		}
+		if cmdCtx.Opts.All && len(args) > 0 {
+			return app.NewExitError(fmt.Errorf("unexpected arguments for --all: %s", strings.Join(args, " ")), app.ExitUsage)
 		}
 		return cmd.run(ctx, cmdCtx, args)
 	}
@@ -394,6 +418,7 @@ func parseGlobal(args []string) (Options, []string, error) {
 	fs.BoolVar(&opts.Expert, "expert", false, "")
 	fs.BoolVar(&opts.All, "all", false, "")
 	fs.BoolVar(&opts.PasswordStdin, "password-stdin", false, "")
+	fs.StringVar(&opts.ConfirmTarget, "confirm-target", "", "")
 
 	if err := fs.Parse(args); err != nil {
 		return opts, nil, err
@@ -466,15 +491,16 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --wait               Wait for the task to complete before exiting")
 	fmt.Fprintln(w, "  --expert             Enable expert-mode operations (Tier 4: identity, ACL changes)")
 	fmt.Fprintln(w, "  --password-stdin     Read password from stdin instead of interactive prompt")
+	fmt.Fprintln(w, "  --confirm-target     Exact target text for non-interactive destructive confirmation")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Run 'nodex help <command>' for details on a specific command.")
 }
 
-func printCommandHelp(w io.Writer, name string) {
+func printCommandHelp(w io.Writer, name string) bool {
 	cmd, ok := commands[name]
 	if !ok {
 		fmt.Fprintf(w, "Unknown command: %s\n", name)
-		return
+		return false
 	}
 	fmt.Fprintf(w, "nodex %s — %s\n", name, cmd.short)
 	fmt.Fprintln(w)
@@ -490,6 +516,7 @@ func printCommandHelp(w io.Writer, name string) {
 			fmt.Fprintf(w, "  %-14s %s\n", subName, sub.short)
 		}
 	}
+	return true
 }
 
 func printSubcommandUsage(w io.Writer, cmd *command) {

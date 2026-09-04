@@ -17,16 +17,17 @@ type Node struct {
 
 // VM represents a virtual machine.
 type VM struct {
-	ID     string            `json:"id" yaml:"id"`
-	Name   string            `json:"name" yaml:"name"`
-	Status string            `json:"status" yaml:"status"` // running, stopped, paused
-	Node   string            `json:"node" yaml:"node"`
-	CPU    int               `json:"cpu" yaml:"cpu"`
-	Memory int64             `json:"memory" yaml:"memory"` // bytes
-	Disk   int64             `json:"disk" yaml:"disk"`     // bytes
-	IP     string            `json:"ip,omitempty" yaml:"ip,omitempty"`
-	OS     string            `json:"os,omitempty" yaml:"os,omitempty"`
-	Labels map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	ID       string            `json:"id" yaml:"id"`
+	Name     string            `json:"name" yaml:"name"`
+	Status   string            `json:"status" yaml:"status"` // running, stopped, paused
+	Node     string            `json:"node" yaml:"node"`
+	CPU      int               `json:"cpu" yaml:"cpu"`
+	Memory   int64             `json:"memory" yaml:"memory"` // bytes
+	Disk     int64             `json:"disk" yaml:"disk"`     // bytes
+	Template bool              `json:"template,omitempty" yaml:"template,omitempty"`
+	IP       string            `json:"ip,omitempty" yaml:"ip,omitempty"`
+	OS       string            `json:"os,omitempty" yaml:"os,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 }
 
 // Container represents a container (e.g., LXC).
@@ -61,6 +62,20 @@ type Cluster struct {
 	Name    string `json:"name" yaml:"name"`
 	Version string `json:"version" yaml:"version"`
 	Nodes   int    `json:"nodes" yaml:"nodes"`
+}
+
+// ClusterInitParams contains the safe, non-secret inputs for cluster creation.
+type ClusterInitParams struct {
+	Name        string `json:"name" yaml:"name"`
+	BindAddress string `json:"bind_address" yaml:"bind_address"`
+}
+
+// ClusterJoinParams contains the public inputs used to identify a join target.
+// The PVE join API also requires a peer root password; that secret is
+// intentionally not representable here.
+type ClusterJoinParams struct {
+	NodeAddress string `json:"node_address" yaml:"node_address"`
+	Fingerprint string `json:"fingerprint" yaml:"fingerprint"`
 }
 
 // StorageContentItem represents a single content item in storage.

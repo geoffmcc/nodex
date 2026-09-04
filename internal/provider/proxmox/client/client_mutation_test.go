@@ -84,6 +84,111 @@ func TestPostAuthorizationHeader(t *testing.T) {
 	}
 }
 
+func TestCTCreate(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/nodes/pve1/lxc" {
+			t.Fatalf("request = %s %s, want POST /nodes/pve1/lxc", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		want := map[string]string{
+			"vmid":       "9402",
+			"ostemplate": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+			"hostname":   "nodex-test-ct",
+			"storage":    "local-lvm",
+		}
+		for key, value := range want {
+			if got := r.FormValue(key); got != value {
+				t.Errorf("%s = %q, want %q", key, got, value)
+			}
+		}
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00000A1B:0023A45B:root@pam:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.CTCreate(context.Background(), "pve1", 9402, "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst", "nodex-test-ct", "local-lvm")
+	if err != nil {
+		t.Fatalf("CTCreate: %v", err)
+	}
+	if !strings.HasPrefix(upid, "UPID:pve1:") {
+		t.Errorf("UPID = %q, want Proxmox UPID", upid)
+	}
+}
+
+func TestVMCreate(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/nodes/pve1/qemu" {
+			t.Fatalf("request = %s %s, want POST /nodes/pve1/qemu", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		want := map[string]string{
+			"vmid":    "9403",
+			"name":    "nodex-test-vm",
+			"ostype":  "l26",
+			"cores":   "1",
+			"memory":  "512",
+			"serial0": "socket",
+			"vga":     "serial0",
+			"ide2":    "local:iso/debian.iso,media=cdrom",
+			"scsi0":   "local-lvm:4",
+			"scsihw":  "virtio-scsi-single",
+		}
+		for key, value := range want {
+			if got := r.FormValue(key); got != value {
+				t.Errorf("%s = %q, want %q", key, got, value)
+			}
+		}
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00000A1B:0023A45B:qmcreate:9403:root@pam:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.VMCreate(context.Background(), "pve1", 9403, "nodex-test-vm", "local:iso/debian.iso", "local-lvm")
+	if err != nil {
+		t.Fatalf("VMCreate: %v", err)
+	}
+	if !strings.HasPrefix(upid, "UPID:pve1:") {
+		t.Errorf("UPID = %q, want Proxmox UPID", upid)
+	}
+}
+
+func TestCTRestore(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/nodes/pve1/lxc" {
+			t.Fatalf("request = %s %s, want POST /nodes/pve1/lxc", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		want := map[string]string{
+			"vmid":       "9402",
+			"ostemplate": "local:backup/vzdump-lxc-9402.tar.zst",
+			"restore":    "1",
+			"storage":    "local-lvm",
+		}
+		for key, value := range want {
+			if got := r.FormValue(key); got != value {
+				t.Errorf("%s = %q, want %q", key, got, value)
+			}
+		}
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00000A1B:0023A45B:vzrestore:9402:root@pam:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.CTRestore(context.Background(), "pve1", 9402, "local:backup/vzdump-lxc-9402.tar.zst", "local-lvm")
+	if err != nil {
+		t.Fatalf("CTRestore: %v", err)
+	}
+	if !strings.HasPrefix(upid, "UPID:pve1:") {
+		t.Errorf("UPID = %q, want Proxmox UPID", upid)
+	}
+}
+
 func TestPostDecodesResponse(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

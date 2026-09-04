@@ -3,6 +3,7 @@ package client
 import (
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -469,6 +470,16 @@ func TestGetNodeTimeDecodesNumericLocalTime(t *testing.T) {
 	}
 }
 
+func TestGetNodeTimeDerivesEpochFromLocalTime(t *testing.T) {
+	var data NodeTimeData
+	if err := json.Unmarshal([]byte(`{"timezone":"UTC","localtime":1784073342}`), &data); err != nil {
+		t.Fatalf("unmarshal node time: %v", err)
+	}
+	if data.Epoch != 1784073342 {
+		t.Fatalf("epoch = %d, want 1784073342", data.Epoch)
+	}
+}
+
 func TestGetNodeUpdatesUsesAptUpdatePath(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/nodes/proxmox/apt/update" {
@@ -500,8 +511,8 @@ func TestGetHAStatusDecodesArrayResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetHAStatus: %v", err)
 	}
-	if got.Status != "ok" || got.Quorum != 1 {
-		t.Fatalf("HA status = %+v", got)
+	if got.Status != "unknown" || got.Quorum != 0 {
+		t.Fatalf("HA status = %+v, want unknown status and no quorum", got)
 	}
 }
 

@@ -105,15 +105,59 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilityStorageMutation,
 		domain.CapabilityMigration,
 		domain.CapabilityClone,
+		domain.CapabilityContainerCreate,
+		domain.CapabilityVMCreate,
+		domain.CapabilityContainerRestore,
 		domain.CapabilityDisk,
 		domain.CapabilityNetworkMutation,
 		domain.CapabilityFirewallMutation,
 		domain.CapabilityAccess,
+		domain.CapabilityConsole,
 		domain.CapabilityCeph,
 		domain.CapabilityCephMutation,
 		domain.CapabilitySDNMutation,
 		domain.CapabilityReplication,
+		domain.CapabilityClusterAdmin,
 	}
+}
+
+// ClusterInit initializes a new Proxmox cluster.
+func (p *Provider) ClusterInit(ctx context.Context, params domain.ClusterInitParams) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CreateCluster(ctx, client.ClusterInitRequest{
+		ClusterName: params.Name,
+		Link0:       params.BindAddress,
+	})
+}
+
+// ClusterJoin performs the validated, fail-closed join preflight. It never
+// sends a join request because the PVE API requires an unavailable secret.
+func (p *Provider) ClusterJoin(ctx context.Context, params domain.ClusterJoinParams) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.JoinCluster(ctx, client.ClusterJoinRequest{
+		Hostname:    params.NodeAddress,
+		Fingerprint: params.Fingerprint,
+	})
+}
+
+// VMConsole opens an interactive QEMU serial console.
+func (p *Provider) VMConsole(ctx context.Context, node string, vmid int, in io.Reader, out io.Writer) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.VMConsole(ctx, node, vmid, in, out)
+}
+
+// ContainerConsole opens an interactive LXC console.
+func (p *Provider) ContainerConsole(ctx context.Context, node string, vmid int, in io.Reader, out io.Writer) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.ContainerConsole(ctx, node, vmid, in, out)
 }
 
 const errNotConnected = "provider not connected: call Connect() first"
@@ -197,7 +241,14 @@ func (p *Provider) Cluster(ctx context.Context) (*domain.Cluster, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
-	return MapCluster(version, len(nodes)), nil
+	name := ""
+	// /version does not include the cluster name. Keep the primary cluster
+	// query useful when /cluster/status is unavailable by retaining the
+	// version and node data already collected above.
+	if items, statusErr := p.client.GetClusterStatus(ctx); statusErr == nil {
+		name = MapClusterStatus(items).Name
+	}
+	return MapCluster(version, len(nodes), name), nil
 }
 
 // TestConnectivity checks if the provider can connect to the endpoint.
@@ -321,6 +372,12 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.SearchDomain != "" {
 		m["searchdomain"] = c.SearchDomain
 	}
+	if c.Unused0 != "" {
+		m["unused0"] = c.Unused0
+	}
+	for key, value := range c.Raw {
+		m[key] = value
+	}
 	return m
 }
 
@@ -394,6 +451,9 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	if c.Hookscript != "" {
 		m["hookscript"] = c.Hookscript
 	}
+	for key, value := range c.Raw {
+		m[key] = value
+	}
 	return m
 }
 
@@ -453,6 +513,15 @@ func (p *Provider) Task(ctx context.Context, node, upid string) (*domain.Task, e
 func mapTask(item client.TaskListItem, node string) domain.Task {
 	state := item.State
 	status := item.Status
+	if state == "" {
+		if status == "running" {
+			state = "running"
+		} else if item.EndTime > 0 || status != "" || item.ExitStatus != "" {
+			state = "stopped"
+		} else {
+			state = "running"
+		}
+	}
 	if item.ExitStatus != "" {
 		// /nodes/{node}/tasks/{upid}/status uses status for running/stopped
 		// state and exitstatus for the final OK/error value.
@@ -483,7 +552,7 @@ func (p *Provider) VMSnapshots(ctx context.Context, node string, vmid int) ([]do
 	for _, item := range items {
 		result = append(result, domain.Snapshot{
 			Name:   item.Name,
-			VMID:   item.VMID,
+			VMID:   vmid,
 			Ctime:  item.Ctime,
 			Parent: item.Parent,
 			Node:   node,
@@ -506,7 +575,7 @@ func (p *Provider) ContainerSnapshots(ctx context.Context, node string, vmid int
 	for _, item := range items {
 		result = append(result, domain.Snapshot{
 			Name:   item.Name,
-			VMID:   item.VMID,
+			VMID:   vmid,
 			Ctime:  item.Ctime,
 			Parent: item.Parent,
 			Node:   node,
@@ -673,6 +742,31 @@ func (p *Provider) NodeStatus(ctx context.Context, node string) (map[string]inte
 	if err != nil {
 		return nil, fmt.Errorf("get node status: %w", err)
 	}
+	// Proxmox's detailed status response omits identity and lifecycle fields
+	// on some versions. Enrich those fields from the node inventory when it
+	// is available, without making inventory failure hide the detailed data.
+	if status.Status == "" {
+		if nodes, inventoryErr := p.client.Nodes(ctx); inventoryErr == nil {
+			for _, item := range nodes {
+				if item.Node == node || item.Name == node {
+					status.Status = item.Status
+					break
+				}
+			}
+		}
+	}
+	nodeID := status.ID
+	if nodeID == "" {
+		nodeID = "node/" + node
+	}
+	nodeName := status.Node
+	if nodeName == "" {
+		nodeName = node
+	}
+	nodeType := status.Type
+	if nodeType == "" {
+		nodeType = "node"
+	}
 	m := map[string]interface{}{
 		"cpu":     status.CPU,
 		"maxcpu":  status.MaxCPU,
@@ -682,10 +776,14 @@ func (p *Provider) NodeStatus(ctx context.Context, node string) (map[string]inte
 		"maxdisk": status.MaxDisk,
 		"uptime":  status.Uptime,
 		"level":   status.Level,
-		"id":      status.ID,
-		"node":    status.Node,
-		"type":    status.Type,
+		"id":      nodeID,
+		"node":    nodeName,
+		"type":    nodeType,
 		"status":  status.Status,
+		"wait":    status.Wait,
+		"ksm":     status.Ksm,
+		"numa":    status.Numa,
+		"io":      status.IOMax,
 	}
 	if status.KVersion != "" {
 		m["kversion"] = status.KVersion
@@ -711,9 +809,11 @@ func (p *Provider) NodeServices(ctx context.Context, node string) ([]domain.Node
 	result := make([]domain.NodeService, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.NodeService{
-			Name:   item.Name,
-			State:  item.State,
-			Active: item.Active,
+			Name:  item.Name,
+			State: item.State,
+			// PVE reports the service state reliably; older versions omit the
+			// optional active flag from this endpoint.
+			Active: item.Active || item.State == "running" || item.State == "active",
 		})
 	}
 	return result, nil
@@ -1958,6 +2058,30 @@ func (p *Provider) CTClone(ctx context.Context, node string, vmid, newVmid int, 
 		return "", errors.New(errNotConnected)
 	}
 	return p.client.CTClone(ctx, node, vmid, newVmid, hostname, storage)
+}
+
+// CTCreate creates an LXC container from an ostemplate.
+func (p *Provider) CTCreate(ctx context.Context, node string, vmid int, ostemplate, hostname, storage string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTCreate(ctx, node, vmid, ostemplate, hostname, storage)
+}
+
+// VMCreate creates a minimal QEMU VM, optionally attaching an ISO and disk storage.
+func (p *Provider) VMCreate(ctx context.Context, node string, vmid int, name, iso, diskStorage string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.VMCreate(ctx, node, vmid, name, iso, diskStorage)
+}
+
+// CTRestore restores an LXC container from a backup archive.
+func (p *Provider) CTRestore(ctx context.Context, node string, vmid int, archive, storage string) (string, error) {
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	return p.client.CTRestore(ctx, node, vmid, archive, storage)
 }
 
 // --- DiskProvider methods ---

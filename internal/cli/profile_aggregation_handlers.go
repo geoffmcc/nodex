@@ -262,6 +262,12 @@ func runNodesAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 				continue
 			}
 			out.AddSuccess(profileName, applyLimitN(nodes, cmdCtx.Opts.Limit), time.Since(start))
+		} else {
+			err := fmt.Errorf("provider %q does not support node inspection", prov.Name())
+			fmt.Fprintf(cmdCtx.ErrW, "profile %q nodes: %v\n", profileName, err)
+			cleanup()
+			out.AddFailure(profileName, err, time.Since(start))
+			continue
 		}
 		cleanup()
 	}
@@ -335,6 +341,12 @@ func runVMsAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 				continue
 			}
 			out.AddSuccess(profileName, applyLimitN(vms, cmdCtx.Opts.Limit), time.Since(start))
+		} else {
+			err := fmt.Errorf("provider %q does not support VM inspection", prov.Name())
+			fmt.Fprintf(cmdCtx.ErrW, "profile %q vms: %v\n", profileName, err)
+			cleanup()
+			out.AddFailure(profileName, err, time.Since(start))
+			continue
 		}
 		cleanup()
 	}
@@ -405,6 +417,12 @@ func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 				continue
 			}
 			out.AddSuccess(profileName, applyLimitN(cts, cmdCtx.Opts.Limit), time.Since(start))
+		} else {
+			err := fmt.Errorf("provider %q does not support container inspection", prov.Name())
+			fmt.Fprintf(cmdCtx.ErrW, "profile %q containers: %v\n", profileName, err)
+			cleanup()
+			out.AddFailure(profileName, err, time.Since(start))
+			continue
 		}
 		cleanup()
 	}

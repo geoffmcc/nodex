@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -124,8 +125,17 @@ func pbsWriteMutationResult(ctx context.Context, cmdCtx *Context, prov domain.Pr
 		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
 	}
 	if upid == "" {
-		opResult.Warnings = append(opResult.Warnings, "provider returned no task ID; cannot wait")
-		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
+		opResult.Success = false
+		opResult.Status = "ambiguous"
+		opResult.Error = &output.ResultError{
+			Class:  "ambiguous_outcome",
+			Exit:   app.ExitAmbiguousOutcome,
+			Detail: "provider returned no task ID; completion cannot be verified",
+		}
+		if err := output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult); err != nil {
+			return err
+		}
+		return app.NewExitError(errors.New("provider returned no task ID; completion cannot be verified"), app.ExitAmbiguousOutcome)
 	}
 
 	ti, ok := prov.(domain.PBSTaskInspector)

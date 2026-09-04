@@ -45,6 +45,39 @@ func requireContainerInspector(prov domain.Provider) (domain.ContainerInspector,
 	return p, nil
 }
 
+func requireContainerCreate(prov domain.Provider) (domain.ContainerCreateProvider, error) {
+	p, ok := prov.(domain.ContainerCreateProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: container creation not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+func requireVMCreate(prov domain.Provider) (domain.VMCreateProvider, error) {
+	p, ok := prov.(domain.VMCreateProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: VM creation not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+func requireContainerRestore(prov domain.Provider) (domain.ContainerRestoreProvider, error) {
+	p, ok := prov.(domain.ContainerRestoreProvider)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: container restore not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
 // requireStorageInspector asserts the provider has StorageInspector.
 func requireStorageInspector(prov domain.Provider) (domain.StorageInspector, error) {
 	p, ok := prov.(domain.StorageInspector)

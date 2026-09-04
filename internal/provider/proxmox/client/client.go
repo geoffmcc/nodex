@@ -3,23 +3,32 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/redact"
 	"github.com/geoffmcc/nodex/internal/transport/httpclient"
+	"github.com/gorilla/websocket"
 )
+
+var clusterNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,14}$`)
+var clusterFingerprintPattern = regexp.MustCompile(`^(?:[[:xdigit:]]{2}:){31}[[:xdigit:]]{2}$`)
 
 // Success status codes for API operations.
 var successCodes = map[int]bool{
@@ -221,6 +230,39 @@ func (c *Client) GetClusterStatus(ctx context.Context) ([]ClusterStatusItem, err
 		return nil, err
 	}
 	return resp.Data, nil
+}
+
+// CreateCluster initializes a new PVE cluster via POST /cluster/config.
+// The endpoint returns a worker UPID; callers must not treat submission as
+// proof that corosync restarted successfully unless they poll that task.
+func (c *Client) CreateCluster(ctx context.Context, request ClusterInitRequest) (string, error) {
+	if !clusterNamePattern.MatchString(request.ClusterName) {
+		return "", fmt.Errorf("cluster name must start with a letter and contain at most 15 letters, numbers, '-' or '_' characters")
+	}
+	if net.ParseIP(request.Link0) == nil {
+		return "", fmt.Errorf("cluster bind address must be an IP address")
+	}
+	var resp TaskResponse
+	body := url.Values{}
+	body.Set("clustername", request.ClusterName)
+	body.Set("link0", request.Link0)
+	if err := c.post(ctx, "/cluster/config", body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// JoinCluster refuses before network I/O. PVE requires the peer's root
+// password for POST /cluster/config/join; profile API tokens are not valid
+// substitutes and Nodex never accepts or transports that password.
+func (c *Client) JoinCluster(_ context.Context, request ClusterJoinRequest) (string, error) {
+	if strings.TrimSpace(request.Hostname) == "" {
+		return "", fmt.Errorf("cluster join node address is required")
+	}
+	if !clusterFingerprintPattern.MatchString(request.Fingerprint) {
+		return "", fmt.Errorf("cluster join fingerprint must be a SHA-256 fingerprint in colon-separated form")
+	}
+	return "", errors.New("cluster join refused: Proxmox requires the peer root password; Nodex does not accept or transport passwords")
 }
 
 // GetVMConfig returns configuration for a specific VM.
@@ -1545,6 +1587,217 @@ func (c *Client) CTClone(ctx context.Context, node string, vmid, newVmid int, ho
 	if hostname != "" {
 		body.Set("hostname", hostname)
 	}
+	if storage != "" {
+		body.Set("storage", storage)
+	}
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CTCreate creates an LXC container via POST /nodes/{node}/lxc.
+func (c *Client) CTCreate(ctx context.Context, node string, vmid int, ostemplate, hostname, storage string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if ostemplate == "" {
+		return "", fmt.Errorf("OS template is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc"
+	body := url.Values{}
+	body.Set("vmid", strconv.Itoa(vmid))
+	body.Set("ostemplate", ostemplate)
+	if hostname != "" {
+		body.Set("hostname", hostname)
+	}
+	if storage != "" {
+		body.Set("storage", storage)
+	}
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// VMConsole opens a QEMU serial console through Proxmox termproxy.
+func (c *Client) VMConsole(ctx context.Context, node string, vmid int, in io.Reader, out io.Writer) error {
+	return c.console(ctx, node, "qemu", vmid, in, out, url.Values{"serial": {"serial0"}})
+}
+
+// ContainerConsole opens an LXC console through Proxmox termproxy.
+func (c *Client) ContainerConsole(ctx context.Context, node string, vmid int, in io.Reader, out io.Writer) error {
+	return c.console(ctx, node, "lxc", vmid, in, out, nil)
+}
+
+func (c *Client) console(ctx context.Context, node, guestType string, vmid int, in io.Reader, out io.Writer, params url.Values) error {
+	if c == nil || c.client == nil {
+		return fmt.Errorf("client is not initialized")
+	}
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return fmt.Errorf("VMID is required")
+	}
+	if in == nil || out == nil {
+		return fmt.Errorf("console input and output are required")
+	}
+
+	var response struct {
+		Data TermProxyResponse `json:"data"`
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/" + guestType + "/" + strconv.Itoa(vmid) + "/termproxy"
+	if err := c.post(ctx, path, params, &response); err != nil {
+		return fmt.Errorf("start console proxy: %w", err)
+	}
+	proxy := response.Data
+	port, err := strconv.Atoi(proxy.Port)
+	if port <= 0 || err != nil || proxy.Ticket == "" {
+		return fmt.Errorf("start console proxy: invalid proxy response")
+	}
+
+	wsEndpoint := strings.TrimRight(c.endpoint, "/")
+	if strings.HasPrefix(wsEndpoint, "https://") {
+		wsEndpoint = "wss://" + strings.TrimPrefix(wsEndpoint, "https://")
+	} else if strings.HasPrefix(wsEndpoint, "http://") {
+		wsEndpoint = "ws://" + strings.TrimPrefix(wsEndpoint, "http://")
+	}
+	wsURL := wsEndpoint + DefaultAPIPath + "/nodes/" +
+		url.PathEscape(node) + "/" + guestType + "/" + strconv.Itoa(vmid) + "/vncwebsocket?" +
+		url.Values{"port": {strconv.Itoa(port)}, "vncticket": {proxy.Ticket}}.Encode()
+	dialer := websocket.Dialer{NetDialContext: (&net.Dialer{}).DialContext, TLSClientConfig: tlsConfig(c.client.Transport())}
+	header := http.Header{}
+	if c.token != "" {
+		header.Set("Authorization", "PVEAPIToken="+c.token)
+	}
+	conn, _, err := dialer.DialContext(ctx, wsURL, header)
+	if err != nil {
+		// Websocket errors can include the request URL, so scrub the ticket
+		// before returning any diagnostic detail.
+		return fmt.Errorf("connect console websocket: %s", strings.ReplaceAll(err.Error(), proxy.Ticket, "[REDACTED]"))
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var once sync.Once
+	closeConn := func() { once.Do(func() { _ = conn.Close() }) }
+	go func() {
+		<-ctx.Done()
+		closeConn()
+	}()
+
+	errs := make(chan error, 2)
+	go func() {
+		for {
+			messageType, data, readErr := conn.ReadMessage()
+			if readErr != nil {
+				errs <- readErr
+				return
+			}
+			if messageType == websocket.TextMessage || messageType == websocket.BinaryMessage {
+				if _, writeErr := out.Write(data); writeErr != nil {
+					errs <- writeErr
+					return
+				}
+			}
+		}
+	}()
+	go func() {
+		buf := make([]byte, 32*1024)
+		for {
+			n, readErr := in.Read(buf)
+			if n > 0 {
+				if writeErr := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); writeErr != nil {
+					errs <- writeErr
+					return
+				}
+			}
+			if readErr != nil {
+				errs <- readErr
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errs:
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if errors.Is(err, io.EOF) || websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+			return nil
+		}
+		return fmt.Errorf("console relay: %w", err)
+	}
+}
+
+func tlsConfig(rt http.RoundTripper) *tls.Config {
+	if t, ok := rt.(*http.Transport); ok && t.TLSClientConfig != nil {
+		return t.TLSClientConfig.Clone()
+	}
+	return &tls.Config{MinVersion: tls.VersionTLS12}
+}
+
+// VMCreate creates a minimal QEMU VM via POST /nodes/{node}/qemu.
+func (c *Client) VMCreate(ctx context.Context, node string, vmid int, name, iso, diskStorage string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/qemu"
+	body := url.Values{}
+	body.Set("vmid", strconv.Itoa(vmid))
+	body.Set("ostype", "l26")
+	body.Set("cores", "1")
+	body.Set("memory", "512")
+	// Keep newly created guests accessible through the authenticated serial
+	// console, including before an operating system has been installed.
+	body.Set("serial0", "socket")
+	body.Set("vga", "serial0")
+	if name != "" {
+		body.Set("name", name)
+	}
+	if iso != "" {
+		body.Set("ide2", iso+",media=cdrom")
+	}
+	if diskStorage != "" {
+		body.Set("scsi0", diskStorage+":4")
+		body.Set("scsihw", "virtio-scsi-single")
+	}
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data, nil
+}
+
+// CTRestore restores an LXC container via POST /nodes/{node}/lxc.
+func (c *Client) CTRestore(ctx context.Context, node string, vmid int, archive, storage string) (string, error) {
+	if node == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return "", fmt.Errorf("VMID is required")
+	}
+	if archive == "" {
+		return "", fmt.Errorf("backup archive is required")
+	}
+	var resp TaskResponse
+	path := "/nodes/" + url.PathEscape(node) + "/lxc"
+	body := url.Values{}
+	body.Set("vmid", strconv.Itoa(vmid))
+	body.Set("ostemplate", archive)
+	body.Set("restore", "1")
 	if storage != "" {
 		body.Set("storage", storage)
 	}
