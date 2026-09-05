@@ -1,0 +1,57 @@
+---
+# Nodex embedded playbook: apply-container-updates.
+#
+# The update policy is fixed to a noninteractive APT dist-upgrade. Reboots are
+# deliberately not part of this operation.
+- name: Apply LXC guest updates
+  hosts: all
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Verify LXC guest is running
+      ansible.builtin.command:
+        argv:
+          - pct
+          - status
+          - "{{ nodex_vmid }}"
+      register: nodex_container_status
+      changed_when: false
+      failed_when: "nodex_container_status.rc != 0 or 'status: running' not in nodex_container_status.stdout"
+
+    - name: Verify LXC guest uses APT
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - test
+          - -x
+          - /usr/bin/apt-get
+      changed_when: false
+
+    - name: Refresh LXC package metadata
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - apt-get
+          - update
+      changed_when: false
+
+    - name: Apply LXC full upgrade
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - env
+          - DEBIAN_FRONTEND=noninteractive
+          - apt-get
+          - -y
+          - dist-upgrade
+      register: nodex_container_update
+      changed_when: true

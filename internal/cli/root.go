@@ -162,6 +162,7 @@ func init() {
 		&command{name: "suspend", short: "Suspend a container", run: runCTSuspend},
 		&command{name: "resume", short: "Resume a suspended container", run: runCTResume},
 		&command{name: "update", short: "Update container configuration", run: runCTUpdate},
+		&command{name: "os-update", short: "Update a running LXC guest OS", run: runContainerOSUpdate},
 		&command{name: "delete", short: "Delete a container (destructive)", run: runCTDelete},
 		&command{name: "template", short: "Convert container to template", run: runCTTemplate},
 		&command{name: "snapshot", short: "Manage container snapshots", run: runCTSnapshotDispatch},

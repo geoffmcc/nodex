@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -115,10 +116,37 @@ func TestHelperProcess(t *testing.T) {
 			"stats":     map[string]any{},
 			"inventory": string(invData),
 			"playbook":  string(pbData),
+			"args":      args,
 			"cwd":       mustGetwd(),
 		}
 		b, _ := json.Marshal(payload)
 		fmt.Println(string(b))
+	}
+}
+
+func TestRunContainerOperationUsesStructuredVMID(t *testing.T) {
+	hosts := testHosts()[:1]
+	r := newStubRunner(t, "inspect-files", hosts)
+	res, err := r.Run(context.Background(), RunRequest{Operation: "check-container-updates", Hosts: hosts, ContainerVMID: 42})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var payload struct {
+		Args []string `json:"args"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &payload); err != nil {
+		t.Fatalf("parse stub payload: %v", err)
+	}
+	joined := strings.Join(payload.Args, " ")
+	if !strings.Contains(joined, `--extra-vars {"nodex_vmid":42}`) {
+		t.Errorf("container VMID was not passed as structured extra-vars: %v", payload.Args)
+	}
+}
+
+func TestRunContainerOperationRequiresVMID(t *testing.T) {
+	r := newStubRunner(t, "ok", testHosts()[:1])
+	if _, err := r.Run(context.Background(), RunRequest{Operation: "check-container-updates", Hosts: testHosts()[:1]}); err == nil {
+		t.Fatal("container operation without VMID must be rejected")
 	}
 }
 
@@ -451,7 +479,8 @@ func countNodexTempDirs(t *testing.T) int {
 
 func TestRegistryAllowlist(t *testing.T) {
 	ids := OperationIDs()
-	if len(ids) != 5 || ids[0] != "apply-approved-updates" || ids[1] != "apply-security-updates" || ids[2] != "check-updates" || ids[3] != "verify-host" || ids[4] != "verify-maintenance" {
+	want := []string{"apply-approved-updates", "apply-container-updates", "apply-security-updates", "check-container-updates", "check-updates", "verify-container-updates", "verify-host", "verify-maintenance"}
+	if len(ids) != len(want) || !reflect.DeepEqual(ids, want) {
 		t.Errorf("unexpected allowlist: %v", ids)
 	}
 	for _, op := range Operations() {
@@ -462,7 +491,7 @@ func TestRegistryAllowlist(t *testing.T) {
 			t.Errorf("operation %q playbook uses the shell module", op.ID)
 		}
 	}
-	for _, id := range []string{"apply-security-updates", "apply-approved-updates", "verify-maintenance"} {
+	for _, id := range []string{"apply-security-updates", "apply-approved-updates", "check-container-updates", "apply-container-updates", "verify-container-updates", "verify-maintenance"} {
 		if _, err := Lookup(id); err != nil {
 			t.Errorf("operation %q must resolve: %v", id, err)
 		}
