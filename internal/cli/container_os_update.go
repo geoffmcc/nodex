@@ -53,16 +53,22 @@ func parseContainerOSUpdateArgs(args []string) error {
 		return fmt.Errorf("--policy %s is required", containerUpdatePolicy)
 	}
 	policy := ""
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
+		switch arg {
 		case "--policy":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+			if len(args) == 0 {
 				return fmt.Errorf("--policy requires a value")
 			}
-			policy = args[i+1]
-			i++
+			value := args[0]
+			args = args[1:]
+			if strings.HasPrefix(value, "--") {
+				return fmt.Errorf("--policy requires a value")
+			}
+			policy = value
 		default:
-			return fmt.Errorf("unknown argument %q", args[i])
+			return fmt.Errorf("unknown argument %q", arg)
 		}
 	}
 	if policy != containerUpdatePolicy {
@@ -180,7 +186,7 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 		return app.NewExitError(err, app.ExitUsage)
 	}
 	if err := parseContainerOSUpdateArgs(args[1:]); err != nil {
-		return app.NewExitError(fmt.Errorf("%w: %v", usage, err), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("%w: %w", usage, err), app.ExitUsage)
 	}
 
 	profileName, err := resolveProfileName(cmdCtx)
