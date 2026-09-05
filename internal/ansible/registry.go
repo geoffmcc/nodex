@@ -29,6 +29,15 @@ var applyApprovedUpdatesPlaybook string
 //go:embed playbooks/verify-maintenance.yml
 var verifyMaintenancePlaybook string
 
+//go:embed playbooks/check-container-updates.yml
+var checkContainerUpdatesPlaybook string
+
+//go:embed playbooks/apply-container-updates.yml
+var applyContainerUpdatesPlaybook string
+
+//go:embed playbooks/verify-container-updates.yml
+var verifyContainerUpdatesPlaybook string
+
 // Operation is one allowlisted maintenance operation backed by an embedded
 // playbook. The playbook content ships inside the Nodex binary; paths on
 // disk are never accepted.
@@ -89,6 +98,21 @@ var registry = map[string]Operation{
 		ID: "verify-maintenance", Description: "Verify maintenance postconditions",
 		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
 		playbook: verifyMaintenancePlaybook,
+	},
+	"check-container-updates": {
+		ID: "check-container-updates", Description: "Check an LXC guest for pending updates",
+		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
+		playbook: checkContainerUpdatesPlaybook,
+	},
+	"apply-container-updates": {
+		ID: "apply-container-updates", Description: "Apply approved updates to an LXC guest",
+		Safety: safety.TierDisruptive, ReadOnly: false, RequiresBecome: false,
+		playbook: applyContainerUpdatesPlaybook,
+	},
+	"verify-container-updates": {
+		ID: "verify-container-updates", Description: "Verify LXC guest update postconditions",
+		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
+		playbook: verifyContainerUpdatesPlaybook,
 	},
 }
 

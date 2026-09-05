@@ -294,9 +294,17 @@ Inspect and operate containers.
 | Command | Description |
 |---------|-------------|
 | `container update <id> <params...>` | Update container config |
+| `container os-update <node>/<vmid> --policy approved-full-upgrade` | Update a running LXC guest OS through the enrolled PVE host |
 | `container template <id>` | Convert container to template |
 | `container snapshot <action> <id> [args]` | Create, delete, or rollback snapshots |
 | `container clone <id> --newid <id>` | Clone a container |
+
+`container os-update` is a disruptive operation and requires `--yes --force`.
+It only targets an explicitly identified running LXC, executes the fixed APT
+full-upgrade procedure through the enrolled PVE host's Ansible connection, and
+never reboots the guest. Nodex verifies that the guest remains running and has
+no remaining APT or package-database issues after the update. VM operating
+system updates are not provided by this command.
 
 ### `nodex storage`
 

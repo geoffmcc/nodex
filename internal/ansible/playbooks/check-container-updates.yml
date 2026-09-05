@@ -1,0 +1,97 @@
+---
+# Nodex embedded playbook: check-container-updates.
+#
+# The playbook runs on an explicitly enrolled Proxmox host and uses only fixed
+# pct argument vectors to inspect one running LXC guest. Package metadata is
+# refreshed, but no guest packages are installed.
+- name: Check LXC guest updates
+  hosts: all
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Verify LXC guest is running
+      ansible.builtin.command:
+        argv:
+          - pct
+          - status
+          - "{{ nodex_vmid }}"
+      register: nodex_container_status
+      changed_when: false
+      failed_when: "nodex_container_status.rc != 0 or 'status: running' not in nodex_container_status.stdout"
+
+    - name: Verify LXC guest uses APT
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - test
+          - -x
+          - /usr/bin/apt-get
+      changed_when: false
+
+    - name: Refresh LXC package metadata
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - apt-get
+          - update
+      changed_when: false
+
+    - name: List LXC upgradable packages
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - apt
+          - list
+          - --upgradable
+      register: nodex_container_upgradable
+      changed_when: false
+
+    - name: Check LXC package database
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - dpkg
+          - --audit
+      register: nodex_container_dpkg_audit
+      changed_when: false
+      failed_when: false
+
+    - name: Check LXC reboot-required marker
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - stat
+          - -c
+          - "%F"
+          - /var/run/reboot-required
+      register: nodex_container_reboot_required
+      changed_when: false
+      failed_when: false
+
+    - name: Report LXC root filesystem usage
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - df
+          - -P
+          - /
+      register: nodex_container_root_usage
+      changed_when: false

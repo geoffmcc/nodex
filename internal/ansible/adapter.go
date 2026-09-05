@@ -178,6 +178,10 @@ type RunRequest struct {
 	// Packages is accepted only by the fixed security-update operation. It is
 	// encoded as structured extra-vars, never interpolated into a command.
 	Packages []string
+
+	// ContainerVMID is accepted only by the fixed LXC guest operations. It is
+	// encoded as a structured extra-var, never interpolated into a command.
+	ContainerVMID int
 }
 
 // HostResult is the per-host outcome parsed from Ansible's JSON callback.
@@ -269,6 +273,13 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	if len(req.Packages) > 0 && req.Operation != "apply-security-updates" {
 		return nil, fmt.Errorf("packages are not supported for operation %q", req.Operation)
 	}
+	containerOperation := strings.HasSuffix(req.Operation, "-container-updates")
+	if containerOperation && req.ContainerVMID <= 0 {
+		return nil, fmt.Errorf("operation %q requires a positive container VMID", req.Operation)
+	}
+	if req.ContainerVMID > 0 && !containerOperation {
+		return nil, fmt.Errorf("container VMID is not supported for operation %q", req.Operation)
+	}
 	for _, pkg := range req.Packages {
 		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._:-]*$`).MatchString(pkg) {
 			return nil, fmt.Errorf("invalid package name %q", pkg)
@@ -330,6 +341,10 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	args := append(append([]string{}, r.testArgsPrefix...), "-i", inventoryPath)
 	if req.Operation == "apply-security-updates" {
 		vars, _ := json.Marshal(map[string][]string{"nodex_packages": req.Packages})
+		args = append(args, "--extra-vars", string(vars))
+	}
+	if req.ContainerVMID > 0 {
+		vars, _ := json.Marshal(map[string]int{"nodex_vmid": req.ContainerVMID})
 		args = append(args, "--extra-vars", string(vars))
 	}
 	args = append(args, playbookPath)

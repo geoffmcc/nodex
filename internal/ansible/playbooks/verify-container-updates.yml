@@ -1,0 +1,60 @@
+---
+# Nodex embedded playbook: verify-container-updates.
+#
+# Verifies the guest remains running, has a usable APT database, and has no
+# remaining package or dpkg audit issues. Reboots are never performed.
+- name: Verify LXC guest updates
+  hosts: all
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Verify LXC guest is running
+      ansible.builtin.command:
+        argv:
+          - pct
+          - status
+          - "{{ nodex_vmid }}"
+      register: nodex_container_status
+      changed_when: false
+      failed_when: "nodex_container_status.rc != 0 or 'status: running' not in nodex_container_status.stdout"
+
+    - name: List remaining LXC upgradable packages
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - apt
+          - list
+          - --upgradable
+      register: nodex_container_upgradable
+      changed_when: false
+
+    - name: Check remaining LXC package database issues
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - dpkg
+          - --audit
+      register: nodex_container_dpkg_audit
+      changed_when: false
+      failed_when: false
+
+    - name: Check LXC reboot-required marker
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - stat
+          - -c
+          - "%F"
+          - /var/run/reboot-required
+      register: nodex_container_reboot_required
+      changed_when: false
+      failed_when: false

@@ -450,6 +450,14 @@ func buildRegistry() []OperationMeta {
 		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "ConfigProvider", HandlerFunc: "runCTUpdate",
 	})
+	ops = append(ops, OperationMeta{
+		Path: "container os-update", Description: "Update a running LXC guest OS",
+		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDisruptive,
+		RiskDimensions: []RiskDimension{RiskServiceDown, RiskPrivEsc},
+		Waitable:       true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
+		CapabilityInterface: "AnsiblePctExecutor", HandlerFunc: "runContainerOSUpdate",
+	})
 
 	// --- container (destructive mutations) ---
 	ops = append(ops, OperationMeta{
