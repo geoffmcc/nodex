@@ -18,6 +18,7 @@ func TestRunCompletionScripts(t *testing.T) {
 		{shell: "bash", want: []string{"_nodex_completion", "profile", "set-credentials", "complete -F _nodex_completion nodex"}},
 		{shell: "zsh", want: []string{"#compdef nodex", "_nodex", "profile", "set-credentials"}},
 		{shell: "fish", want: []string{"complete -c nodex", "__fish_seen_subcommand_from profile", "set-credentials"}},
+		{shell: "powershell", want: []string{"Register-ArgumentCompleter", "set-credentials"}},
 	}
 
 	for _, tt := range tests {
@@ -39,12 +40,27 @@ func TestRunCompletionScripts(t *testing.T) {
 
 func TestRunCompletionRejectsUnknownShell(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	err := Run(context.Background(), []string{"completion", "powershell"}, &stdout, &stderr)
+	err := Run(context.Background(), []string{"completion", "cmd"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("expected unknown shell error")
 	}
 	var exitCode *app.ExitCoder
 	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
 		t.Fatalf("error = %v, want ExitUsage", err)
+	}
+}
+
+func TestRunCompletionIncludesDispatchSubcommands(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), []string{"completion", shell}, &stdout, &stderr); err != nil {
+			t.Fatalf("completion %s: %v", shell, err)
+		}
+		out := stdout.String()
+		for _, want := range []string{"firewall", "rule", "create", "vm", "disk", "resize", "snapshot", "rollback"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("completion %s missing dispatch token %q", shell, want)
+			}
+		}
 	}
 }

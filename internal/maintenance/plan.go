@@ -5,9 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // PlanSchemaVersion versions the serialized plan shape.
@@ -49,10 +55,14 @@ type PlanHost struct {
 // BackupState captures the backup requirements and their observed
 // satisfaction at planning time.
 type BackupState struct {
-	RequiredHosts []string `json:"required_hosts,omitempty" yaml:"required_hosts,omitempty"`
-	MaxAgeHours   int      `json:"max_age_hours" yaml:"max_age_hours"`
-	Satisfied     bool     `json:"satisfied" yaml:"satisfied"`
-	Detail        string   `json:"detail,omitempty" yaml:"detail,omitempty"`
+	RequiredHosts            []string `json:"required_hosts,omitempty" yaml:"required_hosts,omitempty"`
+	MaxAgeHours              int      `json:"max_age_hours" yaml:"max_age_hours"`
+	Satisfied                bool     `json:"satisfied" yaml:"satisfied"`
+	CoverageComplete         bool     `json:"coverage_complete" yaml:"coverage_complete"`
+	VerificationHealthy      bool     `json:"verification_healthy" yaml:"verification_healthy"`
+	DatastoreCapacityPercent int      `json:"datastore_capacity_percent" yaml:"datastore_capacity_percent"`
+	OldestBackupAgeHours     int      `json:"oldest_backup_age_hours" yaml:"oldest_backup_age_hours"`
+	Detail                   string   `json:"detail,omitempty" yaml:"detail,omitempty"`
 }
 
 // InfraSnapshot records the infrastructure state the plan was built
@@ -63,6 +73,45 @@ type InfraSnapshot struct {
 	Overall         string   `json:"overall,omitempty" yaml:"overall,omitempty"`
 	MaintenanceSafe bool     `json:"maintenance_safe" yaml:"maintenance_safe"`
 	Blockers        []string `json:"blockers,omitempty" yaml:"blockers,omitempty"`
+	// Checks contains only normalized statuses and never provider output.
+	Checks           map[string]string `json:"checks,omitempty" yaml:"checks,omitempty"`
+	EvidenceComplete bool              `json:"evidence_complete" yaml:"evidence_complete"`
+}
+
+// HostSnapshot is the normalized safety state captured during planning and
+// immediately before apply. It deliberately contains no credentials or raw
+// child-process output.
+type HostSnapshot struct {
+	Name                 string   `json:"name" yaml:"name"`
+	Address              string   `json:"address" yaml:"address"`
+	Role                 string   `json:"role" yaml:"role"`
+	Group                string   `json:"group,omitempty" yaml:"group,omitempty"`
+	Criticality          string   `json:"criticality" yaml:"criticality"`
+	SSHUser              string   `json:"ssh_user" yaml:"ssh_user"`
+	SSHPort              int      `json:"ssh_port" yaml:"ssh_port"`
+	KeyConfigured        bool     `json:"key_configured" yaml:"key_configured"`
+	KnownHostsConfigured bool     `json:"known_hosts_configured" yaml:"known_hosts_configured"`
+	Reachable            bool     `json:"reachable" yaml:"reachable"`
+	Supported            bool     `json:"supported" yaml:"supported"`
+	PendingUpdates       []string `json:"pending_updates,omitempty" yaml:"pending_updates,omitempty"`
+	SecurityUpdates      []string `json:"security_updates,omitempty" yaml:"security_updates,omitempty"`
+	HeldPackages         []string `json:"held_packages,omitempty" yaml:"held_packages,omitempty"`
+	BrokenDependencies   []string `json:"broken_dependencies,omitempty" yaml:"broken_dependencies,omitempty"`
+	RebootRequired       bool     `json:"reboot_required" yaml:"reboot_required"`
+	FailedUnits          []string `json:"failed_units,omitempty" yaml:"failed_units,omitempty"`
+	RootUsage            string   `json:"root_usage,omitempty" yaml:"root_usage,omitempty"`
+	EvidenceComplete     bool     `json:"evidence_complete" yaml:"evidence_complete"`
+}
+
+// SafetySnapshot is the normalized, plan-bound precondition set. A zero
+// snapshot is accepted by Verify for old persisted plans, but apply treats it
+// as unknown and refuses to mutate anything.
+type SafetySnapshot struct {
+	Version          int                     `json:"version" yaml:"version"`
+	Hosts            map[string]HostSnapshot `json:"hosts" yaml:"hosts"`
+	Infrastructure   InfraSnapshot           `json:"infrastructure" yaml:"infrastructure"`
+	Backup           BackupState             `json:"backup" yaml:"backup"`
+	EvidenceComplete bool                    `json:"evidence_complete" yaml:"evidence_complete"`
 }
 
 // Plan is an immutable, expiring, tamper-evident maintenance plan. It
@@ -94,10 +143,11 @@ type Plan struct {
 	// SafetyClassification is the tier apply must enforce.
 	SafetyClassification string `json:"safety_classification" yaml:"safety_classification"`
 
-	Backup   BackupState   `json:"backup" yaml:"backup"`
-	Infra    InfraSnapshot `json:"infra" yaml:"infra"`
-	Warnings []string      `json:"warnings,omitempty" yaml:"warnings,omitempty"`
-	Blockers []string      `json:"blockers,omitempty" yaml:"blockers,omitempty"`
+	Backup   BackupState    `json:"backup" yaml:"backup"`
+	Infra    InfraSnapshot  `json:"infra" yaml:"infra"`
+	Snapshot SafetySnapshot `json:"snapshot,omitempty" yaml:"snapshot,omitempty"`
+	Warnings []string       `json:"warnings,omitempty" yaml:"warnings,omitempty"`
+	Blockers []string       `json:"blockers,omitempty" yaml:"blockers,omitempty"`
 
 	// Digest is the hex SHA-256 over the canonical JSON of the plan with
 	// this field empty.
@@ -121,6 +171,14 @@ func Finalize(p Plan) (Plan, error) {
 	sort.Strings(p.Blockers)
 	sort.Strings(p.Backup.RequiredHosts)
 	sort.Strings(p.Infra.Blockers)
+	for name, h := range p.Snapshot.Hosts {
+		sort.Strings(h.PendingUpdates)
+		sort.Strings(h.SecurityUpdates)
+		sort.Strings(h.HeldPackages)
+		sort.Strings(h.BrokenDependencies)
+		sort.Strings(h.FailedUnits)
+		p.Snapshot.Hosts[name] = h
+	}
 	digest, err := computeDigest(p)
 	if err != nil {
 		return Plan{}, err
@@ -168,7 +226,101 @@ func Verify(p Plan, now time.Time) error {
 	if p.RebootPolicy != RebootPolicyNever {
 		return fmt.Errorf("unsupported reboot policy %q", p.RebootPolicy)
 	}
+	if p.CreatedAt <= 0 || p.ExpiresAt <= p.CreatedAt {
+		return fmt.Errorf("invalid plan timestamps")
+	}
+	if p.BatchSize < 1 || p.SafetyClassification != "disruptive" {
+		return fmt.Errorf("invalid plan safety settings")
+	}
+	seen := map[string]bool{}
+	for _, h := range p.Hosts {
+		if h.Name == "" || h.Address == "" || seen[h.Name] {
+			return fmt.Errorf("invalid or duplicate plan host %q", h.Name)
+		}
+		seen[h.Name] = true
+	}
+	if len(p.HostOrder) != len(p.Hosts) {
+		return fmt.Errorf("host order does not cover the plan hosts")
+	}
+	for _, name := range p.HostOrder {
+		if !seen[name] {
+			return fmt.Errorf("host order contains unknown host %q", name)
+		}
+		delete(seen, name)
+	}
+	if len(seen) != 0 {
+		return fmt.Errorf("host order contains duplicate or missing hosts")
+	}
 	return nil
+}
+
+// Load decodes a plan from JSON or YAML, rejects unknown fields and verifies
+// its digest and safety invariants before returning it. The entire input is
+// bounded by the caller's reader; no plan content is executed.
+func Load(r io.Reader, format string, now time.Time) (Plan, error) {
+	if r == nil {
+		return Plan{}, fmt.Errorf("plan reader is nil")
+	}
+	var p Plan
+	if format == "" {
+		format = "json"
+	}
+	switch format {
+	case "json":
+		dec := json.NewDecoder(r)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&p); err != nil {
+			return Plan{}, fmt.Errorf("decode plan JSON: %w", err)
+		}
+		if err := ensureEOF(dec); err != nil {
+			return Plan{}, err
+		}
+	case "yaml", "yml":
+		dec := yaml.NewDecoder(r)
+		dec.KnownFields(true)
+		if err := dec.Decode(&p); err != nil {
+			return Plan{}, fmt.Errorf("decode plan YAML: %w", err)
+		}
+		var extra any
+		if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+			if err == nil {
+				return Plan{}, fmt.Errorf("plan contains multiple YAML documents")
+			}
+			return Plan{}, fmt.Errorf("read plan YAML: %w", err)
+		}
+	default:
+		return Plan{}, fmt.Errorf("unsupported plan format %q", format)
+	}
+	if err := Verify(p, now); err != nil {
+		return Plan{}, err
+	}
+	return p, nil
+}
+
+func ensureEOF(dec *json.Decoder) error {
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("plan contains multiple JSON values")
+		}
+		return fmt.Errorf("read plan JSON: %w", err)
+	}
+	return nil
+}
+
+// LoadFile loads a plan based on its .json/.yaml extension.
+func LoadFile(path string, now time.Time) (Plan, error) {
+	f, err := os.Open(path) // #nosec G304 -- caller explicitly selected the plan file.
+	if err != nil {
+		return Plan{}, fmt.Errorf("open plan: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	ext := filepath.Ext(path)
+	format := "json"
+	if ext == ".yaml" || ext == ".yml" {
+		format = "yaml"
+	}
+	return Load(io.LimitReader(f, 8<<20), format, now)
 }
 
 // OrderHosts computes the planned execution order: standard-criticality

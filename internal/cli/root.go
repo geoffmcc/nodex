@@ -56,6 +56,8 @@ type command struct {
 	short string
 	run   CommandFunc
 	sub   map[string]*command
+	meta  *OperationMeta
+	bound bool
 }
 
 var commands = map[string]*command{}
@@ -77,6 +79,12 @@ func init() {
 		&command{name: "parse", short: "Parse a semver version", run: runVersionParse},
 	)
 	register("init", "Initialize nodex configuration", runInit)
+	register("setup", "Guided secure provider setup", runSetup)
+	register("certification", "Run opt-in disposable-environment certification", nil,
+		&command{name: "run", short: "Create, verify, and clean up a certification VM", run: runCertification},
+		&command{name: "cleanup", short: "Recover pending certification cleanup", run: runCertificationCleanup},
+		&command{name: "report", short: "Show the sanitized certification ledger", run: runCertificationReport},
+	)
 	register("completion", "Generate shell completion scripts", runCompletion)
 	register("profile", "Manage connection profiles", nil,
 		&command{name: "add", short: "Add a new profile", run: runProfileAdd},
@@ -86,6 +94,7 @@ func init() {
 		&command{name: "use", short: "Set the current profile", run: runProfileUse},
 		&command{name: "current", short: "Show the current profile", run: runProfileCurrent},
 		&command{name: "test", short: "Test profile connectivity", run: runProfileTest},
+		&command{name: "diagnose-permissions", short: "Diagnose profile permissions", run: runProfileDiagnosePermissions},
 		&command{name: "remove", short: "Remove a profile", run: runProfileRemove},
 		&command{name: "export", short: "Export a profile (sanitized)", run: runProfileExport},
 		&command{name: "import", short: "Import a profile from stdin", run: runProfileImport},
@@ -181,6 +190,10 @@ func init() {
 	)
 	register("log", "Show node syslog", runLog)
 	register("doctor", "Check system health", runDoctor)
+	register("monitor", "Run configured one-shot health checks", nil,
+		&command{name: "targets", short: "List configured monitoring targets", run: runMonitorTargets},
+		&command{name: "check", short: "Check configured monitoring targets", run: runMonitorCheck},
+	)
 	register("backup", "Manage backups", nil,
 		&command{name: "list", short: "List backup tasks", run: runBackupList},
 		&command{name: "content", short: "List backup content", run: runBackupContent},
@@ -242,6 +255,12 @@ func init() {
 		&command{name: "inventory", short: "List enrolled maintenance hosts", run: runMaintenanceInventory},
 		&command{name: "status", short: "Read-only maintenance preflight status", run: runMaintenanceStatus},
 		&command{name: "plan", short: "Create an immutable maintenance plan", run: runMaintenancePlan},
+		&command{name: "apply", short: "Apply a verified maintenance plan", run: runMaintenanceApply},
+		&command{name: "resume", short: "Resume an interrupted maintenance receipt", run: runMaintenanceResume},
+		&command{name: "reconcile", short: "Reconcile an ambiguous maintenance receipt", run: runMaintenanceReconcile},
+		&command{name: "abandon", short: "Mark an interrupted maintenance receipt abandoned", run: runMaintenanceAbandon},
+		&command{name: "verify", short: "Verify maintenance postconditions", run: runMaintenanceVerify},
+		&command{name: "report", short: "Show a durable maintenance receipt", run: runMaintenanceReport},
 	)
 	register("environment", "Unified PVE/PBS environment health", nil,
 		&command{name: "list", short: "List configured environments", run: runEnvironmentList},
@@ -269,6 +288,31 @@ func init() {
 		&command{name: "delete", short: "Delete a replication job", run: runReplicationDelete},
 		&command{name: "schedule", short: "Schedule replication job now", run: runReplicationSchedule},
 	)
+	bindCommandMetadata()
+}
+
+// bindCommandMetadata makes the operation registry the runtime contract for
+// every reachable handler. Registration remains deliberately small and
+// declarative here; safety and output claims are never inferred from handler
+// names at dispatch time.
+func bindCommandMetadata() {
+	var bind func(map[string]*command, string)
+	bind = func(cmds map[string]*command, prefix string) {
+		for _, cmd := range cmds {
+			path := cmd.name
+			if prefix != "" {
+				path = prefix + " " + cmd.name
+			}
+			if cmd.run != nil {
+				cmd.meta = LookupOperation(path)
+				cmd.bound = true
+			}
+			if cmd.sub != nil {
+				bind(cmd.sub, path)
+			}
+		}
+	}
+	bind(commands, "")
 }
 
 // Run parses global flags and dispatches to the appropriate command.
@@ -334,6 +378,12 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if len(args) > 0 {
 			subName := args[0]
 			if sub, ok := cmd.sub[subName]; ok {
+				if sub.bound && sub.meta == nil {
+					return app.NewExitError(fmt.Errorf("command %q has no operation metadata", name+" "+subName), app.ExitGeneral)
+				}
+				if err := validateInvocation(cmdCtx.Opts, sub.meta); err != nil {
+					return err
+				}
 				if err := checkAllSupported(cmdCtx.Opts.All, name, subName); err != nil {
 					return err
 				}
@@ -367,6 +417,12 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 
 	if cmd.run != nil {
+		if cmd.bound && cmd.meta == nil {
+			return app.NewExitError(fmt.Errorf("command %q has no operation metadata", name), app.ExitGeneral)
+		}
+		if err := validateInvocation(cmdCtx.Opts, cmd.meta); err != nil {
+			return err
+		}
 		if err := checkAllSupported(cmdCtx.Opts.All, name); err != nil {
 			return err
 		}
@@ -376,6 +432,21 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return cmd.run(ctx, cmdCtx, args)
 	}
 
+	return nil
+}
+
+func validateInvocation(opts Options, meta *OperationMeta) error {
+	if meta == nil {
+		return nil
+	}
+	// Dispatch handlers parse their own deeper operation path and flags. Their
+	// parent metadata describes the router, not the selected leaf operation.
+	if _, ok := knownDispatchCommands[meta.Path]; ok {
+		return nil
+	}
+	if opts.Wait && !meta.Waitable {
+		return app.NewExitError(fmt.Errorf("--wait is not supported for %q", meta.Path), app.ExitUsage)
+	}
 	return nil
 }
 

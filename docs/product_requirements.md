@@ -41,13 +41,15 @@ Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infras
   remove-vanished), prune run (destructive, typed confirmation),
   garbage-collection run (disruptive) — all with conflicting-task preflight
   and `--wait` task polling
-- Fleet maintenance (read-only): `maintenance inventory|status|plan` over
+- Fleet maintenance: `maintenance inventory|status|plan|apply|verify|report` over
   explicitly enrolled hosts, with `--environment/--group/--role/--host`
   filters. Status runs the allowlisted read-only `check-updates` preflight
   (Ansible required, otherwise clearly reported); plan emits an immutable,
   expiring, tamper-evident (SHA-256 digest) plan with per-host package
   intent, conservative ordering, `never` reboot policy, and explicit
-  backup-requirement blockers
+  backup-requirement blockers. Apply requires the existing verified plan,
+  exact typed plan-ID confirmation, and writes atomic secret-free receipts;
+  verification and reporting refuse missing or tampered state.
 - Unified environments (`environments` config section, schema v2):
   `environment list|health|backup-health` combining PVE and PBS state —
   reachability, datastore availability/capacity thresholds, active and
@@ -237,10 +239,10 @@ For profile `lab`: `NODEX_LAB_TOKEN_ID`, `NODEX_LAB_TOKEN_SECRET`, `NODEX_LAB_TO
 
 | OS runner | Go version |
 |-----------|-----------|
-| `ubuntu-latest` | 1.25.12 |
-| `macos-15` (ARM) | 1.25.12 |
-| `macos-15-intel` | 1.25.12 |
-| `windows-latest` | 1.25.12 |
+| `ubuntu-latest` | 1.25.13 |
+| `macos-15` (ARM) | 1.25.13 |
+| `macos-15-intel` | 1.25.13 |
+| `windows-latest` | 1.25.13 |
 
 ## Current Limitations
 

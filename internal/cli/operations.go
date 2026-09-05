@@ -29,6 +29,7 @@ const (
 	ScopeBackup   Scope = "backup"
 	ScopeHA       Scope = "ha"
 	ScopeRepl     Scope = "replication"
+	ScopeCert     Scope = "certification"
 )
 
 // RiskDimension describes a specific risk axis independent of safety tier.
@@ -142,10 +143,23 @@ func buildRegistry() []OperationMeta {
 		OutputModes: []string{"table"}, HandlerFunc: "runInit",
 	})
 	ops = append(ops, OperationMeta{
+		Path: "setup", Description: "Guided secure provider setup",
+		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
+		SecuritySensitivity: SecCredentials,
+		OutputModes:         []string{"table", "json", "yaml"}, HandlerFunc: "runSetup",
+	})
+	ops = append(ops, OperationMeta{
 		Path: "completion", Description: "Generate shell completion scripts",
 		Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
 		OutputModes: []string{"table"}, HandlerFunc: "runCompletion",
 	})
+	ops = append(ops,
+		OperationMeta{Path: "monitor targets", Description: "List configured monitoring targets", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMonitorTargets"},
+		OperationMeta{Path: "monitor check", Description: "Check configured monitoring targets", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMonitorCheck"},
+		OperationMeta{Path: "certification run", Description: "Run an opt-in disposable certification transaction", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertification"},
+		OperationMeta{Path: "certification cleanup", Description: "Recover pending certification cleanup", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationCleanup"},
+		OperationMeta{Path: "certification report", Description: "Show the sanitized certification ledger", Inspection: true, Scope: ScopeCert, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationReport"},
+	)
 
 	// --- profile ---
 	ops = append(ops, OperationMeta{
@@ -183,6 +197,11 @@ func buildRegistry() []OperationMeta {
 		Path: "profile test", Description: "Test profile connectivity",
 		Inspection: true, Scope: ScopeProfile, SafetyTier: safety.TierObservation,
 		OutputModes: []string{"table"}, HandlerFunc: "runProfileTest",
+	})
+	ops = append(ops, OperationMeta{
+		Path: "profile diagnose-permissions", Description: "Diagnose profile permissions",
+		Inspection: true, Scope: ScopeProfile, SafetyTier: safety.TierObservation,
+		OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runProfileDiagnosePermissions",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "profile remove", Description: "Remove a profile",
@@ -865,7 +884,7 @@ func buildRegistry() []OperationMeta {
 	}
 	ops = append(ops, dispatchOps...)
 
-	// --- maintenance (fleet, read-only in phase 5) ---
+	// --- maintenance (plan execution remains explicitly confirmation-gated) ---
 	maintOps := []OperationMeta{
 		{Path: "maintenance inventory", Description: "List enrolled maintenance hosts",
 			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
@@ -876,6 +895,24 @@ func buildRegistry() []OperationMeta {
 		{Path: "maintenance plan", Description: "Create an immutable maintenance plan (makes no changes)",
 			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
 			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenancePlan"},
+		{Path: "maintenance apply", Description: "Apply a verified maintenance plan",
+			Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierDisruptive,
+			RiskDimensions: []RiskDimension{RiskServiceDown}, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceApply"},
+		{Path: "maintenance resume", Description: "Resume an interrupted maintenance receipt",
+			Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierDisruptive,
+			RiskDimensions: []RiskDimension{RiskServiceDown}, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceResume"},
+		{Path: "maintenance reconcile", Description: "Reconcile an ambiguous maintenance receipt",
+			Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierDisruptive,
+			RiskDimensions: []RiskDimension{RiskServiceDown}, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceReconcile"},
+		{Path: "maintenance abandon", Description: "Mark an interrupted maintenance receipt abandoned",
+			Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierDisruptive,
+			RiskDimensions: []RiskDimension{RiskServiceDown}, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceAbandon"},
+		{Path: "maintenance verify", Description: "Verify maintenance postconditions",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceVerify"},
+		{Path: "maintenance report", Description: "Show a durable maintenance receipt",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceReport"},
 	}
 	ops = append(ops, maintOps...)
 

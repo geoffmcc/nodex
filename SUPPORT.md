@@ -35,16 +35,17 @@ For suspected vulnerabilities, follow the [security policy](SECURITY.md). Do not
 - **Proxmox VE provider** — the built-in `proxmox` provider
   - Read-only inspection of nodes, VMs, containers, storage, tasks, events, snapshots, firewall rules, HA resources, backups, SDN, pools, Ceph, and access control
   - Mutation operations through the five-tier safety model (lifecycle, config updates, snapshots, backups, storage, migration, clone, firewall, SDN, Ceph, replication, access)
-- **Configuration** via YAML schema v1
+- **Configuration** via YAML schemas v1 and v2
 - **Credential management** through file, keyring, environment, and stdin backends
 - **API token authentication** (supported) for provider connections
 - **TLS 1.2+** with certificate verification and custom CA support
 - **Output formats** — table, JSON, and YAML
-- **Shell completion** for bash, zsh, and fish
+- **Shell completion** for bash, zsh, fish, and PowerShell
 
 ### Not Yet Supported
 
-- **Stable release artifacts.** No versioned release binaries are published.
+- **Stable release artifacts.** Release artifacts are currently draft-only and
+  not a stable published release series.
 - **Non-Proxmox providers.** The provider registry supports additional providers, but only `proxmox` is implemented.
 - **Corosync configuration.** Cluster membership changes are excluded.
 - **Subscription key management.**
@@ -68,7 +69,7 @@ The internal Go APIs (everything under `internal/`) are not stable and may chang
 ## Building from Source
 
 Requirements:
-- Go 1.25.12
+- Go 1.25.13
 - `make` (optional; `go build` works directly)
 
 ```bash

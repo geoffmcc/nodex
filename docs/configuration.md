@@ -12,6 +12,15 @@ Nodex uses a local YAML configuration file plus optional credential backends. Co
 
 `nodex init` creates the configuration file. Interactive mode prompts for provider, endpoint, credential reference, and profile name. Non-interactive mode creates a minimal `default` profile with provider `proxmox` and no endpoint.
 
+`nodex setup` is the guided production setup path. It accepts explicit
+provider, profile, HTTPS endpoint, credential-reference, and optional CA-file
+inputs, validates them before an atomic write, and never accepts token or
+password values as ordinary command-line arguments. Use `--check` for
+read-only connectivity, version, capability, and provider-supported
+permission diagnostics. `nodex profile diagnose-permissions <name>` can run
+the same diagnostics later; unavailable checks are reported as `unsupported`
+or `unknown`, not as success.
+
 ## Schema Versions
 
 Nodex reads schema versions 1 and 2. New configurations are written as
@@ -59,11 +68,29 @@ import` accept only known provider names (`proxmox`, `pbs`). A config file
 containing an unknown but well-formed provider name still loads — so a file
 written by a newer Nodex does not invalidate your other profiles — but any
 command that uses such a profile fails with an unknown-provider error. The
-`pbs` provider name is reserved by the fleet-operations roadmap
-(`docs/roadmap.md`); PBS commands ship in a later phase. Endpoint, TLS, and
+`pbs` provider is Proxmox Backup Server. The schema-version-2
+`monitoring.targets` map contains explicit one-shot checks. Supported target
+types are `http`, `https`, `tcp`, `tls`, and `dns`; DNS targets require an
+explicit resolver. Nodex never discovers monitoring targets. Endpoint, TLS, and
 credential rules below apply identically to every provider: PVE and PBS
 credentials are always separate credential-store entries, and there is no
 insecure TLS option for any provider.
+
+Example monitoring configuration:
+
+```yaml
+monitoring:
+  targets:
+    pve-api:
+      type: https
+      address: https://pve.example.com:8006/api2/json/version
+      environment: lab
+      timeout_seconds: 10
+    dns:
+      type: dns
+      address: pve.example.com
+      resolver: 192.0.2.53:53
+```
 
 ## Endpoint Rules
 

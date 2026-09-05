@@ -19,7 +19,7 @@ Status: done (merged 2026-07-17, PR #64)
   (no silent rewrites), newer-than-supported versions rejected with an
   "upgrade nodex" error.
 - Known-provider model: `proxmox` (Proxmox VE, unchanged) and `pbs` (Proxmox
-  Backup Server, reserved here, implemented in Phase 2). Per-provider profile
+  Backup Server, implemented in Phase 2). Per-provider profile
   validation; CLI rejects unknown providers at entry, config files tolerate
   them until use.
 - `nodex profile add --provider <proxmox|pbs>`.
@@ -91,9 +91,9 @@ playbooks (check-updates, verify-host), and the shell-free Ansible adapter.
 
 ## Phase 5 — Maintenance status and immutable planning
 
-Status: implemented (this PR) — `maintenance inventory|status|plan` with
+Status: implemented — `maintenance inventory|status|plan` with
 filters, Ansible-backed read-only preflight, and immutable digest-protected
-plans. `maintenance apply` and plan enforcement arrive in Phase 6.
+plans. Plan application and enforcement are implemented in Phase 6.
 
 - `nodex maintenance inventory|status|plan` (read-only) with
   `--environment/--group/--host/--role` filters.
@@ -109,7 +109,9 @@ plans. `maintenance apply` and plan enforcement arrive in Phase 6.
 
 ## Phase 6 — Maintenance apply, verification, reporting
 
-Status: planned
+Status: implemented in this branch — `maintenance apply|verify|report` uses
+digest-verified plans, allowlisted Ansible operations, atomic receipts, and
+honest unknown outcomes.
 
 - `nodex maintenance apply|verify|report`.
 - Apply rejects stale/modified/expired plans, materially changed
@@ -138,7 +140,10 @@ Status: planned
 
 ## Phase 8 — One-shot monitoring and external integration
 
-Status: planned
+Status: partially implemented in this branch: configured one-shot HTTP,
+HTTPS, TCP, TLS, and DNS checks are available. PVE/PBS-specific checks and
+service checks remain planned until their explicit configuration contracts are
+added.
 
 - Version-2-only `monitoring` config section; `nodex monitor targets|check`
   with `--environment/--target` filters.

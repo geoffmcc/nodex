@@ -20,6 +20,15 @@ var checkUpdatesPlaybook string
 //go:embed playbooks/verify-host.yml
 var verifyHostPlaybook string
 
+//go:embed playbooks/apply-security-updates.yml
+var applySecurityUpdatesPlaybook string
+
+//go:embed playbooks/apply-approved-updates.yml
+var applyApprovedUpdatesPlaybook string
+
+//go:embed playbooks/verify-maintenance.yml
+var verifyMaintenancePlaybook string
+
 // Operation is one allowlisted maintenance operation backed by an embedded
 // playbook. The playbook content ships inside the Nodex binary; paths on
 // disk are never accepted.
@@ -47,11 +56,8 @@ type Operation struct {
 // Playbook returns the embedded playbook content.
 func (o Operation) Playbook() string { return o.playbook }
 
-// registry is the complete allowlist. The set grows only through code
-// review: further operations (install-security-updates,
-// install-approved-updates, restart-approved-services,
-// reboot-approved-host, verify-service, configure-security-updates) are
-// added in later phases together with the safety machinery that gates them.
+// registry is the complete allowlist. Operation behavior is fixed in embedded
+// playbooks; callers cannot provide paths, modules, arguments, or variables.
 var registry = map[string]Operation{
 	"check-updates": {
 		ID:             "check-updates",
@@ -68,6 +74,21 @@ var registry = map[string]Operation{
 		ReadOnly:       true,
 		RequiresBecome: false,
 		playbook:       verifyHostPlaybook,
+	},
+	"apply-security-updates": {
+		ID: "apply-security-updates", Description: "Apply security updates only",
+		Safety: safety.TierDisruptive, ReadOnly: false, RequiresBecome: true,
+		playbook: applySecurityUpdatesPlaybook,
+	},
+	"apply-approved-updates": {
+		ID: "apply-approved-updates", Description: "Apply the approved full update policy",
+		Safety: safety.TierDisruptive, ReadOnly: false, RequiresBecome: true,
+		playbook: applyApprovedUpdatesPlaybook,
+	},
+	"verify-maintenance": {
+		ID: "verify-maintenance", Description: "Verify maintenance postconditions",
+		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
+		playbook: verifyMaintenancePlaybook,
 	},
 }
 

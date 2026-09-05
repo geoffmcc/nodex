@@ -451,13 +451,10 @@ func countNodexTempDirs(t *testing.T) int {
 
 func TestRegistryAllowlist(t *testing.T) {
 	ids := OperationIDs()
-	if len(ids) != 2 || ids[0] != "check-updates" || ids[1] != "verify-host" {
+	if len(ids) != 5 || ids[0] != "apply-approved-updates" || ids[1] != "apply-security-updates" || ids[2] != "check-updates" || ids[3] != "verify-host" || ids[4] != "verify-maintenance" {
 		t.Errorf("unexpected allowlist: %v", ids)
 	}
 	for _, op := range Operations() {
-		if !op.ReadOnly {
-			t.Errorf("phase 4 operation %q must be read-only", op.ID)
-		}
 		if op.Playbook() == "" {
 			t.Errorf("operation %q has no embedded playbook", op.ID)
 		}
@@ -465,8 +462,10 @@ func TestRegistryAllowlist(t *testing.T) {
 			t.Errorf("operation %q playbook uses the shell module", op.ID)
 		}
 	}
-	if _, err := Lookup("install-security-updates"); err == nil {
-		t.Error("operations not yet implemented must not resolve")
+	for _, id := range []string{"apply-security-updates", "apply-approved-updates", "verify-maintenance"} {
+		if _, err := Lookup(id); err != nil {
+			t.Errorf("operation %q must resolve: %v", id, err)
+		}
 	}
 }
 

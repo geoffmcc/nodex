@@ -89,6 +89,47 @@ nodex --non-interactive init
 
 Interactive mode prompts for provider, endpoint, credential reference, and profile name. Non-interactive mode creates a minimal configuration with a `default` profile using provider `proxmox` and no endpoint. If the configuration file already exists, interactive mode asks before overwriting.
 
+### `nodex setup`
+
+Run guided secure setup for a provider profile. Interactive mode prompts only
+for non-secret configuration values. Secrets are never accepted as command-line
+arguments; use a credential reference to an existing `file`, `keyring`, or
+environment credential.
+
+```bash
+nodex setup
+nodex --non-interactive setup --provider proxmox --profile production \
+  --endpoint https://pve.example.com:8006 \
+  --credential-ref keyring:production --ca-file /path/to/ca.pem --check
+```
+
+`--endpoint` must use HTTPS. `--ca-file`, when supplied, must be a readable
+PEM certificate. Non-interactive setup fails closed unless provider, profile,
+and endpoint are explicitly supplied. Configuration is written atomically.
+`--check` runs read-only connectivity, API-version, capability, and supported
+permission diagnostics before the profile is written; a failed preflight does
+not modify the configuration. Use `--force` to replace an existing profile.
+
+### `nodex certification`
+
+Run an explicitly selected disposable-environment certification transaction.
+Certification is restricted to the configured `nodex-test-admin` profile and
+never falls back to the current profile.
+
+```bash
+nodex --profile nodex-test-admin --yes --confirm-target nodex-cert-smoke \
+  certification run --environment <environment> --suite <readonly|disposable-mutations> \
+  --node <node> --vmid <vmid> --name nodex-cert-smoke --storage <storage>
+nodex --profile nodex-test-admin --yes --confirm-target <ledger-entry-id> certification cleanup
+nodex certification report [--ledger <path>]
+```
+
+Run records cleanup intent before creating a VM, waits for task completion, and
+verifies both creation and cleanup. A failed or interrupted run remains in the
+ledger for recovery. Names must begin with `nodex-cert-`; reports contain no
+credentials or provider response bodies. Do not use this command against
+production-looking targets.
+
 ### `nodex completion`
 
 Generate shell completion scripts.
@@ -132,6 +173,7 @@ Subcommands:
 | `profile use <name>` | Set the current active profile |
 | `profile current` | Show the current active profile |
 | `profile test [name]` | Test profile connectivity |
+| `profile diagnose-permissions <name>` | Report confirmed, missing, unsupported, and unknown setup/permission checks without exposing credentials |
 | `profile remove <name> [--remove-credential]` | Remove a profile |
 | `profile export <name>` | Export a sanitized profile (no credentials) |
 | `profile import` | Import a profile from stdin |
@@ -426,13 +468,19 @@ Inspect and manage SDN.
 
 ### `nodex maintenance`
 
-Fleet maintenance status and planning (Phase 5: strictly read-only — nothing under `maintenance` modifies a managed host). Requires an `inventory` section (schema version 2) and, for `status`/`plan`, an installed `ansible-playbook` (ansible-core 2.12+); Nodex without Ansible keeps full PVE/PBS functionality.
+Fleet maintenance status, planning, guarded apply, verification, and reporting. Requires an `inventory` section (schema version 2) and an installed `ansible-playbook` (ansible-core 2.12+) for status, plan, apply, and verify; Nodex without Ansible keeps full PVE/PBS functionality.
 
 ```bash
 nodex maintenance inventory [--environment <env>] [--group <group>] [--role <role>] [--host <name>]...
 nodex maintenance status    [--environment <env>] [--group <group>] [--role <role>] [--host <name>]...
 nodex maintenance plan --policy security-only|approved-full-upgrade \
     [--expires-in <10m..24h>] [--batch-size <1..10>] [filters...]
+nodex maintenance apply --plan <file> [--receipt-dir <dir>]
+nodex maintenance resume --plan <file> --receipt <file>
+nodex maintenance reconcile --plan <file> --receipt <file>
+nodex maintenance abandon --receipt <file> --reason <reason>
+nodex maintenance verify --plan <file>
+nodex maintenance report --receipt <file>
 ```
 
 | Command | Description |
@@ -440,8 +488,14 @@ nodex maintenance plan --policy security-only|approved-full-upgrade \
 | `maintenance inventory` | List enrolled hosts with role, environment, group, criticality, backup requirement, and reboot policy |
 | `maintenance status` | Run the read-only `check-updates` preflight through the allowlisted Ansible boundary: pending updates, security updates, reboot-required state, failed units, root filesystem usage per host. With `--environment`, adds the environment's backup health. Exits 11 on partial failure. |
 | `maintenance plan` | Run the same preflight and emit an immutable plan: plan ID, creation/expiry timestamps (default TTL 4h), update policy, per-host package intent, execution order (standard hosts first, critical hosts serial, PVE/PBS/DNS roles last), batch size, reboot policy (always `never` in this phase), backup requirements and their observed state, infrastructure snapshot, warnings, blockers, and a SHA-256 digest over the whole plan. Save it with `--output json > plan.json`. |
+| `maintenance apply` | Apply an existing digest-verified plan with `--yes --force --confirm-target <plan-id>`. Writes atomic receipts and refuses blocked, stale, tampered, or ambiguous reruns. |
+| `maintenance resume` | Revalidate a plan-bound receipt and continue only hosts not yet started; refuses to replay non-successful hosts. |
+| `maintenance reconcile` | Perform read-only postcondition verification against a plan-bound receipt. |
+| `maintenance abandon` | Record an explicit operator decision that an interrupted receipt will not be resumed. |
+| `maintenance verify` | Verify planned hosts through the embedded read-only Ansible operation. |
+| `maintenance report` | Render a verified receipt as table, JSON, or YAML. |
 
-Plans are tamper-evident (any modification breaks the digest), expiring, deterministic for unchanged inputs, and contain no secrets. A plan created with blockers (unreachable hosts, unverifiable or unmet backup requirements, unsafe environment) is still emitted for review but the command exits 11, and the future `maintenance apply` will refuse it. Backup requirements can only be verified when `--environment` links the hosts to a PVE/PBS pair; without it, `backup_required` hosts are a blocker by design.
+Plans are tamper-evident (any modification breaks the digest), expiring, deterministic for unchanged inputs, and contain no secrets. A plan created with blockers is still emitted for review but apply refuses it. Backup requirements can only be verified when `--environment` links the hosts to a PVE/PBS pair; without it, `backup_required` hosts are a blocker by design.
 
 ### `nodex environment`
 
