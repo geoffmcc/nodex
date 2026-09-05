@@ -122,7 +122,7 @@ func diagnoseProfile(ctx context.Context, cmdCtx *Context, name string, p config
 		add("connectivity", classifyPermissionError(err), "provider connection failed")
 		return checks
 	}
-	defer prov.Close()
+	defer func() { _ = prov.Close() }()
 	if err := prov.Health(ctx); err != nil {
 		add("connectivity", classifyPermissionError(err), "provider health check failed")
 		return checks

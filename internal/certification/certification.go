@@ -162,7 +162,7 @@ func VerifyEndpointIdentity(ctx context.Context, endpoint, caFile, expected, exp
 	if err != nil {
 		return fmt.Errorf("verify certification endpoint TLS identity")
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok || len(tlsConn.ConnectionState().PeerCertificates) == 0 {
 		return fmt.Errorf("certification endpoint returned no certificate")

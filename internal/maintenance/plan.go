@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -281,7 +282,7 @@ func Load(r io.Reader, format string, now time.Time) (Plan, error) {
 			return Plan{}, fmt.Errorf("decode plan YAML: %w", err)
 		}
 		var extra any
-		if err := dec.Decode(&extra); err != io.EOF {
+		if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 			if err == nil {
 				return Plan{}, fmt.Errorf("plan contains multiple YAML documents")
 			}
@@ -313,7 +314,7 @@ func LoadFile(path string, now time.Time) (Plan, error) {
 	if err != nil {
 		return Plan{}, fmt.Errorf("open plan: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	ext := filepath.Ext(path)
 	format := "json"
 	if ext == ".yaml" || ext == ".yml" {

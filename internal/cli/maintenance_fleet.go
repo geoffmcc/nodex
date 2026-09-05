@@ -750,8 +750,7 @@ func runMaintenanceApply(ctx context.Context, cmdCtx *Context, args []string) er
 			standard = append(standard, name)
 		}
 	}
-	stop := false
-	for start := 0; start < len(standard) && !stop; start += plan.BatchSize {
+	for start := 0; start < len(standard); start += plan.BatchSize {
 		end := start + plan.BatchSize
 		if end > len(standard) {
 			end = len(standard)
@@ -764,7 +763,6 @@ func runMaintenanceApply(ctx context.Context, cmdCtx *Context, args []string) er
 		}
 		batch := standard[start:end]
 		if err := executeMaintenanceBatch(ctx, path, &receipt, selected, plan, op, batch, completed); err != nil {
-			stop = true
 			receipt.State = hostFailureState(err)
 			receipt.Error = redactError(err)
 			if saveErr := persistReceipt(path, &receipt); saveErr != nil {
@@ -774,9 +772,6 @@ func runMaintenanceApply(ctx context.Context, cmdCtx *Context, args []string) er
 		}
 	}
 	for _, name := range critical {
-		if stop {
-			break
-		}
 		if err := revalidateBeforeBatch(ctx, cmdCtx, cfg, selected, plan, completed); err != nil {
 			receipt.State = "blocked"
 			receipt.Error = redactError(err)

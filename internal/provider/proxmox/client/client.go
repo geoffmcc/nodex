@@ -1681,7 +1681,7 @@ func (c *Client) console(ctx context.Context, node, guestType string, vmid int, 
 		// before returning any diagnostic detail.
 		return fmt.Errorf("connect console websocket: %s", strings.ReplaceAll(err.Error(), proxy.Ticket, "[REDACTED]"))
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

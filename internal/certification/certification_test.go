@@ -59,7 +59,7 @@ func TestLedgerRoundTripIsSanitizedAndSorted(t *testing.T) {
 	if len(loaded.Entries) != 2 || loaded.Entries[0].Name != "nodex-cert-a" {
 		t.Fatalf("unexpected ledger ordering: %+v", loaded.Entries)
 	}
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- path is created under t.TempDir.
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -234,7 +234,7 @@ func httpCheck(ctx context.Context, address, caFile string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("HTTP request failed")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, MaxResponseBytes+1)); err != nil {
 		return 0, fmt.Errorf("read HTTP response")
 	}
@@ -271,7 +271,7 @@ func tlsCheck(ctx context.Context, address, caFile string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("TLS connection failed")
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {
 		return 0, fmt.Errorf("TLS connection did not negotiate TLS")

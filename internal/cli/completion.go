@@ -110,8 +110,8 @@ func shellWords(values []string) string {
 	}
 	return strings.Join(out, " ")
 }
-func shellQuote(value string) string                    { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
-func completionPathCases(shell string) []completionNode { return completionNodes() }
+func shellQuote(value string) string        { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
+func completionPathCases() []completionNode { return completionNodes() }
 
 func writeBashCompletion(cmdCtx *Context) {
 	root := append(commandNames(), "help")
@@ -131,7 +131,7 @@ func writeBashCompletion(cmdCtx *Context) {
     path="${path:+$path }$token"
   done
   case "$path" in`)
-	for _, node := range completionPathCases("bash") {
+	for _, node := range completionPathCases() {
 		fmt.Fprintf(cmdCtx.Writer, "    %s) COMPREPLY=( $(compgen -W \"%s\" -- \"$cur\") ); return 0 ;;\n", strings.ReplaceAll(node.Path, " ", "\\ "), strings.Join(node.Children, " "))
 	}
 	fmt.Fprintf(cmdCtx.Writer, `  esac
@@ -152,7 +152,7 @@ _nodex() {
   fi
   for ((i=2; i<CURRENT; i++)); do [[ "${words[i]}" == --* ]] && continue; path="${path:+$path }${words[i]}"; done
   case "$path" in`)
-	for _, node := range completionPathCases("zsh") {
+	for _, node := range completionPathCases() {
 		fmt.Fprintf(cmdCtx.Writer, "    %s) values=(%s); _describe 'subcommand' values; return ;;\n", strings.ReplaceAll(node.Path, " ", "\\ "), shellWords(node.Children))
 	}
 	fmt.Fprintln(cmdCtx.Writer, `  esac
@@ -170,7 +170,7 @@ func writeFishCompletion(cmdCtx *Context) {
 	for _, name := range append(commandNames(), "help") {
 		fmt.Fprintf(cmdCtx.Writer, "complete -c nodex -n '__fish_use_subcommand' -a %s\n", name)
 	}
-	for _, node := range completionPathCases("fish") {
+	for _, node := range completionPathCases() {
 		fmt.Fprintf(cmdCtx.Writer, "complete -c nodex -n '__fish_seen_subcommand_from %s' -a '%s'\n", strings.ReplaceAll(node.Path, " ", " "), strings.Join(node.Children, " "))
 	}
 }
@@ -191,7 +191,7 @@ Register-ArgumentCompleter -Native -CommandName nodex -ScriptBlock {
 		}
 		return out
 	}(), ", "))
-	for _, node := range completionPathCases("powershell") {
+	for _, node := range completionPathCases() {
 		fmt.Fprintf(cmdCtx.Writer, "  if ($path -eq '%s') { $values = @(%s) }\n", strings.ReplaceAll(node.Path, "'", "''"), strings.Join(func() []string {
 			out := make([]string, len(node.Children))
 			for i, c := range node.Children {
