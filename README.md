@@ -108,6 +108,7 @@ nodex pools              List resource pools
 nodex pbs                Inspect Proxmox Backup Server; guarded maintenance runs
 nodex environment        Unified PVE/PBS health and backup coverage
 nodex maintenance        Fleet maintenance status, planning, and guarded apply
+nodex certification      Opt-in disposable-environment certification
 nodex monitor             Run configured one-shot health checks
 nodex network            Inspect and manage network config
 nodex access             Inspect and manage identity (expert)
@@ -130,6 +131,7 @@ Global flags go before the command name: `nodex --output json node list`.
 - [Security policy](SECURITY.md) — threat model, reporting, protections
 - [Release procedure](docs/releasing.md) — reproducible artifact validation
 - [Maintenance operations](docs/maintenance.md) — plans, guarded apply, and receipts
+- [Certification](docs/certification.md) — opt-in disposable-environment validation and cleanup recovery
 - [Support](SUPPORT.md) — what is supported, how to get help
 - [Contributing](CONTRIBUTING.md) — development setup, PR requirements
 

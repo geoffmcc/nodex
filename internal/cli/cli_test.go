@@ -843,6 +843,15 @@ func TestWriteFirewallAdvancedNilHandling(t *testing.T) {
 }
 
 func TestPhase13SubcommandsRegistered(t *testing.T) {
+	certification, ok := GetCommand("certification")
+	if !ok {
+		t.Fatal("certification command not registered")
+	}
+	for _, name := range []string{"run", "cleanup", "report"} {
+		if _, ok := certification.sub[name]; !ok {
+			t.Fatalf("certification command missing %s", name)
+		}
+	}
 	ha, ok := GetCommand("ha")
 	if !ok {
 		t.Fatal("ha command not registered")

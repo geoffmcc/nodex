@@ -80,6 +80,11 @@ func init() {
 	)
 	register("init", "Initialize nodex configuration", runInit)
 	register("setup", "Guided secure provider setup", runSetup)
+	register("certification", "Run opt-in disposable-environment certification", nil,
+		&command{name: "run", short: "Create, verify, and clean up a certification VM", run: runCertification},
+		&command{name: "cleanup", short: "Recover pending certification cleanup", run: runCertificationCleanup},
+		&command{name: "report", short: "Show the sanitized certification ledger", run: runCertificationReport},
+	)
 	register("completion", "Generate shell completion scripts", runCompletion)
 	register("profile", "Manage connection profiles", nil,
 		&command{name: "add", short: "Add a new profile", run: runProfileAdd},

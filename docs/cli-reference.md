@@ -109,6 +109,25 @@ and endpoint are explicitly supplied. Configuration is written atomically.
 `--check` runs read-only connectivity, API-version, capability, and supported
 permission diagnostics after the profile is written.
 
+### `nodex certification`
+
+Run an explicitly selected disposable-environment certification transaction.
+Certification is restricted to the configured `nodex-test-admin` profile and
+never falls back to the current profile.
+
+```bash
+nodex --profile nodex-test-admin --yes --confirm-target nodex-cert-smoke \
+  certification run --node <node> --vmid <vmid> --name nodex-cert-smoke --storage <storage>
+nodex --profile nodex-test-admin --yes --confirm-target <ledger-entry-id> certification cleanup
+nodex certification report [--ledger <path>]
+```
+
+Run records cleanup intent before creating a VM, waits for task completion, and
+verifies both creation and cleanup. A failed or interrupted run remains in the
+ledger for recovery. Names must begin with `nodex-cert-`; reports contain no
+credentials or provider response bodies. Do not use this command against
+production-looking targets.
+
 ### `nodex completion`
 
 Generate shell completion scripts.
