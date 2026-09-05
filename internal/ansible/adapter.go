@@ -3,6 +3,7 @@ package ansible
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,9 @@ import (
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/redact"
 )
+
+//go:embed callback/nodex_json.py
+var nodexJSONCallback []byte
 
 const (
 	// DefaultTimeout bounds a whole playbook run.
@@ -292,6 +296,14 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	if err := os.Chmod(workDir, 0o700); err != nil { // #nosec G302 -- directories need the owner execute bit; 0700 is owner-only
 		return nil, fmt.Errorf("restrict work dir: %w", err)
 	}
+	callbackDir := filepath.Join(workDir, "callback_plugins")
+	if err := os.Mkdir(callbackDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create callback directory: %w", err)
+	}
+	callbackPath := filepath.Join(callbackDir, "nodex_json.py")
+	if err := os.WriteFile(callbackPath, nodexJSONCallback, 0o600); err != nil {
+		return nil, fmt.Errorf("write callback plugin: %w", err)
+	}
 
 	playbookPath := filepath.Join(workDir, "playbook.yml")
 	if err := os.WriteFile(playbookPath, []byte(op.Playbook()), 0o600); err != nil {
@@ -304,7 +316,7 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	// Pin the Ansible configuration so a working-directory ansible.cfg can
 	// never inject plugins or weaken host-key checking.
 	cfgPath := filepath.Join(workDir, "ansible.cfg")
-	if err := os.WriteFile(cfgPath, []byte(pinnedAnsibleCfg), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(fmt.Sprintf(pinnedAnsibleCfg, callbackDir)), 0o600); err != nil {
 		return nil, fmt.Errorf("write ansible.cfg: %w", err)
 	}
 	localTmp := filepath.Join(workDir, "tmp")
@@ -500,7 +512,8 @@ func renderInventory(hosts []HostSpec) string {
 const pinnedAnsibleCfg = `[defaults]
 host_key_checking = True
 retry_files_enabled = False
-stdout_callback = json
+stdout_callback = nodex_json
+callback_plugins = %s
 nocows = 1
 interpreter_python = auto_silent
 [ssh_connection]
@@ -513,7 +526,7 @@ func minimalEnv(extra map[string]string) []string {
 	env := []string{
 		"LANG=C.UTF-8",
 		"ANSIBLE_HOST_KEY_CHECKING=True",
-		"ANSIBLE_STDOUT_CALLBACK=json",
+		"ANSIBLE_STDOUT_CALLBACK=nodex_json",
 		"ANSIBLE_RETRY_FILES_ENABLED=False",
 		"ANSIBLE_NOCOLOR=1",
 		"ANSIBLE_FORCE_COLOR=0",

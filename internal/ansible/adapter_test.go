@@ -324,7 +324,7 @@ func TestRunMinimalEnvironment(t *testing.T) {
 	if strings.Contains(res.Stdout, "NODEX_SECRET_SHOULD_NOT_LEAK") || strings.Contains(res.Stdout, "AWS_SECRET_ACCESS_KEY") {
 		t.Error("parent environment leaked into the child process")
 	}
-	for _, want := range []string{"ANSIBLE_HOST_KEY_CHECKING=True", "ANSIBLE_STDOUT_CALLBACK=json", "ANSIBLE_CONFIG="} {
+	for _, want := range []string{"ANSIBLE_HOST_KEY_CHECKING=True", "ANSIBLE_STDOUT_CALLBACK=nodex_json", "ANSIBLE_CONFIG="} {
 		if !strings.Contains(res.Stdout, want) {
 			t.Errorf("child environment missing %q", want)
 		}
