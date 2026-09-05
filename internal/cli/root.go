@@ -79,6 +79,7 @@ func init() {
 		&command{name: "parse", short: "Parse a semver version", run: runVersionParse},
 	)
 	register("init", "Initialize nodex configuration", runInit)
+	register("setup", "Guided secure provider setup", runSetup)
 	register("completion", "Generate shell completion scripts", runCompletion)
 	register("profile", "Manage connection profiles", nil,
 		&command{name: "add", short: "Add a new profile", run: runProfileAdd},
@@ -88,6 +89,7 @@ func init() {
 		&command{name: "use", short: "Set the current profile", run: runProfileUse},
 		&command{name: "current", short: "Show the current profile", run: runProfileCurrent},
 		&command{name: "test", short: "Test profile connectivity", run: runProfileTest},
+		&command{name: "diagnose-permissions", short: "Diagnose profile permissions", run: runProfileDiagnosePermissions},
 		&command{name: "remove", short: "Remove a profile", run: runProfileRemove},
 		&command{name: "export", short: "Export a profile (sanitized)", run: runProfileExport},
 		&command{name: "import", short: "Import a profile from stdin", run: runProfileImport},

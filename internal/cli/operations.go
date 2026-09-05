@@ -142,6 +142,12 @@ func buildRegistry() []OperationMeta {
 		OutputModes: []string{"table"}, HandlerFunc: "runInit",
 	})
 	ops = append(ops, OperationMeta{
+		Path: "setup", Description: "Guided secure provider setup",
+		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
+		SecuritySensitivity: SecCredentials,
+		OutputModes:         []string{"table", "json", "yaml"}, HandlerFunc: "runSetup",
+	})
+	ops = append(ops, OperationMeta{
 		Path: "completion", Description: "Generate shell completion scripts",
 		Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
 		OutputModes: []string{"table"}, HandlerFunc: "runCompletion",
@@ -187,6 +193,11 @@ func buildRegistry() []OperationMeta {
 		Path: "profile test", Description: "Test profile connectivity",
 		Inspection: true, Scope: ScopeProfile, SafetyTier: safety.TierObservation,
 		OutputModes: []string{"table"}, HandlerFunc: "runProfileTest",
+	})
+	ops = append(ops, OperationMeta{
+		Path: "profile diagnose-permissions", Description: "Diagnose profile permissions",
+		Inspection: true, Scope: ScopeProfile, SafetyTier: safety.TierObservation,
+		OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runProfileDiagnosePermissions",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "profile remove", Description: "Remove a profile",

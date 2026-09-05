@@ -12,6 +12,15 @@ Nodex uses a local YAML configuration file plus optional credential backends. Co
 
 `nodex init` creates the configuration file. Interactive mode prompts for provider, endpoint, credential reference, and profile name. Non-interactive mode creates a minimal `default` profile with provider `proxmox` and no endpoint.
 
+`nodex setup` is the guided production setup path. It accepts explicit
+provider, profile, HTTPS endpoint, credential-reference, and optional CA-file
+inputs, validates them before an atomic write, and never accepts token or
+password values as ordinary command-line arguments. Use `--check` for
+read-only connectivity, version, capability, and provider-supported
+permission diagnostics. `nodex profile diagnose-permissions <name>` can run
+the same diagnostics later; unavailable checks are reported as `unsupported`
+or `unknown`, not as success.
+
 ## Schema Versions
 
 Nodex reads schema versions 1 and 2. New configurations are written as

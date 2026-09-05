@@ -89,6 +89,26 @@ nodex --non-interactive init
 
 Interactive mode prompts for provider, endpoint, credential reference, and profile name. Non-interactive mode creates a minimal configuration with a `default` profile using provider `proxmox` and no endpoint. If the configuration file already exists, interactive mode asks before overwriting.
 
+### `nodex setup`
+
+Run guided secure setup for a provider profile. Interactive mode prompts only
+for non-secret configuration values. Secrets are never accepted as command-line
+arguments; use a credential reference to an existing `file`, `keyring`, or
+environment credential.
+
+```bash
+nodex setup
+nodex --non-interactive setup --provider proxmox --profile production \
+  --endpoint https://pve.example.com:8006 \
+  --credential-ref keyring:production --ca-file /path/to/ca.pem --check
+```
+
+`--endpoint` must use HTTPS. `--ca-file`, when supplied, must be a readable
+PEM certificate. Non-interactive setup fails closed unless provider, profile,
+and endpoint are explicitly supplied. Configuration is written atomically.
+`--check` runs read-only connectivity, API-version, capability, and supported
+permission diagnostics after the profile is written.
+
 ### `nodex completion`
 
 Generate shell completion scripts.
@@ -132,6 +152,7 @@ Subcommands:
 | `profile use <name>` | Set the current active profile |
 | `profile current` | Show the current active profile |
 | `profile test [name]` | Test profile connectivity |
+| `profile diagnose-permissions <name>` | Report confirmed, missing, unsupported, and unknown setup/permission checks without exposing credentials |
 | `profile remove <name> [--remove-credential]` | Remove a profile |
 | `profile export <name>` | Export a sanitized profile (no credentials) |
 | `profile import` | Import a profile from stdin |
