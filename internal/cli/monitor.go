@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
@@ -98,7 +99,12 @@ func runMonitorCheck(ctx context.Context, cmdCtx *Context, args []string) error 
 			globalTimeout = time.Duration(cfg.Monitoring.Timeout) * time.Second
 		}
 	}
-	providerResults := providerMonitorResults(ctx, cmdCtx, cfg, targets)
+	providerCtx, cancelProvider := context.WithCancel(ctx)
+	if globalTimeout > 0 {
+		providerCtx, cancelProvider = context.WithTimeout(ctx, globalTimeout)
+	}
+	defer cancelProvider()
+	providerResults := providerMonitorResults(providerCtx, cmdCtx, cfg, targets)
 	report := monitor.CheckWithProviderOptions(ctx, targets, concurrency, globalTimeout, func(_ context.Context, name string, target config.MonitorTarget) (monitor.Result, bool) {
 		result, ok := providerResults[name]
 		return result, ok
@@ -143,6 +149,18 @@ func providerMonitorResults(ctx context.Context, cmdCtx *Context, cfg *config.Co
 			checkName = "guest_backup_coverage"
 		}
 		status, detail := backupHealthCheck(health, checkName)
+		if target.Type == "pbs-tasks" {
+			if activeStatus, activeDetail := backupHealthCheck(health, "pbs_active_tasks"); activeStatus != monitor.Healthy {
+				status, detail = activeStatus, activeDetail
+			} else if len(health.Blockers) > 0 {
+				for _, blocker := range health.Blockers {
+					if strings.Contains(blocker, "active PBS backup-chain task") {
+						status, detail = monitor.Blocked, blocker
+						break
+					}
+				}
+			}
+		}
 		if target.Type == "pve-tasks" && env.PVEProfile == "" {
 			status, detail = monitor.Unsupported, "no pve_profile configured"
 		}
@@ -165,8 +183,14 @@ func providerMonitorType(kind string) bool {
 func providerCheckName(kind string) string {
 	switch kind {
 	case "pve-api", "pve-tasks":
+		if kind == "pve-tasks" {
+			return "pve_failed_backup_tasks"
+		}
 		return "pve_reachable"
 	case "pbs-api", "pbs-tasks":
+		if kind == "pbs-tasks" {
+			return "pbs_failed_tasks"
+		}
 		return "pbs_reachable"
 	case "datastore":
 		return "pbs_datastores"

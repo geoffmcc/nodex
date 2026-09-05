@@ -27,3 +27,10 @@ func TestReceiptTamperDetected(t *testing.T) {
 		t.Fatal("tampered receipt accepted")
 	}
 }
+
+func TestReceiptPathCannotEscapeDirectory(t *testing.T) {
+	path := ReceiptPath("/tmp/receipts", "../outside")
+	if strings.Contains(path, "..") || !strings.HasSuffix(path, "invalid-plan.receipt.json") {
+		t.Fatalf("unsafe receipt path: %q", path)
+	}
+}

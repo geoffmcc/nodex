@@ -203,7 +203,12 @@ type TaskOutcome struct {
 	Failed      bool     `json:"failed,omitempty" yaml:"failed,omitempty"`
 	Skipped     bool     `json:"skipped,omitempty" yaml:"skipped,omitempty"`
 	Unreachable bool     `json:"unreachable,omitempty" yaml:"unreachable,omitempty"`
+	Changed     bool     `json:"changed,omitempty" yaml:"changed,omitempty"`
+	RC          *int     `json:"rc,omitempty" yaml:"rc,omitempty"`
+	Stdout      string   `json:"stdout,omitempty" yaml:"stdout,omitempty"`
 	StdoutLines []string `json:"stdout_lines,omitempty" yaml:"stdout_lines,omitempty"`
+	Stderr      string   `json:"stderr,omitempty" yaml:"stderr,omitempty"`
+	StderrLines []string `json:"stderr_lines,omitempty" yaml:"stderr_lines,omitempty"`
 	StatExists  *bool    `json:"stat_exists,omitempty" yaml:"stat_exists,omitempty"`
 	Message     string   `json:"msg,omitempty" yaml:"msg,omitempty"`
 }
@@ -423,7 +428,12 @@ func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec) {
 					Failed      bool     `json:"failed"`
 					Skipped     bool     `json:"skipped"`
 					Unreachable bool     `json:"unreachable"`
+					Changed     bool     `json:"changed"`
+					RC          *int     `json:"rc"`
+					Stdout      string   `json:"stdout"`
 					StdoutLines []string `json:"stdout_lines"`
+					Stderr      string   `json:"stderr"`
+					StderrLines []string `json:"stderr_lines"`
 					Msg         any      `json:"msg"`
 					Stat        *struct {
 						Exists bool `json:"exists"`
@@ -448,14 +458,19 @@ func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec) {
 					Failed:      hr.Failed,
 					Skipped:     hr.Skipped,
 					Unreachable: hr.Unreachable,
-					StdoutLines: hr.StdoutLines,
+					Changed:     hr.Changed,
+					RC:          hr.RC,
+					Stdout:      sanitizeOutput(hr.Stdout),
+					StdoutLines: sanitizeLines(hr.StdoutLines),
+					Stderr:      sanitizeOutput(hr.Stderr),
+					StderrLines: sanitizeLines(hr.StderrLines),
 				}
 				if hr.Stat != nil {
 					exists := hr.Stat.Exists
 					outcome.StatExists = &exists
 				}
 				if s, ok := hr.Msg.(string); ok {
-					outcome.Message = s
+					outcome.Message = sanitizeOutput(s)
 				}
 				result.TaskOutcomes[host] = append(result.TaskOutcomes[host], outcome)
 			}
@@ -566,6 +581,17 @@ func minimalEnv(extra map[string]string) []string {
 // captured child output.
 func sanitizeOutput(s string) string {
 	return redact.String(output.SanitizeTerminal(s))
+}
+
+func sanitizeLines(lines []string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	sanitized := make([]string, len(lines))
+	for i, line := range lines {
+		sanitized[i] = sanitizeOutput(line)
+	}
+	return sanitized
 }
 
 // boundedBuffer captures up to limit bytes and records truncation.

@@ -36,6 +36,7 @@ func seedMaintenanceConfig(t *testing.T) {
 			},
 			"pve-primary": {
 				Address: "pve.example.invalid", Role: "pve", Environment: "e2e-env",
+				PVENode: "pve-primary",
 				SSHUser: "automation", MaintenanceGroup: "hypervisors",
 				Criticality: "critical", BackupRequired: true,
 			},
@@ -64,6 +65,7 @@ func cannedHealthyResult(hosts []ansible.HostSpec) *ansible.RunResult {
 	for _, h := range hosts {
 		res.Hosts = append(res.Hosts, ansible.HostResult{Host: h.Name, OK: 7})
 		res.TaskOutcomes[h.Name] = []ansible.TaskOutcome{
+			{Task: "Verify Debian family"},
 			{Task: "List upgradable packages", StdoutLines: []string{
 				"Listing...",
 				"openssl/stable-security 3.0.15-1 amd64 [upgradable from: 3.0.14-1]",

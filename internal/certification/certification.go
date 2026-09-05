@@ -290,9 +290,34 @@ func Run(ctx context.Context, p domain.Provider, req Request, ledgerPath string,
 	}
 	upid, err := creator.VMCreate(ctx, req.Node, req.VMID, req.Name, "", req.Storage)
 	if err != nil {
+		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+			entry.State, entry.Error, entry.UpdatedAt = "unknown", "creation request outcome unavailable", time.Now().Unix()
+		}); saveErr != nil {
+			return result, fmt.Errorf("create certification VM failed and ledger update failed: %w", saveErr)
+		}
 		return result, fmt.Errorf("create certification VM: %w", err)
 	}
+	if strings.TrimSpace(upid) == "" {
+		_ = UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+			entry.State, entry.Error, entry.UpdatedAt = "unknown", "creation returned no task ID", time.Now().Unix()
+		})
+		return result, fmt.Errorf("create certification VM returned no task ID")
+	}
+	if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+		entry.CreateUPID, entry.UpdatedAt = upid, time.Now().Unix()
+	}); err != nil {
+		return result, fmt.Errorf("checkpoint certification creation task: %w", err)
+	}
 	if err := waitTask(ctx, p, req.Node, upid); err != nil {
+		state := "failed"
+		if task.IsUnknownOutcome(err) || ctx.Err() != nil {
+			state = "unknown"
+		}
+		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+			entry.State, entry.Error, entry.UpdatedAt = state, "creation task outcome unavailable", time.Now().Unix()
+		}); saveErr != nil {
+			return result, fmt.Errorf("create certification VM failed and ledger update failed: %w", saveErr)
+		}
 		return result, fmt.Errorf("create certification VM: %w", err)
 	}
 	if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) { entry.State, entry.UpdatedAt = "created", time.Now().Unix() }); err != nil {
@@ -303,9 +328,30 @@ func Run(ctx context.Context, p domain.Provider, req Request, ledgerPath string,
 	}
 	deleteUPID, err := deleter.VMDelete(ctx, req.Node, req.VMID)
 	if err != nil {
+		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup request outcome unavailable", time.Now().Unix()
+		}); saveErr != nil {
+			return result, fmt.Errorf("cleanup certification VM failed and ledger update failed: %w", saveErr)
+		}
 		return result, fmt.Errorf("cleanup certification VM: %w", err)
 	}
+	if strings.TrimSpace(deleteUPID) == "" {
+		_ = UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup returned no task ID", time.Now().Unix()
+		})
+		return result, fmt.Errorf("cleanup certification VM returned no task ID")
+	}
+	if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+		entry.State, entry.Cleanup, entry.DeleteUPID, entry.UpdatedAt = "deleting", "in_progress", deleteUPID, time.Now().Unix()
+	}); err != nil {
+		return result, fmt.Errorf("checkpoint certification cleanup task: %w", err)
+	}
 	if err := waitTask(ctx, p, req.Node, deleteUPID); err != nil {
+		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup task outcome unavailable", time.Now().Unix()
+		}); saveErr != nil {
+			return result, fmt.Errorf("cleanup certification VM failed and ledger update failed: %w", saveErr)
+		}
 		return result, fmt.Errorf("cleanup certification VM: %w", err)
 	}
 	vms, err = inspector.VMs(ctx)
@@ -373,14 +419,31 @@ func Cleanup(ctx context.Context, p domain.Provider, ledgerPath, confirm string,
 		}
 		return []Result{{Profile: e.Profile, Target: e.Name, State: "cleaned", Cleanup: "complete", Ledger: ledgerPath}}, nil
 	}
-	upid, err := d.VMDelete(ctx, e.Node, e.VMID)
-	if err != nil {
-		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
-			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup request failed", time.Now().Unix()
-		}); saveErr != nil {
-			return nil, fmt.Errorf("persist cleanup failure: %w", saveErr)
+	upid := e.DeleteUPID
+	if upid == "" {
+		upid, err = d.VMDelete(ctx, e.Node, e.VMID)
+		if err != nil {
+			if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+				entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup request outcome unavailable", time.Now().Unix()
+			}); saveErr != nil {
+				return nil, fmt.Errorf("persist cleanup failure: %w", saveErr)
+			}
+			return nil, err
 		}
-		return nil, err
+		if strings.TrimSpace(upid) == "" {
+			_ = UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+				entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup returned no task ID", time.Now().Unix()
+			})
+			return nil, fmt.Errorf("cleanup task has no task ID")
+		}
+		if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+			entry.State, entry.Cleanup, entry.DeleteUPID, entry.Error, entry.UpdatedAt = "deleting", "in_progress", upid, "", time.Now().Unix()
+		}); err != nil {
+			return nil, fmt.Errorf("checkpoint cleanup task: %w", err)
+		}
+	}
+	if strings.TrimSpace(upid) == "" {
+		return nil, fmt.Errorf("cleanup task has no task ID")
 	}
 	if err := waitTask(ctx, p, e.Node, upid); err != nil {
 		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {

@@ -466,6 +466,14 @@ func validateInventory(cfg *Config) error {
 		if !ProviderRegex.MatchString(h.Role) {
 			return fail("invalid role %q", h.Role)
 		}
+		if h.Role == RolePVE {
+			if h.PVENode == "" {
+				return fail("pve_node is required for PVE inventory hosts")
+			}
+			if !ProfileRegex.MatchString(h.PVENode) {
+				return fail("invalid pve_node %q", h.PVENode)
+			}
+		}
 		if h.SSHUser == "" {
 			return fail("ssh_user is required")
 		}

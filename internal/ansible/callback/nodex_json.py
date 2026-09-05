@@ -36,11 +36,11 @@ class CallbackModule(CallbackBase):
             "failed": bool(data.get("failed", False)),
             "skipped": bool(data.get("skipped", False)),
             "unreachable": bool(data.get("unreachable", False)),
+            "changed": bool(data.get("changed", False)),
         }
-        if "stdout_lines" in data:
-            outcome["stdout_lines"] = data["stdout_lines"]
-        if "msg" in data:
-            outcome["msg"] = data["msg"]
+        for key in ("rc", "stdout", "stderr", "stdout_lines", "stderr_lines", "msg"):
+            if key in data:
+                outcome[key] = data[key]
         if "stat" in data and isinstance(data["stat"], dict):
             outcome["stat"] = {"exists": bool(data["stat"].get("exists", False))}
         self.current_task["hosts"][host] = outcome

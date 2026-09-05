@@ -293,6 +293,7 @@ inventory:
       address: pve.example.com
       role: pve
       environment: homelab
+      pve_node: pve-primary
       pve_profile: production-pve
       ssh_user: automation
       ssh_port: 22
@@ -309,6 +310,7 @@ inventory:
 | `address` | yes | — | Hostname or IP. No scheme, port, or userinfo. |
 | `role` | yes | — | Host role: `pve`, `pbs`, `dns`, `generic`, or another lowercase identifier. `pve`, `pbs`, and `dns` receive extra protection in maintenance sequencing. |
 | `environment` | no | — | Environment this host belongs to; must exist in `environments`. |
+| `pve_node` | for `pve` hosts | — | Exact Proxmox node name represented by this SSH host. Required for safe LXC `pct` execution; it prevents a profile with multiple PVE hosts from selecting the wrong node. |
 | `pve_profile` / `pbs_profile` | no | — | Provider profile linkage for backup-aware checks. |
 | `ssh_user` | yes | — | SSH user name. |
 | `ssh_port` | no | 22 | SSH port. |

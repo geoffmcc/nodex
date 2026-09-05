@@ -29,7 +29,9 @@
           - test
           - -x
           - /usr/bin/apt-get
+      register: nodex_container_apt
       changed_when: false
+      failed_when: "nodex_container_apt.rc != 0"
 
     - name: Refresh LXC package metadata
       ansible.builtin.command:
@@ -40,6 +42,7 @@
           - --
           - apt-get
           - update
+      register: nodex_container_refresh
       changed_when: false
 
     - name: List LXC upgradable packages
@@ -53,6 +56,19 @@
           - list
           - --upgradable
       register: nodex_container_upgradable
+      changed_when: false
+
+    - name: Simulate LXC full upgrade
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - apt-get
+          - -s
+          - dist-upgrade
+      register: nodex_container_upgrade_simulation
       changed_when: false
 
     - name: Check LXC package database

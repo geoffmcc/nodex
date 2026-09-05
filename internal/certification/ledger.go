@@ -43,6 +43,8 @@ type Entry struct {
 	Fingerprint      string `json:"fingerprint,omitempty"`
 	CAIdentity       string `json:"ca_identity,omitempty"`
 	RunID            string `json:"run_id,omitempty"`
+	CreateUPID       string `json:"create_upid,omitempty"`
+	DeleteUPID       string `json:"delete_upid,omitempty"`
 }
 
 type Ledger struct {
@@ -136,6 +138,9 @@ func Reserve(path string, entry Entry, maxResources int) (*Ledger, error) {
 	if maxResources <= 0 {
 		return nil, fmt.Errorf("invalid certification resource limit")
 	}
+	if entry.State != "reserved" || entry.Cleanup != "required" {
+		return nil, fmt.Errorf("new certification entries must start reserved with cleanup required")
+	}
 	lock, err := config.Lock(path)
 	if err != nil {
 		return nil, fmt.Errorf("lock certification ledger: %w", err)
@@ -191,8 +196,14 @@ func ClaimCleanup(path, id string, auth *Authorization) (Entry, error) {
 		if e.Environment != auth.Environment || e.Profile != auth.Profile || e.EndpointIdentity != auth.Endpoint || !strings.EqualFold(e.ProviderIdentity, auth.Provider) || e.Fingerprint != auth.ExpectedFingerprint || e.CAIdentity != auth.TrustedCAIdentity {
 			return Entry{}, fmt.Errorf("ledger entry does not match the current certification authorization")
 		}
-		if e.State == "reserved" || e.State == "creating" || e.Cleanup == "in_progress" {
+		if e.Cleanup == "in_progress" && e.DeleteUPID == "" {
 			return Entry{}, fmt.Errorf("certification creation or cleanup is already in progress")
+		}
+		if e.Cleanup == "in_progress" {
+			return *e, nil
+		}
+		if e.State == "reserved" || e.State == "creating" {
+			return Entry{}, fmt.Errorf("certification creation is still in progress")
 		}
 		e.State, e.Cleanup, e.UpdatedAt = "deleting", "in_progress", time.Now().Unix()
 		if err := saveUnlocked(path, l); err != nil {

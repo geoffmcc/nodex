@@ -159,6 +159,18 @@ func TestPlanRejectsUnknownPolicyAndSchema(t *testing.T) {
 	}
 }
 
+func TestPlanRejectsUnsafeIdentifier(t *testing.T) {
+	p := samplePlan(t)
+	p.PlanID = "../outside"
+	p, err := Finalize(p)
+	if err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	if err := Verify(p, fixedNow); err == nil {
+		t.Fatal("path-like plan ID passed verification")
+	}
+}
+
 func TestPlanContainsNoSecretLikeContent(t *testing.T) {
 	p := samplePlan(t)
 	raw, err := json.Marshal(p)
@@ -275,4 +287,22 @@ func TestInterpretUnsupportedDistribution(t *testing.T) {
 	}
 }
 
+func TestInterpretCheckUpdatesRequiresCompleteSuccessfulEvidence(t *testing.T) {
+	res := &ansible.RunResult{
+		Hosts: []ansible.HostResult{{Host: "web1"}},
+		TaskOutcomes: map[string][]ansible.TaskOutcome{
+			"web1": {
+				{Task: "Verify Debian family"},
+				{Task: "List upgradable packages", RC: intPtr(7)},
+			},
+		},
+	}
+	statuses := InterpretCheckUpdates(res)
+	if len(statuses) != 1 || statuses[0].EvidenceComplete {
+		t.Fatalf("incomplete task evidence was accepted: %+v", statuses)
+	}
+}
+
 func boolPtr(b bool) *bool { return &b }
+
+func intPtr(i int) *int { return &i }

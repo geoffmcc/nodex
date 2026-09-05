@@ -411,6 +411,18 @@ func TestPBSOnlyEnvironment(t *testing.T) {
 	if res.Overall != StatusUnsupported {
 		t.Errorf("overall = %s, want unsupported", res.Overall)
 	}
+	if res.MaintenanceSafe {
+		t.Error("unsupported environment checks must not be safe for maintenance")
+	}
+}
+
+func TestUnknownVerificationStateIsNotHealthy(t *testing.T) {
+	pve, pbs := healthyFakes()
+	pbs.snapshots["backups|"][0].Verification = &domain.PBSVerificationState{State: "mystery"}
+	res := run(t, pve, pbs, nil)
+	if res.Overall != StatusUnknown || res.MaintenanceSafe {
+		t.Fatalf("unknown verification state was treated as safe: overall=%s safe=%t guests=%+v", res.Overall, res.MaintenanceSafe, res.Guests)
+	}
 }
 
 func TestNamespaceSearch(t *testing.T) {

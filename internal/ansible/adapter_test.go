@@ -61,6 +61,9 @@ func TestHelperProcess(t *testing.T) {
 					map[string]any{
 						"task": map[string]any{"name": "List upgradable packages"},
 						"hosts": map[string]any{hosts[0]: map[string]any{
+							"changed":      false,
+							"rc":           0,
+							"stdout":       "Listing...\nnano/stable 8.0-1 amd64 [upgradable from: 7.2-1]",
 							"stdout_lines": []string{"Listing...", "nano/stable 8.0-1 amd64 [upgradable from: 7.2-1]"},
 						}},
 					},
@@ -551,6 +554,9 @@ func TestTaskOutcomesParsed(t *testing.T) {
 	up := byName["List upgradable packages"]
 	if len(up.StdoutLines) != 2 || up.StdoutLines[1] != "nano/stable 8.0-1 amd64 [upgradable from: 7.2-1]" {
 		t.Errorf("upgradable stdout lines wrong: %+v", up)
+	}
+	if up.RC == nil || *up.RC != 0 || up.Stdout == "" || up.Changed {
+		t.Errorf("structured task result wrong: %+v", up)
 	}
 	rb := byName["Check reboot-required marker"]
 	if rb.StatExists == nil || !*rb.StatExists {

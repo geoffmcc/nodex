@@ -164,8 +164,13 @@ func compareHost(c *HostComparison, p, n HostSnapshot) {
 	}
 	compare("address", p.Address == n.Address)
 	compare("role", p.Role == n.Role)
+	compare("environment", p.Environment == n.Environment)
+	compare("pve_node", p.PVENode == n.PVENode)
+	compare("pve_profile", p.PVEProfile == n.PVEProfile)
+	compare("pbs_profile", p.PBSProfile == n.PBSProfile)
 	compare("group", p.Group == n.Group)
 	compare("criticality", p.Criticality == n.Criticality)
+	compare("automatic_reboot", p.AutomaticReboot == n.AutomaticReboot)
 	compare("ssh_user", p.SSHUser == n.SSHUser)
 	compare("ssh_port", p.SSHPort == n.SSHPort)
 	compare("key_configured", p.KeyConfigured == n.KeyConfigured)
