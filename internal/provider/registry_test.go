@@ -39,6 +39,7 @@ func TestGetUnknown(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
+	Register("list-test-provider", func() domain.Provider { return &mockProvider{name: "list-test-provider"} })
 	names := List()
 	if len(names) == 0 {
 		t.Fatal("expected at least one registered provider")
@@ -46,8 +47,9 @@ func TestList(t *testing.T) {
 }
 
 func TestIsRegistered(t *testing.T) {
-	if !IsRegistered("test-provider") {
-		t.Error("expected test-provider to be registered")
+	Register("registered-test-provider", func() domain.Provider { return &mockProvider{name: "registered-test-provider"} })
+	if !IsRegistered("registered-test-provider") {
+		t.Error("expected registered-test-provider to be registered")
 	}
 	if IsRegistered("nonexistent-provider") {
 		t.Error("expected nonexistent-provider to not be registered")

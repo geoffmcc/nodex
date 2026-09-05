@@ -13,6 +13,7 @@ func validInventoryConfig() *Config {
 			"pve-primary": {
 				Address:          "pve.example.invalid",
 				Role:             RolePVE,
+				PVENode:          "pve-primary",
 				Environment:      "homelab",
 				PVEProfile:       "production-pve",
 				SSHUser:          "automation",
@@ -75,6 +76,8 @@ func TestInventoryValidation(t *testing.T) {
 		{"port too high", func(h *InventoryHost) { h.SSHPort = 70000 }, "ssh_port"},
 		{"negative port", func(h *InventoryHost) { h.SSHPort = -1 }, "ssh_port"},
 		{"bad criticality", func(h *InventoryHost) { h.Criticality = "very-important" }, "criticality"},
+		{"missing PVE node", func(h *InventoryHost) { h.PVENode = "" }, "pve_node"},
+		{"bad PVE node", func(h *InventoryHost) { h.PVENode = "bad node!" }, "pve_node"},
 		{"bad maintenance group", func(h *InventoryHost) { h.MaintenanceGroup = "bad group!" }, "maintenance_group"},
 		{"unknown environment", func(h *InventoryHost) { h.Environment = "nonexistent" }, "unknown environment"},
 		{"unknown pve profile", func(h *InventoryHost) { h.PVEProfile = "missing" }, "unknown profile"},

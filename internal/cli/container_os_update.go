@@ -20,6 +20,7 @@ const (
 	containerStatusTask   = "Verify LXC guest is running"
 	containerAPTTask      = "Verify LXC guest uses APT"
 	containerPackagesTask = "List LXC upgradable packages"
+	containerSimTask      = "Simulate LXC full upgrade"
 	containerDpkgTask     = "Check LXC package database"
 	containerRebootTask   = "Check LXC reboot-required marker"
 	containerRootTask     = "Report LXC root filesystem usage"
@@ -77,16 +78,19 @@ func parseContainerOSUpdateArgs(args []string) error {
 	return nil
 }
 
-func findPVEInventoryHost(cfg *config.Config, profileName string) (string, config.InventoryHost, error) {
+func findPVEInventoryHost(cfg *config.Config, profileName, node string) (string, config.InventoryHost, error) {
 	if cfg.Inventory == nil {
 		return "", config.InventoryHost{}, fmt.Errorf("no inventory configured; an enrolled PVE host is required")
+	}
+	if node == "" {
+		return "", config.InventoryHost{}, fmt.Errorf("a PVE node is required to select the pct execution host")
 	}
 	var matches []struct {
 		name string
 		host config.InventoryHost
 	}
 	for name, host := range cfg.Inventory.Hosts {
-		if host.Role == config.RolePVE && host.PVEProfile == profileName {
+		if host.Role == config.RolePVE && host.PVEProfile == profileName && host.PVENode == node {
 			matches = append(matches, struct {
 				name string
 				host config.InventoryHost
@@ -94,10 +98,10 @@ func findPVEInventoryHost(cfg *config.Config, profileName string) (string, confi
 		}
 	}
 	if len(matches) == 0 {
-		return "", config.InventoryHost{}, fmt.Errorf("profile %q has no enrolled PVE host for pct execution", profileName)
+		return "", config.InventoryHost{}, fmt.Errorf("profile %q has no enrolled PVE host for node %q pct execution", profileName, node)
 	}
 	if len(matches) != 1 {
-		return "", config.InventoryHost{}, fmt.Errorf("profile %q has %d enrolled PVE hosts; pct execution target is ambiguous", profileName, len(matches))
+		return "", config.InventoryHost{}, fmt.Errorf("profile %q has %d enrolled PVE hosts for node %q; pct execution target is ambiguous", profileName, len(matches), node)
 	}
 	return matches[0].name, matches[0].host, nil
 }
@@ -108,35 +112,79 @@ func interpretContainerOSUpdate(result *ansible.RunResult, hostName string) cont
 		return state
 	}
 	seen := map[string]bool{}
+	usable := map[string]bool{}
 	for _, outcome := range result.TaskOutcomes[hostName] {
 		seen[outcome.Task] = true
+		usable[outcome.Task] = containerTaskUsable(outcome)
 		switch outcome.Task {
 		case containerPackagesTask:
 			state.PendingUpdates = parseContainerPackages(outcome.StdoutLines)
 		case containerDpkgTask:
-			state.DpkgIssues = len(nonEmptyLines(outcome.StdoutLines)) > 0
+			state.DpkgIssues = (outcome.RC != nil && *outcome.RC != 0) || len(nonEmptyLines(outcome.StdoutLines)) > 0
 		case containerRebootTask:
-			state.RebootRequired = len(nonEmptyLines(outcome.StdoutLines)) > 0
+			if outcome.RC != nil {
+				state.RebootRequired = *outcome.RC == 0
+			} else {
+				state.RebootRequired = len(nonEmptyLines(outcome.StdoutLines)) > 0
+			}
 		case containerRootTask:
 			state.RootUsage = parseContainerRootUsage(outcome.StdoutLines)
 		}
 	}
-	state.EvidenceComplete = seen[containerStatusTask] && seen[containerAPTTask] && seen[containerPackagesTask] && seen[containerDpkgTask] && seen[containerRebootTask]
+	state.EvidenceComplete = true
+	for _, task := range []string{containerStatusTask, containerAPTTask, containerPackagesTask, containerSimTask, containerDpkgTask, containerRebootTask, containerRootTask} {
+		if !seen[task] || !usable[task] {
+			state.EvidenceComplete = false
+			break
+		}
+	}
+	if state.RootUsage == "" {
+		state.EvidenceComplete = false
+	}
 	return state
 }
 
+func containerTaskUsable(outcome ansible.TaskOutcome) bool {
+	if outcome.Failed || outcome.Skipped || outcome.Unreachable {
+		return false
+	}
+	if outcome.RC == nil {
+		return false
+	}
+	rc := *outcome.RC
+	// `stat` returns 1 when the reboot marker is absent. The package audit also
+	// uses its return code as diagnostic evidence, so its non-zero result is
+	// handled by DpkgIssues instead of being discarded as an execution error.
+	if outcome.Task == containerDpkgTask {
+		return true
+	}
+	if outcome.Task == containerRebootTask {
+		return rc == 0 || rc == 1
+	}
+	return rc == 0
+}
+
 func missingContainerUpdateEvidence(result *ansible.RunResult, hostName string) []string {
-	seen := map[string]bool{}
+	outcomes := map[string]ansible.TaskOutcome{}
 	if result != nil {
 		for _, outcome := range result.TaskOutcomes[hostName] {
-			seen[outcome.Task] = true
+			outcomes[outcome.Task] = outcome
 		}
 	}
-	required := []string{containerStatusTask, containerAPTTask, containerPackagesTask, containerDpkgTask, containerRebootTask}
+	required := []string{containerStatusTask, containerAPTTask, containerPackagesTask, containerSimTask, containerDpkgTask, containerRebootTask, containerRootTask}
 	missing := make([]string, 0)
 	for _, task := range required {
-		if !seen[task] {
+		outcome, ok := outcomes[task]
+		if !ok {
 			missing = append(missing, task)
+			continue
+		}
+		if !containerTaskUsable(outcome) {
+			missing = append(missing, task+" (unusable)")
+			continue
+		}
+		if task == containerRootTask && parseContainerRootUsage(outcome.StdoutLines) == "" {
+			missing = append(missing, task+" (missing root usage)")
 		}
 	}
 	return missing
@@ -197,7 +245,7 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 	if err != nil {
 		return err
 	}
-	hostName, inventoryHost, err := findPVEInventoryHost(cfg, profileName)
+	hostName, inventoryHost, err := findPVEInventoryHost(cfg, profileName, node)
 	if err != nil {
 		return app.NewExitError(err, app.ExitConfig)
 	}
@@ -238,10 +286,13 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 	}
 	before := interpretContainerOSUpdate(preflight, hostName)
 	if !before.EvidenceComplete {
-		return app.NewExitError(fmt.Errorf("container %s preflight was incomplete; missing task evidence: %s", target, strings.Join(missingContainerUpdateEvidence(preflight, hostName), ", ")), app.ExitPartialFailure)
+		return app.NewExitError(fmt.Errorf("container %s preflight was incomplete; missing or unusable task evidence: %s", target, strings.Join(missingContainerUpdateEvidence(preflight, hostName), ", ")), app.ExitPartialFailure)
 	}
 	if !preflight.Success {
 		return app.NewExitError(fmt.Errorf("container %s preflight failed", target), app.ExitPartialFailure)
+	}
+	if before.DpkgIssues {
+		return app.NewExitError(fmt.Errorf("container %s has package database issues; update refused", target), app.ExitValidationError)
 	}
 	if len(before.PendingUpdates) == 0 {
 		return writeContainerUpdateResult(cmdCtx, prov, profileName, target, false, false, before, before)
@@ -252,18 +303,27 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 	}
 	applyResult, err := runContainerOSAnsible(ctx, "apply-container-updates", host, vmid)
 	if err != nil {
-		return err
+		return app.NewExitError(fmt.Errorf("container %s update outcome is unknown; do not retry until a fresh preflight completes: %w", target, err), app.ExitAmbiguousOutcome)
 	}
 	if !applyResult.Success {
-		return app.NewExitError(fmt.Errorf("container %s update failed", target), app.ExitTaskFailure)
+		if err := writeContainerUpdateResult(cmdCtx, prov, profileName, target, true, false, before, before); err != nil {
+			return app.NewExitError(fmt.Errorf("container %s update outcome is ambiguous: %w", target, err), app.ExitAmbiguousOutcome)
+		}
+		return app.NewExitError(fmt.Errorf("container %s update outcome is ambiguous; do not retry until a fresh preflight completes", target), app.ExitAmbiguousOutcome)
 	}
 	verifyResult, err := runContainerOSAnsible(ctx, "verify-container-updates", host, vmid)
 	if err != nil {
-		return err
+		return app.NewExitError(fmt.Errorf("container %s update completed but verification outcome is unknown; do not retry until a fresh verification completes: %w", target, err), app.ExitAmbiguousOutcome)
 	}
 	after := interpretContainerOSUpdate(verifyResult, hostName)
 	verified := verifyResult.Success && after.EvidenceComplete && !after.DpkgIssues && len(after.PendingUpdates) == 0
-	return writeContainerUpdateResult(cmdCtx, prov, profileName, target, true, verified, before, after)
+	if err := writeContainerUpdateResult(cmdCtx, prov, profileName, target, true, verified, before, after); err != nil {
+		if !verified {
+			return app.NewExitError(fmt.Errorf("container %s update requires operator review after failed verification: %w", target, err), app.ExitAmbiguousOutcome)
+		}
+		return err
+	}
+	return nil
 }
 
 func writeContainerUpdateResult(cmdCtx *Context, prov domain.Provider, profileName, target string, submitted, verified bool, before, after containerUpdateState) error {

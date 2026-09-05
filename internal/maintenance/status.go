@@ -44,6 +44,9 @@ type HostStatus struct {
 // operation into per-host statuses. Hosts that failed or were unreachable
 // are reported as such, never silently dropped.
 func InterpretCheckUpdates(res *ansible.RunResult) []HostStatus {
+	if res == nil {
+		return nil
+	}
 	statuses := make([]HostStatus, 0, len(res.Hosts))
 	for _, hr := range res.Hosts {
 		hs := HostStatus{
@@ -61,12 +64,21 @@ func InterpretCheckUpdates(res *ansible.RunResult) []HostStatus {
 			statuses = append(statuses, hs)
 			continue
 		}
+		seen := map[string]bool{}
 		for _, outcome := range res.TaskOutcomes[hr.Host] {
+			seen[outcome.Task] = true
 			interpretOutcome(&hs, outcome)
 		}
 		if len(res.TaskOutcomes[hr.Host]) == 0 {
 			hs.EvidenceComplete = false
 			hs.Warnings = append(hs.Warnings, "no task evidence was returned")
+		} else {
+			for _, task := range []string{taskDebianAssert, taskUpgradable, taskUpgradeSim, taskRebootRequired, taskFailedUnits, taskRootUsage} {
+				if !seen[task] {
+					hs.EvidenceComplete = false
+					hs.Warnings = append(hs.Warnings, "missing task evidence: "+task)
+				}
+			}
 		}
 		statuses = append(statuses, hs)
 	}
@@ -74,6 +86,16 @@ func InterpretCheckUpdates(res *ansible.RunResult) []HostStatus {
 }
 
 func interpretOutcome(hs *HostStatus, o ansible.TaskOutcome) {
+	if o.Failed || o.Skipped || o.Unreachable || (o.RC != nil && *o.RC != 0) {
+		hs.EvidenceComplete = false
+		if o.Unreachable {
+			hs.Warnings = append(hs.Warnings, "task reported unreachable")
+		} else if o.Skipped {
+			hs.Warnings = append(hs.Warnings, "task was skipped")
+		} else {
+			hs.Warnings = append(hs.Warnings, "task reported failure: "+o.Task)
+		}
+	}
 	switch o.Task {
 	case taskDebianAssert:
 		if o.Failed {
@@ -107,7 +129,9 @@ func interpretOutcome(hs *HostStatus, o ansible.TaskOutcome) {
 // the normalized facts used by plan comparison.
 func Snapshot(host PlanHost, status HostStatus, sshUser string, sshPort int, keyConfigured, knownHostsConfigured bool) HostSnapshot {
 	return HostSnapshot{
-		Name: host.Name, Address: host.Address, Role: host.Role, Group: host.Group,
+		Name: host.Name, Address: host.Address, Role: host.Role,
+		Environment: host.Environment, PVENode: host.PVENode, PVEProfile: host.PVEProfile,
+		PBSProfile: host.PBSProfile, Group: host.Group, AutomaticReboot: host.AutomaticReboot,
 		Criticality: host.Criticality, SSHUser: sshUser, SSHPort: sshPort,
 		KeyConfigured: keyConfigured, KnownHostsConfigured: knownHostsConfigured,
 		Reachable: status.Reachable, Supported: status.Supported,

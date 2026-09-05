@@ -66,7 +66,7 @@ func (r Receipt) digest() (string, error) {
 }
 
 func (r *Receipt) Finalize() error {
-	if r.Schema != ReceiptSchemaVersion || r.ReceiptID == "" || r.PlanID == "" || r.PlanDigest == "" {
+	if r.Schema != ReceiptSchemaVersion || !validPlanIdentifier(r.ReceiptID) || !validPlanIdentifier(r.PlanID) || r.PlanDigest == "" {
 		return fmt.Errorf("invalid receipt identity")
 	}
 	if r.StartedAt <= 0 || r.UpdatedAt < r.StartedAt || r.State == "" {
@@ -92,7 +92,7 @@ func (r *Receipt) Finalize() error {
 }
 
 func (r Receipt) Verify() error {
-	if r.Schema != ReceiptSchemaVersion || r.ReceiptID == "" || r.PlanID == "" || r.PlanDigest == "" {
+	if r.Schema != ReceiptSchemaVersion || !validPlanIdentifier(r.ReceiptID) || !validPlanIdentifier(r.PlanID) || r.PlanDigest == "" {
 		return fmt.Errorf("invalid receipt")
 	}
 	if r.State != "running" && r.State != "succeeded" && r.State != "failed" && r.State != "unknown" && r.State != "cancelled" && r.State != "abandoned" && r.State != "blocked" {
@@ -217,4 +217,9 @@ func rejectReceiptSymlink(path string) error {
 	return nil
 }
 
-func ReceiptPath(dir, planID string) string { return filepath.Join(dir, planID+".receipt.json") }
+func ReceiptPath(dir, planID string) string {
+	if !validPlanIdentifier(planID) {
+		return filepath.Join(dir, "invalid-plan.receipt.json")
+	}
+	return filepath.Join(dir, planID+".receipt.json")
+}

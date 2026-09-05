@@ -201,11 +201,11 @@ func runMaintenanceInventory(_ context.Context, cmdCtx *Context, args []string) 
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, entries)
 	default:
-		headers := []string{"NAME", "ADDRESS", "ROLE", "ENV", "GROUP", "CRITICALITY", "BACKUP-REQ", "AUTO-REBOOT"}
+		headers := []string{"NAME", "ADDRESS", "ROLE", "PVE-NODE", "ENV", "GROUP", "CRITICALITY", "BACKUP-REQ", "AUTO-REBOOT"}
 		rows := make([][]string, 0, len(entries))
 		for _, e := range entries {
 			rows = append(rows, []string{
-				e.Name, e.Address, e.Role, e.Environment, e.MaintenanceGroup,
+				e.Name, e.Address, e.Role, e.PVENode, e.Environment, e.MaintenanceGroup,
 				e.Criticality, boolYes(e.BackupRequired), boolYes(e.AutomaticReboot),
 			})
 		}
@@ -252,7 +252,13 @@ func runMaintenanceStatus(ctx context.Context, cmdCtx *Context, args []string) e
 	}
 	statusResult := maintenanceStatusResult{
 		Hosts:          maintenance.InterpretCheckUpdates(res),
-		PartialFailure: res.PartialFailure || res.ParseError != "",
+		PartialFailure: res == nil || res.PartialFailure || res.ParseError != "",
+	}
+	for _, host := range statusResult.Hosts {
+		if !host.EvidenceComplete {
+			statusResult.PartialFailure = true
+			break
+		}
 	}
 
 	if f.environment != "" {
@@ -416,12 +422,17 @@ func runMaintenancePlan(ctx context.Context, cmdCtx *Context, args []string) err
 		h := selected[name]
 		status, hasStatus := statusByHost[name]
 		ph := maintenance.PlanHost{
-			Name:           name,
-			Address:        h.Address,
-			Role:           h.Role,
-			Group:          h.MaintenanceGroup,
-			Criticality:    orDefault(h.Criticality, config.CriticalityStandard),
-			BackupRequired: h.BackupRequired,
+			Name:            name,
+			Address:         h.Address,
+			Role:            h.Role,
+			Environment:     h.Environment,
+			PVENode:         h.PVENode,
+			PVEProfile:      h.PVEProfile,
+			PBSProfile:      h.PBSProfile,
+			Group:           h.MaintenanceGroup,
+			Criticality:     orDefault(h.Criticality, config.CriticalityStandard),
+			BackupRequired:  h.BackupRequired,
+			AutomaticReboot: h.AutomaticReboot,
 		}
 		if hasStatus {
 			ph.PendingUpdates = status.PendingUpdates
@@ -432,6 +443,8 @@ func runMaintenancePlan(ctx context.Context, cmdCtx *Context, args []string) err
 				plan.Blockers = append(plan.Blockers, fmt.Sprintf("host %s is unreachable", name))
 			} else if !status.Supported {
 				plan.Blockers = append(plan.Blockers, fmt.Sprintf("host %s is unsupported for maintenance", name))
+			} else if !status.EvidenceComplete {
+				plan.Blockers = append(plan.Blockers, fmt.Sprintf("host %s produced incomplete preflight evidence", name))
 			}
 			plan.Snapshot.Hosts[name] = maintenance.Snapshot(ph, status, h.SSHUser, h.SSHPort, h.SSHKeyFile != "", h.KnownHostsFile != "")
 		} else {
@@ -467,6 +480,7 @@ func runMaintenancePlan(ctx context.Context, cmdCtx *Context, args []string) err
 		plan.Backup = maintenanceBackupState(plan.Backup, envResult)
 		if !envResult.MaintenanceSafe {
 			plan.Blockers = append(plan.Blockers, envResult.Blockers...)
+			plan.Blockers = append(plan.Blockers, fmt.Sprintf("environment %s is not safe for maintenance", f.environment))
 		}
 	} else if len(plan.Backup.RequiredHosts) > 0 {
 		plan.Backup.Satisfied = false
@@ -474,6 +488,8 @@ func runMaintenancePlan(ctx context.Context, cmdCtx *Context, args []string) err
 		plan.Blockers = append(plan.Blockers, "backup requirements cannot be verified without --environment")
 	} else {
 		plan.Backup.Satisfied = true
+		plan.Backup.CoverageComplete = true
+		plan.Backup.VerificationHealthy = true
 		plan.Backup.Detail = "no hosts require backups"
 		plan.Infra = maintenance.InfraSnapshot{Overall: "not-configured", MaintenanceSafe: true, EvidenceComplete: true}
 	}
@@ -481,7 +497,7 @@ func runMaintenancePlan(ctx context.Context, cmdCtx *Context, args []string) err
 	plan.Snapshot.Backup = plan.Backup
 	plan.Snapshot.EvidenceComplete = len(plan.Blockers) == 0 && len(plan.Snapshot.Hosts) == len(plan.Hosts) && plan.Infra.EvidenceComplete
 
-	if res.PartialFailure || res.ParseError != "" {
+	if res == nil || res.PartialFailure || res.ParseError != "" {
 		plan.Warnings = append(plan.Warnings, "preflight was incomplete; see host warnings")
 	}
 
@@ -511,12 +527,19 @@ func environmentCheckStates(result *backuphealth.Result) map[string]string {
 }
 
 func maintenanceBackupState(state maintenance.BackupState, result *backuphealth.Result) maintenance.BackupState {
+	if result == nil {
+		state.Satisfied = false
+		state.CoverageComplete = false
+		state.VerificationHealthy = false
+		return state
+	}
+	state.Satisfied = result.MaintenanceSafe
 	state.CoverageComplete, state.VerificationHealthy = true, true
 	for _, guest := range result.Guests {
 		if guest.Status == backuphealth.StatusUnknown || guest.Status == backuphealth.StatusBlocked {
 			state.CoverageComplete = false
 		}
-		if guest.Verification != "ok" {
+		if guest.Verification == "failed" || guest.Verification == "" || guest.Status == backuphealth.StatusUnknown || guest.Status == backuphealth.StatusBlocked {
 			state.VerificationHealthy = false
 		}
 		if int(guest.AgeHours) > state.OldestBackupAgeHours {
@@ -650,6 +673,9 @@ func runMaintenanceApply(ctx context.Context, cmdCtx *Context, args []string) er
 	if len(plan.Blockers) != 0 {
 		return app.NewExitError(fmt.Errorf("plan %s has %d blocker(s); apply refused", plan.PlanID, len(plan.Blockers)), app.ExitValidationError)
 	}
+	if !plan.Infra.MaintenanceSafe || (len(plan.Backup.RequiredHosts) > 0 && !plan.Backup.Satisfied) {
+		return app.NewExitError(fmt.Errorf("plan %s does not contain a positive maintenance-safety decision; apply refused", plan.PlanID), app.ExitValidationError)
+	}
 	resume := parsed.receiptPath != ""
 	if !cmdCtx.Opts.Yes || !cmdCtx.Opts.Force {
 		return app.NewExitError(fmt.Errorf("confirmation refused: apply requires --yes --force"), app.ExitUsage)
@@ -667,24 +693,23 @@ func runMaintenanceApply(ctx context.Context, cmdCtx *Context, args []string) er
 			return app.NewExitError(fmt.Errorf("inventory is not configured; create a new plan"), app.ExitConflict)
 		}
 		h, ok := cfg.Inventory.Hosts[ph.Name]
-		if !ok || h.Address != ph.Address {
+		if !ok || !inventoryHostMatchesPlan(ph, h) {
 			return app.NewExitError(fmt.Errorf("inventory changed for planned host %q; create a new plan", ph.Name), app.ExitConflict)
 		}
 		selected[ph.Name] = h
-	}
-	current, err := captureMaintenanceSnapshot(ctx, cmdCtx, cfg, selected, plan)
-	if err != nil {
-		return app.NewExitError(fmt.Errorf("revalidate maintenance safety: %w", err), app.ExitConflict)
-	}
-	comparison := maintenance.CompareSnapshots(plan.Snapshot, current)
-	if comparison.Overall != maintenance.DispositionMatch {
-		return app.NewExitError(fmt.Errorf("maintenance plan conflict: create a new plan; changed=%v unknown=%v blockers=%v", comparison.ChangedFields, comparison.UnknownFields, comparison.Blockers), app.ExitConflict)
 	}
 	var receipt maintenance.Receipt
 	completed := map[string]bool{}
 	path := maintenance.ReceiptPath(receiptDir, plan.PlanID)
 	if resume {
 		path = parsed.receiptPath
+	}
+	applyLock, err := config.Lock(path + ".apply")
+	if err != nil {
+		return app.NewExitError(fmt.Errorf("lock maintenance apply: %w", err), app.ExitConflict)
+	}
+	defer func() { _ = config.Unlock(applyLock) }()
+	if resume {
 		if cmdCtx.Opts.ConfirmTarget == "" {
 			return app.NewExitError(fmt.Errorf("resume requires --confirm-target <receipt-id>"), app.ExitUsage)
 		}
@@ -724,6 +749,18 @@ func runMaintenanceApply(ctx context.Context, cmdCtx *Context, args []string) er
 		} else if !os.IsNotExist(statErr) {
 			return fmt.Errorf("inspect receipt: %w", statErr)
 		}
+	}
+	current, err := captureMaintenanceSnapshot(ctx, cmdCtx, cfg, selected, plan)
+	if err != nil {
+		return app.NewExitError(fmt.Errorf("revalidate maintenance safety: %w", err), app.ExitConflict)
+	}
+	expected := plan.Snapshot
+	if resume {
+		expected = snapshotWithCompletedHosts(plan.Snapshot, current, completed)
+	}
+	comparison := maintenance.CompareSnapshots(expected, current)
+	if comparison.Overall != maintenance.DispositionMatch {
+		return app.NewExitError(fmt.Errorf("maintenance plan conflict: create a new plan; changed=%v unknown=%v blockers=%v", comparison.ChangedFields, comparison.UnknownFields, comparison.Blockers), app.ExitConflict)
 	}
 	var saveErr error
 	if resume {
@@ -823,6 +860,19 @@ func findPlanHost(plan maintenance.Plan, name string) maintenance.PlanHost {
 		}
 	}
 	return maintenance.PlanHost{}
+}
+
+func inventoryHostMatchesPlan(planHost maintenance.PlanHost, host config.InventoryHost) bool {
+	return host.Address == planHost.Address &&
+		host.Role == planHost.Role &&
+		host.Environment == planHost.Environment &&
+		host.PVENode == planHost.PVENode &&
+		host.PVEProfile == planHost.PVEProfile &&
+		host.PBSProfile == planHost.PBSProfile &&
+		host.MaintenanceGroup == planHost.Group &&
+		orDefault(host.Criticality, config.CriticalityStandard) == planHost.Criticality &&
+		host.BackupRequired == planHost.BackupRequired &&
+		host.AutomaticReboot == planHost.AutomaticReboot
 }
 
 func persistReceipt(path string, receipt *maintenance.Receipt) error {
@@ -973,17 +1023,26 @@ func revalidateBeforeBatch(ctx context.Context, cmdCtx *Context, cfg *config.Con
 	if err != nil {
 		return err
 	}
-	expected := plan.Snapshot
-	for name := range completed {
-		if currentHost, ok := current.Hosts[name]; ok {
-			expected.Hosts[name] = currentHost
-		}
-	}
+	expected := snapshotWithCompletedHosts(plan.Snapshot, current, completed)
 	comparison := maintenance.CompareSnapshots(expected, current)
 	if comparison.Overall != maintenance.DispositionMatch {
 		return fmt.Errorf("plan/current safety comparison: changed=%v unknown=%v blockers=%v", comparison.ChangedFields, comparison.UnknownFields, comparison.Blockers)
 	}
 	return nil
+}
+
+func snapshotWithCompletedHosts(planned, current maintenance.SafetySnapshot, completed map[string]bool) maintenance.SafetySnapshot {
+	expected := planned
+	expected.Hosts = make(map[string]maintenance.HostSnapshot, len(planned.Hosts))
+	for name, host := range planned.Hosts {
+		expected.Hosts[name] = host
+	}
+	for name := range completed {
+		if currentHost, ok := current.Hosts[name]; ok {
+			expected.Hosts[name] = currentHost
+		}
+	}
+	return expected
 }
 
 func captureMaintenanceSnapshot(ctx context.Context, cmdCtx *Context, cfg *config.Config, selected map[string]config.InventoryHost, plan maintenance.Plan) (maintenance.SafetySnapshot, error) {
@@ -996,7 +1055,7 @@ func captureMaintenanceSnapshot(ctx context.Context, cmdCtx *Context, cfg *confi
 	for _, s := range statuses {
 		byHost[s.Host] = s
 	}
-	snapshot := maintenance.SafetySnapshot{Version: 1, Hosts: map[string]maintenance.HostSnapshot{}, Infrastructure: plan.Snapshot.Infrastructure, Backup: plan.Snapshot.Backup, EvidenceComplete: res != nil && res.ParseError == "" && !res.PartialFailure}
+	snapshot := maintenance.SafetySnapshot{Version: 1, Hosts: map[string]maintenance.HostSnapshot{}, Infrastructure: plan.Snapshot.Infrastructure, Backup: plan.Snapshot.Backup, EvidenceComplete: res != nil && res.Success && res.ParseError == "" && !res.PartialFailure}
 	for _, ph := range plan.Hosts {
 		h, ok := selected[ph.Name]
 		status, found := byHost[ph.Name]
@@ -1006,6 +1065,9 @@ func captureMaintenanceSnapshot(ctx context.Context, cmdCtx *Context, cfg *confi
 			continue
 		}
 		snapshot.Hosts[ph.Name] = maintenance.Snapshot(ph, status, h.SSHUser, h.SSHPort, h.SSHKeyFile != "", h.KnownHostsFile != "")
+		if !status.EvidenceComplete {
+			snapshot.EvidenceComplete = false
+		}
 	}
 	if plan.Environment != "" {
 		env, err := evaluateEnvironment(ctx, cmdCtx, cfg, plan.Environment, true)
@@ -1063,7 +1125,7 @@ func runMaintenanceVerify(ctx context.Context, cmdCtx *Context, args []string) e
 			return app.NewExitError(fmt.Errorf("inventory is not configured"), app.ExitConfig)
 		}
 		h, ok := cfg.Inventory.Hosts[ph.Name]
-		if !ok || h.Address != ph.Address {
+		if !ok || !inventoryHostMatchesPlan(ph, h) {
 			return app.NewExitError(fmt.Errorf("inventory changed for planned host %q", ph.Name), app.ExitConflict)
 		}
 		selected[ph.Name] = h

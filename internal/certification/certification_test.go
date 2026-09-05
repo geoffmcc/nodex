@@ -67,3 +67,52 @@ func TestLedgerRoundTripIsSanitizedAndSorted(t *testing.T) {
 		t.Fatalf("ledger contains credential material: %s", b)
 	}
 }
+
+func TestReserveRequiresCleanupIntent(t *testing.T) {
+	entry := NewEntry(RequiredProfile, "pve-test", 9003, "nodex-cert-intent", "local", time.Unix(3, 0))
+	entry.State = "creating"
+	if _, err := Reserve(filepath.Join(t.TempDir(), "ledger.json"), entry, 1); err == nil {
+		t.Fatal("entry without initial reservation state was accepted")
+	}
+}
+
+func TestClaimCleanupResumesCheckpointedDelete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.json")
+	entry := NewEntry(RequiredProfile, "pve-test", 9004, "nodex-cert-resume", "local", time.Unix(4, 0))
+	entry.State = "created"
+	entry.Environment = "lab"
+	entry.EndpointIdentity = "https://pve.example.test"
+	entry.ProviderIdentity = "proxmox"
+	entry.Fingerprint = strings.Repeat("a", 64)
+	entry.CAIdentity = strings.Repeat("b", 64)
+	if err := Save(path, &Ledger{Schema: SchemaVersion, Entries: []Entry{entry}}); err != nil {
+		t.Fatal(err)
+	}
+	auth := &Authorization{
+		Environment:         "lab",
+		Profile:             RequiredProfile,
+		Endpoint:            entry.EndpointIdentity,
+		Provider:            entry.ProviderIdentity,
+		ExpectedFingerprint: entry.Fingerprint,
+		TrustedCAIdentity:   entry.CAIdentity,
+	}
+	claimed, err := ClaimCleanup(path, entry.ID, auth)
+	if err != nil {
+		t.Fatalf("claim cleanup: %v", err)
+	}
+	if claimed.State != "deleting" || claimed.Cleanup != "in_progress" {
+		t.Fatalf("unexpected claimed entry: %+v", claimed)
+	}
+	if err := UpdateEntry(path, entry.ID, func(e *Entry) {
+		e.DeleteUPID = "UPID:pve-test/9004/0"
+	}); err != nil {
+		t.Fatalf("checkpoint delete task: %v", err)
+	}
+	resumed, err := ClaimCleanup(path, entry.ID, auth)
+	if err != nil {
+		t.Fatalf("resume cleanup: %v", err)
+	}
+	if resumed.DeleteUPID != "UPID:pve-test/9004/0" || resumed.Cleanup != "in_progress" {
+		t.Fatalf("checkpointed cleanup was not resumed: %+v", resumed)
+	}
+}

@@ -145,8 +145,12 @@ func checkOne(parent context.Context, name string, target config.MonitorTarget, 
 	if providerCheck != nil {
 		if checked, handled := providerCheck(ctx, name, target); handled {
 			checked.Name, checked.Type = name, target.Type
-			if checked.Address == "" {
-				checked.Address = SafeAddress(target.Address)
+			checked.Address = SafeAddress(target.Address)
+			if _, known := severity[checked.State]; !known {
+				checked.State = Unknown
+				if checked.Detail == "" {
+					checked.Detail = "provider returned an invalid state"
+				}
 			}
 			checked.Latency = time.Since(start).Milliseconds()
 			return checked
@@ -284,8 +288,11 @@ func tlsCheck(ctx context.Context, address, caFile string) (int64, error) {
 }
 
 func dnsCheck(ctx context.Context, address, resolver string) error {
-	r := net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "udp", resolver)
+	r := net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		if network != "udp" && network != "tcp" {
+			return nil, fmt.Errorf("unsupported DNS transport %q", network)
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, resolver)
 	}}
 	if _, err := r.LookupHost(ctx, strings.TrimSpace(address)); err != nil {
 		return fmt.Errorf("DNS lookup failed")

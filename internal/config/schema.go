@@ -111,6 +111,7 @@ type InventoryHost struct {
 	Address        string `yaml:"address" json:"address"`
 	Role           string `yaml:"role" json:"role"`
 	Environment    string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	PVENode        string `yaml:"pve_node,omitempty" json:"pve_node,omitempty"`
 	PVEProfile     string `yaml:"pve_profile,omitempty" json:"pve_profile,omitempty"`
 	PBSProfile     string `yaml:"pbs_profile,omitempty" json:"pbs_profile,omitempty"`
 	SSHUser        string `yaml:"ssh_user" json:"ssh_user"`

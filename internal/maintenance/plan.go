@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"time"
 
@@ -38,14 +39,25 @@ func ValidPolicy(p string) bool {
 // authorize reboots. Explicit reboot operations arrive in a later phase.
 const RebootPolicyNever = "never"
 
+var planIdentifierRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
+
+func validPlanIdentifier(value string) bool {
+	return planIdentifierRe.MatchString(value)
+}
+
 // PlanHost is one target host inside a plan.
 type PlanHost struct {
 	Name            string   `json:"name" yaml:"name"`
 	Address         string   `json:"address" yaml:"address"`
 	Role            string   `json:"role" yaml:"role"`
+	Environment     string   `json:"environment,omitempty" yaml:"environment,omitempty"`
+	PVENode         string   `json:"pve_node,omitempty" yaml:"pve_node,omitempty"`
+	PVEProfile      string   `json:"pve_profile,omitempty" yaml:"pve_profile,omitempty"`
+	PBSProfile      string   `json:"pbs_profile,omitempty" yaml:"pbs_profile,omitempty"`
 	Group           string   `json:"group,omitempty" yaml:"group,omitempty"`
 	Criticality     string   `json:"criticality" yaml:"criticality"`
 	BackupRequired  bool     `json:"backup_required" yaml:"backup_required"`
+	AutomaticReboot bool     `json:"automatic_reboot" yaml:"automatic_reboot"`
 	PendingUpdates  []string `json:"pending_updates,omitempty" yaml:"pending_updates,omitempty"`
 	SecurityUpdates []string `json:"security_updates,omitempty" yaml:"security_updates,omitempty"`
 	RebootRequired  bool     `json:"reboot_required" yaml:"reboot_required"`
@@ -85,8 +97,13 @@ type HostSnapshot struct {
 	Name                 string   `json:"name" yaml:"name"`
 	Address              string   `json:"address" yaml:"address"`
 	Role                 string   `json:"role" yaml:"role"`
+	Environment          string   `json:"environment,omitempty" yaml:"environment,omitempty"`
+	PVENode              string   `json:"pve_node,omitempty" yaml:"pve_node,omitempty"`
+	PVEProfile           string   `json:"pve_profile,omitempty" yaml:"pve_profile,omitempty"`
+	PBSProfile           string   `json:"pbs_profile,omitempty" yaml:"pbs_profile,omitempty"`
 	Group                string   `json:"group,omitempty" yaml:"group,omitempty"`
 	Criticality          string   `json:"criticality" yaml:"criticality"`
+	AutomaticReboot      bool     `json:"automatic_reboot" yaml:"automatic_reboot"`
 	SSHUser              string   `json:"ssh_user" yaml:"ssh_user"`
 	SSHPort              int      `json:"ssh_port" yaml:"ssh_port"`
 	KeyConfigured        bool     `json:"key_configured" yaml:"key_configured"`
@@ -204,8 +221,8 @@ func Verify(p Plan, now time.Time) error {
 	if p.Schema != PlanSchemaVersion {
 		return fmt.Errorf("unsupported plan schema %d (expected %d)", p.Schema, PlanSchemaVersion)
 	}
-	if p.PlanID == "" {
-		return fmt.Errorf("plan has no ID")
+	if !validPlanIdentifier(p.PlanID) {
+		return fmt.Errorf("plan has invalid ID")
 	}
 	if p.Digest == "" {
 		return fmt.Errorf("plan has no digest")

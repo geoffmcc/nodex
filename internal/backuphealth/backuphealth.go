@@ -267,9 +267,10 @@ func (s *Service) CheckEnvironmentBackupHealth(ctx context.Context, req Request)
 		s.checkGuestCoverage(ctx, req, now, datastores, res, record, maintenanceUnsafe, retrievalError)
 	}
 
-	// Maintenance safety: any blocker, or any non-healthy overall state
-	// beyond pure warnings that don't affect safety, blocks maintenance.
-	res.MaintenanceSafe = len(res.Blockers) == 0 && statusSeverity[res.Overall] < statusSeverity[StatusBlocked]
+	// Maintenance safety is fail-closed. Warnings, unsupported checks,
+	// unknown checks, and partial provider results all require review before a
+	// maintenance mutation may proceed.
+	res.MaintenanceSafe = res.Overall == StatusHealthy && len(res.Blockers) == 0 && !res.PartialFailure
 	sort.Strings(res.Blockers)
 	return res, nil
 }
@@ -292,6 +293,10 @@ func (s *Service) checkDatastores(usages []domain.PBSDatastoreUsage, t Threshold
 			}
 			details = append(details, fmt.Sprintf("%s: unavailable (%s)", u.Store, detail))
 			unsafe(fmt.Sprintf("datastore %q unavailable", u.Store))
+		case u.Total <= 0 || u.Used < 0 || u.Used > u.Total:
+			status = worse(status, StatusUnknown)
+			details = append(details, fmt.Sprintf("%s: capacity unavailable or invalid", u.Store))
+			unsafe(fmt.Sprintf("datastore %q capacity is unknown", u.Store))
 		case u.Total > 0:
 			usedPct := int(u.Used * 100 / u.Total)
 			if usedPct >= t.DatastoreBlockPercent {
@@ -392,6 +397,9 @@ func (s *Service) checkPVEBackupTasks(ctx context.Context, now time.Time, retrie
 			Status: StatusWarning,
 			Detail: fmt.Sprintf("%d failed vzdump task(s) in the last %s: %s", len(failures), failedTaskWindow, strings.Join(failures, "; ")),
 		}
+	}
+	if len(nodes) == 0 {
+		return Check{Name: "pve_failed_backup_tasks", Status: StatusUnknown, Detail: "PVE returned no nodes"}
 	}
 	return Check{Name: "pve_failed_backup_tasks", Status: StatusHealthy}
 }
@@ -505,7 +513,7 @@ func (s *Service) checkGuestCoverage(
 		age := now.Sub(time.Unix(loc.snap.BackupTime, 0))
 		g.AgeHours = int64(age.Hours())
 		if loc.snap.Verification != nil {
-			g.Verification = loc.snap.Verification.State
+			g.Verification = strings.ToLower(strings.TrimSpace(loc.snap.Verification.State))
 		}
 
 		if age > req.Thresholds.BackupMaxAge {
@@ -514,6 +522,8 @@ func (s *Service) checkGuestCoverage(
 			unsafe(fmt.Sprintf("guest %d (%s) backup is stale (%dh)", vmid, name, g.AgeHours))
 		}
 		switch g.Verification {
+		case "ok":
+			// Verified backup.
 		case "failed":
 			g.Status = worse(g.Status, StatusWarning)
 			g.Detail = strings.TrimSpace(g.Detail + "; verification failed")
@@ -523,6 +533,10 @@ func (s *Service) checkGuestCoverage(
 				g.Status = worse(g.Status, StatusWarning)
 				g.Detail = strings.TrimSpace(g.Detail + "; unverified beyond verify threshold")
 			}
+		default:
+			g.Status = StatusUnknown
+			g.Detail = strings.TrimSpace(g.Detail + "; verification state is unknown")
+			unsafe(fmt.Sprintf("guest %d (%s) verification state is unknown", vmid, name))
 		}
 		coverage = worse(coverage, g.Status)
 		res.Guests = append(res.Guests, g)
