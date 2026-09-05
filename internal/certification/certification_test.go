@@ -31,6 +31,17 @@ func TestValidateRequestIsFailClosed(t *testing.T) {
 	}
 }
 
+func TestValidateAuthorizationRequiresExactBinding(t *testing.T) {
+	r := Request{Profile: RequiredProfile, Environment: "lab", Suite: "readonly", Endpoint: "https://pve.example.test", Node: "pve1", VMID: 9001, Storage: "local", Authorization: &Authorization{Environment: "lab", Profile: RequiredProfile, Endpoint: "https://pve.example.test", Provider: "proxmox", ExpectedFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", TrustedCAIdentity: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Nodes: []string{"pve1"}, Storage: []string{"local"}, VMIDMin: 9000, VMIDMax: 9099, Suites: []string{"readonly"}, MaxResources: 1, ExpiresAt: time.Now().Add(time.Hour).Unix()}}
+	if err := ValidateAuthorization(r); err != nil {
+		t.Fatalf("valid authorization rejected: %v", err)
+	}
+	r.Node = "other-node"
+	if err := ValidateAuthorization(r); err == nil {
+		t.Fatal("unauthorized node accepted")
+	}
+}
+
 func TestLedgerRoundTripIsSanitizedAndSorted(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
 	l := New(path)

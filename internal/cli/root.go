@@ -256,6 +256,9 @@ func init() {
 		&command{name: "status", short: "Read-only maintenance preflight status", run: runMaintenanceStatus},
 		&command{name: "plan", short: "Create an immutable maintenance plan", run: runMaintenancePlan},
 		&command{name: "apply", short: "Apply a verified maintenance plan", run: runMaintenanceApply},
+		&command{name: "resume", short: "Resume an interrupted maintenance receipt", run: runMaintenanceResume},
+		&command{name: "reconcile", short: "Reconcile an ambiguous maintenance receipt", run: runMaintenanceReconcile},
+		&command{name: "abandon", short: "Mark an interrupted maintenance receipt abandoned", run: runMaintenanceAbandon},
 		&command{name: "verify", short: "Verify maintenance postconditions", run: runMaintenanceVerify},
 		&command{name: "report", short: "Show a durable maintenance receipt", run: runMaintenanceReport},
 	)

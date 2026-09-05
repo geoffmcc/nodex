@@ -46,6 +46,11 @@ func runProfileDiagnosePermissions(ctx context.Context, cmdCtx *Context, args []
 	if err := writePermissionChecks(cmdCtx, name, checks); err != nil {
 		return err
 	}
+	for _, check := range checks {
+		if check.Status != permissionConfirmed {
+			return app.NewExitError(fmt.Errorf("permission diagnosis incomplete: %s is %s", check.Name, check.Status), app.ExitPartialFailure)
+		}
+	}
 	return nil
 }
 

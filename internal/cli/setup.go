@@ -55,15 +55,32 @@ func runSetup(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	profile := config.Profile{Provider: in.provider, Endpoint: in.endpoint, CredentialRef: in.credentialRef, CAFile: in.caFile}
-	if _, err := os.Stat(configPathForSetup()); err != nil && !os.IsNotExist(err) {
-		return app.NewExitError(fmt.Errorf("inspect config: %w", err), app.ExitConfig)
+	if in.check {
+		checks := diagnoseProfile(ctx, cmdCtx, in.profile, profile)
+		if err := writePermissionChecks(cmdCtx, in.profile, checks); err != nil {
+			return err
+		}
+		if !setupChecksConfirmed(checks) {
+			return app.NewExitError(fmt.Errorf("setup preflight failed; profile was not written"), app.ExitValidationError)
+		}
+	}
+	if _, statErr := os.Stat(configPathForSetup()); statErr == nil {
+		existing, err := config.Read()
+		if err != nil {
+			return err
+		}
+		if _, exists := existing.Profiles[in.profile]; exists && !cmdCtx.Opts.Force {
+			return app.NewExitError(fmt.Errorf("profile %q already exists; use --force to replace it", in.profile), app.ExitConflict)
+		}
+	} else if !os.IsNotExist(statErr) {
+		return app.NewExitError(fmt.Errorf("inspect config: %w", statErr), app.ExitConfig)
 	}
 	if err := writeSetupProfile(profile, in.profile); err != nil {
 		return err
 	}
 
 	if in.check {
-		return runProfileDiagnosePermissions(ctx, cmdCtx, []string{in.profile})
+		return nil
 	}
 	if !cmdCtx.Opts.Quiet {
 		path, _ := config.ConfigPath()
@@ -77,6 +94,15 @@ func runSetup(ctx context.Context, cmdCtx *Context, args []string) error {
 		}
 	}
 	return nil
+}
+
+func setupChecksConfirmed(checks []permissionCheck) bool {
+	for _, check := range checks {
+		if check.Status != permissionConfirmed {
+			return false
+		}
+	}
+	return len(checks) > 0
 }
 
 func configPathForSetup() string {

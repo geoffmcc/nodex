@@ -107,7 +107,8 @@ nodex --non-interactive setup --provider proxmox --profile production \
 PEM certificate. Non-interactive setup fails closed unless provider, profile,
 and endpoint are explicitly supplied. Configuration is written atomically.
 `--check` runs read-only connectivity, API-version, capability, and supported
-permission diagnostics after the profile is written.
+permission diagnostics before the profile is written; a failed preflight does
+not modify the configuration. Use `--force` to replace an existing profile.
 
 ### `nodex certification`
 
@@ -117,7 +118,8 @@ never falls back to the current profile.
 
 ```bash
 nodex --profile nodex-test-admin --yes --confirm-target nodex-cert-smoke \
-  certification run --node <node> --vmid <vmid> --name nodex-cert-smoke --storage <storage>
+  certification run --environment <environment> --suite <readonly|disposable-mutations> \
+  --node <node> --vmid <vmid> --name nodex-cert-smoke --storage <storage>
 nodex --profile nodex-test-admin --yes --confirm-target <ledger-entry-id> certification cleanup
 nodex certification report [--ledger <path>]
 ```
@@ -474,6 +476,9 @@ nodex maintenance status    [--environment <env>] [--group <group>] [--role <rol
 nodex maintenance plan --policy security-only|approved-full-upgrade \
     [--expires-in <10m..24h>] [--batch-size <1..10>] [filters...]
 nodex maintenance apply --plan <file> [--receipt-dir <dir>]
+nodex maintenance resume --plan <file> --receipt <file>
+nodex maintenance reconcile --plan <file> --receipt <file>
+nodex maintenance abandon --receipt <file> --reason <reason>
 nodex maintenance verify --plan <file>
 nodex maintenance report --receipt <file>
 ```
@@ -484,6 +489,9 @@ nodex maintenance report --receipt <file>
 | `maintenance status` | Run the read-only `check-updates` preflight through the allowlisted Ansible boundary: pending updates, security updates, reboot-required state, failed units, root filesystem usage per host. With `--environment`, adds the environment's backup health. Exits 11 on partial failure. |
 | `maintenance plan` | Run the same preflight and emit an immutable plan: plan ID, creation/expiry timestamps (default TTL 4h), update policy, per-host package intent, execution order (standard hosts first, critical hosts serial, PVE/PBS/DNS roles last), batch size, reboot policy (always `never` in this phase), backup requirements and their observed state, infrastructure snapshot, warnings, blockers, and a SHA-256 digest over the whole plan. Save it with `--output json > plan.json`. |
 | `maintenance apply` | Apply an existing digest-verified plan with `--yes --force --confirm-target <plan-id>`. Writes atomic receipts and refuses blocked, stale, tampered, or ambiguous reruns. |
+| `maintenance resume` | Revalidate a plan-bound receipt and continue only hosts not yet started; refuses to replay non-successful hosts. |
+| `maintenance reconcile` | Perform read-only postcondition verification against a plan-bound receipt. |
+| `maintenance abandon` | Record an explicit operator decision that an interrupted receipt will not be resumed. |
 | `maintenance verify` | Verify planned hosts through the embedded read-only Ansible operation. |
 | `maintenance report` | Render a verified receipt as table, JSON, or YAML. |
 

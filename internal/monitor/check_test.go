@@ -43,3 +43,22 @@ func TestCheckCancellationIsUnknown(t *testing.T) {
 		t.Fatalf("state = %s, want unknown", report.Results[0].State)
 	}
 }
+
+func TestCheckWithProviderUsesInjectedResult(t *testing.T) {
+	calls := 0
+	report := CheckWithProviderOptions(context.Background(), map[string]config.MonitorTarget{
+		"pve": {Type: "pve-api", Address: "https://not-used.invalid", Environment: "lab"},
+	}, 1, 0, func(_ context.Context, name string, target config.MonitorTarget) (Result, bool) {
+		calls++
+		return Result{Name: name, Type: target.Type, State: Healthy, Detail: "provider health passed"}, true
+	})
+	if calls != 1 || report.Overall != Healthy || report.Results[0].Detail != "provider health passed" {
+		t.Fatalf("provider result = %#v, calls=%d", report, calls)
+	}
+}
+
+func TestSafeAddressDoesNotExposeURLQuery(t *testing.T) {
+	if got := SafeAddress("https://example.test/check?token=secret#fragment"); got != "https://example.test/check?<redacted>#%3Credacted%3E" {
+		t.Fatalf("safe address = %q", got)
+	}
+}

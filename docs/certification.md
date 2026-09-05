@@ -2,18 +2,23 @@
 
 Certification is an explicit, disposable-environment transaction for validating
 Nodex against a real configured Proxmox test environment. It never selects a
-profile implicitly and refuses every profile except `nodex-test-admin`.
+profile implicitly and refuses every profile except `nodex-test-admin`. The
+environment must be declared in the configuration with its exact endpoint,
+provider, allowed node/storage/VMID range, expiry, expected leaf certificate
+fingerprint, and trusted-CA identity.
 
-The transaction is opt-in and requires `--yes`, an exact `--confirm-target`, an
-explicit node, VMID, storage, and a VM name beginning with `nodex-cert-`. Nodex
-records the cleanup target atomically before creation, waits for provider task
-completion, verifies creation, deletes only the matching ledger resource, and
-verifies absence. Failed or interrupted runs leave a pending ledger entry for
-recovery.
+The `readonly` suite performs no VM mutation. The `disposable-mutations` suite
+is opt-in and requires `--yes`, an exact `--confirm-target`, an explicit node,
+VMID, storage, and a VM name beginning with `nodex-cert-`. Nodex verifies the
+provider TLS identity before mutation, records the cleanup target atomically,
+waits for task completion, verifies creation, deletes only the matching ledger
+resource, and verifies absence. Failed or interrupted runs leave a pending
+ledger entry for recovery.
 
 ```bash
 nodex --profile nodex-test-admin --yes \
   --confirm-target nodex-cert-smoke certification run \
+  --environment test-lab --suite disposable-mutations \
   --node pve-test --vmid 9000 --name nodex-cert-smoke --storage local
 nodex --profile nodex-test-admin --yes \
   --confirm-target <ledger-entry-id> certification cleanup

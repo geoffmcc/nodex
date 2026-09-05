@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/backuphealth"
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/monitor"
 	"github.com/geoffmcc/nodex/internal/output"
@@ -31,13 +33,18 @@ func runMonitorTargets(_ context.Context, cmdCtx *Context, args []string) error 
 	rows := make([][]string, 0, len(names))
 	for _, name := range names {
 		t := targets[name]
-		rows = append(rows, []string{name, t.Type, t.Address})
+		rows = append(rows, []string{name, t.Type, monitor.SafeAddress(t.Address)})
+	}
+	safeTargets := make(map[string]config.MonitorTarget, len(targets))
+	for name, target := range targets {
+		target.Address = monitor.SafeAddress(target.Address)
+		safeTargets[name] = target
 	}
 	if cmdCtx.Opts.Output == output.FormatJSON {
-		return output.WriteJSON(cmdCtx.Writer, targets)
+		return output.WriteJSON(cmdCtx.Writer, safeTargets)
 	}
 	if cmdCtx.Opts.Output == output.FormatYAML {
-		return output.WriteYAML(cmdCtx.Writer, targets)
+		return output.WriteYAML(cmdCtx.Writer, safeTargets)
 	}
 	return output.WriteTable(cmdCtx.Writer, []string{"NAME", "TYPE", "ADDRESS"}, rows)
 }
@@ -84,16 +91,114 @@ func runMonitorCheck(ctx context.Context, cmdCtx *Context, args []string) error 
 	if len(targets) == 0 {
 		return app.NewExitError(fmt.Errorf("no monitoring targets are configured for the requested scope"), app.ExitConfig)
 	}
-	report := monitor.Check(ctx, targets)
+	concurrency, globalTimeout := monitor.DefaultConcurrency, time.Duration(0)
+	if cfg.Monitoring != nil {
+		concurrency = cfg.Monitoring.Concurrency
+		if cfg.Monitoring.Timeout > 0 {
+			globalTimeout = time.Duration(cfg.Monitoring.Timeout) * time.Second
+		}
+	}
+	providerResults := providerMonitorResults(ctx, cmdCtx, cfg, targets)
+	report := monitor.CheckWithProviderOptions(ctx, targets, concurrency, globalTimeout, func(_ context.Context, name string, target config.MonitorTarget) (monitor.Result, bool) {
+		result, ok := providerResults[name]
+		return result, ok
+	})
 	if err := writeMonitorReport(cmdCtx, report); err != nil {
 		return err
 	}
-	for _, result := range report.Results {
-		if result.State != monitor.Healthy {
-			return app.NewExitError(fmt.Errorf("monitor check is %s", result.State), app.ExitPartialFailure)
-		}
+	if report.Overall != monitor.Healthy {
+		return app.NewExitError(fmt.Errorf("monitor check is %s", report.Overall), app.ExitPartialFailure)
 	}
 	return nil
+}
+
+func providerMonitorResults(ctx context.Context, cmdCtx *Context, cfg *config.Config, targets map[string]config.MonitorTarget) map[string]monitor.Result {
+	results := make(map[string]monitor.Result)
+	environmentResults := make(map[string]*backuphealth.Result)
+	for name, target := range targets {
+		if !providerMonitorType(target.Type) {
+			continue
+		}
+		if target.Environment == "" {
+			results[name] = monitor.Result{Name: name, Type: target.Type, State: monitor.Blocked, Detail: "provider-backed checks require an environment"}
+			continue
+		}
+		env, ok := cfg.Environments[target.Environment]
+		if !ok {
+			results[name] = monitor.Result{Name: name, Type: target.Type, State: monitor.Blocked, Detail: "monitor environment is not configured"}
+			continue
+		}
+		health, cached := environmentResults[target.Environment]
+		if !cached {
+			var err error
+			health, err = evaluateEnvironment(ctx, cmdCtx, cfg, target.Environment, true)
+			if err != nil {
+				results[name] = monitor.Result{Name: name, Type: target.Type, State: monitor.Unknown, Detail: "provider-backed check could not be evaluated"}
+				continue
+			}
+			environmentResults[target.Environment] = health
+		}
+		checkName := providerCheckName(target.Type)
+		if target.Type == "backup-age" || target.Type == "backup-verification" || target.Type == "backup-coverage" {
+			checkName = "guest_backup_coverage"
+		}
+		status, detail := backupHealthCheck(health, checkName)
+		if target.Type == "pve-tasks" && env.PVEProfile == "" {
+			status, detail = monitor.Unsupported, "no pve_profile configured"
+		}
+		if target.Type == "pbs-tasks" && env.PBSProfile == "" {
+			status, detail = monitor.Unsupported, "no pbs_profile configured"
+		}
+		results[name] = monitor.Result{Name: name, Type: target.Type, State: status, Detail: detail}
+	}
+	return results
+}
+
+func providerMonitorType(kind string) bool {
+	switch kind {
+	case "pve-api", "pbs-api", "pve-tasks", "pbs-tasks", "datastore", "backup-age", "backup-verification", "backup-coverage":
+		return true
+	}
+	return false
+}
+
+func providerCheckName(kind string) string {
+	switch kind {
+	case "pve-api", "pve-tasks":
+		return "pve_reachable"
+	case "pbs-api", "pbs-tasks":
+		return "pbs_reachable"
+	case "datastore":
+		return "pbs_datastores"
+	}
+	return "guest_backup_coverage"
+}
+
+func backupHealthCheck(result *backuphealth.Result, name string) (monitor.State, string) {
+	if result == nil {
+		return monitor.Unknown, "provider-backed check returned no result"
+	}
+	for _, check := range result.Checks {
+		if check.Name == name {
+			return monitorState(check.Status), check.Detail
+		}
+	}
+	return monitor.Unknown, "provider-backed check was not reported"
+}
+
+func monitorState(status backuphealth.Status) monitor.State {
+	switch status {
+	case backuphealth.StatusHealthy:
+		return monitor.Healthy
+	case backuphealth.StatusWarning:
+		return monitor.Degraded
+	case backuphealth.StatusUnsupported:
+		return monitor.Unsupported
+	case backuphealth.StatusBlocked:
+		return monitor.Blocked
+	default:
+		return monitor.Unknown
+	}
 }
 
 func writeMonitorReport(cmdCtx *Context, report monitor.Report) error {

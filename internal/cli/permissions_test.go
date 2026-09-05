@@ -23,8 +23,8 @@ func TestProfileDiagnosePermissionsReportsMissingCredential(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), []string{"--output", "json", "profile", "diagnose-permissions", "lab"}, &stdout, &stderr)
-	if err != nil {
-		t.Fatalf("diagnose-permissions: %v", err)
+	if err == nil {
+		t.Fatal("diagnose-permissions should fail when a required check is missing")
 	}
 	out := stdout.String()
 	if !strings.Contains(out, `"name": "credential"`) || !strings.Contains(out, `"status": "missing"`) {

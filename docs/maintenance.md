@@ -1,6 +1,6 @@
 # Fleet Maintenance
 
-`maintenance plan` creates a signed, expiring JSON/YAML plan. `maintenance apply`
+`maintenance plan` creates an expiring JSON/YAML plan with an integrity digest. `maintenance apply`
 loads and validates that plan, requires `--yes --force --confirm-target <plan-id>`,
 rechecks inventory addresses, and executes only the embedded Ansible operations.
 Security updates are limited to the package names recorded by the preflight;
@@ -11,9 +11,10 @@ contain plan and host outcome metadata only; Ansible output and credentials are
 never persisted. `maintenance report --receipt <file>` verifies the receipt
 digest before rendering deterministic table, JSON, or YAML output.
 
-An interrupted or ambiguous operation is recorded as `unknown` and is not
-automatically replayed. This is intentional: Ansible may have changed a host
-before the client lost its result, so automatic recovery could apply updates
-twice. Review the receipt and current host state, then create a new plan before
-retrying. A missing, malformed, or tampered receipt is rejected rather than
-overwritten.
+An interrupted or ambiguous operation is recorded as `unknown`. `maintenance
+resume` revalidates the exact plan and receipt but refuses to replay any
+non-successful host; review the receipt and current host state, then create a
+new plan before retrying. `maintenance reconcile` performs read-only
+postcondition verification, while `maintenance abandon` records an explicit
+operator decision. A missing, malformed, or tampered receipt is rejected
+rather than overwritten.

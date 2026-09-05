@@ -9,12 +9,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/credentials"
 )
+
+var sha256FingerprintRegex = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 
 // Read loads the config from the default path.
 func Read() (*Config, error) {
@@ -281,7 +284,83 @@ func Validate(cfg *Config) error {
 	if err := validateMonitoring(cfg); err != nil {
 		return err
 	}
+	if err := validateCertifications(cfg); err != nil {
+		return err
+	}
 
+	return nil
+}
+
+func validateCertifications(cfg *Config) error {
+	for name, env := range cfg.Certifications {
+		fail := func(format string, args ...any) error {
+			return app.NewExitError(fmt.Errorf("%w: certification environment %q: %s", app.ErrConfigInvalid, name, fmt.Sprintf(format, args...)), app.ExitConfig)
+		}
+		if !ProfileRegex.MatchString(name) || env.Profile == "" || !ProfileRegex.MatchString(env.Profile) {
+			return fail("invalid environment or profile name")
+		}
+		if env.Profile != "nodex-test-admin" {
+			return fail("profile must be nodex-test-admin")
+		}
+		p, ok := cfg.Profiles[env.Profile]
+		if !ok {
+			return fail("profile %q is not configured", env.Profile)
+		}
+		if err := ValidateEndpoint(env.Endpoint); err != nil {
+			return fail("endpoint: %v", err)
+		}
+		if env.Endpoint != p.Endpoint {
+			return fail("endpoint does not match profile")
+		}
+		if env.Provider == "" {
+			return fail("provider is required")
+		}
+		if !sha256FingerprintRegex.MatchString(env.ExpectedFingerprint) {
+			return fail("expected_fingerprint must be a SHA-256 fingerprint")
+		}
+		if !sha256FingerprintRegex.MatchString(env.TrustedCAIdentity) {
+			return fail("trusted_ca_identity must be a SHA-256 fingerprint")
+		}
+		if NormalizeProvider(env.Provider) != NormalizeProvider(p.Provider) {
+			return fail("provider does not match profile")
+		}
+		if env.VMIDMin <= 0 || env.VMIDMax < env.VMIDMin {
+			return fail("invalid VMID range")
+		}
+		if env.MaxResources <= 0 || env.MaxResources > 100 {
+			return fail("max_resources must be between 1 and 100")
+		}
+		if env.ExpiresAt <= 0 || env.ExpiresAt <= time.Now().Unix() {
+			return fail("authorization is expired")
+		}
+		seen := map[string]bool{}
+		for _, suite := range env.Suites {
+			if suite != "readonly" && suite != "disposable-mutations" {
+				return fail("unsupported suite %q", suite)
+			}
+			if seen[suite] {
+				return fail("duplicate suite %q", suite)
+			}
+			seen[suite] = true
+		}
+		if !env.AllowMutations {
+			for _, suite := range env.Suites {
+				if suite == "disposable-mutations" {
+					return fail("mutation suite requires allow_mutations")
+				}
+			}
+		}
+		for _, node := range env.Nodes {
+			if !ProfileRegex.MatchString(node) {
+				return fail("invalid node name")
+			}
+		}
+		for _, storage := range env.Storage {
+			if !ProfileRegex.MatchString(storage) {
+				return fail("invalid storage name")
+			}
+		}
+	}
 	return nil
 }
 
@@ -292,12 +371,18 @@ func validateMonitoring(cfg *Config) error {
 	if cfg.Version < 2 {
 		return app.NewExitError(fmt.Errorf("%w: the monitoring section requires schema version 2 (set \"version: 2\")", app.ErrConfigInvalid), app.ExitConfig)
 	}
+	if cfg.Monitoring.Concurrency < 0 || cfg.Monitoring.Concurrency > 32 {
+		return app.NewExitError(fmt.Errorf("%w: monitoring concurrency must be between 0 and 32", app.ErrConfigInvalid), app.ExitConfig)
+	}
+	if cfg.Monitoring.Timeout < 0 || cfg.Monitoring.Timeout > 300 {
+		return app.NewExitError(fmt.Errorf("%w: monitoring timeout must be between 0 and 300 seconds", app.ErrConfigInvalid), app.ExitConfig)
+	}
 	for name, target := range cfg.Monitoring.Targets {
 		if !ProfileRegex.MatchString(name) {
 			return app.NewExitError(fmt.Errorf("%w: monitoring target %q has invalid name", app.ErrConfigInvalid, name), app.ExitConfig)
 		}
 		switch target.Type {
-		case "http", "https", "tcp", "tls", "dns":
+		case "http", "https", "tcp", "tls", "dns", "pve-api", "pbs-api", "pve-tasks", "pbs-tasks", "datastore", "backup-age", "backup-verification", "backup-coverage", "service", "application":
 		default:
 			return app.NewExitError(fmt.Errorf("%w: monitoring target %q has unsupported type %q", app.ErrConfigInvalid, name, target.Type), app.ExitConfig)
 		}
@@ -309,7 +394,7 @@ func validateMonitoring(cfg *Config) error {
 		}
 		if target.Type == "http" || target.Type == "https" {
 			u, err := url.Parse(target.Address)
-			if err != nil || u.User != nil || u.Host == "" || (target.Type == "https" && u.Scheme != "https") || (target.Type == "http" && u.Scheme != "http") {
+			if err != nil || u.User != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || (target.Type == "https" && u.Scheme != "https") || (target.Type == "http" && u.Scheme != "http") {
 				return app.NewExitError(fmt.Errorf("%w: monitoring target %q must be a credential-free %s URL", app.ErrConfigInvalid, name, target.Type), app.ExitConfig)
 			}
 		}
@@ -320,6 +405,23 @@ func validateMonitoring(cfg *Config) error {
 		}
 		if target.Type == "dns" && target.Resolver == "" {
 			return app.NewExitError(fmt.Errorf("%w: monitoring target %q requires an explicit resolver", app.ErrConfigInvalid, name), app.ExitConfig)
+		}
+		if target.Type == "dns" {
+			if _, _, err := net.SplitHostPort(target.Resolver); err != nil {
+				return app.NewExitError(fmt.Errorf("%w: monitoring target %q resolver must be host:port", app.ErrConfigInvalid, name), app.ExitConfig)
+			}
+		}
+		if target.Type != "http" && target.Type != "https" && (strings.HasSuffix(target.Type, "-api") || strings.HasSuffix(target.Type, "-tasks") || target.Type == "application") {
+			u, err := url.Parse(target.Address)
+			if err != nil || u.User != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || u.Scheme != "https" {
+				return app.NewExitError(fmt.Errorf("%w: monitoring target %q must be a credential-free HTTPS URL", app.ErrConfigInvalid, name), app.ExitConfig)
+			}
+		}
+		if target.Type == "tls" && target.ExpiresIn < 0 {
+			return app.NewExitError(fmt.Errorf("%w: monitoring target %q expiry warning must be non-negative", app.ErrConfigInvalid, name), app.ExitConfig)
+		}
+		if target.ExpectedStatus < 0 || target.ExpectedStatus > 599 {
+			return app.NewExitError(fmt.Errorf("%w: monitoring target %q expected status is invalid", app.ErrConfigInvalid, name), app.ExitConfig)
 		}
 	}
 	return nil

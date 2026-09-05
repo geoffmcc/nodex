@@ -139,7 +139,7 @@ Global flags go before the command name: `nodex --output json node list`.
 
 - Go 1.25.13 for building from source
 - A Proxmox VE endpoint reachable over HTTPS
-- A Proxmox API token (or username/password) with appropriate permissions
+- A Proxmox API token with appropriate permissions
 
 CI builds and tests on Ubuntu, macOS (Apple Silicon and Intel), and Windows.
 

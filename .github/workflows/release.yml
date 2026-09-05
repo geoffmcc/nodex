@@ -7,6 +7,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -27,8 +28,40 @@ jobs:
         run: go install github.com/sigstore/cosign/v2/cmd/cosign@v2.5.0
       - name: Verify modules
         run: go mod verify
+      - name: Test
+        run: go test -race ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
+      - name: Staticcheck
+        run: staticcheck ./...
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+      - name: Govulncheck
+        run: govulncheck ./...
+      - name: Install Syft
+        run: go install github.com/anchore/syft/cmd/syft@v1.30.0
+      - name: Validate Syft
+        run: syft version
+      - name: Validate GoReleaser configuration
+        run: goreleaser check --config .goreleaser.yaml
       - name: Build release artifacts
         env:
           GOVERSION: ${{ steps.go-version.outputs.version }}
           SOURCE_DATE_EPOCH: 0
         run: goreleaser release --clean
+      - name: Verify release checksums
+        working-directory: dist
+        run: sha256sum -c checksums.txt
+      - name: Verify release signature bundle
+        run: |
+          cosign verify-blob \
+            --bundle checksums.txt.sigstore.json \
+            --certificate-identity-regexp 'https://github.com/geoffmcc/nodex/.github/workflows/release.yml@refs/tags/v.*' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            checksums.txt
+      - name: Attest release checksums
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.2.2
+        with:
+          subject-path: dist/checksums.txt

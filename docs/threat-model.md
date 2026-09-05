@@ -143,8 +143,9 @@ tampering.
 **Gaps:**
 - No required reviewer enforcement in branch protection (repository setting,
   not code).
-- Release signing, SBOM generation, and provenance attestations are not yet
-  configured; the build/test workflow does not publish artifacts.
+- Release signing and SBOM generation are configured for draft releases, with
+  checksum-bundle verification in the release workflow. Build provenance still
+  requires verification of the configured attestation path before publication.
 - No workflow approval requirement for first-time contributors.
 
 ### 7. Dependency Compromise
@@ -162,9 +163,9 @@ takeover, malicious update).
 - All dependencies are from well-known sources (`golang.org/x`, `github.com`).
 
 **Gaps:**
-- No automated dependency update tooling (Dependabot, Renovate).
-- SBOM (Software Bill of Materials) and provenance are produced only when the
-  release workflow is added; normal CI is source verification only.
+- Dependabot is configured for scheduled dependency update pull requests.
+- SBOM (Software Bill of Materials) and provenance remain release-stage
+  evidence; normal CI is source verification only.
 
 ### 8. CI/CD Compromise
 The GitHub Actions workflow or runner is compromised, allowing tampering with
@@ -180,10 +181,11 @@ build artifacts or exfiltration of secrets.
 - GitHub-hosted runners are ephemeral.
 
 **Gaps:**
-- No SLSA provenance generation for builds.
-- No code signing for release binaries.
-- No reproducible build configuration.
-- No `id-token` permission for keyless signing integration.
+- Release builds use Sigstore keyless signing and a signed checksum bundle.
+- Release builds use `-trimpath`, fixed archive settings, and
+  `SOURCE_DATE_EPOCH` for reproducibility controls.
+- The release workflow has `id-token` and attestation permissions; published
+  provenance still depends on successful workflow execution.
 - No Step Security Harden Runner step.
 
 ### 9. Release Tampering
@@ -196,10 +198,10 @@ An attacker modifies a release binary after build but before distribution.
 - Source is in a public Git repository with signed commits.
 
 **Gaps:**
-- No binary signing (no GPG, Cosign, or Sigstore signatures).
-- No checksums published for release binaries.
-- No SBOM to verify component provenance.
-- No reproducible builds to independently verify binary integrity.
+- Draft releases include Cosign/Sigstore signature bundles and SHA-256
+  checksums.
+- Draft releases include SPDX SBOM artifacts.
+- Independent rebuild comparison is not yet automated for every release.
 
 ---
 
@@ -288,16 +290,16 @@ An attacker modifies a release binary after build but before distribution.
 
 | # | Gap | Priority | Notes |
 |---|-----|----------|-------|
-| G1 | SBOM generation | Medium | `go version -m` provides basic info; full SBOM (SPDX/CycloneDX) recommended |
-| G2 | Binary signing | Medium | Cosign/Sigstore for release binaries |
-| G3 | Reproducible builds | Low | Requires build environment standardization |
-| G4 | CI tool version pinning | High | `staticcheck` and `govulncheck` use `@latest` |
-| G5 | SLSA provenance | Medium | Build provenance attestation |
+| G1 | SBOM generation | Medium | Release workflow generates SPDX SBOM artifacts |
+| G2 | Release artifact signing | Medium | Tagged release workflow signs the checksum manifest with Cosign/Sigstore |
+| G3 | Reproducible builds | Low | Release build uses `-trimpath`, `CGO_ENABLED=0`, and fixed source date |
+| G4 | CI tool version pinning | High | CI pins `staticcheck`, `govulncheck`, and GoReleaser versions |
+| G5 | SLSA provenance | Medium | Release workflow requests and verifies build provenance attestation |
 | G6 | Certificate pinning | Low | Adds operational complexity; custom CA covers most cases |
 | G7 | Encryption-at-rest for file credentials | Low | OS-level permissions are primary control |
-| G8 | Dependency update automation | Medium | Dependabot/Renovate for automated updates |
+| G8 | Dependency update automation | Medium | Dependabot is configured for Go modules and GitHub Actions |
 | G9 | Fuzzing in CI | Low | Go native fuzzing for parsing/input handlers |
-| G10 | `go.sum` verification in CI | Medium | Explicit `go mod verify` step before build |
+| G10 | `go.sum` verification in CI | Medium | CI runs `go mod verify` before build and tests |
 
 ---
 

@@ -31,13 +31,13 @@ sboms:
   - artifacts: archive
 
 signs:
-  - artifacts: all
+  - artifacts: checksum
+    signature: "${artifact}.sigstore.json"
     cmd: cosign
     args:
       - sign-blob
       - --yes
-      - --output-signature=${signature}
-      - --output-certificate=${certificate}
+      - --bundle=${signature}
       - ${artifact}
 
 release:

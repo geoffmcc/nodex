@@ -36,7 +36,7 @@ func certificationLedgerPath(args []string) (string, []string, error) {
 	return path, rest, nil
 }
 
-func certificationArgs(args []string) (node, name, storage, ledger string, vmid int, err error) {
+func certificationArgs(args []string) (environment, suite, node, name, storage, ledger string, vmid int, err error) {
 	ledger, args, err = certificationLedgerPath(args)
 	if err != nil {
 		return
@@ -50,6 +50,10 @@ func certificationArgs(args []string) (node, name, storage, ledger string, vmid 
 			return args[i], nil
 		}
 		switch args[i] {
+		case "--environment":
+			environment, err = value()
+		case "--suite":
+			suite, err = value()
 		case "--node":
 			node, err = value()
 		case "--name":
@@ -63,7 +67,7 @@ func certificationArgs(args []string) (node, name, storage, ledger string, vmid 
 				vmid, err = strconv.Atoi(s)
 			}
 		default:
-			return "", "", "", "", 0, fmt.Errorf("unknown certification argument %q", args[i])
+			return "", "", "", "", "", "", 0, fmt.Errorf("unknown certification argument %q", args[i])
 		}
 		if err != nil {
 			return
@@ -79,20 +83,41 @@ func requireCertificationProfile(cmdCtx *Context) error {
 	return nil
 }
 
+func certificationAuthorization(cfg *config.Config, environment string) (*certification.Authorization, string, error) {
+	env, ok := cfg.Certifications[environment]
+	if !ok {
+		return nil, "", fmt.Errorf("certification environment %q is not configured", environment)
+	}
+	profile, ok := cfg.Profiles[env.Profile]
+	if !ok {
+		return nil, "", fmt.Errorf("certification profile %q is not configured", env.Profile)
+	}
+	return &certification.Authorization{Environment: environment, Profile: env.Profile, Endpoint: env.Endpoint, Provider: env.Provider, ExpectedFingerprint: env.ExpectedFingerprint, TrustedCAIdentity: env.TrustedCAIdentity, Nodes: env.Nodes, Storage: env.Storage, VMIDMin: env.VMIDMin, VMIDMax: env.VMIDMax, Suites: env.Suites, AllowMutations: env.AllowMutations, MaxResources: env.MaxResources, ExpiresAt: env.ExpiresAt}, profile.CAFile, nil
+}
+
 func runCertification(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err := requireCertificationProfile(cmdCtx); err != nil {
 		return err
 	}
-	node, name, storage, ledger, vmid, err := certificationArgs(args)
-	if err != nil || node == "" || name == "" || storage == "" || vmid <= 0 {
-		return app.NewExitError(fmt.Errorf("usage: nodex --profile %s certification run --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage> [--ledger <path>]", certification.RequiredProfile), app.ExitUsage)
+	environment, suite, node, name, storage, ledger, vmid, err := certificationArgs(args)
+	if err != nil || environment == "" || suite == "" || node == "" || name == "" || storage == "" || vmid <= 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex --profile %s certification run --environment <name> --suite <readonly|disposable-mutations> --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage> [--ledger <path>]", certification.RequiredProfile), app.ExitUsage)
+	}
+	cfg, err := config.Read()
+	if err != nil {
+		return err
+	}
+	auth, caFile, err := certificationAuthorization(cfg, environment)
+	if err != nil {
+		return app.NewExitError(err, app.ExitValidationError)
 	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, certification.RequiredProfile)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
-	res, err := certification.Run(ctx, prov, certification.Request{Profile: certification.RequiredProfile, Node: node, VMID: vmid, Name: name, Storage: storage, ConfirmTarget: cmdCtx.Opts.ConfirmTarget, OptIn: cmdCtx.Opts.Yes}, ledger, now())
+	request := certification.Request{Profile: certification.RequiredProfile, Environment: environment, Suite: suite, Endpoint: auth.Endpoint, CAFile: caFile, Node: node, VMID: vmid, Name: name, Storage: storage, ConfirmTarget: cmdCtx.Opts.ConfirmTarget, OptIn: cmdCtx.Opts.Yes, Authorization: auth}
+	res, err := certification.Run(ctx, prov, request, ledger, now())
 	if err != nil {
 		return app.NewExitError(err, app.ExitValidationError)
 	}
@@ -107,12 +132,37 @@ func runCertificationCleanup(ctx context.Context, cmdCtx *Context, args []string
 	if err != nil || len(rest) != 0 || !cmdCtx.Opts.Yes {
 		return app.NewExitError(fmt.Errorf("usage: nodex --profile %s --yes --confirm-target <ledger-entry-id> certification cleanup [--ledger <path>]", certification.RequiredProfile), app.ExitUsage)
 	}
+	cfg, err := config.Read()
+	if err != nil {
+		return err
+	}
+	loaded, err := certification.Load(ledger)
+	if err != nil {
+		return app.NewExitError(err, app.ExitValidationError)
+	}
+	var target *certification.Entry
+	for i := range loaded.Entries {
+		if loaded.Entries[i].ID == cmdCtx.Opts.ConfirmTarget {
+			target = &loaded.Entries[i]
+			break
+		}
+	}
+	if target == nil || target.Environment == "" {
+		return app.NewExitError(fmt.Errorf("ledger entry is not bound to a configured certification environment"), app.ExitConflict)
+	}
+	auth, caFile, err := certificationAuthorization(cfg, target.Environment)
+	if err != nil {
+		return app.NewExitError(err, app.ExitValidationError)
+	}
+	if auth.Profile != certification.RequiredProfile {
+		return app.NewExitError(fmt.Errorf("certification environment must use explicit profile %s", certification.RequiredProfile), app.ExitValidationError)
+	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, certification.RequiredProfile)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
-	res, err := certification.Cleanup(ctx, prov, ledger, cmdCtx.Opts.ConfirmTarget)
+	res, err := certification.Cleanup(ctx, prov, ledger, cmdCtx.Opts.ConfirmTarget, auth, caFile)
 	if err != nil {
 		return app.NewExitError(err, app.ExitValidationError)
 	}

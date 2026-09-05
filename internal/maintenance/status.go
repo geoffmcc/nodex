@@ -26,15 +26,18 @@ const (
 
 // HostStatus is the interpreted preflight state of one host.
 type HostStatus struct {
-	Host            string   `json:"host" yaml:"host"`
-	Reachable       bool     `json:"reachable" yaml:"reachable"`
-	Supported       bool     `json:"supported" yaml:"supported"`
-	PendingUpdates  []string `json:"pending_updates,omitempty" yaml:"pending_updates,omitempty"`
-	SecurityUpdates []string `json:"security_updates,omitempty" yaml:"security_updates,omitempty"`
-	RebootRequired  bool     `json:"reboot_required" yaml:"reboot_required"`
-	FailedUnits     []string `json:"failed_units,omitempty" yaml:"failed_units,omitempty"`
-	RootUsage       string   `json:"root_usage,omitempty" yaml:"root_usage,omitempty"`
-	Warnings        []string `json:"warnings,omitempty" yaml:"warnings,omitempty"`
+	Host               string   `json:"host" yaml:"host"`
+	Reachable          bool     `json:"reachable" yaml:"reachable"`
+	Supported          bool     `json:"supported" yaml:"supported"`
+	PendingUpdates     []string `json:"pending_updates,omitempty" yaml:"pending_updates,omitempty"`
+	SecurityUpdates    []string `json:"security_updates,omitempty" yaml:"security_updates,omitempty"`
+	RebootRequired     bool     `json:"reboot_required" yaml:"reboot_required"`
+	FailedUnits        []string `json:"failed_units,omitempty" yaml:"failed_units,omitempty"`
+	RootUsage          string   `json:"root_usage,omitempty" yaml:"root_usage,omitempty"`
+	HeldPackages       []string `json:"held_packages,omitempty" yaml:"held_packages,omitempty"`
+	BrokenDependencies []string `json:"broken_dependencies,omitempty" yaml:"broken_dependencies,omitempty"`
+	EvidenceComplete   bool     `json:"evidence_complete" yaml:"evidence_complete"`
+	Warnings           []string `json:"warnings,omitempty" yaml:"warnings,omitempty"`
 }
 
 // InterpretCheckUpdates converts an adapter run of the check-updates
@@ -51,6 +54,7 @@ func InterpretCheckUpdates(res *ansible.RunResult) []HostStatus {
 		if hr.Failures > 0 {
 			hs.Warnings = append(hs.Warnings, "one or more preflight tasks failed")
 		}
+		hs.EvidenceComplete = hr.Failures == 0 && hr.Unreachable == 0
 		if !hs.Reachable {
 			hs.Supported = false
 			hs.Warnings = append(hs.Warnings, "host unreachable")
@@ -59,6 +63,10 @@ func InterpretCheckUpdates(res *ansible.RunResult) []HostStatus {
 		}
 		for _, outcome := range res.TaskOutcomes[hr.Host] {
 			interpretOutcome(&hs, outcome)
+		}
+		if len(res.TaskOutcomes[hr.Host]) == 0 {
+			hs.EvidenceComplete = false
+			hs.Warnings = append(hs.Warnings, "no task evidence was returned")
 		}
 		statuses = append(statuses, hs)
 	}
@@ -92,6 +100,21 @@ func interpretOutcome(hs *HostStatus, o ansible.TaskOutcome) {
 		}
 	case taskRootUsage:
 		hs.RootUsage = parseRootUsage(o.StdoutLines)
+	}
+}
+
+// Snapshot converts a host status and its immutable inventory identity into
+// the normalized facts used by plan comparison.
+func Snapshot(host PlanHost, status HostStatus, sshUser string, sshPort int, keyConfigured, knownHostsConfigured bool) HostSnapshot {
+	return HostSnapshot{
+		Name: host.Name, Address: host.Address, Role: host.Role, Group: host.Group,
+		Criticality: host.Criticality, SSHUser: sshUser, SSHPort: sshPort,
+		KeyConfigured: keyConfigured, KnownHostsConfigured: knownHostsConfigured,
+		Reachable: status.Reachable, Supported: status.Supported,
+		PendingUpdates: append([]string(nil), status.PendingUpdates...), SecurityUpdates: append([]string(nil), status.SecurityUpdates...),
+		HeldPackages: append([]string(nil), status.HeldPackages...), BrokenDependencies: append([]string(nil), status.BrokenDependencies...),
+		RebootRequired: status.RebootRequired, FailedUnits: append([]string(nil), status.FailedUnits...), RootUsage: status.RootUsage,
+		EvidenceComplete: status.EvidenceComplete,
 	}
 }
 

@@ -62,3 +62,17 @@ func TestRunSetupWritesProfileWithoutSecrets(t *testing.T) {
 		t.Fatal("setup output exposed a secret")
 	}
 }
+
+func TestRunSetupDoesNotReplaceProfileWithoutForce(t *testing.T) {
+	isolateConfigAndHome(t)
+	args := []string{"--non-interactive", "setup", "--provider", "proxmox", "--profile", "lab", "--endpoint", "https://pve.example.test:8006"}
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("initial setup: %v", err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if err := Run(context.Background(), args, &stdout, &stderr); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("replacement error = %v", err)
+	}
+}

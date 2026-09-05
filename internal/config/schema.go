@@ -47,27 +47,53 @@ var ProviderRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 // Config is the top-level configuration structure (schema versions 1-2).
 // The environments and inventory sections are schema-version-2-only.
 type Config struct {
-	Version        int                    `yaml:"version"`
-	CurrentProfile string                 `yaml:"current_profile"`
-	Profiles       map[string]Profile     `yaml:"profiles"`
-	Environments   map[string]Environment `yaml:"environments,omitempty"`
-	Inventory      *Inventory             `yaml:"inventory,omitempty"`
-	Monitoring     *Monitoring            `yaml:"monitoring,omitempty"`
+	Version        int                                 `yaml:"version"`
+	CurrentProfile string                              `yaml:"current_profile"`
+	Profiles       map[string]Profile                  `yaml:"profiles"`
+	Environments   map[string]Environment              `yaml:"environments,omitempty"`
+	Inventory      *Inventory                          `yaml:"inventory,omitempty"`
+	Monitoring     *Monitoring                         `yaml:"monitoring,omitempty"`
+	Certifications map[string]CertificationEnvironment `yaml:"certifications,omitempty"`
+}
+
+// CertificationEnvironment is an explicit authorization binding for the
+// opt-in certification suites. Names and profile prefixes are not security
+// boundaries; every mutation must match this record exactly.
+type CertificationEnvironment struct {
+	Profile             string   `yaml:"profile"`
+	Endpoint            string   `yaml:"endpoint"`
+	Provider            string   `yaml:"provider"`
+	Nodes               []string `yaml:"nodes"`
+	Storage             []string `yaml:"storage"`
+	VMIDMin             int      `yaml:"vmid_min"`
+	VMIDMax             int      `yaml:"vmid_max"`
+	Suites              []string `yaml:"suites"`
+	AllowMutations      bool     `yaml:"allow_mutations"`
+	MaxResources        int      `yaml:"max_resources"`
+	ExpiresAt           int64    `yaml:"expires_at"`
+	ExpectedFingerprint string   `yaml:"expected_fingerprint,omitempty"`
+	TrustedCAIdentity   string   `yaml:"trusted_ca_identity,omitempty"`
 }
 
 // Monitoring contains only explicitly configured one-shot checks. Nodex never
 // discovers targets or opens connections that are not represented here.
 type Monitoring struct {
-	Targets map[string]MonitorTarget `yaml:"targets"`
+	Targets     map[string]MonitorTarget `yaml:"targets"`
+	Concurrency int                      `yaml:"concurrency,omitempty"`
+	Timeout     int                      `yaml:"timeout_seconds,omitempty"`
 }
 
 type MonitorTarget struct {
-	Type        string `yaml:"type" json:"type"`
-	Address     string `yaml:"address" json:"address"`
-	Environment string `yaml:"environment,omitempty" json:"environment,omitempty"`
-	Timeout     int    `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
-	Resolver    string `yaml:"resolver,omitempty" json:"resolver,omitempty"`
-	ExpiresIn   int    `yaml:"expiry_warning_days,omitempty" json:"expiry_warning_days,omitempty"`
+	Type           string `yaml:"type" json:"type"`
+	Address        string `yaml:"address" json:"address"`
+	Environment    string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Timeout        int    `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+	Resolver       string `yaml:"resolver,omitempty" json:"resolver,omitempty"`
+	ExpiresIn      int    `yaml:"expiry_warning_days,omitempty" json:"expiry_warning_days,omitempty"`
+	CAFile         string `yaml:"ca_file,omitempty" json:"ca_file,omitempty"`
+	ExpectedStatus int    `yaml:"expected_status,omitempty" json:"expected_status,omitempty"`
+	Service        string `yaml:"service,omitempty" json:"service,omitempty"`
+	Application    string `yaml:"application,omitempty" json:"application,omitempty"`
 }
 
 // Inventory declares the SSH-manageable Linux hosts. Hosts must be enrolled

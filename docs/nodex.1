@@ -79,8 +79,12 @@ Requires \-\-expert flag.
 .SS nodex init
 Initialize nodex configuration interactively.
 Non\-interactive with \-\-non\-interactive.
+.SS nodex setup
+Run guided secure setup for a provider profile. Requires an explicit provider,
+profile, and HTTPS endpoint in non\-interactive mode. Use \-\-check for
+read\-only preflight diagnostics; use \-\-force to replace an existing profile.
 .SS nodex completion \fISHELL\fR
-Generate shell completion (bash|zsh|fish). Writes to stdout.
+Generate shell completion (bash|zsh|fish|powershell). Writes to stdout.
 .SS nodex version
 Print version information.
 .SS nodex provider list
@@ -107,6 +111,16 @@ Remove a profile, optionally deleting its referenced credential.
 Export a sanitized profile (no credentials). Writes JSON to stdout.
 .SS nodex profile import
 Import a profile from stdin.
+.SS nodex profile diagnose\-permissions \fINAME\fR
+Run provider\-supported permission diagnostics without exposing credentials.
+.SS nodex certification run
+Run an explicitly selected disposable\-environment certification suite. Requires
+the nodex\-test\-admin profile, an environment, suite, node, VMID, storage, and
+the mutation confirmation flags for the disposable\-mutations suite.
+.SS nodex certification cleanup
+Clean up a ledger\-recorded certification resource after exact identity checks.
+.SS nodex certification report
+Render certification ledger entries as table, JSON, or YAML.
 .SS nodex node list
 List all nodes.
 .SS nodex node show \fINAME\fR
@@ -311,6 +325,18 @@ List enrolled maintenance hosts.
 Read\-only maintenance preflight via the allowlisted Ansible boundary. Exits 11 on partial failure.
 .SS nodex maintenance plan \-\-policy security\-only|approved\-full\-upgrade [\-\-expires\-in \fIDUR\fR] [\-\-batch\-size \fIN\fR]
 Create an immutable, expiring, tamper\-evident maintenance plan. Makes no changes. Exits 11 when the plan has blockers.
+.SS nodex maintenance apply \-\-plan \fIFILE\fR
+Apply a digest\-verified plan with explicit mutation confirmation.
+.SS nodex maintenance resume \-\-plan \fIFILE\fR \-\-receipt \fIFILE\fR
+Revalidate an interrupted receipt and continue only hosts not yet started.
+.SS nodex maintenance reconcile \-\-plan \fIFILE\fR \-\-receipt \fIFILE\fR
+Perform read\-only postcondition verification for a receipt.
+.SS nodex maintenance abandon \-\-receipt \fIFILE\fR \-\-reason \fITEXT\fR
+Record that an interrupted receipt will not be resumed.
+.SS nodex maintenance verify \-\-plan \fIFILE\fR
+Verify planned hosts through the embedded read\-only Ansible operation.
+.SS nodex maintenance report \-\-receipt \fIFILE\fR
+Render a verified maintenance receipt as table, JSON, or YAML.
 .SS nodex environment list
 List configured PVE/PBS environments.
 .SS nodex environment health \fINAME\fR
