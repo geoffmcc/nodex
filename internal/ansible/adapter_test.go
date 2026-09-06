@@ -25,7 +25,11 @@ func TestHelperProcess(t *testing.T) {
 	hosts := strings.Split(os.Getenv("NODEX_ANSIBLE_STUB_HOSTS"), ",")
 
 	stats := func(entries map[string]map[string]int) string {
-		b, _ := json.Marshal(map[string]any{"stats": entries})
+		b, _ := json.Marshal(map[string]any{
+			"schema":   EvidenceSchemaVersion,
+			"contract": EvidenceContract,
+			"stats":    entries,
+		})
 		return string(b)
 	}
 	okStats := map[string]map[string]int{}
@@ -37,7 +41,27 @@ func TestHelperProcess(t *testing.T) {
 
 	switch mode {
 	case "ok":
-		fmt.Println(stats(okStats))
+		connectivity, reboot, failedUnits, root := map[string]any{}, map[string]any{}, map[string]any{}, map[string]any{}
+		for _, host := range hosts {
+			if host == "" {
+				continue
+			}
+			connectivity[host] = map[string]any{}
+			reboot[host] = map[string]any{"stat": map[string]any{"exists": false}}
+			failedUnits[host] = map[string]any{"stdout_lines": []string{}}
+			root[host] = map[string]any{"stdout_lines": []string{"Filesystem 1024-blocks Used Available Capacity Mounted on", "/dev/root 100 10 90 10% /"}}
+		}
+		payload := map[string]any{
+			"schema": EvidenceSchemaVersion, "contract": EvidenceContract, "stats": okStats,
+			"plays": []any{map[string]any{"tasks": []any{
+				map[string]any{"task": map[string]any{"name": "Confirm connectivity", "evidence_id": HostEvidenceConnectivity}, "hosts": connectivity},
+				map[string]any{"task": map[string]any{"name": "Check reboot-required marker", "evidence_id": HostEvidenceReboot}, "hosts": reboot},
+				map[string]any{"task": map[string]any{"name": "List failed systemd units", "evidence_id": HostEvidenceFailedUnits}, "hosts": failedUnits},
+				map[string]any{"task": map[string]any{"name": "Report root filesystem usage", "evidence_id": HostEvidenceRoot}, "hosts": root},
+			}}},
+		}
+		b, _ := json.Marshal(payload)
+		fmt.Println(string(b))
 	case "one-failed":
 		if len(hosts) > 0 {
 			okStats[hosts[0]] = map[string]int{"ok": 2, "changed": 0, "failures": 1, "unreachable": 0, "skipped": 0}
@@ -55,11 +79,13 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Println(stats(okStats))
 	case "task-detail":
 		payload := map[string]any{
-			"stats": okStats,
+			"schema":   EvidenceSchemaVersion,
+			"contract": EvidenceContract,
+			"stats":    okStats,
 			"plays": []any{map[string]any{
 				"tasks": []any{
 					map[string]any{
-						"task": map[string]any{"name": "List upgradable packages"},
+						"task": map[string]any{"name": "List upgradable packages", "evidence_id": ContainerEvidencePackages},
 						"hosts": map[string]any{hosts[0]: map[string]any{
 							"changed":      false,
 							"rc":           0,
@@ -68,13 +94,13 @@ func TestHelperProcess(t *testing.T) {
 						}},
 					},
 					map[string]any{
-						"task": map[string]any{"name": "Check reboot-required marker"},
+						"task": map[string]any{"name": "Check reboot-required marker", "evidence_id": ContainerEvidenceReboot},
 						"hosts": map[string]any{hosts[0]: map[string]any{
 							"stat": map[string]any{"exists": true},
 						}},
 					},
 					map[string]any{
-						"task": map[string]any{"name": "List failed systemd units"},
+						"task": map[string]any{"name": "List failed systemd units", "evidence_id": "host.failed_units"},
 						"hosts": map[string]any{hosts[0]: map[string]any{
 							"stdout_lines": []string{},
 						}},
@@ -84,6 +110,44 @@ func TestHelperProcess(t *testing.T) {
 		}
 		b, _ := json.Marshal(payload)
 		fmt.Println(string(b))
+	case "container-evidence":
+		if len(hosts) == 0 {
+			fmt.Println(stats(okStats))
+			return
+		}
+		host := hosts[0]
+		task := func(id string, data map[string]any) map[string]any {
+			return map[string]any{
+				"task":  map[string]any{"name": id, "evidence_id": id},
+				"hosts": map[string]any{host: data},
+			}
+		}
+		payload := map[string]any{
+			"schema":   EvidenceSchemaVersion,
+			"contract": EvidenceContract,
+			"stats":    okStats,
+			"plays": []any{map[string]any{"tasks": []any{
+				task(ContainerEvidenceStatus, map[string]any{"rc": 0}),
+				task(ContainerEvidenceAPT, map[string]any{"rc": 0}),
+				task(ContainerEvidenceRefresh, map[string]any{"rc": 0}),
+				task(ContainerEvidencePackages, map[string]any{
+					"rc":           0,
+					"stdout":       "Listing...\nnano/stable 8.0-1 amd64 [upgradable from: 7.2-1]",
+					"stdout_lines": []string{"Listing...", "nano/stable 8.0-1 amd64 [upgradable from: 7.2-1]"},
+				}),
+				task(ContainerEvidenceSimulation, map[string]any{"rc": 0}),
+				task(ContainerEvidenceDpkg, map[string]any{"rc": 0}),
+				task(ContainerEvidenceReboot, map[string]any{"rc": 1, "stat": map[string]any{"exists": false}}),
+				task(ContainerEvidenceRoot, map[string]any{
+					"rc":           0,
+					"stdout_lines": []string{"Filesystem 1024-blocks Used Available Capacity Mounted on", "/dev/root 100 91 9 91% /"},
+				}),
+			}}},
+		}
+		b, _ := json.Marshal(payload)
+		fmt.Println(string(b))
+	case "bad-contract":
+		fmt.Println(`{"schema":999,"contract":"untrusted","stats":{}}`)
 	case "bad-json":
 		fmt.Println("PLAY RECAP *** not json at all")
 	case "exit1-good-stats":
@@ -116,6 +180,8 @@ func TestHelperProcess(t *testing.T) {
 		invData, _ := os.ReadFile(inv) // #nosec G304 G703 -- stub reads adapter-generated file
 		pbData, _ := os.ReadFile(pb)   // #nosec G304 G703 -- stub reads adapter-generated file
 		payload := map[string]any{
+			"schema":    EvidenceSchemaVersion,
+			"contract":  EvidenceContract,
 			"stats":     map[string]any{},
 			"inventory": string(invData),
 			"playbook":  string(pbData),
@@ -150,6 +216,103 @@ func TestRunContainerOperationRequiresVMID(t *testing.T) {
 	r := newStubRunner(t, "ok", testHosts()[:1])
 	if _, err := r.Run(context.Background(), RunRequest{Operation: "check-container-updates", Hosts: testHosts()[:1]}); err == nil {
 		t.Fatal("container operation without VMID must be rejected")
+	}
+}
+
+func TestOperationsReturnDefensiveCopies(t *testing.T) {
+	operation, err := Lookup("check-updates")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(operation.RequiredEvidence) == 0 {
+		t.Fatal("check-updates has no evidence contract")
+	}
+	originalID := operation.RequiredEvidence[0]
+	operation.RequiredEvidence[0] = "tampered"
+
+	current, err := Lookup("check-updates")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.RequiredEvidence[0] != originalID {
+		t.Fatalf("Lookup returned mutable registry storage: %v", current.RequiredEvidence)
+	}
+	all := Operations()
+	all[0].RequiredEvidence = append(all[0].RequiredEvidence, "tampered")
+	current, err = Lookup("check-updates")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current.RequiredEvidence) != len(operation.RequiredEvidence) {
+		t.Fatalf("Operations returned mutable registry storage: %v", current.RequiredEvidence)
+	}
+}
+
+func TestRunRequiresVersionedEvidenceContract(t *testing.T) {
+	hosts := testHosts()[:1]
+	r := newStubRunner(t, "bad-contract", hosts)
+	res, err := r.Run(context.Background(), RunRequest{Operation: "verify-host", Hosts: hosts})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Success || !strings.Contains(res.ParseError, "unsupported ansible evidence contract") {
+		t.Fatalf("untrusted evidence envelope accepted: %+v", res)
+	}
+}
+
+func TestRunContainerEvidenceContract(t *testing.T) {
+	hosts := testHosts()[:1]
+	r := newStubRunner(t, "container-evidence", hosts)
+	res, err := r.Run(context.Background(), RunRequest{Operation: "check-container-updates", Hosts: hosts, ContainerVMID: 42})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.Success || !res.EvidenceComplete || len(res.MissingEvidence) != 0 {
+		t.Fatalf("complete container evidence rejected: %+v", res)
+	}
+	if res.EvidenceSchema != EvidenceSchemaVersion || res.EvidenceContract != EvidenceContract {
+		t.Fatalf("wrong result contract metadata: %+v", res)
+	}
+	if got := res.TaskOutcomes[hosts[0].Name][0].EvidenceID; got != ContainerEvidenceStatus {
+		t.Fatalf("first evidence ID = %q, want %q", got, ContainerEvidenceStatus)
+	}
+}
+
+func TestRunContainerMissingEvidenceNeverSucceeds(t *testing.T) {
+	hosts := testHosts()[:1]
+	r := newStubRunner(t, "task-detail", hosts)
+	res, err := r.Run(context.Background(), RunRequest{Operation: "check-container-updates", Hosts: hosts, ContainerVMID: 42})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Success || res.EvidenceComplete {
+		t.Fatalf("incomplete container evidence accepted: %+v", res)
+	}
+	if len(res.MissingEvidence[hosts[0].Name]) == 0 {
+		t.Fatalf("missing evidence was not reported: %+v", res)
+	}
+}
+
+func TestRequiredEvidenceRejectsUnusableTask(t *testing.T) {
+	operation, err := Lookup("verify-host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hosts := testHosts()[:1]
+	result := &RunResult{TaskOutcomes: map[string][]TaskOutcome{hosts[0].Name: {}}}
+	for _, evidenceID := range operation.RequiredEvidence {
+		outcome := TaskOutcome{EvidenceID: evidenceID}
+		if evidenceID == HostEvidenceRoot {
+			rc := 1
+			outcome.RC = &rc
+		}
+		result.TaskOutcomes[hosts[0].Name] = append(result.TaskOutcomes[hosts[0].Name], outcome)
+	}
+	if validateRequiredEvidence(result, hosts, operation.ID, operation.RequiredEvidence) {
+		t.Fatalf("failed required task was accepted: %+v", result)
+	}
+	if len(result.MissingEvidence[hosts[0].Name]) != 1 || !strings.Contains(result.MissingEvidence[hosts[0].Name][0], "unusable") {
+		t.Fatalf("unusable evidence was not reported: %+v", result.MissingEvidence)
 	}
 }
 
@@ -508,6 +671,20 @@ func TestRunnerRequiresAbsoluteExe(t *testing.T) {
 	}
 }
 
+func TestRunnerRejectsUnsafeExecutable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ansible-playbook")
+	if err := os.WriteFile(path, []byte("stub"), 0o777); err != nil { // #nosec G306 -- this test intentionally creates an unsafe executable fixture.
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o777); err != nil { // #nosec G302 -- this test intentionally creates an unsafe executable fixture.
+		t.Fatal(err)
+	}
+	r := &Runner{Exe: path}
+	if _, err := r.Run(context.Background(), RunRequest{Operation: "verify-host", Hosts: testHosts()[:1]}); err == nil || !strings.Contains(err.Error(), "world-writable executable") {
+		t.Fatalf("unsafe executable error = %v", err)
+	}
+}
+
 func TestVersionParsing(t *testing.T) {
 	tests := []struct {
 		line string
@@ -557,6 +734,9 @@ func TestTaskOutcomesParsed(t *testing.T) {
 	}
 	if up.RC == nil || *up.RC != 0 || up.Stdout == "" || up.Changed {
 		t.Errorf("structured task result wrong: %+v", up)
+	}
+	if up.EvidenceID != ContainerEvidencePackages {
+		t.Errorf("stable evidence ID missing: %+v", up)
 	}
 	rb := byName["Check reboot-required marker"]
 	if rb.StatExists == nil || !*rb.StatExists {

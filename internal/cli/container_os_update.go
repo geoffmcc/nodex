@@ -17,13 +17,14 @@ import (
 const containerUpdatePolicy = "approved-full-upgrade"
 
 const (
-	containerStatusTask   = "Verify LXC guest is running"
-	containerAPTTask      = "Verify LXC guest uses APT"
-	containerPackagesTask = "List LXC upgradable packages"
-	containerSimTask      = "Simulate LXC full upgrade"
-	containerDpkgTask     = "Check LXC package database"
-	containerRebootTask   = "Check LXC reboot-required marker"
-	containerRootTask     = "Report LXC root filesystem usage"
+	containerStatusTask   = ansible.ContainerEvidenceStatus
+	containerAPTTask      = ansible.ContainerEvidenceAPT
+	containerRefreshTask  = ansible.ContainerEvidenceRefresh
+	containerPackagesTask = ansible.ContainerEvidencePackages
+	containerSimTask      = ansible.ContainerEvidenceSimulation
+	containerDpkgTask     = ansible.ContainerEvidenceDpkg
+	containerRebootTask   = ansible.ContainerEvidenceReboot
+	containerRootTask     = ansible.ContainerEvidenceRoot
 )
 
 // runContainerOSAnsible is the only execution seam for LXC guest updates.
@@ -108,15 +109,15 @@ func findPVEInventoryHost(cfg *config.Config, profileName, node string) (string,
 
 func interpretContainerOSUpdate(result *ansible.RunResult, hostName string) containerUpdateState {
 	state := containerUpdateState{}
-	if result == nil || !result.Success {
+	if result == nil || !result.Success || !result.EvidenceComplete {
 		return state
 	}
 	seen := map[string]bool{}
 	usable := map[string]bool{}
 	for _, outcome := range result.TaskOutcomes[hostName] {
-		seen[outcome.Task] = true
-		usable[outcome.Task] = containerTaskUsable(outcome)
-		switch outcome.Task {
+		seen[outcome.EvidenceID] = true
+		usable[outcome.EvidenceID] = containerTaskUsable(outcome)
+		switch outcome.EvidenceID {
 		case containerPackagesTask:
 			state.PendingUpdates = parseContainerPackages(outcome.StdoutLines)
 		case containerDpkgTask:
@@ -132,7 +133,7 @@ func interpretContainerOSUpdate(result *ansible.RunResult, hostName string) cont
 		}
 	}
 	state.EvidenceComplete = true
-	for _, task := range []string{containerStatusTask, containerAPTTask, containerPackagesTask, containerSimTask, containerDpkgTask, containerRebootTask, containerRootTask} {
+	for _, task := range containerRequiredEvidence(result) {
 		if !seen[task] || !usable[task] {
 			state.EvidenceComplete = false
 			break
@@ -145,33 +146,17 @@ func interpretContainerOSUpdate(result *ansible.RunResult, hostName string) cont
 }
 
 func containerTaskUsable(outcome ansible.TaskOutcome) bool {
-	if outcome.Failed || outcome.Skipped || outcome.Unreachable {
-		return false
-	}
-	if outcome.RC == nil {
-		return false
-	}
-	rc := *outcome.RC
-	// `stat` returns 1 when the reboot marker is absent. The package audit also
-	// uses its return code as diagnostic evidence, so its non-zero result is
-	// handled by DpkgIssues instead of being discarded as an execution error.
-	if outcome.Task == containerDpkgTask {
-		return true
-	}
-	if outcome.Task == containerRebootTask {
-		return rc == 0 || rc == 1
-	}
-	return rc == 0
+	return outcome.RC != nil && ansible.EvidenceOutcomeUsable("", outcome)
 }
 
 func missingContainerUpdateEvidence(result *ansible.RunResult, hostName string) []string {
 	outcomes := map[string]ansible.TaskOutcome{}
 	if result != nil {
 		for _, outcome := range result.TaskOutcomes[hostName] {
-			outcomes[outcome.Task] = outcome
+			outcomes[outcome.EvidenceID] = outcome
 		}
 	}
-	required := []string{containerStatusTask, containerAPTTask, containerPackagesTask, containerSimTask, containerDpkgTask, containerRebootTask, containerRootTask}
+	required := containerRequiredEvidence(result)
 	missing := make([]string, 0)
 	for _, task := range required {
 		outcome, ok := outcomes[task]
@@ -188,6 +173,13 @@ func missingContainerUpdateEvidence(result *ansible.RunResult, hostName string) 
 		}
 	}
 	return missing
+}
+
+func containerRequiredEvidence(result *ansible.RunResult) []string {
+	if result != nil && len(result.RequiredEvidence) > 0 {
+		return append([]string(nil), result.RequiredEvidence...)
+	}
+	return []string{containerStatusTask, containerAPTTask, containerRefreshTask, containerPackagesTask, containerSimTask, containerDpkgTask, containerRebootTask, containerRootTask}
 }
 
 func parseContainerPackages(lines []string) []string {
@@ -305,7 +297,7 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 	if err != nil {
 		return app.NewExitError(fmt.Errorf("container %s update outcome is unknown; do not retry until a fresh preflight completes: %w", target, err), app.ExitAmbiguousOutcome)
 	}
-	if !applyResult.Success {
+	if applyResult == nil || !applyResult.Success || !applyResult.EvidenceComplete {
 		if err := writeContainerUpdateResult(cmdCtx, prov, profileName, target, true, false, before, before); err != nil {
 			return app.NewExitError(fmt.Errorf("container %s update outcome is ambiguous: %w", target, err), app.ExitAmbiguousOutcome)
 		}
@@ -316,7 +308,7 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 		return app.NewExitError(fmt.Errorf("container %s update completed but verification outcome is unknown; do not retry until a fresh verification completes: %w", target, err), app.ExitAmbiguousOutcome)
 	}
 	after := interpretContainerOSUpdate(verifyResult, hostName)
-	verified := verifyResult.Success && after.EvidenceComplete && !after.DpkgIssues && len(after.PendingUpdates) == 0
+	verified := verifyResult != nil && verifyResult.Success && verifyResult.EvidenceComplete && after.EvidenceComplete && !after.DpkgIssues && len(after.PendingUpdates) == 0
 	if err := writeContainerUpdateResult(cmdCtx, prov, profileName, target, true, verified, before, after); err != nil {
 		if !verified {
 			return app.NewExitError(fmt.Errorf("container %s update requires operator review after failed verification: %w", target, err), app.ExitAmbiguousOutcome)

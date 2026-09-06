@@ -199,6 +199,9 @@ type HostResult struct {
 // callback. Fields cover the registered values Nodex's embedded playbooks
 // produce; unknown fields are ignored.
 type TaskOutcome struct {
+	// EvidenceID is a stable machine-readable contract key. Task is retained
+	// only as presentation text and must not be used for control flow.
+	EvidenceID  string   `json:"evidence_id,omitempty" yaml:"evidence_id,omitempty"`
 	Task        string   `json:"task" yaml:"task"`
 	Failed      bool     `json:"failed,omitempty" yaml:"failed,omitempty"`
 	Skipped     bool     `json:"skipped,omitempty" yaml:"skipped,omitempty"`
@@ -216,18 +219,23 @@ type TaskOutcome struct {
 // RunResult is the complete outcome of one adapter run. Success is derived
 // from the parsed per-host statistics, never from the exit code alone.
 type RunResult struct {
-	Operation       string                   `json:"operation" yaml:"operation"`
-	ExitCode        int                      `json:"exit_code" yaml:"exit_code"`
-	DurationSeconds float64                  `json:"duration_seconds" yaml:"duration_seconds"`
-	Hosts           []HostResult             `json:"hosts" yaml:"hosts"`
-	TaskOutcomes    map[string][]TaskOutcome `json:"task_outcomes,omitempty" yaml:"task_outcomes,omitempty"`
-	Success         bool                     `json:"success" yaml:"success"`
-	PartialFailure  bool                     `json:"partial_failure" yaml:"partial_failure"`
-	ParseError      string                   `json:"parse_error,omitempty" yaml:"parse_error,omitempty"`
-	Stdout          string                   `json:"stdout,omitempty" yaml:"stdout,omitempty"`
-	Stderr          string                   `json:"stderr,omitempty" yaml:"stderr,omitempty"`
-	StdoutTruncated bool                     `json:"stdout_truncated,omitempty" yaml:"stdout_truncated,omitempty"`
-	StderrTruncated bool                     `json:"stderr_truncated,omitempty" yaml:"stderr_truncated,omitempty"`
+	Operation        string                   `json:"operation" yaml:"operation"`
+	EvidenceSchema   int                      `json:"evidence_schema,omitempty" yaml:"evidence_schema,omitempty"`
+	EvidenceContract string                   `json:"evidence_contract,omitempty" yaml:"evidence_contract,omitempty"`
+	RequiredEvidence []string                 `json:"required_evidence,omitempty" yaml:"required_evidence,omitempty"`
+	MissingEvidence  map[string][]string      `json:"missing_evidence,omitempty" yaml:"missing_evidence,omitempty"`
+	EvidenceComplete bool                     `json:"evidence_complete" yaml:"evidence_complete"`
+	ExitCode         int                      `json:"exit_code" yaml:"exit_code"`
+	DurationSeconds  float64                  `json:"duration_seconds" yaml:"duration_seconds"`
+	Hosts            []HostResult             `json:"hosts" yaml:"hosts"`
+	TaskOutcomes     map[string][]TaskOutcome `json:"task_outcomes,omitempty" yaml:"task_outcomes,omitempty"`
+	Success          bool                     `json:"success" yaml:"success"`
+	PartialFailure   bool                     `json:"partial_failure" yaml:"partial_failure"`
+	ParseError       string                   `json:"parse_error,omitempty" yaml:"parse_error,omitempty"`
+	Stdout           string                   `json:"stdout,omitempty" yaml:"stdout,omitempty"`
+	Stderr           string                   `json:"stderr,omitempty" yaml:"stderr,omitempty"`
+	StdoutTruncated  bool                     `json:"stdout_truncated,omitempty" yaml:"stdout_truncated,omitempty"`
+	StderrTruncated  bool                     `json:"stderr_truncated,omitempty" yaml:"stderr_truncated,omitempty"`
 }
 
 // Runner executes allowlisted operations through ansible-playbook.
@@ -292,6 +300,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	}
 	if r.Exe == "" || !filepath.IsAbs(r.Exe) {
 		return nil, fmt.Errorf("runner requires an absolute ansible-playbook path (run Detect first)")
+	}
+	if err := checkExecutableSafety(r.Exe); err != nil {
+		return nil, err
 	}
 
 	timeout := r.Timeout
@@ -377,12 +388,15 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	duration := time.Since(start)
 
 	result := &RunResult{
-		Operation:       req.Operation,
-		DurationSeconds: duration.Seconds(),
-		Stdout:          sanitizeOutput(stdout.String()),
-		Stderr:          sanitizeOutput(stderr.String()),
-		StdoutTruncated: stdout.truncated,
-		StderrTruncated: stderr.truncated,
+		Operation:        req.Operation,
+		EvidenceSchema:   op.EvidenceSchema,
+		EvidenceContract: EvidenceContract,
+		RequiredEvidence: op.RequiredEvidenceIDs(),
+		DurationSeconds:  duration.Seconds(),
+		Stdout:           sanitizeOutput(stdout.String()),
+		Stderr:           sanitizeOutput(stderr.String()),
+		StdoutTruncated:  stdout.truncated,
+		StderrTruncated:  stderr.truncated,
 	}
 	if cmd.ProcessState != nil {
 		result.ExitCode = cmd.ProcessState.ExitCode()
@@ -398,21 +412,24 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		return result, fmt.Errorf("execute ansible-playbook: %w", runErr)
 	}
 
-	parseRunStats(result, stdout.Bytes(), req.Hosts)
+	parseRunStats(result, stdout.Bytes(), req.Hosts, op)
 	return result, nil
 }
 
 // parseRunStats extracts per-host statistics from the JSON callback output
 // and derives success honestly: every requested host must appear with no
-// failures and no unreachability, and the process must have exited zero.
-func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec) {
+// failures and no unreachability, the process must have exited zero, and the
+// operation's required evidence must be present.
+func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec, op Operation) {
 	if result.StdoutTruncated {
 		result.ParseError = "stdout truncated; per-host results unavailable"
 		result.Success = false
 		return
 	}
 	var payload struct {
-		Stats map[string]struct {
+		Schema   int    `json:"schema"`
+		Contract string `json:"contract"`
+		Stats    map[string]struct {
 			OK          int `json:"ok"`
 			Changed     int `json:"changed"`
 			Failures    int `json:"failures"`
@@ -422,7 +439,8 @@ func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec) {
 		Plays []struct {
 			Tasks []struct {
 				Task struct {
-					Name string `json:"name"`
+					Name       string `json:"name"`
+					EvidenceID string `json:"evidence_id"`
 				} `json:"task"`
 				Hosts map[string]struct {
 					Failed      bool     `json:"failed"`
@@ -442,8 +460,18 @@ func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec) {
 			} `json:"tasks"`
 		} `json:"plays"`
 	}
-	if err := json.Unmarshal(stdoutRaw, &payload); err != nil || payload.Stats == nil {
+	if err := json.Unmarshal(stdoutRaw, &payload); err != nil {
 		result.ParseError = "could not parse ansible JSON output"
+		result.Success = false
+		return
+	}
+	if payload.Schema != EvidenceSchemaVersion || payload.Contract != EvidenceContract {
+		result.ParseError = fmt.Sprintf("unsupported ansible evidence contract %q schema %d", payload.Contract, payload.Schema)
+		result.Success = false
+		return
+	}
+	if payload.Stats == nil {
+		result.ParseError = "ansible JSON output has no host statistics"
 		result.Success = false
 		return
 	}
@@ -454,6 +482,7 @@ func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec) {
 		for _, task := range play.Tasks {
 			for host, hr := range task.Hosts {
 				outcome := TaskOutcome{
+					EvidenceID:  task.Task.EvidenceID,
 					Task:        task.Task.Name,
 					Failed:      hr.Failed,
 					Skipped:     hr.Skipped,
@@ -506,7 +535,53 @@ func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec) {
 	}
 
 	result.PartialFailure = (failedOrUnreachable > 0 || missing > 0) && completed > 0
-	result.Success = result.ExitCode == 0 && failedOrUnreachable == 0 && missing == 0 && completed == len(hosts)
+	result.EvidenceComplete = validateRequiredEvidence(result, hosts, op.ID, op.RequiredEvidence)
+	result.Success = result.ExitCode == 0 && failedOrUnreachable == 0 && missing == 0 && completed == len(hosts) && result.EvidenceComplete
+}
+
+func validateRequiredEvidence(result *RunResult, hosts []HostSpec, operation string, required []string) bool {
+	result.MissingEvidence = nil
+	if len(required) == 0 {
+		return true
+	}
+	requiredSet := make(map[string]bool, len(required))
+	for _, id := range required {
+		requiredSet[id] = true
+	}
+	complete := true
+	for _, host := range hosts {
+		seen := make(map[string]bool, len(required))
+		for _, outcome := range result.TaskOutcomes[host.Name] {
+			if outcome.EvidenceID == "" || !requiredSet[outcome.EvidenceID] {
+				continue
+			}
+			if seen[outcome.EvidenceID] {
+				result.ParseError = fmt.Sprintf("duplicate evidence ID %q for host %q", outcome.EvidenceID, host.Name)
+				complete = false
+			}
+			seen[outcome.EvidenceID] = true
+			if !EvidenceOutcomeUsable(operation, outcome) {
+				if result.MissingEvidence == nil {
+					result.MissingEvidence = map[string][]string{}
+				}
+				result.MissingEvidence[host.Name] = append(result.MissingEvidence[host.Name], outcome.EvidenceID+" (unusable)")
+				complete = false
+			}
+		}
+		for _, id := range required {
+			if !seen[id] {
+				if result.MissingEvidence == nil {
+					result.MissingEvidence = map[string][]string{}
+				}
+				result.MissingEvidence[host.Name] = append(result.MissingEvidence[host.Name], id)
+				complete = false
+			}
+		}
+	}
+	if !complete && result.ParseError == "" {
+		result.ParseError = "required ansible evidence is missing"
+	}
+	return complete
 }
 
 // renderInventory generates the INI inventory for validated host specs.

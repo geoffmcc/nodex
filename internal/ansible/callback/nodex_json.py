@@ -16,6 +16,12 @@ class CallbackModule(CallbackBase):
         self.current_play = None
         self.current_task = None
 
+    @staticmethod
+    def _evidence_id(task):
+        variables = task.get_vars()
+        value = variables.get("nodex_evidence_id") if variables else None
+        return value if isinstance(value, str) and value else None
+
     def v2_playbook_on_play_start(self, play):
         self.current_play = {"tasks": []}
         self.plays.append(self.current_play)
@@ -24,7 +30,11 @@ class CallbackModule(CallbackBase):
         if self.current_play is None:
             self.current_play = {"tasks": []}
             self.plays.append(self.current_play)
-        self.current_task = {"task": {"name": task.get_name()}, "hosts": {}}
+        task_meta = {"name": task.get_name()}
+        evidence_id = self._evidence_id(task)
+        if evidence_id is not None:
+            task_meta["evidence_id"] = evidence_id
+        self.current_task = {"task": task_meta, "hosts": {}}
         self.current_play["tasks"].append(self.current_task)
 
     def _record(self, result):
@@ -62,6 +72,8 @@ class CallbackModule(CallbackBase):
 
     def v2_playbook_on_stats(self, stats):
         payload = {
+            "schema": 1,
+            "contract": "nodex.ansible.task-results.v1",
             "stats": {
                 host: stats.summarize(host)
                 for host in sorted(stats.processed)

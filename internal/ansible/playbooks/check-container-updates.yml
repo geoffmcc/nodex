@@ -10,6 +10,8 @@
   become: false
   tasks:
     - name: Verify LXC guest is running
+      vars:
+        nodex_evidence_id: container.status
       ansible.builtin.command:
         argv:
           - pct
@@ -20,6 +22,8 @@
       failed_when: "nodex_container_status.rc != 0 or 'status: running' not in nodex_container_status.stdout"
 
     - name: Verify LXC guest uses APT
+      vars:
+        nodex_evidence_id: container.apt
       ansible.builtin.command:
         argv:
           - pct
@@ -34,6 +38,8 @@
       failed_when: "nodex_container_apt.rc != 0"
 
     - name: Refresh LXC package metadata
+      vars:
+        nodex_evidence_id: container.refresh
       ansible.builtin.command:
         argv:
           - pct
@@ -46,6 +52,8 @@
       changed_when: false
 
     - name: List LXC upgradable packages
+      vars:
+        nodex_evidence_id: container.packages
       ansible.builtin.command:
         argv:
           - pct
@@ -59,6 +67,8 @@
       changed_when: false
 
     - name: Simulate LXC full upgrade
+      vars:
+        nodex_evidence_id: container.simulation
       ansible.builtin.command:
         argv:
           - pct
@@ -72,6 +82,8 @@
       changed_when: false
 
     - name: Check LXC package database
+      vars:
+        nodex_evidence_id: container.dpkg
       ansible.builtin.command:
         argv:
           - pct
@@ -85,6 +97,8 @@
       failed_when: false
 
     - name: Check LXC reboot-required marker
+      vars:
+        nodex_evidence_id: container.reboot
       ansible.builtin.command:
         argv:
           - pct
@@ -100,6 +114,8 @@
       failed_when: false
 
     - name: Report LXC root filesystem usage
+      vars:
+        nodex_evidence_id: container.root
       ansible.builtin.command:
         argv:
           - pct

@@ -2,6 +2,8 @@ package httpclient
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -96,6 +98,44 @@ func TestDoMutationSuccessful(t *testing.T) {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
+}
+
+func TestLeafCertificateFingerprintPinsAllRequests(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	cert := server.Certificate()
+	sum := sha256.Sum256(cert.Raw)
+	transport := server.Client().Transport.(*http.Transport).Clone()
+	client := New(WithMaxRetries(0))
+	client.httpClient.Transport = transport
+	WithLeafCertificateFingerprint(hex.EncodeToString(sum[:]))(client)
+	request, err := http.NewRequest(http.MethodPost, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.DoMutation(context.Background(), request)
+	if err != nil {
+		t.Fatalf("pinned request failed: %v", err)
+	}
+	_ = response.Body.Close()
+
+	wrong := New()
+	wrong.httpClient.Transport = server.Client().Transport.(*http.Transport).Clone()
+	WithLeafCertificateFingerprint(strings.Repeat("0", 64))(wrong)
+	request, err = http.NewRequest(http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err = wrong.Do(context.Background(), request)
+	if response != nil {
+		_ = response.Body.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "fingerprint") {
+		t.Fatalf("wrong certificate pin error = %v", err)
+	}
 }
 
 func TestDoContextCancellation(t *testing.T) {
