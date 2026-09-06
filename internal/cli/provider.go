@@ -108,6 +108,10 @@ func runProviderCapabilities(_ context.Context, cmdCtx *Context, args []string) 
 // connectProfile loads a profile and connects a provider.
 // Returns the connected provider and a cleanup function.
 func connectProfile(ctx context.Context, cmdCtx *Context, profileName string) (domain.Provider, func(), error) {
+	return connectProfileWithOptions(ctx, cmdCtx, profileName)
+}
+
+func connectProfileWithOptions(ctx context.Context, cmdCtx *Context, profileName string, extra ...httpclient.Option) (domain.Provider, func(), error) {
 	cfg, err := config.Read()
 	if err != nil {
 		return nil, nil, err
@@ -150,7 +154,8 @@ func connectProfile(ctx context.Context, cmdCtx *Context, profileName string) (d
 		return nil, nil, app.NewExitError(err, app.ExitProvider)
 	}
 
-	opts := []httpclient.Option{httpclient.WithTimeout(cmdCtx.Opts.Timeout)}
+	opts := append([]httpclient.Option(nil), extra...)
+	opts = append(opts, httpclient.WithTimeout(cmdCtx.Opts.Timeout))
 	if p.CAFile != "" {
 		caOpt, err := httpclient.WithCACert(p.CAFile)
 		if err != nil {
@@ -162,6 +167,8 @@ func connectProfile(ctx context.Context, cmdCtx *Context, profileName string) (d
 		ConnectWithOptions(string, *domain.Credentials, ...httpclient.Option) error
 	}); ok {
 		err = configurable.ConnectWithOptions(p.Endpoint, creds, opts...)
+	} else if len(extra) > 0 {
+		return nil, nil, app.NewExitError(fmt.Errorf("provider %q cannot enforce the requested connection identity policy", p.Provider), app.ExitTLS)
 	} else {
 		err = prov.Connect(ctx, p.Endpoint, creds)
 	}

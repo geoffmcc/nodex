@@ -48,17 +48,19 @@ func TestFindPVEInventoryHost(t *testing.T) {
 
 func TestInterpretContainerOSUpdate(t *testing.T) {
 	result := &ansible.RunResult{
-		Success: true,
-		Hosts:   []ansible.HostResult{{Host: "pve", OK: 6}},
+		Success:          true,
+		EvidenceComplete: true,
+		Hosts:            []ansible.HostResult{{Host: "pve", OK: 6}},
 		TaskOutcomes: map[string][]ansible.TaskOutcome{
 			"pve": {
-				{Task: containerStatusTask, RC: intPtrCLI(0)},
-				{Task: containerAPTTask, RC: intPtrCLI(0)},
-				{Task: containerPackagesTask, RC: intPtrCLI(0), StdoutLines: []string{"Listing...", "openssl/stable 3.0 amd64 [upgradable from: 2.9]"}},
-				{Task: containerSimTask, RC: intPtrCLI(0)},
-				{Task: containerDpkgTask, RC: intPtrCLI(0)},
-				{Task: containerRebootTask, RC: intPtrCLI(1)},
-				{Task: containerRootTask, RC: intPtrCLI(0), StdoutLines: []string{"Filesystem 1024-blocks Used Available Capacity Mounted on", "/dev/root 100 91 9 91% /"}},
+				{EvidenceID: containerStatusTask, Task: "renamed status task", RC: intPtrCLI(0)},
+				{EvidenceID: containerAPTTask, Task: "renamed apt task", RC: intPtrCLI(0)},
+				{EvidenceID: containerRefreshTask, Task: "renamed refresh task", RC: intPtrCLI(0)},
+				{EvidenceID: containerPackagesTask, Task: "renamed package task", RC: intPtrCLI(0), StdoutLines: []string{"Listing...", "openssl/stable 3.0 amd64 [upgradable from: 2.9]"}},
+				{EvidenceID: containerSimTask, Task: "renamed simulation task", RC: intPtrCLI(0)},
+				{EvidenceID: containerDpkgTask, Task: "renamed dpkg task", RC: intPtrCLI(0)},
+				{EvidenceID: containerRebootTask, Task: "renamed reboot task", RC: intPtrCLI(1)},
+				{EvidenceID: containerRootTask, Task: "renamed root task", RC: intPtrCLI(0), StdoutLines: []string{"Filesystem 1024-blocks Used Available Capacity Mounted on", "/dev/root 100 91 9 91% /"}},
 			},
 		},
 	}
@@ -74,16 +76,18 @@ func TestInterpretContainerOSUpdate(t *testing.T) {
 func TestInterpretContainerOSUpdateRejectsIncompleteCommandEvidence(t *testing.T) {
 	zero := intPtrCLI(0)
 	result := &ansible.RunResult{
-		Success: true,
+		Success:          true,
+		EvidenceComplete: true,
 		TaskOutcomes: map[string][]ansible.TaskOutcome{
 			"pve": {
-				{Task: containerStatusTask, RC: zero},
-				{Task: containerAPTTask, RC: zero},
-				{Task: containerPackagesTask, RC: zero},
-				{Task: containerSimTask, RC: zero},
-				{Task: containerDpkgTask, RC: zero},
-				{Task: containerRebootTask, RC: intPtrCLI(1)},
-				{Task: containerRootTask, RC: zero},
+				{EvidenceID: containerStatusTask, RC: zero},
+				{EvidenceID: containerAPTTask, RC: zero},
+				{EvidenceID: containerRefreshTask, RC: zero},
+				{EvidenceID: containerPackagesTask, RC: zero},
+				{EvidenceID: containerSimTask, RC: zero},
+				{EvidenceID: containerDpkgTask, RC: zero},
+				{EvidenceID: containerRebootTask, RC: intPtrCLI(1)},
+				{EvidenceID: containerRootTask, RC: zero},
 			},
 		},
 	}
@@ -104,6 +108,20 @@ func TestInterpretContainerOSUpdateRejectsIncompleteCommandEvidence(t *testing.T
 	evidence = missingContainerUpdateEvidence(result, "pve")
 	if len(evidence) != 2 || !strings.Contains(evidence[0], "unusable") {
 		t.Fatalf("evidence = %v, want unusable status diagnostic", evidence)
+	}
+}
+
+func TestInterpretContainerOSUpdateRejectsIncompleteRun(t *testing.T) {
+	result := &ansible.RunResult{
+		Success:          true,
+		EvidenceComplete: false,
+		TaskOutcomes: map[string][]ansible.TaskOutcome{
+			"pve": {{EvidenceID: containerRootTask, RC: intPtrCLI(0), StdoutLines: []string{"/dev/root 100 1 99 1% /"}}},
+		},
+	}
+	state := interpretContainerOSUpdate(result, "pve")
+	if state.EvidenceComplete {
+		t.Fatal("unsuccessful evidence collection must not be interpreted as complete")
 	}
 }
 

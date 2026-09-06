@@ -12,38 +12,52 @@
   become: false
   tasks:
     - name: Verify Debian family
+      vars:
+        nodex_evidence_id: host.os.debian
       ansible.builtin.assert:
         that: ansible_facts['os_family'] == 'Debian'
         fail_msg: "unsupported distribution: only Debian and Ubuntu are supported"
 
     - name: Refresh package metadata
+      vars:
+        nodex_evidence_id: host.package.refresh
       ansible.builtin.apt:
         update_cache: true
       become: true
       changed_when: false
 
     - name: List upgradable packages
+      vars:
+        nodex_evidence_id: host.packages
       ansible.builtin.command: apt list --upgradable
       register: nodex_upgradable
       changed_when: false
 
     - name: Simulate dist-upgrade
+      vars:
+        nodex_evidence_id: host.upgrade_simulation
       ansible.builtin.command: apt-get -s dist-upgrade
       register: nodex_upgrade_simulation
       changed_when: false
 
     - name: Check reboot-required marker
+      vars:
+        nodex_evidence_id: host.reboot_required
       ansible.builtin.stat:
         path: /var/run/reboot-required
       register: nodex_reboot_required
 
     - name: List failed systemd units
+      vars:
+        nodex_evidence_id: host.failed_units
       ansible.builtin.command: systemctl list-units --state=failed --no-legend --plain
       register: nodex_failed_units
       changed_when: false
       failed_when: false
 
     - name: Report root filesystem usage
+      vars:
+        nodex_evidence_id: host.root_usage
       ansible.builtin.command: df -P /
       register: nodex_root_usage
       changed_when: false

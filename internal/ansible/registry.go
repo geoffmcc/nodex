@@ -58,6 +58,14 @@ type Operation struct {
 	// RequiresBecome is true when any task escalates privileges.
 	RequiresBecome bool
 
+	// EvidenceSchema is the structured callback schema required by this
+	// operation. A zero value means the operation only needs host statistics.
+	EvidenceSchema int
+
+	// RequiredEvidence contains stable evidence IDs that must be emitted for
+	// every requested host before a run can be considered complete.
+	RequiredEvidence []string
+
 	// playbook is the embedded playbook content.
 	playbook string
 }
@@ -74,7 +82,8 @@ var registry = map[string]Operation{
 		Safety:         safety.TierObservation,
 		ReadOnly:       true,
 		RequiresBecome: true, // apt metadata refresh only
-		playbook:       checkUpdatesPlaybook,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: hostCheckEvidence,
+		playbook: checkUpdatesPlaybook,
 	},
 	"verify-host": {
 		ID:             "verify-host",
@@ -82,36 +91,43 @@ var registry = map[string]Operation{
 		Safety:         safety.TierObservation,
 		ReadOnly:       true,
 		RequiresBecome: false,
-		playbook:       verifyHostPlaybook,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: hostVerifyEvidence,
+		playbook: verifyHostPlaybook,
 	},
 	"apply-security-updates": {
 		ID: "apply-security-updates", Description: "Apply security updates only",
 		Safety: safety.TierDisruptive, ReadOnly: false, RequiresBecome: true,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: hostUpdateEvidence,
 		playbook: applySecurityUpdatesPlaybook,
 	},
 	"apply-approved-updates": {
 		ID: "apply-approved-updates", Description: "Apply the approved full update policy",
 		Safety: safety.TierDisruptive, ReadOnly: false, RequiresBecome: true,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: hostUpdateEvidence,
 		playbook: applyApprovedUpdatesPlaybook,
 	},
 	"verify-maintenance": {
 		ID: "verify-maintenance", Description: "Verify maintenance postconditions",
 		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: hostVerifyEvidence,
 		playbook: verifyMaintenancePlaybook,
 	},
 	"check-container-updates": {
 		ID: "check-container-updates", Description: "Check an LXC guest for pending updates",
 		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: containerPreflightEvidence,
 		playbook: checkContainerUpdatesPlaybook,
 	},
 	"apply-container-updates": {
 		ID: "apply-container-updates", Description: "Apply approved updates to an LXC guest",
 		Safety: safety.TierDisruptive, ReadOnly: false, RequiresBecome: false,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: containerApplyEvidence,
 		playbook: applyContainerUpdatesPlaybook,
 	},
 	"verify-container-updates": {
 		ID: "verify-container-updates", Description: "Verify LXC guest update postconditions",
 		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: containerVerifyEvidence,
 		playbook: verifyContainerUpdatesPlaybook,
 	},
 }
@@ -122,7 +138,7 @@ func Lookup(id string) (Operation, error) {
 	if !ok {
 		return Operation{}, fmt.Errorf("unknown maintenance operation %q (allowed: %v)", id, OperationIDs())
 	}
-	return op, nil
+	return cloneOperation(op), nil
 }
 
 // OperationIDs returns the sorted allowlist.
@@ -139,7 +155,12 @@ func OperationIDs() []string {
 func Operations() []Operation {
 	ops := make([]Operation, 0, len(registry))
 	for _, id := range OperationIDs() {
-		ops = append(ops, registry[id])
+		ops = append(ops, cloneOperation(registry[id]))
 	}
 	return ops
+}
+
+func cloneOperation(operation Operation) Operation {
+	operation.RequiredEvidence = append([]string(nil), operation.RequiredEvidence...)
+	return operation
 }

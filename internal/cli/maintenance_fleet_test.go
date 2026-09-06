@@ -60,22 +60,31 @@ func withCannedCheckUpdates(t *testing.T, fn func(ctx context.Context, hosts []a
 }
 
 func cannedHealthyResult(hosts []ansible.HostSpec) *ansible.RunResult {
-	res := &ansible.RunResult{Operation: "check-updates", Success: true}
+	res := &ansible.RunResult{
+		Operation:        "check-updates",
+		EvidenceSchema:   ansible.EvidenceSchemaVersion,
+		EvidenceContract: ansible.EvidenceContract,
+		RequiredEvidence: []string{ansible.HostEvidenceDebian, ansible.HostEvidenceRefresh, ansible.HostEvidencePackages, ansible.HostEvidenceSimulation, ansible.HostEvidenceReboot, ansible.HostEvidenceFailedUnits, ansible.HostEvidenceRoot},
+		EvidenceComplete: true,
+		Success:          true,
+		ExitCode:         0,
+	}
 	res.TaskOutcomes = map[string][]ansible.TaskOutcome{}
 	for _, h := range hosts {
 		res.Hosts = append(res.Hosts, ansible.HostResult{Host: h.Name, OK: 7})
 		res.TaskOutcomes[h.Name] = []ansible.TaskOutcome{
-			{Task: "Verify Debian family"},
-			{Task: "List upgradable packages", StdoutLines: []string{
+			{EvidenceID: ansible.HostEvidenceDebian, Task: "renamed Debian task"},
+			{EvidenceID: ansible.HostEvidenceRefresh, Task: "renamed refresh task"},
+			{EvidenceID: ansible.HostEvidencePackages, Task: "renamed package task", StdoutLines: []string{
 				"Listing...",
 				"openssl/stable-security 3.0.15-1 amd64 [upgradable from: 3.0.14-1]",
 			}},
-			{Task: "Simulate dist-upgrade", StdoutLines: []string{
+			{EvidenceID: ansible.HostEvidenceSimulation, Task: "renamed simulation task", StdoutLines: []string{
 				"Inst openssl [3.0.14-1] (3.0.15-1 Debian-Security:12/stable-security [amd64])",
 			}},
-			{Task: "Check reboot-required marker", StatExists: boolPtrCLI(false)},
-			{Task: "List failed systemd units", StdoutLines: []string{}},
-			{Task: "Report root filesystem usage", StdoutLines: []string{
+			{EvidenceID: ansible.HostEvidenceReboot, Task: "renamed reboot task", StatExists: boolPtrCLI(false)},
+			{EvidenceID: ansible.HostEvidenceFailedUnits, Task: "renamed failed-units task", StdoutLines: []string{}},
+			{EvidenceID: ansible.HostEvidenceRoot, Task: "renamed root task", StdoutLines: []string{
 				"Filesystem 1024-blocks Used Available Capacity Mounted on",
 				"/dev/sda1 41152736 12345678 27000000 32% /",
 			}},
@@ -194,6 +203,23 @@ func TestMaintenanceStatusPartialFailureExits11(t *testing.T) {
 	_, _, err := runPBSCommand(t, "maintenance", "status", "--environment", "e2e-env")
 	if err == nil {
 		t.Fatal("partial failure must exit non-zero")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitPartialFailure {
+		t.Errorf("error = %v, want ExitPartialFailure", err)
+	}
+}
+
+func TestMaintenanceStatusUnsuccessfulRunExits11(t *testing.T) {
+	seedMaintenanceConfig(t)
+	withCannedCheckUpdates(t, func(_ context.Context, hosts []ansible.HostSpec) (*ansible.RunResult, error) {
+		res := cannedHealthyResult(hosts)
+		res.Success = false
+		return res, nil
+	})
+	_, _, err := runPBSCommand(t, "maintenance", "status", "--host", "web1")
+	if err == nil {
+		t.Fatal("unsuccessful run must exit non-zero")
 	}
 	var exitCode *app.ExitCoder
 	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitPartialFailure {
@@ -425,4 +451,240 @@ func withCannedMaintenanceOperation(t *testing.T, fn func(context.Context, strin
 	prev := runMaintenanceOperation
 	runMaintenanceOperation = fn
 	t.Cleanup(func() { runMaintenanceOperation = prev })
+}
+
+func testMaintenancePlan(t *testing.T, hosts ...string) maintenance.Plan {
+	t.Helper()
+	now := time.Now()
+	plan := maintenance.Plan{
+		Schema:               maintenance.PlanSchemaVersion,
+		PlanID:               "mp-test-receipt",
+		CreatedAt:            now.Add(-time.Minute).Unix(),
+		ExpiresAt:            now.Add(time.Hour).Unix(),
+		Policy:               maintenance.PolicySecurityOnly,
+		BatchSize:            1,
+		RebootPolicy:         maintenance.RebootPolicyNever,
+		SafetyClassification: "disruptive",
+		Infra:                maintenance.InfraSnapshot{MaintenanceSafe: true, EvidenceComplete: true},
+		Snapshot:             maintenance.SafetySnapshot{Version: 1, Hosts: map[string]maintenance.HostSnapshot{}, EvidenceComplete: true},
+	}
+	for _, name := range hosts {
+		ph := maintenance.PlanHost{Name: name, Address: name + ".example.invalid", Role: "generic", Criticality: config.CriticalityStandard}
+		if name == "web1" {
+			ph.Environment, ph.Group = "e2e-env", "guests"
+		}
+		plan.Hosts = append(plan.Hosts, ph)
+		plan.HostOrder = append(plan.HostOrder, name)
+		plan.Snapshot.Hosts[name] = maintenance.HostSnapshot{Name: name, Address: ph.Address, Role: ph.Role, Criticality: ph.Criticality}
+	}
+	finalized, err := maintenance.Finalize(plan)
+	if err != nil {
+		t.Fatalf("finalize test plan: %v", err)
+	}
+	return finalized
+}
+
+func cannedMaintenanceResult(hosts []ansible.HostSpec, required []string) *ansible.RunResult {
+	res := &ansible.RunResult{
+		Operation:        "maintenance-test",
+		EvidenceSchema:   ansible.EvidenceSchemaVersion,
+		EvidenceContract: ansible.EvidenceContract,
+		RequiredEvidence: append([]string(nil), required...),
+		EvidenceComplete: true,
+		Success:          true,
+		ExitCode:         0,
+		TaskOutcomes:     map[string][]ansible.TaskOutcome{},
+	}
+	for _, h := range hosts {
+		res.Hosts = append(res.Hosts, ansible.HostResult{Host: h.Name, OK: len(required)})
+		for _, evidenceID := range required {
+			res.TaskOutcomes[h.Name] = append(res.TaskOutcomes[h.Name], ansible.TaskOutcome{EvidenceID: evidenceID})
+		}
+	}
+	return res
+}
+
+func TestMaintenanceBatchDurablyCheckpointsEachHost(t *testing.T) {
+	plan := testMaintenancePlan(t, "web1", "standalone")
+	receipt := maintenance.NewReceipt(plan, time.Now())
+	if err := receipt.Finalize(); err != nil {
+		t.Fatalf("finalize receipt: %v", err)
+	}
+	path := t.TempDir() + "/receipt.json"
+	if err := maintenance.SaveReceipt(path, receipt); err != nil {
+		t.Fatalf("save receipt: %v", err)
+	}
+	selected := map[string]config.InventoryHost{
+		"web1":       {Address: "web1.example.invalid", SSHUser: "automation"},
+		"standalone": {Address: "standalone.example.invalid", SSHUser: "automation"},
+	}
+	withCannedMaintenanceOperation(t, func(_ context.Context, _ string, hosts []ansible.HostSpec, _ []string) (*ansible.RunResult, error) {
+		if hosts[0].Name == "standalone" {
+			return nil, stderrors.New("injected provider outage")
+		}
+		result := cannedMaintenanceResult(hosts, []string{
+			ansible.HostEvidenceDebian,
+			ansible.HostEvidenceRefresh,
+			ansible.HostEvidenceUpdate,
+			ansible.HostEvidenceUpdateReport,
+		})
+		result.Hosts[0].Changed = 1
+		return result, nil
+	})
+	completed := map[string]bool{}
+	err := executeMaintenanceBatch(context.Background(), path, &receipt, selected, plan, "apply-security-updates", []string{"web1", "standalone"}, completed)
+	if err == nil {
+		t.Fatal("batch with one provider error must fail")
+	}
+	persisted, err := maintenance.LoadReceipt(path)
+	if err != nil {
+		t.Fatalf("load checkpointed receipt: %v", err)
+	}
+	states := map[string]string{}
+	for _, host := range persisted.Hosts {
+		states[host.Host] = host.State
+	}
+	if states["standalone"] != "unknown" || states["web1"] != "succeeded" {
+		t.Fatalf("checkpointed host states = %v", states)
+	}
+	if len(persisted.Events) < 4 {
+		t.Fatalf("events = %d, want initial and per-host checkpoints", len(persisted.Events))
+	}
+	for _, host := range persisted.Hosts {
+		if host.Host == "web1" && host.Changed != 1 {
+			t.Fatalf("web1 host counters = %+v, want changed=1", host)
+		}
+	}
+}
+
+func TestMaintenanceSecurityNoUpdatesAcceptsSkippedUpdateEvidence(t *testing.T) {
+	result := cannedMaintenanceResult([]ansible.HostSpec{{Name: "web1"}}, []string{
+		ansible.HostEvidenceDebian,
+		ansible.HostEvidenceRefresh,
+		ansible.HostEvidenceUpdate,
+		ansible.HostEvidenceUpdateReport,
+	})
+	result.Operation = "apply-security-updates"
+	for i := range result.TaskOutcomes["web1"] {
+		if result.TaskOutcomes["web1"][i].EvidenceID == ansible.HostEvidenceUpdate {
+			result.TaskOutcomes["web1"][i].Skipped = true
+			result.TaskOutcomes["web1"][i].RC = nil
+		}
+	}
+
+	state, success, detail := classifyMaintenanceResult(result, "web1")
+	if !success || state != "succeeded" || len(detail) != 0 {
+		t.Fatalf("security no-update result = state %q success %v detail %v", state, success, detail)
+	}
+}
+
+func TestEnsureReceiptHostsForPlanCoversMissingHosts(t *testing.T) {
+	plan := testMaintenancePlan(t, "web1", "standalone")
+	receipt := maintenance.NewReceipt(plan, time.Now())
+	receipt.Hosts = []maintenance.HostReceipt{{Host: "web1", Operation: "apply-security-updates", State: "unknown", Verification: "pending"}}
+	if err := ensureReceiptHostsForPlan(&receipt, plan); err != nil {
+		t.Fatalf("ensure receipt hosts: %v", err)
+	}
+	if len(receipt.Hosts) != len(plan.Hosts) {
+		t.Fatalf("receipt hosts = %d, want %d", len(receipt.Hosts), len(plan.Hosts))
+	}
+	missing := receiptHost(&receipt, "standalone")
+	if missing.Operation != "apply-security-updates" || missing.State != "unknown" || missing.Verification != "unknown" {
+		t.Fatalf("missing host was not made explicit: %+v", *missing)
+	}
+}
+
+func TestMaintenanceReconcilePreservesUnknownMutationOutcome(t *testing.T) {
+	seedMaintenanceConfig(t)
+	plan := testMaintenancePlan(t, "web1")
+	planPath := t.TempDir() + "/plan.json"
+	planBytes, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	if err := os.WriteFile(planPath, planBytes, 0o600); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	receipt := maintenance.NewReceipt(plan, time.Now())
+	receipt.Hosts = []maintenance.HostReceipt{{Host: "web1", Operation: "apply-security-updates", State: "unknown", Verification: "pending"}}
+	if err := receipt.Finalize(); err != nil {
+		t.Fatalf("finalize receipt: %v", err)
+	}
+	receiptPath := t.TempDir() + "/receipt.json"
+	if err := maintenance.SaveReceipt(receiptPath, receipt); err != nil {
+		t.Fatalf("save receipt: %v", err)
+	}
+	withCannedMaintenanceOperation(t, func(_ context.Context, operation string, hosts []ansible.HostSpec, _ []string) (*ansible.RunResult, error) {
+		if operation != "verify-maintenance" {
+			t.Fatalf("operation = %q, want verify-maintenance", operation)
+		}
+		return cannedMaintenanceResult(hosts, []string{
+			ansible.HostEvidenceConnectivity,
+			ansible.HostEvidenceReboot,
+			ansible.HostEvidenceFailedUnits,
+			ansible.HostEvidenceRoot,
+		}), nil
+	})
+	stdout, _, err := runPBSCommand(t, "--output", "json", "maintenance", "reconcile", "--plan", planPath, "--receipt", receiptPath)
+	if err == nil {
+		t.Fatal("reconcile must not claim an interrupted mutation succeeded")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitPartialFailure {
+		t.Fatalf("error = %v, want ExitPartialFailure", err)
+	}
+	var report maintenanceReport
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("parse reconcile report: %v\n%s", err, stdout)
+	}
+	if report.State != "unknown" || !report.Verified || !strings.Contains(report.Error, "outcome remains unknown") {
+		t.Fatalf("reconcile report = %+v", report)
+	}
+	persisted, err := maintenance.LoadReceipt(receiptPath)
+	if err != nil {
+		t.Fatalf("load reconciled receipt: %v", err)
+	}
+	if persisted.State != "unknown" || persisted.Hosts[0].Verification != "succeeded" {
+		t.Fatalf("reconciled receipt = %+v", persisted)
+	}
+}
+
+func TestMaintenanceReconcileIncompleteEvidenceStaysUnknown(t *testing.T) {
+	seedMaintenanceConfig(t)
+	plan := testMaintenancePlan(t, "web1")
+	planPath := t.TempDir() + "/plan.json"
+	planBytes, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	if err := os.WriteFile(planPath, planBytes, 0o600); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	receipt := maintenance.NewReceipt(plan, time.Now())
+	receipt.Hosts = []maintenance.HostReceipt{{Host: "web1", Operation: "apply-security-updates", State: "unknown", Verification: "pending"}}
+	if err := receipt.Finalize(); err != nil {
+		t.Fatalf("finalize receipt: %v", err)
+	}
+	receiptPath := t.TempDir() + "/receipt.json"
+	if err := maintenance.SaveReceipt(receiptPath, receipt); err != nil {
+		t.Fatalf("save receipt: %v", err)
+	}
+	withCannedMaintenanceOperation(t, func(_ context.Context, _ string, hosts []ansible.HostSpec, _ []string) (*ansible.RunResult, error) {
+		result := cannedMaintenanceResult(hosts, []string{ansible.HostEvidenceConnectivity})
+		result.Success = false
+		result.EvidenceComplete = false
+		result.ParseError = "required ansible evidence is missing"
+		return result, nil
+	})
+	stdout, _, err := runPBSCommand(t, "--output", "json", "maintenance", "reconcile", "--plan", planPath, "--receipt", receiptPath)
+	if err == nil {
+		t.Fatal("incomplete evidence must remain non-successful")
+	}
+	var report maintenanceReport
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("parse reconcile report: %v\n%s", err, stdout)
+	}
+	if report.State != "unknown" || report.Verified || !strings.Contains(report.Error, "unknown") {
+		t.Fatalf("incomplete-evidence report = %+v", report)
+	}
 }

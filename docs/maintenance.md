@@ -8,8 +8,11 @@ Security updates are limited to the package names recorded by the preflight;
 
 Each apply writes a mode-0600 JSON receipt atomically after every host. Receipts
 contain plan and host outcome metadata only; Ansible output and credentials are
-never persisted. `maintenance report --receipt <file>` verifies the receipt
-digest before rendering deterministic table, JSON, or YAML output.
+never persisted. The embedded callback uses the versioned
+`nodex.ansible.task-results.v1` evidence contract; a nonzero Ansible exit status,
+missing evidence, or unusable required task result is never treated as success.
+`maintenance report --receipt <file>` verifies the receipt digest before
+rendering deterministic table, JSON, or YAML output.
 
 An interrupted or ambiguous operation is recorded as `unknown`. `maintenance
 resume` revalidates the exact plan and receipt but refuses to replay any

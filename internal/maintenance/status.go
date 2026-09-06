@@ -11,17 +11,17 @@ import (
 	"github.com/geoffmcc/nodex/internal/ansible"
 )
 
-// Task names from the embedded check-updates/verify-host playbooks. These
-// are the join points between playbook content and interpretation; the
-// playbooks are embedded in the same binary, so they cannot drift apart at
-// runtime.
+// Stable evidence IDs from the embedded check-updates/verify-host playbooks.
+// Display task names are presentation text and are never interpretation keys.
 const (
-	taskUpgradable     = "List upgradable packages"
-	taskUpgradeSim     = "Simulate dist-upgrade"
-	taskRebootRequired = "Check reboot-required marker"
-	taskFailedUnits    = "List failed systemd units"
-	taskRootUsage      = "Report root filesystem usage"
-	taskDebianAssert   = "Verify Debian family"
+	taskConnectivity   = ansible.HostEvidenceConnectivity
+	taskUpgradable     = ansible.HostEvidencePackages
+	taskUpgradeSim     = ansible.HostEvidenceSimulation
+	taskRebootRequired = ansible.HostEvidenceReboot
+	taskFailedUnits    = ansible.HostEvidenceFailedUnits
+	taskRootUsage      = ansible.HostEvidenceRoot
+	taskDebianAssert   = ansible.HostEvidenceDebian
+	taskRefresh        = ansible.HostEvidenceRefresh
 )
 
 // HostStatus is the interpreted preflight state of one host.
@@ -50,14 +50,18 @@ func InterpretCheckUpdates(res *ansible.RunResult) []HostStatus {
 	statuses := make([]HostStatus, 0, len(res.Hosts))
 	for _, hr := range res.Hosts {
 		hs := HostStatus{
-			Host:      hr.Host,
-			Reachable: hr.Unreachable == 0,
-			Supported: true,
+			Host:             hr.Host,
+			Reachable:        hr.Unreachable == 0,
+			Supported:        true,
+			EvidenceComplete: res.ParseError == "" && res.Success && res.EvidenceComplete && !hr.Failed && hr.Failures == 0 && hr.Unreachable == 0,
+		}
+		if res.ParseError != "" || !res.Success || !res.EvidenceComplete {
+			hs.EvidenceComplete = false
+			hs.Warnings = append(hs.Warnings, "preflight evidence or run status was incomplete")
 		}
 		if hr.Failures > 0 {
 			hs.Warnings = append(hs.Warnings, "one or more preflight tasks failed")
 		}
-		hs.EvidenceComplete = hr.Failures == 0 && hr.Unreachable == 0
 		if !hs.Reachable {
 			hs.Supported = false
 			hs.Warnings = append(hs.Warnings, "host unreachable")
@@ -66,14 +70,18 @@ func InterpretCheckUpdates(res *ansible.RunResult) []HostStatus {
 		}
 		seen := map[string]bool{}
 		for _, outcome := range res.TaskOutcomes[hr.Host] {
-			seen[outcome.Task] = true
+			seen[outcome.EvidenceID] = true
 			interpretOutcome(&hs, outcome)
 		}
 		if len(res.TaskOutcomes[hr.Host]) == 0 {
 			hs.EvidenceComplete = false
 			hs.Warnings = append(hs.Warnings, "no task evidence was returned")
 		} else {
-			for _, task := range []string{taskDebianAssert, taskUpgradable, taskUpgradeSim, taskRebootRequired, taskFailedUnits, taskRootUsage} {
+			required := []string{taskDebianAssert, taskRefresh, taskUpgradable, taskUpgradeSim, taskRebootRequired, taskFailedUnits, taskRootUsage}
+			if len(res.RequiredEvidence) > 0 {
+				required = res.RequiredEvidence
+			}
+			for _, task := range required {
 				if !seen[task] {
 					hs.EvidenceComplete = false
 					hs.Warnings = append(hs.Warnings, "missing task evidence: "+task)
@@ -96,7 +104,10 @@ func interpretOutcome(hs *HostStatus, o ansible.TaskOutcome) {
 			hs.Warnings = append(hs.Warnings, "task reported failure: "+o.Task)
 		}
 	}
-	switch o.Task {
+	switch o.EvidenceID {
+	case taskConnectivity:
+		// Connectivity is represented by the host result; there is no payload
+		// to interpret here.
 	case taskDebianAssert:
 		if o.Failed {
 			hs.Supported = false

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -203,8 +204,18 @@ func checkOne(parent context.Context, name string, target config.MonitorTarget, 
 }
 
 func SafeAddress(address string) string {
+	if strings.ContainsAny(address, "@\r\n") {
+		return "<redacted>"
+	}
+	if !strings.Contains(address, "://") {
+		if _, port, err := net.SplitHostPort(address); err == nil {
+			if n, portErr := strconv.Atoi(port); portErr == nil && n >= 0 && n <= 65535 {
+				return address
+			}
+		}
+	}
 	u, err := url.Parse(address)
-	if err != nil || u.User != nil {
+	if err != nil || u.User != nil || (u.Scheme != "" && u.Host == "") {
 		return "<redacted>"
 	}
 	if u.RawQuery != "" {

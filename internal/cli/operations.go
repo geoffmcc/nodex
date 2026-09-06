@@ -1032,7 +1032,7 @@ func buildRegistry() []OperationMeta {
 
 // Operations returns the full canonical operation registry.
 func Operations() []OperationMeta {
-	return operationRegistry
+	return cloneOperations(operationRegistry)
 }
 
 // LookupOperation finds an operation by its full command path.
@@ -1040,7 +1040,8 @@ func Operations() []OperationMeta {
 func LookupOperation(path string) *OperationMeta {
 	for i := range operationRegistry {
 		if operationRegistry[i].Path == path {
-			return &operationRegistry[i]
+			operation := cloneOperation(operationRegistry[i])
+			return &operation
 		}
 	}
 	return nil
@@ -1051,7 +1052,7 @@ func MutationOperations() []OperationMeta {
 	var result []OperationMeta
 	for _, op := range operationRegistry {
 		if !op.Inspection {
-			result = append(result, op)
+			result = append(result, cloneOperation(op))
 		}
 	}
 	return result
@@ -1062,7 +1063,7 @@ func InspectionOperations() []OperationMeta {
 	var result []OperationMeta
 	for _, op := range operationRegistry {
 		if op.Inspection {
-			result = append(result, op)
+			result = append(result, cloneOperation(op))
 		}
 	}
 	return result
@@ -1073,10 +1074,25 @@ func OperationsByTier(tier safety.Tier) []OperationMeta {
 	var result []OperationMeta
 	for _, op := range operationRegistry {
 		if op.SafetyTier == tier {
-			result = append(result, op)
+			result = append(result, cloneOperation(op))
 		}
 	}
 	return result
+}
+
+func cloneOperations(operations []OperationMeta) []OperationMeta {
+	clones := make([]OperationMeta, len(operations))
+	for i, operation := range operations {
+		clones[i] = cloneOperation(operation)
+	}
+	return clones
+}
+
+func cloneOperation(operation OperationMeta) OperationMeta {
+	operation.Aliases = append([]string(nil), operation.Aliases...)
+	operation.RiskDimensions = append([]RiskDimension(nil), operation.RiskDimensions...)
+	operation.OutputModes = append([]string(nil), operation.OutputModes...)
+	return operation
 }
 
 // ValidateRegistry checks the operation registry for consistency:

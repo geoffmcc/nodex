@@ -12,6 +12,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/certification"
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/output"
+	"github.com/geoffmcc/nodex/internal/transport/httpclient"
 )
 
 func certificationLedgerPath(args []string) (string, []string, error) {
@@ -111,7 +112,7 @@ func runCertification(ctx context.Context, cmdCtx *Context, args []string) error
 	if err != nil {
 		return app.NewExitError(err, app.ExitValidationError)
 	}
-	prov, cleanup, err := connectProfile(ctx, cmdCtx, certification.RequiredProfile)
+	prov, cleanup, err := connectProfileWithOptions(ctx, cmdCtx, certification.RequiredProfile, httpclient.WithLeafCertificateFingerprint(auth.ExpectedFingerprint))
 	if err != nil {
 		return err
 	}
@@ -157,7 +158,7 @@ func runCertificationCleanup(ctx context.Context, cmdCtx *Context, args []string
 	if auth.Profile != certification.RequiredProfile {
 		return app.NewExitError(fmt.Errorf("certification environment must use explicit profile %s", certification.RequiredProfile), app.ExitValidationError)
 	}
-	prov, cleanup, err := connectProfile(ctx, cmdCtx, certification.RequiredProfile)
+	prov, cleanup, err := connectProfileWithOptions(ctx, cmdCtx, certification.RequiredProfile, httpclient.WithLeafCertificateFingerprint(auth.ExpectedFingerprint))
 	if err != nil {
 		return err
 	}
