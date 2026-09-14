@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -672,6 +673,9 @@ func TestRunnerRequiresAbsoluteExe(t *testing.T) {
 }
 
 func TestRunnerRejectsUnsafeExecutable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits are not meaningful on Windows")
+	}
 	path := filepath.Join(t.TempDir(), "ansible-playbook")
 	if err := os.WriteFile(path, []byte("stub"), 0o777); err != nil { // #nosec G306 -- this test intentionally creates an unsafe executable fixture.
 		t.Fatal(err)
