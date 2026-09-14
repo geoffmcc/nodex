@@ -46,7 +46,7 @@ func TestVMConsoleUsesTermProxyAndRelaysWebsocket(t *testing.T) {
 			// Read until the client's close response arrives (or the connection
 			// ends on its own) so defer conn.Close() cannot abort the TCP
 			// connection before the client reads the close frame.
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 			for {
 				if _, _, err := conn.ReadMessage(); err != nil {
 					break
