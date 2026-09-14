@@ -10,10 +10,12 @@ fingerprint, and trusted-CA identity.
 The `readonly` suite performs no VM mutation. The `disposable-mutations` suite
 is opt-in and requires `--yes`, an exact `--confirm-target`, an explicit node,
 VMID, storage, and a VM name beginning with `nodex-cert-`. Nodex verifies the
-provider TLS identity before mutation, records the cleanup target atomically,
-waits for task completion, verifies creation, deletes only the matching ledger
-resource, and verifies absence. Failed or interrupted runs leave a pending
-ledger entry for recovery.
+provider TLS identity before mutation and pins the authorized leaf fingerprint
+on the provider transport, records the cleanup target atomically, waits for task
+completion, verifies creation, deletes only the matching ledger resource, and
+verifies absence. A ledger transaction lock and expiring lease prevent stale
+workers from overlapping cleanup recovery. Failed or interrupted runs leave a
+pending ledger entry for recovery.
 
 ```bash
 nodex --profile nodex-test-admin --yes \

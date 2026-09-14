@@ -90,6 +90,43 @@ func TestOperations_LookupUnknown(t *testing.T) {
 	}
 }
 
+func TestOperations_ReturnCopies(t *testing.T) {
+	ops := Operations()
+	if len(ops) == 0 {
+		t.Fatal("operation registry is empty")
+	}
+	original := LookupOperation(ops[0].Path)
+	if original == nil {
+		t.Fatalf("operation %q disappeared from registry", ops[0].Path)
+	}
+
+	ops[0].Path = "tampered"
+	if len(ops[0].OutputModes) > 0 {
+		ops[0].OutputModes[0] = "tampered"
+	}
+	if len(ops[0].RiskDimensions) > 0 {
+		ops[0].RiskDimensions[0] = RiskDataLoss
+	}
+	lookup := LookupOperation(original.Path)
+	if lookup == nil || lookup.Path != original.Path {
+		t.Fatalf("registry was changed through Operations: %+v", lookup)
+	}
+	if len(original.OutputModes) > 0 && lookup.OutputModes[0] != original.OutputModes[0] {
+		t.Fatalf("output modes were changed through Operations: %v", lookup.OutputModes)
+	}
+	if len(original.RiskDimensions) > 0 && lookup.RiskDimensions[0] != original.RiskDimensions[0] {
+		t.Fatalf("risk dimensions were changed through Operations: %v", lookup.RiskDimensions)
+	}
+
+	lookup.Path = "tampered"
+	if len(lookup.OutputModes) > 0 {
+		lookup.OutputModes[0] = "tampered"
+	}
+	if current := LookupOperation(original.Path); current == nil || current.Path != original.Path || (len(original.OutputModes) > 0 && current.OutputModes[0] != original.OutputModes[0]) {
+		t.Fatalf("registry was changed through LookupOperation: %+v", current)
+	}
+}
+
 func TestOperations_DestructiveOpsHaveRightTier(t *testing.T) {
 	destructive := []string{
 		"vm delete",

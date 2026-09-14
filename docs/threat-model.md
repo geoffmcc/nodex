@@ -64,9 +64,13 @@ An attacker intercepts HTTPS traffic between Nodex and the Proxmox endpoint.
 - TLS 1.2 minimum; certificate and hostname verification always enabled.
 - No `--insecure` flag, no hidden TLS bypass, no `InsecureSkipVerify`.
 - Custom CA support is explicit per profile via `ca_file`.
+- Explicit certification environments bind the expected leaf certificate and
+  trusted CA identity; mutation requests use the same leaf pin on the provider
+  transport.
 
 **Gaps:**
-- No certificate pinning (relies on system trust store).
+- General provider profiles do not pin a specific certificate or public key and
+  continue to rely on their configured trust store.
 - No mutual TLS support.
 
 ### 3. Malicious Certificate Authority
@@ -79,10 +83,12 @@ certificate.
 **Existing mitigations:**
 - TLS certificate verification uses the system trust pool.
 - Custom CA support allows operators to narrow trust to a private CA.
+- Certification environments require both a trusted-CA identity and an
+  authorized leaf fingerprint, enforced on subsequent provider requests.
 
 **Gaps:**
-- No certificate pinning or known-hosts mechanism.
-- No warning when the CA changes between connections.
+- General profiles have no certificate pinning or known-hosts mechanism.
+- General profiles have no warning when the CA changes between connections.
 
 ### 4. Stolen Credentials
 API tokens, passwords, or authorization headers are exposed through logs,

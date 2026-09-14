@@ -252,7 +252,7 @@ func runMaintenanceStatus(ctx context.Context, cmdCtx *Context, args []string) e
 	}
 	statusResult := maintenanceStatusResult{
 		Hosts:          maintenance.InterpretCheckUpdates(res),
-		PartialFailure: res == nil || res.PartialFailure || res.ParseError != "",
+		PartialFailure: res == nil || !res.Success || res.PartialFailure || res.ParseError != "",
 	}
 	for _, host := range statusResult.Hosts {
 		if !host.EvidenceComplete {
@@ -499,6 +499,9 @@ func runMaintenancePlan(ctx context.Context, cmdCtx *Context, args []string) err
 
 	if res == nil || res.PartialFailure || res.ParseError != "" {
 		plan.Warnings = append(plan.Warnings, "preflight was incomplete; see host warnings")
+	}
+	if res == nil || !res.Success || res.ParseError != "" || !res.EvidenceComplete {
+		plan.Blockers = append(plan.Blockers, "preflight did not produce a complete successful evidence contract")
 	}
 
 	plan, err = maintenance.Finalize(plan)
@@ -836,7 +839,7 @@ func runMaintenanceApply(ctx context.Context, cmdCtx *Context, args []string) er
 	}
 	verification, runErr := runMaintenanceOperation(ctx, "verify-maintenance", hostSpecs(selected), nil)
 	if err := applyPerHostVerification(&receipt, verification, runErr); err != nil {
-		receipt.State = "failed"
+		receipt.State = hostFailureState(err)
 		receipt.Error = redactError(err)
 		if saveErr := persistReceipt(path, &receipt); saveErr != nil {
 			return saveErr
@@ -924,39 +927,30 @@ func executeMaintenanceBatch(ctx context.Context, path string, receipt *maintena
 		}()
 	}
 	failed := ""
-	results := make([]outcome, 0, len(names))
 	for range names {
-		results = append(results, <-ch)
-	}
-	sort.Slice(results, func(i, j int) bool { return results[i].name < results[j].name })
-	for _, result := range results {
+		result := <-ch
 		h := receiptHost(receipt, result.name)
 		if result.err != nil {
 			h.State, h.Success, h.FailuresDetail = "unknown", false, []string{redactError(result.err)}
 			failed = result.name
-		} else if result.result == nil || !result.result.Success {
-			h.State, h.Success = "failed", false
-			h.FailuresDetail = []string{"Ansible reported an unsuccessful or incomplete result"}
-			if result.result != nil {
-				for _, host := range result.result.Hosts {
-					if host.Host == result.name {
-						h.Changed, h.Failures, h.Unreachable = host.Changed, host.Failures, host.Unreachable
-					}
-				}
-			}
+		} else if result.result == nil {
+			h.State, h.Success = "unknown", false
+			h.FailuresDetail = []string{"Ansible returned no result; outcome is unknown"}
 			failed = result.name
 		} else {
-			h.State, h.Success = "succeeded", true
-			if result.result != nil {
-				for _, host := range result.result.Hosts {
-					if host.Host == result.name {
-						h.Changed, h.Failures, h.Unreachable = host.Changed, host.Failures, host.Unreachable
-					}
-				}
+			copyMaintenanceHostStats(h, result.result, result.name)
+			state, success, detail := classifyMaintenanceResult(result.result, result.name)
+			h.State, h.Success, h.FailuresDetail = state, success, detail
+			if success {
+				completed[result.name] = true
+			} else {
+				failed = result.name
 			}
-			completed[result.name] = true
 		}
 		receipt.Events = append(receipt.Events, maintenance.ReceiptEvent{Host: result.name, State: h.State, At: time.Now().Unix()})
+		if err := persistReceipt(path, receipt); err != nil {
+			return err
+		}
 	}
 	if err := persistReceipt(path, receipt); err != nil {
 		return err
@@ -965,6 +959,44 @@ func executeMaintenanceBatch(ctx context.Context, path string, receipt *maintena
 		return fmt.Errorf("host %s returned a non-successful or unknown outcome", failed)
 	}
 	return nil
+}
+
+func copyMaintenanceHostStats(receipt *maintenance.HostReceipt, result *ansible.RunResult, name string) {
+	if receipt == nil || result == nil {
+		return
+	}
+	for _, host := range result.Hosts {
+		if host.Host == name {
+			receipt.Changed = host.Changed
+			receipt.Failures = host.Failures
+			receipt.Unreachable = host.Unreachable
+			return
+		}
+	}
+}
+
+func classifyMaintenanceResult(result *ansible.RunResult, name string) (string, bool, []string) {
+	var host *ansible.HostResult
+	if result != nil {
+		for i := range result.Hosts {
+			if result.Hosts[i].Host == name {
+				host = &result.Hosts[i]
+				break
+			}
+		}
+	}
+	if host == nil {
+		return "unknown", false, []string{"Ansible returned no result for this host; outcome is unknown"}
+	}
+	state := "failed"
+	detail := []string{"Ansible reported an unsuccessful result"}
+	if host.Failed || host.Failures > 0 || host.Unreachable > 0 {
+		return state, false, detail
+	}
+	if result.ParseError != "" || !result.Success || !result.EvidenceComplete || !hostEvidenceComplete(result, name) {
+		return "unknown", false, []string{"Ansible evidence or run status was incomplete; outcome is unknown"}
+	}
+	return "succeeded", true, nil
 }
 
 func receiptHost(receipt *maintenance.Receipt, name string) *maintenance.HostReceipt {
@@ -988,10 +1020,10 @@ func applyPerHostVerification(receipt *maintenance.Receipt, result *ansible.RunR
 		for i := range receipt.Hosts {
 			receipt.Hosts[i].Verification = "unknown"
 		}
-		return runErr
+		return fmt.Errorf("postcondition verification outcome is unknown: %w", runErr)
 	}
 	if result == nil {
-		return fmt.Errorf("verification returned no result")
+		return fmt.Errorf("postcondition verification outcome is unknown: verification returned no result")
 	}
 	byHost := map[string]ansible.HostResult{}
 	for _, h := range result.Hosts {
@@ -1006,16 +1038,51 @@ func applyPerHostVerification(receipt *maintenance.Receipt, result *ansible.RunR
 		if h.Unreachable > 0 || h.Failures > 0 || h.Failed {
 			receipt.Hosts[i].Verification = "failed"
 			receipt.Hosts[i].Warnings = append(receipt.Hosts[i].Warnings, "postcondition failed on this host")
+		} else if !hostEvidenceComplete(result, receipt.Hosts[i].Host) {
+			receipt.Hosts[i].Verification = "unknown"
+			receipt.Hosts[i].Warnings = append(receipt.Hosts[i].Warnings, "postcondition evidence was incomplete on this host")
 		} else {
 			receipt.Hosts[i].Verification = "succeeded"
 		}
 	}
 	for _, h := range receipt.Hosts {
 		if h.Verification != "succeeded" {
+			if h.Verification == "unknown" {
+				return fmt.Errorf("postcondition verification was unknown for host %s", h.Host)
+			}
 			return fmt.Errorf("postcondition verification was not successful for host %s", h.Host)
 		}
 	}
 	return nil
+}
+
+func hostEvidenceComplete(result *ansible.RunResult, host string) bool {
+	if result == nil {
+		return false
+	}
+	if result.ParseError != "" || !result.Success || !result.EvidenceComplete {
+		return false
+	}
+	required := result.RequiredEvidence
+	if len(required) == 0 {
+		return true
+	}
+	seen := make(map[string]bool, len(required))
+	for _, outcome := range result.TaskOutcomes[host] {
+		if outcome.EvidenceID == "" {
+			continue
+		}
+		if !ansible.EvidenceOutcomeUsable(result.Operation, outcome) {
+			return false
+		}
+		seen[outcome.EvidenceID] = true
+	}
+	for _, evidenceID := range required {
+		if !seen[evidenceID] {
+			return false
+		}
+	}
+	return true
 }
 
 func revalidateBeforeBatch(ctx context.Context, cmdCtx *Context, cfg *config.Config, selected map[string]config.InventoryHost, plan maintenance.Plan, completed map[string]bool) error {
@@ -1199,6 +1266,11 @@ func runMaintenanceReconcile(ctx context.Context, cmdCtx *Context, args []string
 	if err != nil || parsed.receiptPath == "" {
 		return app.NewExitError(fmt.Errorf("usage: nodex maintenance reconcile --plan <file> --receipt <file>"), app.ExitUsage)
 	}
+	reconcileLock, err := config.Lock(parsed.receiptPath + ".apply")
+	if err != nil {
+		return app.NewExitError(fmt.Errorf("lock maintenance reconcile: %w", err), app.ExitConflict)
+	}
+	defer func() { _ = config.Unlock(reconcileLock) }()
 	plan, err := maintenance.LoadFile(parsed.planPath, time.Now())
 	if err != nil {
 		return app.NewExitError(err, app.ExitValidationError)
@@ -1210,7 +1282,79 @@ func runMaintenanceReconcile(ctx context.Context, cmdCtx *Context, args []string
 	if err := receipt.VerifyForPlan(plan); err != nil {
 		return app.NewExitError(err, app.ExitConflict)
 	}
-	return runMaintenanceVerify(ctx, cmdCtx, []string{"--plan", parsed.planPath})
+	if receipt.State == "succeeded" || receipt.State == "abandoned" {
+		return app.NewExitError(fmt.Errorf("receipt is already terminal: %s", receipt.State), app.ExitConflict)
+	}
+	if err := ensureReceiptHostsForPlan(&receipt, plan); err != nil {
+		return app.NewExitError(err, app.ExitConflict)
+	}
+	cfg, err := config.Read()
+	if err != nil {
+		return err
+	}
+	selected := map[string]config.InventoryHost{}
+	for _, ph := range plan.Hosts {
+		if cfg.Inventory == nil {
+			return app.NewExitError(fmt.Errorf("inventory is not configured"), app.ExitConfig)
+		}
+		h, ok := cfg.Inventory.Hosts[ph.Name]
+		if !ok || !inventoryHostMatchesPlan(ph, h) {
+			return app.NewExitError(fmt.Errorf("inventory changed for planned host %q", ph.Name), app.ExitConflict)
+		}
+		selected[ph.Name] = h
+	}
+	result, runErr := runMaintenanceOperation(ctx, "verify-maintenance", hostSpecs(selected), nil)
+	verificationErr := applyPerHostVerification(&receipt, result, runErr)
+	receipt.State = "unknown"
+	if verificationErr != nil {
+		receipt.Error = redactError(verificationErr)
+	} else {
+		receipt.Error = "postconditions were checked, but the interrupted mutation outcome remains unknown"
+	}
+	receipt.Events = append(receipt.Events, maintenance.ReceiptEvent{State: "reconciled", At: time.Now().Unix()})
+	if err := persistReceipt(parsed.receiptPath, &receipt); err != nil {
+		return err
+	}
+	report := maintenanceReport{
+		PlanID: plan.PlanID, PlanDigest: plan.Digest, ReceiptID: receipt.ReceiptID,
+		State: receipt.State, Verified: verificationErr == nil, Hosts: receipt.Hosts, Error: receipt.Error,
+	}
+	if err := writeMaintenanceReport(cmdCtx, report); err != nil {
+		return err
+	}
+	return app.NewExitError(fmt.Errorf("maintenance mutation outcome remains unknown; review receipt and create a new plan"), app.ExitPartialFailure)
+}
+
+func ensureReceiptHostsForPlan(receipt *maintenance.Receipt, plan maintenance.Plan) error {
+	if receipt == nil {
+		return fmt.Errorf("maintenance receipt is nil")
+	}
+	planHosts := make(map[string]bool, len(plan.Hosts))
+	operation := "unknown"
+	for _, host := range plan.Hosts {
+		planHosts[host.Name] = true
+	}
+	for _, host := range receipt.Hosts {
+		if !planHosts[host.Host] {
+			return fmt.Errorf("receipt contains host %q not present in the plan", host.Host)
+		}
+		if operation == "unknown" && host.Operation != "" {
+			operation = host.Operation
+		}
+	}
+	for _, host := range plan.Hosts {
+		receiptHost := receiptHost(receipt, host.Name)
+		if receiptHost.Operation == "" {
+			receiptHost.Operation = operation
+		}
+		if receiptHost.State == "" {
+			receiptHost.State = "unknown"
+		}
+		if receiptHost.Verification == "" {
+			receiptHost.Verification = "unknown"
+		}
+	}
+	return nil
 }
 
 func hasArg(args []string, want string) bool {

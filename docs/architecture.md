@@ -257,9 +257,10 @@ identifiers:
 - **Bounded, honest results.** Stdout/stderr are size-bounded, terminal-
   sanitized, and secret-redacted. Per-host results parse Ansible's JSON
   callback: success requires exit code zero, every requested host present in
-  the stats, and no failures or unreachable hosts — truncated or
-  unparseable output is never reported as success, and mixed outcomes are
-  explicit partial failures.
+  the stats, no failures or unreachable hosts, and every operation-specific
+  evidence ID present and usable — truncated, unparseable, or nonzero-exit
+  output is never reported as success, and mixed outcomes are explicit partial
+  failures.
 - **Cancellation.** Context cancellation sends SIGTERM, escalating to kill
   after a grace period.
 
@@ -287,6 +288,9 @@ or blocked plans. Verification and reporting consume the durable receipt.
 - Default timeout of 30s
 - TLS minimum version 1.2
 - Custom CA file support via `WithCACert()`
+- Certification mutation connections can additionally pin an authorized
+  SHA-256 leaf-certificate fingerprint while retaining normal CA and hostname
+  verification.
 - No insecure TLS mode
 - Maximum successful response body size of 50 MiB
 - Maximum API error body size of 256 KiB

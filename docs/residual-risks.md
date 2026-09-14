@@ -70,18 +70,20 @@ backends instead. Environment variables are documented as suitable for CI/CD
 and scripting where process isolation is already trusted.
 **Planned:** None. This is a fundamental property of environment variables.
 
-### L6 — No Certificate Pinning
+### L6 — Certificate Pinning Is Certification-Only
 
-**Status:** Accepted.
+**Status:** Partially mitigated.
 **Severity:** Low.
-**Description:** Nodex relies on the system trust store for TLS certificate
-validation. There is no mechanism to pin a specific certificate or public key
-for a Proxmox endpoint.
-**Mitigation:** Custom CA support allows operators to narrow trust to a private
-CA. Certificate validation is always enabled with no bypass.
-**Rationale:** Certificate pinning adds operational complexity (rotation,
-recovery) and is rarely needed when the system trust store is well-managed.
-**Planned:** Evaluate optional SSH-style known-hosts mechanism post-1.0.
+**Description:** Ordinary provider profiles rely on the configured system or
+custom trust store and do not pin a specific certificate or public key.
+**Mitigation:** Explicit certification environments bind both the expected
+trusted-CA identity and leaf SHA-256 fingerprint; the fingerprint is enforced
+on the actual provider transport used for certification requests. Certificate
+validation remains enabled with no bypass.
+**Rationale:** General-profile pinning would add certificate-rotation and
+recovery complexity; certification has a narrower, explicit identity need.
+**Planned:** Evaluate an optional known-hosts or certificate-pinning mechanism
+for ordinary profiles post-1.0.
 
 ### L7 — No Mutual TLS
 

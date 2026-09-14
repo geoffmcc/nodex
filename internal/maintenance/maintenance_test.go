@@ -225,25 +225,26 @@ func TestInterpretCheckUpdates(t *testing.T) {
 		},
 		TaskOutcomes: map[string][]ansible.TaskOutcome{
 			"web1": {
-				{Task: "List upgradable packages", StdoutLines: []string{
+				{EvidenceID: ansible.HostEvidencePackages, Task: "renamed package task", StdoutLines: []string{
 					"Listing... Done",
 					"nano/stable 8.0-1 amd64 [upgradable from: 7.2-1]",
 					"openssl/stable-security 3.0.15-1 amd64 [upgradable from: 3.0.14-1]",
 				}},
-				{Task: "Simulate dist-upgrade", StdoutLines: []string{
+				{EvidenceID: ansible.HostEvidenceSimulation, Task: "renamed simulation task", StdoutLines: []string{
 					"Inst openssl [3.0.14-1] (3.0.15-1 Debian-Security:12/stable-security [amd64])",
 					"Inst nano [7.2-1] (8.0-1 Debian:12.6/stable [amd64])",
 					"Conf openssl (3.0.15-1 Debian-Security:12/stable-security [amd64])",
 				}},
-				{Task: "Check reboot-required marker", StatExists: boolPtr(true)},
-				{Task: "List failed systemd units", StdoutLines: []string{"smartd.service loaded failed failed Self Monitoring"}},
-				{Task: "Report root filesystem usage", StdoutLines: []string{
+				{EvidenceID: ansible.HostEvidenceReboot, Task: "renamed reboot task", StatExists: boolPtr(true)},
+				{EvidenceID: ansible.HostEvidenceFailedUnits, Task: "renamed failed-units task", StdoutLines: []string{"smartd.service loaded failed failed Self Monitoring"}},
+				{EvidenceID: ansible.HostEvidenceRoot, Task: "renamed root task", StdoutLines: []string{
 					"Filesystem 1024-blocks Used Available Capacity Mounted on",
 					"/dev/sda1 41152736 12345678 27000000 32% /",
 				}},
 			},
 		},
 	}
+	res.TaskOutcomes["web1"] = append([]ansible.TaskOutcome{{EvidenceID: ansible.HostEvidenceDebian, Task: "renamed Debian task"}, {EvidenceID: ansible.HostEvidenceRefresh, Task: "renamed refresh task"}}, res.TaskOutcomes["web1"]...)
 	statuses := InterpretCheckUpdates(res)
 	if len(statuses) != 2 {
 		t.Fatalf("expected 2 statuses, got %d", len(statuses))
@@ -278,7 +279,7 @@ func TestInterpretUnsupportedDistribution(t *testing.T) {
 	res := &ansible.RunResult{
 		Hosts: []ansible.HostResult{{Host: "bsd1", Failures: 1, Failed: true}},
 		TaskOutcomes: map[string][]ansible.TaskOutcome{
-			"bsd1": {{Task: "Verify Debian family", Failed: true, Message: "unsupported distribution"}},
+			"bsd1": {{EvidenceID: ansible.HostEvidenceDebian, Task: "renamed Debian task", Failed: true, Message: "unsupported distribution"}},
 		},
 	}
 	statuses := InterpretCheckUpdates(res)
@@ -292,14 +293,37 @@ func TestInterpretCheckUpdatesRequiresCompleteSuccessfulEvidence(t *testing.T) {
 		Hosts: []ansible.HostResult{{Host: "web1"}},
 		TaskOutcomes: map[string][]ansible.TaskOutcome{
 			"web1": {
-				{Task: "Verify Debian family"},
-				{Task: "List upgradable packages", RC: intPtr(7)},
+				{EvidenceID: ansible.HostEvidenceDebian, Task: "renamed Debian task"},
+				{EvidenceID: ansible.HostEvidencePackages, Task: "renamed package task", RC: intPtr(7)},
 			},
 		},
 	}
 	statuses := InterpretCheckUpdates(res)
 	if len(statuses) != 1 || statuses[0].EvidenceComplete {
 		t.Fatalf("incomplete task evidence was accepted: %+v", statuses)
+	}
+}
+
+func TestInterpretCheckUpdatesRejectsUnsuccessfulRun(t *testing.T) {
+	res := &ansible.RunResult{
+		Success:          false,
+		EvidenceComplete: true,
+		Hosts:            []ansible.HostResult{{Host: "web1"}},
+		TaskOutcomes: map[string][]ansible.TaskOutcome{
+			"web1": {
+				{EvidenceID: ansible.HostEvidenceDebian, Task: "debian"},
+				{EvidenceID: ansible.HostEvidenceRefresh, Task: "refresh"},
+				{EvidenceID: ansible.HostEvidencePackages, Task: "packages"},
+				{EvidenceID: ansible.HostEvidenceSimulation, Task: "simulation"},
+				{EvidenceID: ansible.HostEvidenceReboot, Task: "reboot"},
+				{EvidenceID: ansible.HostEvidenceFailedUnits, Task: "failed units"},
+				{EvidenceID: ansible.HostEvidenceRoot, Task: "root"},
+			},
+		},
+	}
+	statuses := InterpretCheckUpdates(res)
+	if len(statuses) != 1 || statuses[0].EvidenceComplete {
+		t.Fatalf("unsuccessful run was accepted as complete: %+v", statuses)
 	}
 }
 

@@ -3,8 +3,10 @@ package httpclient
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -153,6 +155,45 @@ func WithCACert(path string) (Option, error) {
 		cfg.RootCAs = pool
 		t.TLSClientConfig = cfg
 	}, nil
+}
+
+// WithLeafCertificateFingerprint pins the SHA-256 fingerprint of the leaf
+// certificate for every connection made by the client. Normal CA and hostname
+// verification still runs first; the pin closes the gap between an identity
+// preflight and later provider requests when a hostname resolves differently.
+func WithLeafCertificateFingerprint(expected string) Option {
+	expected = strings.ToLower(strings.TrimSpace(expected))
+	return func(c *Client) {
+		t, ok := c.httpClient.Transport.(*http.Transport)
+		if !ok {
+			t = &http.Transport{}
+			c.httpClient.Transport = t
+		}
+		var cfg *tls.Config
+		if t.TLSClientConfig != nil {
+			cfg = t.TLSClientConfig.Clone()
+		}
+		if cfg == nil {
+			cfg = &tls.Config{MinVersion: tls.VersionTLS12}
+		}
+		prior := cfg.VerifyConnection
+		cfg.VerifyConnection = func(state tls.ConnectionState) error {
+			if prior != nil {
+				if err := prior(state); err != nil {
+					return err
+				}
+			}
+			if len(state.PeerCertificates) == 0 {
+				return fmt.Errorf("TLS peer certificate missing")
+			}
+			sum := sha256.Sum256(state.PeerCertificates[0].Raw)
+			if !strings.EqualFold(hex.EncodeToString(sum[:]), expected) {
+				return fmt.Errorf("TLS leaf certificate fingerprint does not match authorization")
+			}
+			return nil
+		}
+		t.TLSClientConfig = cfg
+	}
 }
 
 // WithMaxBodySize sets the maximum response body size.

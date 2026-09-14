@@ -62,3 +62,11 @@ func TestSafeAddressDoesNotExposeURLQuery(t *testing.T) {
 		t.Fatalf("safe address = %q", got)
 	}
 }
+
+func TestSafeAddressDoesNotExposeCredentialsInHostLikeValues(t *testing.T) {
+	for _, address := range []string{"user:secret@host:443", "token:secret"} {
+		if got := SafeAddress(address); got != "<redacted>" {
+			t.Fatalf("safe address for %q = %q", address, got)
+		}
+	}
+}

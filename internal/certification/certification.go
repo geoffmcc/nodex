@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/task"
 )
@@ -107,13 +108,13 @@ func validateRequest(r Request) error {
 
 func ValidateAuthorization(r Request) error {
 	a := r.Authorization
-	if a == nil {
-		return fmt.Errorf("certification requires an explicit authorization binding")
+	if err := validateAuthorizationBinding(a); err != nil {
+		return err
 	}
 	if a.Environment == "" || a.Profile != RequiredProfile || r.Environment != a.Environment || r.Profile != a.Profile || r.Endpoint != a.Endpoint {
 		return fmt.Errorf("certification target does not match the authorized environment")
 	}
-	if a.Provider == "" || a.ExpectedFingerprint == "" || a.TrustedCAIdentity == "" || a.VMIDMin <= 0 || r.VMID < a.VMIDMin || r.VMID > a.VMIDMax {
+	if r.VMID < a.VMIDMin || r.VMID > a.VMIDMax || a.MaxResources <= 0 {
 		return fmt.Errorf("certification target is outside the authorized resource range")
 	}
 	if r.Suite == "disposable-mutations" && !a.AllowMutations {
@@ -130,6 +131,35 @@ func ValidateAuthorization(r Request) error {
 	}
 	return nil
 }
+
+func validateAuthorizationBinding(a *Authorization) error {
+	if a == nil {
+		return fmt.Errorf("certification requires an explicit authorization binding")
+	}
+	if a.Environment == "" || a.Profile != RequiredProfile || a.Provider == "" {
+		return fmt.Errorf("certification authorization binding is incomplete")
+	}
+	u, err := url.Parse(a.Endpoint)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return fmt.Errorf("certification authorization endpoint is not a valid HTTPS URL")
+	}
+	if !validSHA256Identity(a.ExpectedFingerprint) || !validSHA256Identity(a.TrustedCAIdentity) {
+		return fmt.Errorf("certification authorization identities are invalid")
+	}
+	if a.VMIDMin <= 0 || a.VMIDMax < a.VMIDMin {
+		return fmt.Errorf("certification authorization resource range is invalid")
+	}
+	return nil
+}
+
+func validSHA256Identity(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
@@ -245,6 +275,11 @@ func Run(ctx context.Context, p domain.Provider, req Request, ledgerPath string,
 		}
 		return Result{Profile: req.Profile, Target: req.Name, State: "succeeded", Cleanup: "not_applicable", Ledger: ""}, nil
 	}
+	cleanupLock, err := config.Lock(cleanupLockPath(ledgerPath))
+	if err != nil {
+		return Result{}, fmt.Errorf("lock certification transaction: %w", err)
+	}
+	defer func() { _ = config.Unlock(cleanupLock) }()
 	creator, ok := p.(domain.VMCreateProvider)
 	if !ok {
 		return Result{}, fmt.Errorf("provider does not support VM creation")
@@ -284,13 +319,24 @@ func Run(ctx context.Context, p domain.Provider, req Request, ledgerPath string,
 	if entryIndex < 0 {
 		return Result{}, fmt.Errorf("reserved certification ledger entry disappeared")
 	}
+	e = l.Entries[entryIndex]
 	result := Result{Profile: req.Profile, Target: req.Name, State: "reserved", Cleanup: "required", Ledger: ledgerPath}
-	if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) { entry.State, entry.UpdatedAt = "creating", time.Now().Unix() }); err != nil {
+	updateEntry := func(update func(*Entry)) error {
+		err := UpdateEntryWithLease(ledgerPath, e.ID, e.LeaseID, e.Revision, update)
+		if err == nil {
+			e.Revision++
+		}
+		return err
+	}
+	if err := updateEntry(func(entry *Entry) { entry.State, entry.UpdatedAt = "creating", time.Now().Unix() }); err != nil {
 		return result, fmt.Errorf("checkpoint certification creation: %w", err)
+	}
+	if err := verifyLease(ledgerPath, e.ID, e.LeaseID, e.Revision); err != nil {
+		return result, fmt.Errorf("certification creation lease is no longer current: %w", err)
 	}
 	upid, err := creator.VMCreate(ctx, req.Node, req.VMID, req.Name, "", req.Storage)
 	if err != nil {
-		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+		if saveErr := updateEntry(func(entry *Entry) {
 			entry.State, entry.Error, entry.UpdatedAt = "unknown", "creation request outcome unavailable", time.Now().Unix()
 		}); saveErr != nil {
 			return result, fmt.Errorf("create certification VM failed and ledger update failed: %w", saveErr)
@@ -298,12 +344,12 @@ func Run(ctx context.Context, p domain.Provider, req Request, ledgerPath string,
 		return result, fmt.Errorf("create certification VM: %w", err)
 	}
 	if strings.TrimSpace(upid) == "" {
-		_ = UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+		_ = updateEntry(func(entry *Entry) {
 			entry.State, entry.Error, entry.UpdatedAt = "unknown", "creation returned no task ID", time.Now().Unix()
 		})
 		return result, fmt.Errorf("create certification VM returned no task ID")
 	}
-	if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+	if err := updateEntry(func(entry *Entry) {
 		entry.CreateUPID, entry.UpdatedAt = upid, time.Now().Unix()
 	}); err != nil {
 		return result, fmt.Errorf("checkpoint certification creation task: %w", err)
@@ -313,22 +359,30 @@ func Run(ctx context.Context, p domain.Provider, req Request, ledgerPath string,
 		if task.IsUnknownOutcome(err) || ctx.Err() != nil {
 			state = "unknown"
 		}
-		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+		if saveErr := updateEntry(func(entry *Entry) {
 			entry.State, entry.Error, entry.UpdatedAt = state, "creation task outcome unavailable", time.Now().Unix()
 		}); saveErr != nil {
 			return result, fmt.Errorf("create certification VM failed and ledger update failed: %w", saveErr)
 		}
 		return result, fmt.Errorf("create certification VM: %w", err)
 	}
-	if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) { entry.State, entry.UpdatedAt = "created", time.Now().Unix() }); err != nil {
+	if err := updateEntry(func(entry *Entry) { entry.State, entry.UpdatedAt = "created", time.Now().Unix() }); err != nil {
 		return result, fmt.Errorf("checkpoint created certification VM: %w", err)
 	}
 	if err := waitForVM(ctx, inspector, req.Node, req.VMID, req.Name); err != nil {
+		if saveErr := updateEntry(func(entry *Entry) {
+			entry.State, entry.Error, entry.UpdatedAt = "unknown", "creation verification outcome unavailable", time.Now().Unix()
+		}); saveErr != nil {
+			return result, fmt.Errorf("verify certification VM failed and ledger update failed: %w", saveErr)
+		}
 		return result, fmt.Errorf("verify certification VM: %w", err)
+	}
+	if err := verifyLease(ledgerPath, e.ID, e.LeaseID, e.Revision); err != nil {
+		return result, fmt.Errorf("certification cleanup lease is no longer current: %w", err)
 	}
 	deleteUPID, err := deleter.VMDelete(ctx, req.Node, req.VMID)
 	if err != nil {
-		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+		if saveErr := updateEntry(func(entry *Entry) {
 			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup request outcome unavailable", time.Now().Unix()
 		}); saveErr != nil {
 			return result, fmt.Errorf("cleanup certification VM failed and ledger update failed: %w", saveErr)
@@ -336,18 +390,18 @@ func Run(ctx context.Context, p domain.Provider, req Request, ledgerPath string,
 		return result, fmt.Errorf("cleanup certification VM: %w", err)
 	}
 	if strings.TrimSpace(deleteUPID) == "" {
-		_ = UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+		_ = updateEntry(func(entry *Entry) {
 			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup returned no task ID", time.Now().Unix()
 		})
 		return result, fmt.Errorf("cleanup certification VM returned no task ID")
 	}
-	if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+	if err := updateEntry(func(entry *Entry) {
 		entry.State, entry.Cleanup, entry.DeleteUPID, entry.UpdatedAt = "deleting", "in_progress", deleteUPID, time.Now().Unix()
 	}); err != nil {
 		return result, fmt.Errorf("checkpoint certification cleanup task: %w", err)
 	}
 	if err := waitTask(ctx, p, req.Node, deleteUPID); err != nil {
-		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+		if saveErr := updateEntry(func(entry *Entry) {
 			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup task outcome unavailable", time.Now().Unix()
 		}); saveErr != nil {
 			return result, fmt.Errorf("cleanup certification VM failed and ledger update failed: %w", saveErr)
@@ -356,15 +410,25 @@ func Run(ctx context.Context, p domain.Provider, req Request, ledgerPath string,
 	}
 	vms, err = inspector.VMs(ctx)
 	if err != nil {
+		if saveErr := updateEntry(func(entry *Entry) {
+			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup verification outcome unavailable", time.Now().Unix()
+		}); saveErr != nil {
+			return result, fmt.Errorf("verify certification cleanup failed and ledger update failed: %w", saveErr)
+		}
 		return result, fmt.Errorf("verify certification cleanup: %w", err)
 	}
 	for _, vm := range vms {
 		if vm.ID == targetID {
+			if saveErr := updateEntry(func(entry *Entry) {
+				entry.State, entry.Error, entry.UpdatedAt = "unknown", "certification target still exists after cleanup task", time.Now().Unix()
+			}); saveErr != nil {
+				return result, fmt.Errorf("persist certification cleanup ambiguity: %w", saveErr)
+			}
 			return result, fmt.Errorf("certification cleanup could not verify target absence")
 		}
 	}
-	if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
-		entry.State, entry.Cleanup, entry.UpdatedAt = "succeeded", "complete", time.Now().Unix()
+	if err := updateEntry(func(entry *Entry) {
+		entry.State, entry.Cleanup, entry.LeaseID, entry.LeaseExpiresAt, entry.UpdatedAt = "succeeded", "complete", "", 0, time.Now().Unix()
 	}); err != nil {
 		return result, err
 	}
@@ -385,6 +449,11 @@ func Cleanup(ctx context.Context, p domain.Provider, ledgerPath, confirm string,
 	if err := VerifyEndpointIdentity(ctx, auth.Endpoint, caFile, auth.ExpectedFingerprint, auth.TrustedCAIdentity); err != nil {
 		return nil, err
 	}
+	cleanupLock, err := config.Lock(cleanupLockPath(ledgerPath))
+	if err != nil {
+		return nil, fmt.Errorf("lock certification cleanup: %w", err)
+	}
+	defer func() { _ = config.Unlock(cleanupLock) }()
 	d, ok := p.(domain.DeleteProvider)
 	if !ok {
 		return nil, fmt.Errorf("provider does not support VM cleanup")
@@ -393,13 +462,28 @@ func Cleanup(ctx context.Context, p domain.Provider, ledgerPath, confirm string,
 	if !ok {
 		return nil, fmt.Errorf("provider cannot verify VM state")
 	}
-	e, err := ClaimCleanup(ledgerPath, confirm, auth)
+	e, err := claimCleanup(ledgerPath, confirm, auth)
 	if err != nil {
 		return nil, err
 	}
+	updateEntry := func(update func(*Entry)) error {
+		err := UpdateEntryWithLease(ledgerPath, e.ID, e.LeaseID, e.Revision, update)
+		if err == nil {
+			e.Revision++
+		}
+		return err
+	}
+	if err := verifyLease(ledgerPath, e.ID, e.LeaseID, e.Revision); err != nil {
+		return nil, fmt.Errorf("certification cleanup lease is no longer current: %w", err)
+	}
 	vms, err := inspector.VMs(ctx)
 	if err != nil {
-		return nil, err
+		if saveErr := updateEntry(func(entry *Entry) {
+			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup preflight outcome unavailable", time.Now().Unix()
+		}); saveErr != nil {
+			return nil, fmt.Errorf("inspect cleanup target failed and ledger update failed: %w", saveErr)
+		}
+		return nil, fmt.Errorf("inspect cleanup target: %w", err)
 	}
 	targetID := fmt.Sprintf("%s/%d", e.Node, e.VMID)
 	present := false
@@ -412,8 +496,8 @@ func Cleanup(ctx context.Context, p domain.Provider, ledgerPath, confirm string,
 		}
 	}
 	if !present {
-		if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
-			entry.State, entry.Cleanup, entry.UpdatedAt = "cleaned", "complete", time.Now().Unix()
+		if err := updateEntry(func(entry *Entry) {
+			entry.State, entry.Cleanup, entry.LeaseID, entry.LeaseExpiresAt, entry.UpdatedAt = "cleaned", "complete", "", 0, time.Now().Unix()
 		}); err != nil {
 			return nil, err
 		}
@@ -421,9 +505,12 @@ func Cleanup(ctx context.Context, p domain.Provider, ledgerPath, confirm string,
 	}
 	upid := e.DeleteUPID
 	if upid == "" {
+		if err := verifyLease(ledgerPath, e.ID, e.LeaseID, e.Revision); err != nil {
+			return nil, fmt.Errorf("certification cleanup lease is no longer current: %w", err)
+		}
 		upid, err = d.VMDelete(ctx, e.Node, e.VMID)
 		if err != nil {
-			if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+			if saveErr := updateEntry(func(entry *Entry) {
 				entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup request outcome unavailable", time.Now().Unix()
 			}); saveErr != nil {
 				return nil, fmt.Errorf("persist cleanup failure: %w", saveErr)
@@ -431,12 +518,12 @@ func Cleanup(ctx context.Context, p domain.Provider, ledgerPath, confirm string,
 			return nil, err
 		}
 		if strings.TrimSpace(upid) == "" {
-			_ = UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+			_ = updateEntry(func(entry *Entry) {
 				entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup returned no task ID", time.Now().Unix()
 			})
 			return nil, fmt.Errorf("cleanup task has no task ID")
 		}
-		if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+		if err := updateEntry(func(entry *Entry) {
 			entry.State, entry.Cleanup, entry.DeleteUPID, entry.Error, entry.UpdatedAt = "deleting", "in_progress", upid, "", time.Now().Unix()
 		}); err != nil {
 			return nil, fmt.Errorf("checkpoint cleanup task: %w", err)
@@ -446,7 +533,7 @@ func Cleanup(ctx context.Context, p domain.Provider, ledgerPath, confirm string,
 		return nil, fmt.Errorf("cleanup task has no task ID")
 	}
 	if err := waitTask(ctx, p, e.Node, upid); err != nil {
-		if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+		if saveErr := updateEntry(func(entry *Entry) {
 			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup task outcome unavailable", time.Now().Unix()
 		}); saveErr != nil {
 			return nil, fmt.Errorf("persist cleanup failure: %w", saveErr)
@@ -455,11 +542,16 @@ func Cleanup(ctx context.Context, p domain.Provider, ledgerPath, confirm string,
 	}
 	vms, err = inspector.VMs(ctx)
 	if err != nil {
-		return nil, err
+		if saveErr := updateEntry(func(entry *Entry) {
+			entry.State, entry.Error, entry.UpdatedAt = "unknown", "cleanup verification outcome unavailable", time.Now().Unix()
+		}); saveErr != nil {
+			return nil, fmt.Errorf("verify cleanup failed and ledger update failed: %w", saveErr)
+		}
+		return nil, fmt.Errorf("verify cleanup: %w", err)
 	}
 	for _, vm := range vms {
 		if vm.ID == targetID {
-			if saveErr := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
+			if saveErr := updateEntry(func(entry *Entry) {
 				entry.State, entry.Error, entry.UpdatedAt = "unknown", "target still exists", time.Now().Unix()
 			}); saveErr != nil {
 				return nil, fmt.Errorf("persist cleanup ambiguity: %w", saveErr)
@@ -467,8 +559,8 @@ func Cleanup(ctx context.Context, p domain.Provider, ledgerPath, confirm string,
 			return nil, fmt.Errorf("cleanup target still exists")
 		}
 	}
-	if err := UpdateEntry(ledgerPath, e.ID, func(entry *Entry) {
-		entry.State, entry.Cleanup, entry.UpdatedAt = "cleaned", "complete", time.Now().Unix()
+	if err := updateEntry(func(entry *Entry) {
+		entry.State, entry.Cleanup, entry.LeaseID, entry.LeaseExpiresAt, entry.UpdatedAt = "cleaned", "complete", "", 0, time.Now().Unix()
 	}); err != nil {
 		return nil, err
 	}

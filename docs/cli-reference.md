@@ -124,11 +124,13 @@ nodex --profile nodex-test-admin --yes --confirm-target <ledger-entry-id> certif
 nodex certification report [--ledger <path>]
 ```
 
-Run records cleanup intent before creating a VM, waits for task completion, and
-verifies both creation and cleanup. A failed or interrupted run remains in the
-ledger for recovery. Names must begin with `nodex-cert-`; reports contain no
-credentials or provider response bodies. Do not use this command against
-production-looking targets.
+Run records cleanup intent before creating a VM, verifies the configured
+provider/endpoint/leaf certificate and CA identity, waits for task completion,
+and verifies both creation and cleanup. A failed or interrupted run remains in
+the ledger for recovery; cleanup leases are fenced so stale workers cannot
+overlap a recovered cleanup. Names must begin with `nodex-cert-`; reports
+contain no credentials or provider response bodies. Do not use this command
+against production-looking targets.
 
 ### `nodex completion`
 

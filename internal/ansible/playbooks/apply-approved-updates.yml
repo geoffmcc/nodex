@@ -5,16 +5,24 @@
   become: true
   tasks:
     - name: Verify Debian family
+      vars:
+        nodex_evidence_id: host.os.debian
       ansible.builtin.assert:
         that: ansible_facts['os_family'] == 'Debian'
     - name: Refresh package metadata
+      vars:
+        nodex_evidence_id: host.package.refresh
       ansible.builtin.apt:
         update_cache: true
     - name: Install approved full updates
+      vars:
+        nodex_evidence_id: host.update
       ansible.builtin.apt:
         upgrade: dist
         state: latest
       register: nodex_update_result
     - name: Report update result
+      vars:
+        nodex_evidence_id: host.update_report
       ansible.builtin.debug:
         msg: "full update operation completed"
