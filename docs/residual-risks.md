@@ -187,7 +187,7 @@ tests. Fuzzing will be added for critical parsing paths before v1.0.
 
 | Environment | Reason |
 |-------------|--------|
-| Go < 1.25.12 | Minimum Go version. Older versions are not tested. |
+| Go < 1.26.0 | Minimum Go version. Older versions are not tested. |
 | HTTP (non-TLS) Proxmox endpoints | Endpoint validation rejects `http://` URLs. HTTPS is required. |
 | Proxmox VE < 8.0 | Not tested. May work but compatibility is not asserted. |
 | Non-x86/ARM64 architectures | Only amd64 and arm64 are tested in CI (via ubuntu, macOS-x64, macOS-arm64, and Windows runners). |

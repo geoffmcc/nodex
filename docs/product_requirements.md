@@ -239,10 +239,10 @@ For profile `lab`: `NODEX_LAB_TOKEN_ID`, `NODEX_LAB_TOKEN_SECRET`, `NODEX_LAB_TO
 
 | OS runner | Go version |
 |-----------|-----------|
-| `ubuntu-latest` | 1.25.13 |
-| `macos-15` (ARM) | 1.25.13 |
-| `macos-15-intel` | 1.25.13 |
-| `windows-latest` | 1.25.13 |
+| `ubuntu-latest` | 1.26.7 |
+| `macos-15` (ARM) | 1.26.7 |
+| `macos-15-intel` | 1.26.7 |
+| `windows-latest` | 1.26.7 |
 
 ## Current Limitations
 

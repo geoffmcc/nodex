@@ -137,7 +137,7 @@ Global flags go before the command name: `nodex --output json node list`.
 
 ## Requirements
 
-- Go 1.25.13 for building from source
+- Go 1.26.7 for building from source
 - A Proxmox VE endpoint reachable over HTTPS
 - A Proxmox API token with appropriate permissions
 
