@@ -96,11 +96,13 @@ func parseGlobal(args []string) (opts Options, helpPath []string, remaining []st
 			var value string
 			if hasInline {
 				value = inline
-			} else if i+1 >= len(args) {
-				return opts, helpPath, region, fmt.Errorf("flag needs an argument: %s", tok)
 			} else {
+				var ok bool
+				value, ok = nextArg(args, i)
+				if !ok {
+					return opts, helpPath, region, fmt.Errorf("flag needs an argument: %s", tok)
+				}
 				i++
-				value = args[i]
 			}
 			switch name {
 			case "profile":
@@ -112,7 +114,7 @@ func parseGlobal(args []string) (opts Options, helpPath []string, remaining []st
 			case "timeout":
 				d, perr := time.ParseDuration(value)
 				if perr != nil {
-					return opts, helpPath, region, fmt.Errorf("invalid value %q for flag -timeout: %v", value, perr)
+					return opts, helpPath, region, fmt.Errorf("invalid value %q for flag -timeout: %w", value, perr)
 				}
 				if d <= 0 {
 					return opts, helpPath, region, fmt.Errorf("timeout must be greater than zero")
@@ -121,7 +123,7 @@ func parseGlobal(args []string) (opts Options, helpPath []string, remaining []st
 			case "limit":
 				n, perr := strconv.Atoi(value)
 				if perr != nil {
-					return opts, helpPath, region, fmt.Errorf("invalid value %q for flag -limit: %v", value, perr)
+					return opts, helpPath, region, fmt.Errorf("invalid value %q for flag -limit: %w", value, perr)
 				}
 				if n < 0 {
 					return opts, helpPath, region, fmt.Errorf("limit must be non-negative")
@@ -136,7 +138,7 @@ func parseGlobal(args []string) (opts Options, helpPath []string, remaining []st
 			if hasInline {
 				v, perr := strconv.ParseBool(inline)
 				if perr != nil {
-					return opts, helpPath, region, fmt.Errorf("invalid value %q for flag -%s: %v", inline, name, perr)
+					return opts, helpPath, region, fmt.Errorf("invalid value %q for flag -%s: %w", inline, name, perr)
 				}
 				value = v
 			}
@@ -187,6 +189,14 @@ func parseGlobal(args []string) (opts Options, helpPath []string, remaining []st
 
 	remaining = append(append([]string{}, path...), region...)
 	return opts, helpPath, remaining, nil
+}
+
+// nextArg returns args[i+1] and true when the next element exists.
+func nextArg(args []string, i int) (string, bool) {
+	if i+1 >= len(args) {
+		return "", false
+	}
+	return args[i+1], true
 }
 
 func resolveCommandPath(path []string) *command {
