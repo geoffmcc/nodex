@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -318,7 +317,7 @@ func bindCommandMetadata() {
 
 // Run parses global flags and dispatches to the appropriate command.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	opts, remaining, err := parseGlobal(args)
+	opts, helpPath, remaining, err := parseGlobal(args)
 	if err != nil {
 		return app.NewExitError(err, app.ExitUsage)
 	}
@@ -344,6 +343,17 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		InteractiveOut: stdout,
 	}
 
+	// A -h/--help/-help token short-circuits before dispatch (exit 0).
+	if len(helpPath) > 0 {
+		if !printCommandHelp(safeStdout, helpPath) {
+			return app.NewExitError(
+				fmt.Errorf("unknown command: %s", strings.Join(helpPath, " ")),
+				app.ExitUsage,
+			)
+		}
+		return nil
+	}
+
 	if len(remaining) == 0 {
 		printUsage(safeStdout)
 		return nil
@@ -353,15 +363,15 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	args = remaining[1:]
 
 	if name == "help" {
-		if len(args) > 1 {
-			return app.NewExitError(fmt.Errorf("usage: nodex help [command]"), app.ExitUsage)
-		}
-		if len(args) == 1 {
-			if !printCommandHelp(safeStdout, args[0]) {
-				return app.NewExitError(fmt.Errorf("unknown command: %s", args[0]), app.ExitUsage)
-			}
-		} else {
+		if len(args) == 0 {
 			printUsage(safeStdout)
+			return nil
+		}
+		if !printCommandHelp(safeStdout, args) {
+			return app.NewExitError(
+				fmt.Errorf("unknown command: %s", strings.Join(args, " ")),
+				app.ExitUsage,
+			)
 		}
 		return nil
 	}
@@ -413,8 +423,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			}
 			return cmd.run(ctx, cmdCtx, args)
 		}
-		printSubcommandUsage(safeStdout, cmd)
-		return app.NewExitError(fmt.Errorf("a %s subcommand is required", name), app.ExitUsage)
+		printSubcommandUsage(safeStderr, cmd)
+		return app.NewExitError(
+			fmt.Errorf("%s %s subcommand is required", articleFor(name), name),
+			app.ExitUsage,
+		)
 	}
 
 	if cmd.run != nil {
@@ -470,61 +483,17 @@ func checkAllSupported(all bool, path ...string) error {
 	)
 }
 
-func parseGlobal(args []string) (Options, []string, error) {
-	var opts Options
-	fs := flag.NewFlagSet("nodex", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
-	fs.StringVar(&opts.Profile, "profile", "", "")
-	outFmt := fs.String("output", "", "")
-	fs.DurationVar(&opts.Timeout, "timeout", 30*time.Second, "")
-	fs.BoolVar(&opts.NoColor, "no-color", false, "")
-	fs.BoolVar(&opts.NonInteractive, "non-interactive", false, "")
-	fs.BoolVar(&opts.Quiet, "quiet", false, "")
-	fs.BoolVar(&opts.Verbose, "verbose", false, "")
-	fs.BoolVar(&opts.Debug, "debug", false, "")
-	fs.IntVar(&opts.Limit, "limit", 0, "")
-	fs.BoolVar(&opts.Yes, "yes", false, "")
-	fs.BoolVar(&opts.Force, "force", false, "")
-	fs.BoolVar(&opts.Wait, "wait", false, "")
-	fs.BoolVar(&opts.Expert, "expert", false, "")
-	fs.BoolVar(&opts.All, "all", false, "")
-	fs.BoolVar(&opts.PasswordStdin, "password-stdin", false, "")
-	fs.StringVar(&opts.ConfirmTarget, "confirm-target", "", "")
-
-	if err := fs.Parse(args); err != nil {
-		return opts, nil, err
+// articleFor picks the indefinite article for a command name so usage errors
+// read naturally ("a vm subcommand", "an access subcommand").
+func articleFor(name string) string {
+	if name == "" {
+		return "a"
 	}
-	if opts.Timeout <= 0 {
-		return opts, nil, fmt.Errorf("timeout must be greater than zero")
+	switch name[0] {
+	case 'a', 'e', 'i', 'o', 'u':
+		return "an"
 	}
-	if opts.Limit < 0 {
-		return opts, nil, fmt.Errorf("limit must be non-negative")
-	}
-
-	// Resolve output format.
-	if *outFmt != "" {
-		switch strings.ToLower(*outFmt) {
-		case "table":
-			opts.Output = output.FormatTable
-		case "json":
-			opts.Output = output.FormatJSON
-		case "yaml":
-			opts.Output = output.FormatYAML
-		default:
-			return opts, nil, fmt.Errorf("invalid output format: %s (use table, json, or yaml)", *outFmt)
-		}
-	} else {
-		opts.Output = output.DefaultFormat()
-	}
-
-	remaining := fs.Args()
-	// Skip "--" separator if present.
-	if len(remaining) > 0 && remaining[0] == "--" {
-		remaining = remaining[1:]
-	}
-
-	return opts, remaining, nil
+	return "a"
 }
 
 func printUsage(w io.Writer) {
@@ -565,45 +534,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --password-stdin     Read password from stdin instead of interactive prompt")
 	fmt.Fprintln(w, "  --confirm-target     Exact target text for non-interactive destructive confirmation")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Run 'nodex help <command>' for details on a specific command.")
-}
-
-func printCommandHelp(w io.Writer, name string) bool {
-	cmd, ok := commands[name]
-	if !ok {
-		fmt.Fprintf(w, "Unknown command: %s\n", name)
-		return false
-	}
-	fmt.Fprintf(w, "nodex %s — %s\n", name, cmd.short)
-	fmt.Fprintln(w)
-	if cmd.sub != nil {
-		fmt.Fprintln(w, "Subcommands:")
-		names := make([]string, 0, len(cmd.sub))
-		for subName := range cmd.sub {
-			names = append(names, subName)
-		}
-		sort.Strings(names)
-		for _, subName := range names {
-			sub := cmd.sub[subName]
-			fmt.Fprintf(w, "  %-14s %s\n", subName, sub.short)
-		}
-	}
-	return true
-}
-
-func printSubcommandUsage(w io.Writer, cmd *command) {
-	fmt.Fprintf(w, "Usage: nodex %s <subcommand> [args]\n", cmd.name)
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Subcommands:")
-	names := make([]string, 0, len(cmd.sub))
-	for name := range cmd.sub {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		sub := cmd.sub[name]
-		fmt.Fprintf(w, "  %-14s %s\n", name, sub.short)
-	}
+	fmt.Fprintln(w, "Run 'nodex help <command>' or 'nodex <command> --help' for details on a specific command.")
 }
 
 // Exported for testing.

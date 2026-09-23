@@ -64,7 +64,7 @@ internal/version/                  Build metadata resolution
 
 Commands are registered via `internal/cli/root.go` using a `register()` function that builds a tree of named commands with subcommands. Top-level commands dispatch to handlers in `internal/cli/` (e.g., `runVMStart`, `runNodeList`, `runProfileAdd`).
 
-Global flags are parsed before the command name with Go's standard `flag` package:
+Global and mutation flags are parsed by the custom scanner in `internal/cli/flagscan.go` (`parseGlobal`). Unlike Go's standard `flag` package, the scanner does not stop at the first non-flag token, so global flags may appear anywhere in the argument list — before, between, or after the command path tokens. It separates the resolved command path from the handler argument region, passes handler-owned flags through verbatim (registry in `internal/cli/flags.go`), and captures `-h`/`--help`/`-help` into a help path that short-circuits dispatch. Help rendering lives in `internal/cli/help.go`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -72,6 +72,7 @@ Global flags are parsed before the command name with Go's standard `flag` packag
 | `--output` | string | table/json | Output format: table, json, yaml |
 | `--timeout` | duration | 30s | Provider request timeout |
 | `--limit` | int | 0 | Limit output items (0 = no limit) |
+| `--confirm-target` | string | "" | Pre-confirm the destructive type-in target |
 | `--all` | bool | false | Aggregate across all configured profiles |
 | `--no-color` | bool | false | Disable color output |
 | `--non-interactive` | bool | false | Disable interactive prompts |

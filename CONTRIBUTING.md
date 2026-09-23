@@ -83,7 +83,7 @@ When changing user-visible behavior, update the relevant documentation in the sa
 - `SECURITY.md` when security-sensitive behavior changes
 - `SUPPORT.md` when supported scope changes
 
-Verify command examples against the actual CLI. Global flags must appear before the command name: `nodex --output json node list`.
+Verify command examples against the actual CLI. Global flags may appear at any position in the command line: `nodex --output json node list` and `nodex node list --output json` are equivalent.
 
 ## Pull Requests
 

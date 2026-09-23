@@ -117,7 +117,7 @@ nodex replication        Manage replication jobs
 nodex completion         Generate shell completions
 ```
 
-Global flags go before the command name: `nodex --output json node list`.
+Global flags may appear at any position in the command line: `nodex --output json node list` and `nodex node list --output json` are equivalent. Use `nodex help <command>` or `<command> --help` for per-command help.
 
 ## Documentation
 

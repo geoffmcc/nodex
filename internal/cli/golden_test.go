@@ -288,21 +288,22 @@ func TestGoldenUsage(t *testing.T) {
 		{name: "help", args: []string{"help"}, want: "Commands:"},
 		{name: "version", args: []string{"version"}, want: "Nodex"},
 		{name: "unknown_command", args: []string{"bogus"}, want: "unknown command"},
-		{name: "vm_list_usage", args: []string{"vm"}, want: "Subcommands:"},
-		{name: "node_list_usage", args: []string{"node"}, want: "Subcommands:"},
+		{name: "vm_subcommand_usage", args: []string{"vm"}, want: "Subcommands:"},
+		{name: "node_subcommand_usage", args: []string{"node"}, want: "Subcommands:"},
+		{name: "node_article_usage", args: []string{"node"}, want: "a node subcommand is required"},
+		{name: "access_article_usage", args: []string{"access"}, want: "an access subcommand is required"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			err := Run(context.Background(), tt.args, &stdout, &stderr)
-			out := stdout.String()
-			combined := out
+			combined := stdout.String() + stderr.String()
 			if err != nil {
 				combined += err.Error()
 			}
 			if !strings.Contains(combined, tt.want) {
-				t.Errorf("output missing %q:\nstdout=%s\nerr=%v", tt.want, out, err)
+				t.Errorf("output missing %q:\nstdout=%s\nstderr=%s\nerr=%v", tt.want, stdout.String(), stderr.String(), err)
 			}
 		})
 	}

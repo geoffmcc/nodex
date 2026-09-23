@@ -8,19 +8,27 @@ This reference describes the commands implemented by the `nodex` CLI as verified
 nodex [global-flags] <command> [command-args]
 ```
 
-Global flags must appear before the command name:
+Global flags may appear anywhere on the command line — before, between, or after the command tokens:
 
 ```bash
 nodex --output json node list
-```
-
-This does NOT work because the flag appears after the command:
-
-```bash
+nodex node --output json list
 nodex node list --output json
 ```
 
-Use `nodex help` for top-level help and `nodex help <command>` for per-command help. The CLI does not provide detailed `--help` output for subcommands.
+Each of these is equivalent. Global flags are extracted wherever they appear; flags a subcommand owns itself (such as `--provider` for `nodex profile add`) are passed through to that handler untouched.
+
+Help is available at any depth with `--help`, `-h`, `-help`, or the `help` command:
+
+```bash
+nodex --help
+nodex help <command>
+nodex <command> --help
+nodex help <command> <subcommand> [<operation>]
+nodex <command> <subcommand> --help
+```
+
+`nodex help` prints the top-level command list, `nodex help version` shows a single command, `nodex vm snapshot --help` shows a subcommand's operations, and `nodex help pbs datastore show` reaches a dispatch operation. Help paths are forgiving: trailing tokens beyond the deepest resolvable command are ignored.
 
 ## Global Flags
 

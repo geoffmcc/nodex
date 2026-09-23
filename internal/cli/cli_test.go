@@ -150,8 +150,8 @@ func TestRun_ProviderSubcommands(t *testing.T) {
 	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
 		t.Errorf("expected ExitUsage, got: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Subcommands:") {
-		t.Error("expected subcommands list")
+	if !strings.Contains(stderr.String(), "Subcommands:") {
+		t.Error("expected subcommands list on stderr")
 	}
 }
 
@@ -184,8 +184,8 @@ func TestRun_ProfileSubcommands(t *testing.T) {
 	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
 		t.Errorf("expected ExitUsage, got: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "Subcommands:") {
-		t.Error("expected subcommands list")
+	if !strings.Contains(stderr.String(), "Subcommands:") {
+		t.Error("expected subcommands list on stderr")
 	}
 }
 
@@ -335,7 +335,6 @@ func TestRun_RejectsExtraArgs(t *testing.T) {
 		{"version", "extra"},
 		{"provider", "list", "extra"},
 		{"profile", "remove", "name", "--remove-credential-extra"},
-		{"help", "version", "extra"},
 	} {
 		var stdout, stderr bytes.Buffer
 		if err := Run(context.Background(), args, &stdout, &stderr); err == nil {
@@ -344,10 +343,108 @@ func TestRun_RejectsExtraArgs(t *testing.T) {
 	}
 }
 
+func TestRun_HelpPathTolerant(t *testing.T) {
+	// With multi-level help, help is forgiving: it renders help for the
+	// deepest resolvable prefix and ignores trailing tokens.
+	for _, args := range [][]string{
+		{"help", "version", "extra"},
+		{"help", "vm", "bogus"},
+		{"help", "pbs", "snapshot", "list", "extra"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
+			t.Fatalf("Run(%v) failed: %v", args, err)
+		}
+		if !strings.Contains(stdout.String(), "nodex") {
+			t.Errorf("Run(%v) produced no help output", args)
+		}
+	}
+}
+
 func TestRun_RejectsInvalidTimeout(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if err := Run(context.Background(), []string{"--timeout", "0s", "version"}, &stdout, &stderr); err == nil {
 		t.Fatal("expected invalid timeout error")
+	}
+}
+
+func TestRun_DeepHelpExitsZero(t *testing.T) {
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"--help"}, want: "Commands:"},
+		{args: []string{"vm", "--help"}, want: "nodex vm"},
+		{args: []string{"cluster", "--help"}, want: "nodex cluster"},
+		{args: []string{"help", "vm", "create"}, want: "nodex vm create"},
+		{args: []string{"help", "pbs", "snapshot", "list"}, want: "nodex pbs snapshot list"},
+		{args: []string{"help", "pbs", "garbage-collection"}, want: "Operations:"},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if err := Run(context.Background(), tt.args, &stdout, &stderr); err != nil {
+				t.Fatalf("Run(%v) failed with %v", tt.args, err)
+			}
+			if !strings.Contains(stdout.String(), tt.want) {
+				t.Errorf("Run(%v) stdout missing %q:\n%s", tt.args, tt.want, stdout.String())
+			}
+			if stdout.Len() == 0 && stderr.Len() == 0 {
+				t.Errorf("Run(%v) produced no output", tt.args)
+			}
+		})
+	}
+}
+
+func TestRun_DeepHelpDoesNotReachHandler(t *testing.T) {
+	// --help on a dispatch operation must render help without invoking the
+	// handler (which for e.g. access user create would prompt for credentials).
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"access", "user", "create", "--help"}, &stdout, &stderr); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	combined := stdout.String()
+	if !strings.Contains(combined, "nodex access user") {
+		t.Errorf("expected access user help, got:\n%s", combined)
+	}
+	if strings.Contains(combined, "Error:") || strings.Contains(combined, "password") {
+		t.Errorf("help reached a prompt/handler:\n%s", combined)
+	}
+}
+
+func TestRun_PostCommandGlobalsAccepted(t *testing.T) {
+	for _, args := range [][]string{
+		{"version", "--output", "json"},
+		{"version", "--yes"},
+		{"version", "--yes=false", "--quiet"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
+				t.Fatalf("Run(%v) failed: %v", args, err)
+			}
+			if !strings.Contains(stdout.String(), "Nodex") {
+				t.Errorf("Run(%v) expected version output, got: %s", args, stdout.String())
+			}
+		})
+	}
+}
+
+func TestRun_LiteralSeparator(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"--", "version"}, &stdout, &stderr); err != nil {
+		t.Fatalf("Run(-- version) failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Nodex") {
+		t.Errorf("expected version output, got: %s", stdout.String())
+	}
+}
+
+func TestRun_UnknownFlagRejected(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"node", "status", "--bogus"}, &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "unknown flag: --bogus") {
+		t.Fatalf("Run(node status --bogus) error = %v, want unknown flag", err)
 	}
 }
 
