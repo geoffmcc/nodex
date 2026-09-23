@@ -375,6 +375,9 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.Unused0 != "" {
 		m["unused0"] = c.Unused0
 	}
+	if c.Digest != "" {
+		m["digest"] = c.Digest
+	}
 	for key, value := range c.Raw {
 		m[key] = value
 	}
@@ -450,6 +453,9 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	}
 	if c.Hookscript != "" {
 		m["hookscript"] = c.Hookscript
+	}
+	if c.Digest != "" {
+		m["digest"] = c.Digest
 	}
 	for key, value := range c.Raw {
 		m[key] = value

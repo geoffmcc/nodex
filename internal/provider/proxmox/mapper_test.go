@@ -234,20 +234,31 @@ func TestVMConfigToMapPreservesUnusedAndRawFields(t *testing.T) {
 	got := vmConfigToMap(&client.VMConfigData{
 		VMID:    100,
 		Unused0: "local-lvm:vm-100-disk-1",
-		Raw:     map[string]string{"custom": "value"},
+		Digest:  "abc123",
+		Raw:     map[string]string{"serial0": "socket", "vga": "serial0"},
 	})
-	if got["unused0"] != "local-lvm:vm-100-disk-1" || got["custom"] != "value" {
-		t.Fatalf("config map = %#v", got)
+	for key, want := range map[string]string{
+		"unused0": "local-lvm:vm-100-disk-1",
+		"digest":  "abc123",
+		"serial0": "socket",
+		"vga":     "serial0",
+	} {
+		if got[key] != want {
+			t.Fatalf("config map[%q] = %#v, want %q", key, got[key], want)
+		}
 	}
 }
 
 func TestContainerConfigToMapPreservesRawFields(t *testing.T) {
 	got := containerConfigToMap(&client.ContainerConfigData{
-		VMID: 100,
-		Raw:  map[string]string{"custom": "value"},
+		VMID:   100,
+		Digest: "def456",
+		Raw:    map[string]string{"mp1": "local-lvm:ct-100-disk-1,mp=/data"},
 	})
-	if got["custom"] != "value" {
-		t.Fatalf("config map = %#v", got)
+	for key, want := range map[string]string{"digest": "def456", "mp1": "local-lvm:ct-100-disk-1,mp=/data"} {
+		if got[key] != want {
+			t.Fatalf("config map[%q] = %#v, want %q", key, got[key], want)
+		}
 	}
 }
 

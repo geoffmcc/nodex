@@ -193,6 +193,33 @@ func TestParseGlobalDefaultOutputFormat(t *testing.T) {
 	}
 }
 
+func TestParseGlobalConfirmTargetAtAnyPosition(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+		rem  []string
+	}{
+		{"before command", []string{"--confirm-target", "proxmox/9999", "vm", "delete", "proxmox/9999"}, "proxmox/9999", []string{"vm", "delete", "proxmox/9999"}},
+		{"inline after command path", []string{"vm", "delete", "--confirm-target=proxmox/9999", "proxmox/9999"}, "proxmox/9999", []string{"vm", "delete", "proxmox/9999"}},
+		{"interspersed with handler args", []string{"vm", "delete", "--yes", "proxmox/9999", "--confirm-target", "proxmox/9999", "--force"}, "proxmox/9999", []string{"vm", "delete", "proxmox/9999"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts, _, remaining, err := parseGlobal(tt.args)
+			if err != nil {
+				t.Fatalf("parseGlobal: %v", err)
+			}
+			if opts.ConfirmTarget != tt.want {
+				t.Errorf("ConfirmTarget = %q, want %q", opts.ConfirmTarget, tt.want)
+			}
+			if strings.Join(remaining, " ") != strings.Join(tt.rem, " ") {
+				t.Errorf("remaining = %v, want %v", remaining, tt.rem)
+			}
+		})
+	}
+}
+
 func TestNextArg(t *testing.T) {
 	args := []string{"node", "list"}
 	if v, ok := nextArg(args, 0); !ok || v != "list" {

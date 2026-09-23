@@ -3,10 +3,11 @@
   "operation": "vm start",
   "profile": "e2e",
   "provider": "nodex-e2e-mock",
-  "target": "e2e-node/100",
+  "target": "e2e-node/101",
   "safety": "reversible",
-  "submitted": false,
-  "waited": false,
+  "upid": "UPID:e2e-node/00003039/6553F100",
+  "submitted": true,
+  "waited": true,
   "success": true,
-  "status": "already running"
+  "status": "OK"
 }

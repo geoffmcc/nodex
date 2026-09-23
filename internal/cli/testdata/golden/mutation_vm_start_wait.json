@@ -5,9 +5,8 @@
   "provider": "nodex-e2e-mock",
   "target": "e2e-node/100",
   "safety": "reversible",
-  "upid": "UPID:e2e-node/00003039/6553F100",
-  "submitted": true,
-  "waited": true,
+  "submitted": false,
+  "waited": false,
   "success": true,
-  "status": "OK"
+  "status": "already running"
 }

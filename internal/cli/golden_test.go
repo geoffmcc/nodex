@@ -100,6 +100,13 @@ func TestGoldenJSON(t *testing.T) {
 		{name: "mutation_vm_start_wait", args: []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/100"}},
 		{name: "mutation_vm_update", args: []string{"--output", "json", "--yes", "vm", "update", "e2e-node/100", "memory=4096"}},
 		{name: "mutation_ct_start", args: []string{"--output", "json", "--yes", "container", "start", "e2e-node/200"}},
+		// Submit-path mutations against guests absent from the mock listing.
+		{name: "mutation_vm_start_submit", args: []string{"--output", "json", "--yes", "vm", "start", "e2e-node/101"}},
+		{name: "mutation_vm_start_wait_submit", args: []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/101"}},
+		{name: "mutation_vm_resume_submit", args: []string{"--output", "json", "--yes", "vm", "resume", "e2e-node/101"}},
+		{name: "mutation_vm_unpause_submit", args: []string{"--output", "json", "--yes", "vm", "unpause", "e2e-node/101"}},
+		{name: "mutation_ct_start_submit", args: []string{"--output", "json", "--yes", "container", "start", "e2e-node/201"}},
+		{name: "mutation_ct_resume_submit", args: []string{"--output", "json", "--yes", "container", "resume", "e2e-node/201"}},
 	}
 
 	goldenDir := filepath.Join("testdata", "golden")
@@ -240,6 +247,8 @@ func TestGoldenTable(t *testing.T) {
 		// Mutation table output
 		{name: "mutation_vm_start", args: []string{"--output", "table", "--yes", "vm", "start", "e2e-node/100"}},
 		{name: "mutation_vm_start_wait", args: []string{"--output", "table", "--yes", "--wait", "vm", "start", "e2e-node/100"}},
+		{name: "mutation_vm_start_submit", args: []string{"--output", "table", "--yes", "vm", "start", "e2e-node/101"}},
+		{name: "mutation_vm_start_wait_submit", args: []string{"--output", "table", "--yes", "--wait", "vm", "start", "e2e-node/101"}},
 	}
 
 	goldenDir := filepath.Join("testdata", "golden", "table")

@@ -1429,7 +1429,7 @@ func TestCommandsWithFlagsSucceed(t *testing.T) {
 		name string
 		args []string
 	}{
-		{"vm-start-yes", []string{"--output", "table", "--yes", "vm", "start", "e2e-node/100"}},
+		{"vm-start-yes", []string{"--output", "table", "--yes", "vm", "start", "e2e-node/101"}},
 		{"vm-stop-yes", []string{"--output", "table", "--yes", "vm", "stop", "e2e-node/100"}},
 		{"vm-shutdown-yes", []string{"--output", "table", "--yes", "vm", "shutdown", "e2e-node/100"}},
 		{"vm-update-yes", []string{"--output", "table", "--yes", "vm", "update", "e2e-node/100", "memory=4096"}},
@@ -1594,7 +1594,7 @@ func TestMutationJSONOutputIsValid(t *testing.T) {
 
 	t.Run("vm-start-json", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
-		err := Run(context.Background(), []string{"--output", "json", "--yes", "vm", "start", "e2e-node/100"}, &stdout, &stderr)
+		err := Run(context.Background(), []string{"--output", "json", "--yes", "vm", "start", "e2e-node/101"}, &stdout, &stderr)
 		if err != nil {
 			t.Fatalf("vm start: %v", err)
 		}
@@ -1615,7 +1615,7 @@ func TestMutationJSONOutputIsValid(t *testing.T) {
 
 	t.Run("vm-start-wait-json", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
-		err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/100"}, &stdout, &stderr)
+		err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/101"}, &stdout, &stderr)
 		if err != nil {
 			t.Fatalf("vm start --wait: %v", err)
 		}
@@ -1623,6 +1623,20 @@ func TestMutationJSONOutputIsValid(t *testing.T) {
 		for _, want := range []string{`"waited": true`, `"status": "OK"`} {
 			if !strings.Contains(out, want) {
 				t.Errorf("JSON output missing %q: %s", want, out)
+			}
+		}
+	})
+
+	t.Run("vm-start-noop-json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/100"}, &stdout, &stderr)
+		if err != nil {
+			t.Fatalf("vm start (already running): %v", err)
+		}
+		out := stdout.String()
+		for _, want := range []string{`"submitted": false`, `"success": true`, `"status": "already running"`, `"waited": false`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("no-op JSON output missing %q: %s", want, out)
 			}
 		}
 	})
@@ -1652,7 +1666,7 @@ func TestMutationStdoutStderrSeparation(t *testing.T) {
 
 	t.Run("wait-progress-on-stderr", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
-		err := Run(context.Background(), []string{"--output", "table", "--yes", "--wait", "vm", "start", "e2e-node/100"}, &stdout, &stderr)
+		err := Run(context.Background(), []string{"--output", "table", "--yes", "--wait", "vm", "start", "e2e-node/101"}, &stdout, &stderr)
 		if err != nil {
 			t.Fatalf("vm start --wait: %v", err)
 		}
@@ -1662,6 +1676,20 @@ func TestMutationStdoutStderrSeparation(t *testing.T) {
 		// Stderr must not contain the result data.
 		if strings.Contains(stderr.String(), "completed OK") {
 			t.Errorf("result data leaked to stderr: %q", stderr.String())
+		}
+	})
+
+	t.Run("noop-does-not-wait-or-spam-stderr", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		err := Run(context.Background(), []string{"--output", "table", "--yes", "--wait", "vm", "start", "e2e-node/100"}, &stdout, &stderr)
+		if err != nil {
+			t.Fatalf("vm start (already running): %v", err)
+		}
+		if strings.Contains(stderr.String(), "Waiting for task") {
+			t.Errorf("no-op should not wait, but stderr has wait progress: %q", stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "already running") {
+			t.Errorf("table output missing no-op note: %q", stdout.String())
 		}
 	})
 }

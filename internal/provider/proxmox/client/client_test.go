@@ -436,6 +436,48 @@ func TestGetContainerConfigInjectsVMIDFromParameter(t *testing.T) {
 	}
 }
 
+func TestGetVMConfigPreservesUnknownKeysAndDigest(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"data":{"vmid":100,"name":"test-vm","serial0":"socket","vga":"serial0","digest":"abcdef123456","protection":1}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	config, err := c.GetVMConfig(context.Background(), "proxmox", 100)
+	if err != nil {
+		t.Fatalf("GetVMConfig: %v", err)
+	}
+	if config.Digest != "abcdef123456" {
+		t.Errorf("Digest = %q, want preserved digest", config.Digest)
+	}
+	if config.Protection != 1 {
+		t.Errorf("Protection = %d, want 1", config.Protection)
+	}
+	if config.Raw["serial0"] != "socket" || config.Raw["vga"] != "serial0" {
+		t.Errorf("Raw = %#v, want serial0/vga preserved", config.Raw)
+	}
+}
+
+func TestGetContainerConfigPreservesUnknownKeysAndDigest(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"data":{"hostname":"test-ct","cores":1,"memory":512,"digest":"fedcba654321","protection":1,"mp1":"local-lvm:ct-77-disk-1,mp=/data","unused0":"local-lvm:ct-77-disk-0"}}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	config, err := c.GetContainerConfig(context.Background(), "proxmox", 77)
+	if err != nil {
+		t.Fatalf("GetContainerConfig: %v", err)
+	}
+	if config.Digest != "fedcba654321" {
+		t.Errorf("Digest = %q, want preserved digest", config.Digest)
+	}
+	if config.Protection != 1 {
+		t.Errorf("Protection = %d, want 1", config.Protection)
+	}
+	if config.Raw["mp1"] != "local-lvm:ct-77-disk-1,mp=/data" || config.Raw["unused0"] != "local-lvm:ct-77-disk-0" {
+		t.Errorf("Raw = %#v, want mp1/unused0 preserved", config.Raw)
+	}
+}
+
 func TestGetVMConfigRejectsEmptyNode(t *testing.T) {
 	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
 	_, err := c.GetVMConfig(context.Background(), "", 100)
