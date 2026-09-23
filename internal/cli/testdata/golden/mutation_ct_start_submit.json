@@ -3,10 +3,10 @@
   "operation": "container start",
   "profile": "e2e",
   "provider": "nodex-e2e-mock",
-  "target": "e2e-node/200",
+  "target": "e2e-node/201",
   "safety": "reversible",
-  "submitted": false,
+  "upid": "UPID:e2e-node/00003042/6553F100",
+  "submitted": true,
   "waited": false,
-  "success": true,
-  "status": "already running"
+  "success": true
 }

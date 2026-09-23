@@ -67,6 +67,89 @@ func parseNodeVMID(arg string) (node string, vmid int, err error) {
 	return node, vmid, nil
 }
 
+// lifecycleDesiredState returns the guest status that indicates a lifecycle
+// operation is already satisfied (a no-op). It returns "" when the operation
+// has no meaningful desired state (e.g. reset/reboot always take effect).
+func lifecycleDesiredState(resourceType, operation string) string {
+	switch resourceType {
+	case "vm":
+		switch operation {
+		case "start", "resume", "unpause":
+			return "running"
+		case "stop", "shutdown":
+			return "stopped"
+		case "suspend", "pause":
+			return "paused"
+		}
+	case "container":
+		switch operation {
+		case "start", "resume":
+			return "running"
+		case "stop", "shutdown":
+			return "stopped"
+		case "suspend":
+			return "paused"
+		}
+	}
+	return ""
+}
+
+// currentGuestStatus returns the reported status of a guest when the provider
+// exposes guest state and the guest is listed. ok=false means the state could
+// not be determined and callers should proceed with a normal submit.
+func currentGuestStatus(ctx context.Context, prov domain.Provider, resourceType, node string, vmid int) (string, bool) {
+	id := fmt.Sprintf("%s/%d", node, vmid)
+	if resourceType == "vm" {
+		vi, ok := prov.(domain.VMInspector)
+		if !ok {
+			return "", false
+		}
+		vms, err := vi.VMs(ctx)
+		if err != nil {
+			return "", false
+		}
+		vm, found := findVM(vms, id)
+		if !found {
+			return "", false
+		}
+		return vm.Status, true
+	}
+	ci, ok := prov.(domain.ContainerInspector)
+	if !ok {
+		return "", false
+	}
+	cts, err := ci.Containers(ctx)
+	if err != nil {
+		return "", false
+	}
+	ct, found := findContainer(cts, id)
+	if !found {
+		return "", false
+	}
+	return ct.Status, true
+}
+
+// isBenignLifecycleStatus reports whether a provider status/error string
+// indicates the lifecycle operation was already satisfied on the guest side
+// (e.g. PVE rejecting a start with "VM 9999 already running"). Only
+// reach-a-state operations with a defined desired state qualify; reset/reboot
+// never do because they take effect on a running guest.
+func isBenignLifecycleStatus(resourceType, operation, status string) bool {
+	switch lifecycleDesiredState(resourceType, operation) {
+	case "":
+		return false
+	case "running":
+		lower := strings.ToLower(status)
+		return strings.Contains(lower, "already running") || strings.Contains(lower, "already started")
+	case "stopped":
+		lower := strings.ToLower(status)
+		return strings.Contains(lower, "not running") || strings.Contains(lower, "already stopped") || strings.Contains(lower, "already shutdown")
+	case "paused":
+		return strings.Contains(strings.ToLower(status), "already paused")
+	}
+	return false
+}
+
 // runLifecycle executes a VM lifecycle operation with safety checks and optional task polling.
 func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation, resourceType string, tier safety.Tier) error {
 	if len(args) != 1 {
@@ -116,9 +199,34 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
+	// Idempotent pre-check: if the guest is already in the desired state,
+	// report success with a note and skip submission entirely.
+	if desired := lifecycleDesiredState(resourceType, operation); desired != "" {
+		if state, ok := currentGuestStatus(ctx, prov, resourceType, node, vmid); ok && strings.EqualFold(state, desired) {
+			profileName, _ := resolveProfileName(cmdCtx)
+			opResult := output.NewOperationResult(resourceType+" "+operation, prov.Name(), profileName)
+			opResult.Target = fmt.Sprintf("%s/%d", node, vmid)
+			opResult.Safety = tier.String()
+			opResult.Success = true
+			opResult.Status = fmt.Sprintf("already %s", state)
+			return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
+		}
+	}
+
 	// Execute operation.
 	upid, err := executeLifecycleOp(ctx, lc, resourceType, operation, node, vmid)
 	if err != nil {
+		// A race between the pre-check and submit can still surface a
+		// benign "already in state" rejection from the provider.
+		if isBenignLifecycleStatus(resourceType, operation, err.Error()) {
+			profileName, _ := resolveProfileName(cmdCtx)
+			opResult := output.NewOperationResult(resourceType+" "+operation, prov.Name(), profileName)
+			opResult.Target = fmt.Sprintf("%s/%d", node, vmid)
+			opResult.Safety = tier.String()
+			opResult.Success = true
+			opResult.Status = "already in desired state"
+			return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
+		}
 		return fmt.Errorf("%s %s %s/%d: %w", resourceType, operation, node, vmid, err)
 	}
 
@@ -177,6 +285,13 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 		)
 	}
 	if !tr.OK {
+		// The task may have been rejected because the guest is already in the
+		// desired state (a race between the pre-check and the task submission).
+		if isBenignLifecycleStatus(resourceType, operation, tr.Status) {
+			opResult.Success = true
+			opResult.Status = tr.Status
+			return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
+		}
 		opResult.Success = false
 		opResult.Error = &output.ResultError{
 			Class:  "task_failure",

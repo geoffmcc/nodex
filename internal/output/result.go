@@ -102,15 +102,29 @@ func writeResultTable(w io.Writer, r OperationResult) error {
 		return writeLine(w, fmt.Sprintf("%s on %s FAILED: %s",
 			r.Operation, r.Target, r.Error.Detail))
 	case r.Waited && r.Success:
+		if note := resultStatusNote(r); note != "completed" {
+			return writeLine(w, fmt.Sprintf("Task %s %s for %s on %s",
+				r.UPID, note, r.Operation, r.Target))
+		}
 		return writeLine(w, fmt.Sprintf("Task %s completed OK for %s on %s",
 			r.UPID, r.Operation, r.Target))
 	case r.UPID != "" && r.Submitted:
 		return writeLine(w, fmt.Sprintf("Submitted task %s for %s on %s",
 			r.UPID, r.Operation, r.Target))
 	default:
-		// Non-UPID successful mutations.
-		return writeLine(w, fmt.Sprintf("%s on %s completed", r.Operation, r.Target))
+		// Non-UPID successful mutations. If a status note is present (e.g. a
+		// lifecycle no-op such as "already running"), render it instead of
+		// claiming the operation completed.
+		return writeLine(w, fmt.Sprintf("%s on %s %s", r.Operation, r.Target, resultStatusNote(r)))
 	}
+}
+
+// resultStatusNote returns the status note when present, otherwise "completed".
+func resultStatusNote(r OperationResult) string {
+	if r.Status != "" && r.Status != "OK" {
+		return r.Status
+	}
+	return "completed"
 }
 
 // writeLine writes a redacted, newline-terminated string and returns any write error.

@@ -404,23 +404,25 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "pools list", args: []string{"--output", "json", "pools", "list"}, want: []string{`"poolid": "admins"`, `"comment": "Admin resources"`, `"qemu/100"`}},
 		{name: "cluster log", args: []string{"--output", "json", "cluster", "log"}, want: []string{`"time": 1700000000`, `"tag": "pvedaemon"`, `"message": "starting cluster services"`, `"node": "e2e-node"`}},
 		{name: "status with ha", args: []string{"--output", "json", "status"}, want: []string{`"quorum": 3`, `"ha":`, `"status": "online"`}},
-		// Lifecycle commands (Tier 1, need --yes)
-		{name: "vm start", args: []string{"--yes", "vm", "start", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		// Lifecycle commands (Tier 1, need --yes). VMIDs absent from the mock
+		// guest list exercise the submit path; the running mock guests trigger
+		// the idempotent no-op path (see TestLifecycleIdempotentNoop).
+		{name: "vm start", args: []string{"--yes", "vm", "start", "e2e-node/101"}, want: []string{"UPID:e2e-node"}},
 		{name: "vm stop", args: []string{"--yes", "vm", "stop", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
 		{name: "vm shutdown", args: []string{"--yes", "vm", "shutdown", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
-		{name: "vm resume", args: []string{"--yes", "vm", "resume", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		{name: "vm resume", args: []string{"--yes", "vm", "resume", "e2e-node/101"}, want: []string{"UPID:e2e-node"}},
 		{name: "vm pause", args: []string{"--yes", "vm", "pause", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
-		{name: "vm unpause", args: []string{"--yes", "vm", "unpause", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		{name: "vm unpause", args: []string{"--yes", "vm", "unpause", "e2e-node/101"}, want: []string{"UPID:e2e-node"}},
 		// Lifecycle commands (Tier 2, need --yes --force)
 		{name: "vm reset", args: []string{"--yes", "--force", "vm", "reset", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
 		{name: "vm reboot", args: []string{"--yes", "--force", "vm", "reboot", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
 		// Container lifecycle
-		{name: "container start", args: []string{"--yes", "container", "start", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
+		{name: "container start", args: []string{"--yes", "container", "start", "e2e-node/201"}, want: []string{"UPID:e2e-node"}},
 		{name: "container stop", args: []string{"--yes", "container", "stop", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
 		{name: "container shutdown", args: []string{"--yes", "container", "shutdown", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
 		{name: "container reboot", args: []string{"--yes", "--force", "container", "reboot", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
 		{name: "container suspend", args: []string{"--yes", "container", "suspend", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
-		{name: "container resume", args: []string{"--yes", "container", "resume", "e2e-node/200"}, want: []string{"UPID:e2e-node"}},
+		{name: "container resume", args: []string{"--yes", "container", "resume", "e2e-node/201"}, want: []string{"UPID:e2e-node"}},
 		// Phase 3: Config updates
 		{name: "vm update", args: []string{"--yes", "vm", "update", "e2e-node/100", "memory=4096", "cores=4"}, want: []string{"UPID:e2e-node"}},
 		{name: "container update", args: []string{"--yes", "container", "update", "e2e-node/200", "memory=2048", "cores=2"}, want: []string{"UPID:e2e-node"}},
@@ -449,6 +451,46 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 }
 
 // Phase 7: Multi-Cluster
+
+// TestLifecycleIdempotentNoop verifies that lifecycle operations against a
+// guest that is already in the desired state report a successful no-op
+// (success=true, submitted=false) with a note, instead of submitting a task
+// that fails with "VM 100 already running".
+func TestLifecycleIdempotentNoop(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "vm start on running vm", args: []string{"--yes", "vm", "start", "e2e-node/100"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
+		{name: "vm start --wait on running vm", args: []string{"--yes", "--wait", "vm", "start", "e2e-node/100"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
+		{name: "vm resume on running vm", args: []string{"--yes", "vm", "resume", "e2e-node/100"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
+		{name: "vm unpause on running vm", args: []string{"--yes", "vm", "unpause", "e2e-node/100"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
+		{name: "container start on running ct", args: []string{"--yes", "container", "start", "e2e-node/200"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
+		{name: "container resume on running ct", args: []string{"--yes", "container", "resume", "e2e-node/200"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
+		// Destructive ops (reset/reboot) always submit regardless of current state.
+		{name: "vm reset on running vm still submits", args: []string{"--yes", "--force", "vm", "reset", "e2e-node/100"}, want: []string{`"submitted": true`, `"upid": "UPID:e2e-node`}},
+		{name: "vm reboot on running vm still submits", args: []string{"--yes", "--force", "vm", "reboot", "e2e-node/100"}, want: []string{`"submitted": true`, `"upid": "UPID:e2e-node`}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if err := Run(context.Background(), append([]string{"--output", "json"}, tt.args...), &stdout, &stderr); err != nil {
+				t.Fatalf("Run(%v): %v stderr=%q", tt.args, err, stderr.String())
+			}
+			out := stdout.String()
+			for _, want := range tt.want {
+				if !strings.Contains(out, want) {
+					t.Fatalf("Run(%v) output missing %q:\n%s", tt.args, want, out)
+				}
+			}
+		})
+	}
+}
 
 func TestRunProfileExport(t *testing.T) {
 	isolateConfigAndHome(t)
