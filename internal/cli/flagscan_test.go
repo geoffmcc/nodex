@@ -192,3 +192,16 @@ func TestParseGlobalDefaultOutputFormat(t *testing.T) {
 		t.Errorf("Output = %v, want default %v", opts.Output, output.DefaultFormat())
 	}
 }
+
+func TestNextArg(t *testing.T) {
+	args := []string{"node", "list"}
+	if v, ok := nextArg(args, 0); !ok || v != "list" {
+		t.Errorf("nextArg(args, 0) = %q, %v; want %q, true", v, ok, "list")
+	}
+	if v, ok := nextArg(args, 1); ok || v != "" {
+		t.Errorf("nextArg(args, 1) = %q, %v; want empty, false", v, ok)
+	}
+	if v, ok := nextArg(nil, 0); ok || v != "" {
+		t.Errorf("nextArg(nil, 0) = %q, %v; want empty, false", v, ok)
+	}
+}

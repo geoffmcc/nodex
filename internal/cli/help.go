@@ -241,10 +241,8 @@ var leafHelp = map[string]helpEntry{
 // flagDisplay returns the flags a command owns as a sort-stable list of
 // --flag tokens (value flags beyond the exact sets are noted inline).
 func flagDisplay(fs flagSet) []string {
-	var out []string
-	for _, f := range fs.exact {
-		out = append(out, f)
-	}
+	out := make([]string, 0, len(fs.exact)+len(fs.params))
+	out = append(out, fs.exact...)
 	for _, p := range fs.params {
 		out = append(out, "--"+p+"=<value>")
 	}
