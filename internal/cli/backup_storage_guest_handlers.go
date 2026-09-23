@@ -109,10 +109,21 @@ func checkDestructive(cmdCtx *Context, desc, target string) error {
 	if !result.ConfirmationRequired {
 		return nil // Authorized (all conditions met).
 	}
-	if cmdCtx.Opts.NonInteractive {
+	// --confirm-target is the non-interactive equivalent of typing the
+	// target. It is honored regardless of --non-interactive (e.g. piped
+	// stdin) but still requires BOTH --yes --force AND an exact match.
+	// Any mismatch or missing flag is a refusal; it never falls back to a
+	// TTY prompt when a confirm target was supplied.
+	if cmdCtx.Opts.ConfirmTarget != "" {
 		if cmdCtx.Opts.Yes && cmdCtx.Opts.Force && cmdCtx.Opts.ConfirmTarget == target {
 			return nil
 		}
+		return app.NewExitError(
+			fmt.Errorf("confirmation refused: --confirm-target %q does not authorize %q (requires --yes --force and an exact match)", cmdCtx.Opts.ConfirmTarget, target),
+			app.ExitUsage,
+		)
+	}
+	if cmdCtx.Opts.NonInteractive {
 		return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 	}
 	if result.Warning != "" {
