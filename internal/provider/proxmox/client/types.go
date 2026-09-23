@@ -337,41 +337,42 @@ type VMConfigData struct {
 	Nameserver   string            `json:"nameserver,omitempty"`
 	SearchDomain string            `json:"searchdomain,omitempty"`
 	Unused0      string            `json:"unused0,omitempty"`
+	Digest       string            `json:"digest,omitempty"`
 	Raw          map[string]string `json:"raw,omitempty"`
 }
 
 func (d *VMConfigData) UnmarshalJSON(data []byte) error {
 	type rawVMConfigData struct {
-		VMID         json.RawMessage   `json:"vmid"`
-		Name         string            `json:"name,omitempty"`
-		CPU          json.RawMessage   `json:"cores,omitempty"`
-		CPUType      string            `json:"cpu,omitempty"`
-		Memory       json.RawMessage   `json:"memory,omitempty"`
-		Balloon      json.RawMessage   `json:"balloon,omitempty"`
-		Net0         string            `json:"net0,omitempty"`
-		Scsi0        string            `json:"scsi0,omitempty"`
-		Boot         string            `json:"boot,omitempty"`
-		OnBoot       json.RawMessage   `json:"onboot,omitempty"`
-		Agent        json.RawMessage   `json:"agent,omitempty"`
-		SMBIOS1      string            `json:"smbios1,omitempty"`
-		Numa         json.RawMessage   `json:"numa,omitempty"`
-		OSType       string            `json:"ostype,omitempty"`
-		Description  string            `json:"description,omitempty"`
-		Protection   json.RawMessage   `json:"protection,omitempty"`
-		Tags         string            `json:"tags,omitempty"`
-		VMGenID      string            `json:"vmgenid,omitempty"`
-		Args         string            `json:"args,omitempty"`
-		Bios         string            `json:"bios,omitempty"`
-		IDE2         string            `json:"ide2,omitempty"`
-		ScsiHW       string            `json:"scsihw,omitempty"`
-		Machine      string            `json:"machine,omitempty"`
-		Hotplug      string            `json:"hotplug,omitempty"`
-		CIUser       string            `json:"ciuser,omitempty"`
-		CICustom     string            `json:"cicustom,omitempty"`
-		Nameserver   string            `json:"nameserver,omitempty"`
-		SearchDomain string            `json:"searchdomain,omitempty"`
-		Unused0      string            `json:"unused0,omitempty"`
-		Raw          map[string]string `json:"raw,omitempty"`
+		VMID         json.RawMessage `json:"vmid"`
+		Name         string          `json:"name,omitempty"`
+		CPU          json.RawMessage `json:"cores,omitempty"`
+		CPUType      string          `json:"cpu,omitempty"`
+		Memory       json.RawMessage `json:"memory,omitempty"`
+		Balloon      json.RawMessage `json:"balloon,omitempty"`
+		Net0         string          `json:"net0,omitempty"`
+		Scsi0        string          `json:"scsi0,omitempty"`
+		Boot         string          `json:"boot,omitempty"`
+		OnBoot       json.RawMessage `json:"onboot,omitempty"`
+		Agent        json.RawMessage `json:"agent,omitempty"`
+		SMBIOS1      string          `json:"smbios1,omitempty"`
+		Numa         json.RawMessage `json:"numa,omitempty"`
+		OSType       string          `json:"ostype,omitempty"`
+		Description  string          `json:"description,omitempty"`
+		Protection   json.RawMessage `json:"protection,omitempty"`
+		Tags         string          `json:"tags,omitempty"`
+		VMGenID      string          `json:"vmgenid,omitempty"`
+		Args         string          `json:"args,omitempty"`
+		Bios         string          `json:"bios,omitempty"`
+		IDE2         string          `json:"ide2,omitempty"`
+		ScsiHW       string          `json:"scsihw,omitempty"`
+		Machine      string          `json:"machine,omitempty"`
+		Hotplug      string          `json:"hotplug,omitempty"`
+		CIUser       string          `json:"ciuser,omitempty"`
+		CICustom     string          `json:"cicustom,omitempty"`
+		Nameserver   string          `json:"nameserver,omitempty"`
+		SearchDomain string          `json:"searchdomain,omitempty"`
+		Unused0      string          `json:"unused0,omitempty"`
+		Digest       string          `json:"digest,omitempty"`
 	}
 	var raw rawVMConfigData
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -407,7 +408,8 @@ func (d *VMConfigData) UnmarshalJSON(data []byte) error {
 		Nameserver:   raw.Nameserver,
 		SearchDomain: raw.SearchDomain,
 		Unused0:      raw.Unused0,
-		Raw:          raw.Raw,
+		Digest:       raw.Digest,
+		Raw:          configRaw(data, vmConfigKnownKeys),
 	}
 	return nil
 }
@@ -445,7 +447,69 @@ type ContainerConfigData struct {
 	Dev0         string            `json:"dev0,omitempty"`
 	Fstab        string            `json:"fstab,omitempty"`
 	Hookscript   string            `json:"hookscript,omitempty"`
+	Digest       string            `json:"digest,omitempty"`
 	Raw          map[string]string `json:"raw,omitempty"`
+}
+
+func (d *ContainerConfigData) UnmarshalJSON(data []byte) error {
+	type rawContainerConfigData struct {
+		VMID         json.RawMessage `json:"vmid"`
+		Hostname     string          `json:"hostname,omitempty"`
+		CPU          json.RawMessage `json:"cores,omitempty"`
+		Memory       json.RawMessage `json:"memory,omitempty"`
+		Swap         json.RawMessage `json:"swap,omitempty"`
+		Rootfs       string          `json:"rootfs,omitempty"`
+		MP0          string          `json:"mp0,omitempty"`
+		Net0         string          `json:"net0,omitempty"`
+		OnBoot       json.RawMessage `json:"onboot,omitempty"`
+		OSType       string          `json:"ostype,omitempty"`
+		Description  string          `json:"description,omitempty"`
+		Protection   json.RawMessage `json:"protection,omitempty"`
+		Tags         string          `json:"tags,omitempty"`
+		Unfiltered   json.RawMessage `json:"unfiltered,omitempty"`
+		Features     string          `json:"features,omitempty"`
+		Architecture string          `json:"architecture,omitempty"`
+		Nameserver   string          `json:"nameserver,omitempty"`
+		SearchDomain string          `json:"searchdomain,omitempty"`
+		Password     string          `json:"password,omitempty"`
+		SSHKeys      string          `json:"sshkeys,omitempty"`
+		Dev0         string          `json:"dev0,omitempty"`
+		Fstab        string          `json:"fstab,omitempty"`
+		Hookscript   string          `json:"hookscript,omitempty"`
+		Digest       string          `json:"digest,omitempty"`
+	}
+	var raw rawContainerConfigData
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*d = ContainerConfigData{
+		VMID:         decodeInt(raw.VMID),
+		Hostname:     raw.Hostname,
+		CPU:          decodeInt(raw.CPU),
+		Memory:       decodeInt(raw.Memory),
+		Swap:         decodeInt(raw.Swap),
+		Rootfs:       raw.Rootfs,
+		MP0:          raw.MP0,
+		Net0:         raw.Net0,
+		OnBoot:       decodeInt(raw.OnBoot),
+		OSType:       raw.OSType,
+		Description:  raw.Description,
+		Protection:   decodeInt(raw.Protection),
+		Tags:         raw.Tags,
+		Unfiltered:   decodeInt(raw.Unfiltered),
+		Features:     raw.Features,
+		Architecture: raw.Architecture,
+		Nameserver:   raw.Nameserver,
+		SearchDomain: raw.SearchDomain,
+		Password:     raw.Password,
+		SSHKeys:      raw.SSHKeys,
+		Dev0:         raw.Dev0,
+		Fstab:        raw.Fstab,
+		Hookscript:   raw.Hookscript,
+		Digest:       raw.Digest,
+		Raw:          configRaw(data, containerConfigKnownKeys),
+	}
+	return nil
 }
 
 // ContainerConfig is a convenience alias.
@@ -896,6 +960,55 @@ func decodeInt64(raw json.RawMessage) int64 {
 		}
 	}
 	return 0
+}
+
+// vmConfigKnownKeys is the set of config keys VMConfigData decodes into typed
+// fields. Any other key the PVE config endpoint returns is preserved verbatim
+// in VMConfigData.Raw instead of being silently dropped.
+var vmConfigKnownKeys = map[string]struct{}{
+	"vmid": {}, "name": {}, "cores": {}, "cpu": {}, "memory": {},
+	"balloon": {}, "net0": {}, "scsi0": {}, "boot": {}, "onboot": {},
+	"agent": {}, "smbios1": {}, "numa": {}, "ostype": {}, "description": {},
+	"protection": {}, "tags": {}, "vmgenid": {}, "args": {}, "bios": {},
+	"ide2": {}, "scsihw": {}, "machine": {}, "hotplug": {}, "ciuser": {},
+	"cicustom": {}, "nameserver": {}, "searchdomain": {}, "unused0": {},
+	"digest": {},
+}
+
+// containerConfigKnownKeys is the set of config keys ContainerConfigData
+// decodes into typed fields. Remaining keys are preserved in .Raw.
+var containerConfigKnownKeys = map[string]struct{}{
+	"vmid": {}, "hostname": {}, "cores": {}, "memory": {}, "swap": {},
+	"rootfs": {}, "mp0": {}, "net0": {}, "onboot": {}, "ostype": {},
+	"description": {}, "protection": {}, "tags": {}, "unfiltered": {},
+	"features": {}, "architecture": {}, "nameserver": {}, "searchdomain": {},
+	"password": {}, "sshkeys": {}, "dev0": {}, "fstab": {}, "hookscript": {},
+	"digest": {},
+}
+
+// configRaw captures every key in a PVE config response that is not decoded
+// into an explicit typed field, preserving values as strings so no config key
+// can silently vanish across a read round-trip.
+func configRaw(data []byte, known map[string]struct{}) map[string]string {
+	var flat map[string]json.RawMessage
+	if err := json.Unmarshal(data, &flat); err != nil {
+		return nil
+	}
+	out := make(map[string]string, len(flat))
+	for key, value := range flat {
+		if _, ok := known[key]; ok {
+			continue
+		}
+		if s := decodeString(value); s != "" || string(value) == `""` {
+			out[key] = s
+		} else if len(value) > 0 {
+			out[key] = string(value)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func decodeString(raw json.RawMessage) string {
