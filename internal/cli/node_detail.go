@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
@@ -158,6 +159,7 @@ func writeNodeTime(cmdCtx *Context, nodeTime *domain.NodeTime) error {
 	if nodeTime == nil {
 		nodeTime = &domain.NodeTime{}
 	}
+	nodeTime.LocalHuman = nodeTimeLocalHuman(nodeTime)
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
 		return output.WriteJSON(cmdCtx.Writer, nodeTime)
@@ -168,9 +170,25 @@ func writeNodeTime(cmdCtx *Context, nodeTime *domain.NodeTime) error {
 			{"TIMEZONE", nodeTime.TimeZone},
 			{"LOCAL", nodeTime.Local},
 			{"EPOCH", fmt.Sprintf("%d", nodeTime.Epoch)},
+			{"LOCAL HUMAN", nodeTime.LocalHuman},
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
+}
+
+// nodeTimeLocalHuman renders the node's epoch as an RFC3339 timestamp in its
+// configured time zone, falling back to UTC when the zone is unknown.
+func nodeTimeLocalHuman(nodeTime *domain.NodeTime) string {
+	if nodeTime == nil || nodeTime.Epoch == 0 {
+		return ""
+	}
+	loc := time.UTC
+	if nodeTime.TimeZone != "" {
+		if l, err := time.LoadLocation(nodeTime.TimeZone); err == nil {
+			loc = l
+		}
+	}
+	return time.Unix(nodeTime.Epoch, 0).In(loc).Format(time.RFC3339)
 }
 
 func runNodeDisks(ctx context.Context, cmdCtx *Context, args []string) error {

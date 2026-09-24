@@ -253,7 +253,7 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 		if err := output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult); err != nil {
 			return err
 		}
-		return app.NewExitError(errors.New("provider returned no task ID; completion cannot be verified"), app.ExitAmbiguousOutcome)
+		return app.MarkEmitted(app.NewExitError(errors.New("provider returned no task ID; completion cannot be verified"), app.ExitAmbiguousOutcome))
 	}
 
 	// Wait for task to complete.
@@ -279,10 +279,10 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 			Detail: tr.Error.Error(),
 		}
 		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
-		return app.NewExitError(
+		return app.MarkEmitted(app.NewExitError(
 			&app.ProviderError{UPID: upid, Detail: tr.Error.Error(), Err: tr.Error},
 			exitCode,
-		)
+		))
 	}
 	if !tr.OK {
 		// The task may have been rejected because the guest is already in the
@@ -299,10 +299,10 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 			Detail: fmt.Sprintf("task failed with status %q", tr.Status),
 		}
 		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
-		return app.NewExitError(
+		return app.MarkEmitted(app.NewExitError(
 			fmt.Errorf("task %s failed with status %q", upid, tr.Status),
 			app.ExitTaskFailure,
-		)
+		))
 	}
 	opResult.Status = "OK"
 	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)

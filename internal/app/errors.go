@@ -71,6 +71,38 @@ func NewExitError(err error, code int) *ExitCoder {
 	return &ExitCoder{Err: err, ExitCode: code}
 }
 
+// EmittedError marks an error whose user-facing details were already written
+// to the output stream (for example inside an OperationResult envelope), so a
+// command frontend must not emit a second error document. The wrapped error's
+// chain is preserved for exit-code classification and errors.Is/As.
+type EmittedError struct {
+	Err error
+}
+
+func (e *EmittedError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *EmittedError) Unwrap() error {
+	return e.Err
+}
+
+// MarkEmitted wraps err to record that its details were already emitted.
+// It is a no-op for nil errors and for errors already marked as emitted.
+func MarkEmitted(err error) error {
+	if err == nil || IsEmitted(err) {
+		return err
+	}
+	return &EmittedError{Err: err}
+}
+
+// IsEmitted reports whether err, or any error wrapping it, was marked as
+// already emitted via MarkEmitted.
+func IsEmitted(err error) bool {
+	var ee *EmittedError
+	return errors.As(err, &ee)
+}
+
 // ExitCodeFromError extracts the exit code from an error chain.
 // It checks for typed ProviderError first, then ExitCoder, then
 // classifies by string pattern as a final fallback.

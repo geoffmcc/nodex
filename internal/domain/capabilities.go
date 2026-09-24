@@ -292,9 +292,10 @@ type NodeDNS struct {
 
 // NodeTime represents time configuration for a node.
 type NodeTime struct {
-	TimeZone string `json:"timezone" yaml:"timezone"`
-	Epoch    int64  `json:"epoch" yaml:"epoch"`
-	Local    string `json:"local,omitempty" yaml:"local,omitempty"`
+	TimeZone   string `json:"timezone" yaml:"timezone"`
+	Epoch      int64  `json:"epoch" yaml:"epoch"`
+	Local      string `json:"local,omitempty" yaml:"local,omitempty"`
+	LocalHuman string `json:"local_human,omitempty" yaml:"local_human,omitempty"`
 }
 
 // NodeDisk represents a physical disk on a node.

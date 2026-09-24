@@ -249,3 +249,55 @@ func TestTaskUPIDFromError_Deprecated(t *testing.T) {
 		t.Errorf("TaskUPIDFromError(plain) = %q, want empty", got)
 	}
 }
+
+func TestMarkEmitted_NilIsNoOp(t *testing.T) {
+	if got := MarkEmitted(nil); got != nil {
+		t.Errorf("MarkEmitted(nil) = %v, want nil", got)
+	}
+}
+
+func TestMarkEmitted_WrapsOnce(t *testing.T) {
+	base := stderrors.New("boom")
+	once := MarkEmitted(base)
+	if !IsEmitted(once) {
+		t.Fatal("MarkEmitted(base) should report emitted")
+	}
+	twice := MarkEmitted(once)
+	if !IsEmitted(twice) {
+		t.Fatal("MarkEmitted(once) should still report emitted")
+	}
+	// MarkEmitted must be idempotent and not nest wrappers.
+	var ee *EmittedError
+	if !stderrors.As(twice, &ee) {
+		t.Fatal("expected EmittedError in chain")
+	}
+	if !stderrors.Is(ee.Err, base) {
+		t.Errorf("wrapped error should preserve original, got %q", ee.Err)
+	}
+}
+
+func TestIsEmitted_FalseForPlainError(t *testing.T) {
+	if IsEmitted(stderrors.New("plain")) {
+		t.Error("IsEmitted(plain) should be false")
+	}
+}
+
+func TestMarkEmitted_PreservesExitCode(t *testing.T) {
+	original := NewExitError(stderrors.New("task failed"), ExitTaskFailure)
+	marked := MarkEmitted(original)
+	if got := ExitCodeFromError(marked); got != ExitTaskFailure {
+		t.Errorf("ExitCodeFromError(marked) = %d, want ExitTaskFailure(%d)", got, ExitTaskFailure)
+	}
+}
+
+func TestMarkEmitted_PreservesTypedErrors(t *testing.T) {
+	pe := &ProviderError{StatusCode: http.StatusNotFound, Detail: "gone"}
+	marked := MarkEmitted(pe)
+	if got := ExitCodeFromError(marked); got != ExitNotFound {
+		t.Errorf("ExitCodeFromError(marked provider 404) = %d, want ExitNotFound(%d)", got, ExitNotFound)
+	}
+	var got *ProviderError
+	if !stderrors.As(marked, &got) || got != pe {
+		t.Error("errors.As(marked, &ProviderError) should find the original provider error")
+	}
+}

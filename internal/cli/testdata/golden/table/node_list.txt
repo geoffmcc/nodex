@@ -1,2 +1,2 @@
 NAME      STATUS  IP  ROLE  UPTIME
-e2e-node  online      node  
+e2e-node  online      node  217h0m0s

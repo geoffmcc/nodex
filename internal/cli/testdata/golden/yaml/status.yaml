@@ -6,6 +6,9 @@ quorum_known: true
 nodes_detail:
     - name: e2e-node
       status: online
+      uptime: 217h0m0s
+      uptime_seconds: 781200
+      uptime_human: 217h0m0s
 vms: 1
 vms_running: 1
 vms_stopped: 0
@@ -18,6 +21,9 @@ storage:
       total: 4096
       used: 1024
       avail: 3072
+      total_human: 4.0 KiB
+      used_human: 1.0 KiB
+      avail_human: 3.0 KiB
 ha:
     status: online
     quorum: 1

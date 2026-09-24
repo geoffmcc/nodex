@@ -4,57 +4,67 @@ import "time"
 
 // Node represents a physical or virtual machine host.
 type Node struct {
-	ID       string            `json:"id" yaml:"id"`
-	Name     string            `json:"name" yaml:"name"`
-	Status   string            `json:"status" yaml:"status"` // online, offline, unknown
-	Role     string            `json:"role" yaml:"role"`     // node, storage
-	IP       string            `json:"ip,omitempty" yaml:"ip,omitempty"`
-	Platform string            `json:"platform" yaml:"platform"` // proxxmox, vmware, etc.
-	Version  string            `json:"version,omitempty" yaml:"version,omitempty"`
-	Uptime   *time.Duration    `json:"uptime,omitempty" yaml:"uptime,omitempty"`
-	Labels   map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	ID            string            `json:"id" yaml:"id"`
+	Name          string            `json:"name" yaml:"name"`
+	Status        string            `json:"status" yaml:"status"` // online, offline, unknown
+	Role          string            `json:"role" yaml:"role"`     // node, storage
+	IP            string            `json:"ip,omitempty" yaml:"ip,omitempty"`
+	Platform      string            `json:"platform" yaml:"platform"` // proxxmox, vmware, etc.
+	Version       string            `json:"version,omitempty" yaml:"version,omitempty"`
+	Uptime        *time.Duration    `json:"uptime,omitempty" yaml:"uptime,omitempty"`
+	UptimeSeconds int64             `json:"uptime_seconds,omitempty" yaml:"uptime_seconds,omitempty"`
+	UptimeHuman   string            `json:"uptime_human,omitempty" yaml:"uptime_human,omitempty"`
+	Labels        map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 }
 
 // VM represents a virtual machine.
 type VM struct {
-	ID       string            `json:"id" yaml:"id"`
-	Name     string            `json:"name" yaml:"name"`
-	Status   string            `json:"status" yaml:"status"` // running, stopped, paused
-	Node     string            `json:"node" yaml:"node"`
-	CPU      int               `json:"cpu" yaml:"cpu"`
-	Memory   int64             `json:"memory" yaml:"memory"` // bytes
-	Disk     int64             `json:"disk" yaml:"disk"`     // bytes
-	Template bool              `json:"template,omitempty" yaml:"template,omitempty"`
-	IP       string            `json:"ip,omitempty" yaml:"ip,omitempty"`
-	OS       string            `json:"os,omitempty" yaml:"os,omitempty"`
-	Labels   map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	ID          string            `json:"id" yaml:"id"`
+	Name        string            `json:"name" yaml:"name"`
+	Status      string            `json:"status" yaml:"status"` // running, stopped, paused
+	Node        string            `json:"node" yaml:"node"`
+	CPU         int               `json:"cpu" yaml:"cpu"`
+	Memory      int64             `json:"memory" yaml:"memory"` // bytes
+	Disk        int64             `json:"disk" yaml:"disk"`     // bytes
+	MemoryHuman string            `json:"memory_human,omitempty" yaml:"memory_human,omitempty"`
+	DiskHuman   string            `json:"disk_human,omitempty" yaml:"disk_human,omitempty"`
+	Template    bool              `json:"template,omitempty" yaml:"template,omitempty"`
+	IP          string            `json:"ip,omitempty" yaml:"ip,omitempty"`
+	OS          string            `json:"os,omitempty" yaml:"os,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 }
 
 // Container represents a container (e.g., LXC).
 type Container struct {
-	ID     string            `json:"id" yaml:"id"`
-	Name   string            `json:"name" yaml:"name"`
-	Status string            `json:"status" yaml:"status"` // running, stopped, paused
-	Node   string            `json:"node" yaml:"node"`
-	OS     string            `json:"os,omitempty" yaml:"os,omitempty"`
-	Memory int64             `json:"memory" yaml:"memory"` // bytes
-	Disk   int64             `json:"disk" yaml:"disk"`     // bytes
-	IP     string            `json:"ip,omitempty" yaml:"ip,omitempty"`
-	Labels map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	ID          string            `json:"id" yaml:"id"`
+	Name        string            `json:"name" yaml:"name"`
+	Status      string            `json:"status" yaml:"status"` // running, stopped, paused
+	Node        string            `json:"node" yaml:"node"`
+	CPU         int               `json:"cpu" yaml:"cpu"`
+	OS          string            `json:"os,omitempty" yaml:"os,omitempty"`
+	Memory      int64             `json:"memory" yaml:"memory"` // bytes
+	Disk        int64             `json:"disk" yaml:"disk"`     // bytes
+	MemoryHuman string            `json:"memory_human,omitempty" yaml:"memory_human,omitempty"`
+	DiskHuman   string            `json:"disk_human,omitempty" yaml:"disk_human,omitempty"`
+	IP          string            `json:"ip,omitempty" yaml:"ip,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 }
 
 // Storage represents a storage pool or device.
 type Storage struct {
-	ID      string            `json:"id" yaml:"id"`
-	Name    string            `json:"name" yaml:"name"`
-	Type    string            `json:"type" yaml:"type"`     // local, nfs, zfs, etc.
-	Status  string            `json:"status" yaml:"status"` // active, inactive
-	Node    string            `json:"node,omitempty" yaml:"node,omitempty"`
-	Total   int64             `json:"total" yaml:"total"`                         // bytes
-	Used    int64             `json:"used" yaml:"used"`                           // bytes
-	Avail   int64             `json:"avail" yaml:"avail"`                         // bytes
-	Content []string          `json:"content,omitempty" yaml:"content,omitempty"` // images, iso, backup, etc.
-	Labels  map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	ID         string            `json:"id" yaml:"id"`
+	Name       string            `json:"name" yaml:"name"`
+	Type       string            `json:"type" yaml:"type"`     // local, nfs, zfs, etc.
+	Status     string            `json:"status" yaml:"status"` // active, inactive
+	Node       string            `json:"node,omitempty" yaml:"node,omitempty"`
+	Total      int64             `json:"total" yaml:"total"` // bytes
+	Used       int64             `json:"used" yaml:"used"`   // bytes
+	Avail      int64             `json:"avail" yaml:"avail"` // bytes
+	TotalHuman string            `json:"total_human,omitempty" yaml:"total_human,omitempty"`
+	UsedHuman  string            `json:"used_human,omitempty" yaml:"used_human,omitempty"`
+	AvailHuman string            `json:"avail_human,omitempty" yaml:"avail_human,omitempty"`
+	Content    []string          `json:"content,omitempty" yaml:"content,omitempty"` // images, iso, backup, etc.
+	Labels     map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 }
 
 // Cluster represents a cluster of nodes.
@@ -80,13 +90,14 @@ type ClusterJoinParams struct {
 
 // StorageContentItem represents a single content item in storage.
 type StorageContentItem struct {
-	Content string `json:"content" yaml:"content"`
-	Ctime   int    `json:"ctime,omitempty" yaml:"ctime,omitempty"`
-	Format  string `json:"format,omitempty" yaml:"format,omitempty"`
-	Volid   string `json:"volid,omitempty" yaml:"volid,omitempty"`
-	Size    int64  `json:"size,omitempty" yaml:"size,omitempty"`
-	Subtype string `json:"subtype,omitempty" yaml:"subtype,omitempty"`
-	VMID    int    `json:"vmid,omitempty" yaml:"vmid,omitempty"`
+	Content   string `json:"content" yaml:"content"`
+	Ctime     int    `json:"ctime,omitempty" yaml:"ctime,omitempty"`
+	Format    string `json:"format,omitempty" yaml:"format,omitempty"`
+	Volid     string `json:"volid,omitempty" yaml:"volid,omitempty"`
+	Size      int64  `json:"size,omitempty" yaml:"size,omitempty"`
+	SizeHuman string `json:"size_human,omitempty" yaml:"size_human,omitempty"`
+	Subtype   string `json:"subtype,omitempty" yaml:"subtype,omitempty"`
+	VMID      int    `json:"vmid,omitempty" yaml:"vmid,omitempty"`
 }
 
 // Task represents a Proxmox task.

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
@@ -84,6 +85,9 @@ func runNodeStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 }
 
 func writeNodeStatusMap(cmdCtx *Context, status map[string]interface{}) error {
+	uptimeSec := int64(toFloat(status["uptime"]))
+	status["uptime_seconds"] = uptimeSec
+	status["uptime_human"] = formatUptime(time.Duration(uptimeSec) * time.Second)
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
 		return output.WriteJSON(cmdCtx.Writer, status)
@@ -99,7 +103,7 @@ func writeNodeStatusMap(cmdCtx *Context, status map[string]interface{}) error {
 			{"MAX MEMORY", formatBytes(toInt64(status["maxmem"]))},
 			{"DISK", formatBytes(toInt64(status["disk"]))},
 			{"MAX DISK", formatBytes(toInt64(status["maxdisk"]))},
-			{"UPTIME", fmt.Sprintf("%v", status["uptime"])},
+			{"UPTIME", formatUptime(time.Duration(uptimeSec) * time.Second)},
 			{"LEVEL", fmt.Sprintf("%v", status["level"])},
 			{"KVERSION", fmt.Sprintf("%v", status["kversion"])},
 			{"PVEVERSION", fmt.Sprintf("%v", status["pveversion"])},
@@ -145,6 +149,7 @@ func findNode(nodes []domain.Node, name string) (domain.Node, bool) {
 }
 
 func writeNode(cmdCtx *Context, node domain.Node) error {
+	node = decorateNode(node)
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
 		return output.WriteJSON(cmdCtx.Writer, node)
@@ -171,6 +176,7 @@ func writeNode(cmdCtx *Context, node domain.Node) error {
 
 func writeNodes(cmdCtx *Context, nodes []domain.Node) error {
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
+	nodes = decorateNodes(nodes)
 
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
@@ -259,6 +265,7 @@ func findVM(vms []domain.VM, id string) (domain.VM, bool) {
 }
 
 func writeVM(cmdCtx *Context, vm domain.VM) error {
+	vm = decorateVM(vm)
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
 		return output.WriteJSON(cmdCtx.Writer, vm)
@@ -285,6 +292,7 @@ func writeVMs(cmdCtx *Context, vms []domain.VM) error {
 		vms = []domain.VM{}
 	}
 	sort.Slice(vms, func(i, j int) bool { return vms[i].Name < vms[j].Name })
+	vms = decorateVMs(vms)
 
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
@@ -371,6 +379,7 @@ func findContainer(containers []domain.Container, id string) (domain.Container, 
 }
 
 func writeContainer(cmdCtx *Context, container domain.Container) error {
+	container = decorateContainer(container)
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
 		return output.WriteJSON(cmdCtx.Writer, container)
@@ -382,6 +391,7 @@ func writeContainer(cmdCtx *Context, container domain.Container) error {
 			{"NAME", container.Name},
 			{"STATUS", container.Status},
 			{"NODE", container.Node},
+			{"CPU", fmt.Sprintf("%d", container.CPU)},
 			{"OS", container.OS},
 			{"MEMORY", formatBytes(container.Memory)},
 			{"DISK", formatBytes(container.Disk)},
@@ -396,6 +406,7 @@ func writeContainers(cmdCtx *Context, containers []domain.Container) error {
 		containers = []domain.Container{}
 	}
 	sort.Slice(containers, func(i, j int) bool { return containers[i].Name < containers[j].Name })
+	containers = decorateContainers(containers)
 
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
@@ -403,7 +414,7 @@ func writeContainers(cmdCtx *Context, containers []domain.Container) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, containers)
 	default:
-		headers := []string{"ID", "NAME", "STATUS", "NODE", "OS", "MEMORY", "DISK"}
+		headers := []string{"ID", "NAME", "STATUS", "NODE", "CPU", "OS", "MEMORY", "DISK"}
 		rows := make([][]string, 0, len(containers))
 		for _, c := range containers {
 			rows = append(rows, []string{
@@ -411,6 +422,7 @@ func writeContainers(cmdCtx *Context, containers []domain.Container) error {
 				c.Name,
 				c.Status,
 				c.Node,
+				fmt.Sprintf("%d", c.CPU),
 				c.OS,
 				formatBytes(c.Memory),
 				formatBytes(c.Disk),
@@ -476,6 +488,7 @@ func findStorage(storages []domain.Storage, name string) (domain.Storage, bool) 
 }
 
 func writeStorage(cmdCtx *Context, storage domain.Storage) error {
+	storage = decorateStorage(storage)
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
 		return output.WriteJSON(cmdCtx.Writer, storage)
@@ -502,6 +515,7 @@ func writeStorages(cmdCtx *Context, storages []domain.Storage) error {
 		storages = []domain.Storage{}
 	}
 	sort.Slice(storages, func(i, j int) bool { return storages[i].Name < storages[j].Name })
+	storages = decorateStorages(storages)
 
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
@@ -673,6 +687,7 @@ func writeStorageContent(cmdCtx *Context, items []domain.StorageContentItem) err
 	if items == nil {
 		items = []domain.StorageContentItem{}
 	}
+	items = decorateStorageContent(items)
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
 		return output.WriteJSON(cmdCtx.Writer, items)
@@ -901,17 +916,22 @@ type statusHA struct {
 }
 
 type statusNode struct {
-	Name   string `json:"name" yaml:"name"`
-	Status string `json:"status" yaml:"status"`
-	Uptime string `json:"uptime,omitempty" yaml:"uptime,omitempty"`
+	Name          string `json:"name" yaml:"name"`
+	Status        string `json:"status" yaml:"status"`
+	Uptime        string `json:"uptime,omitempty" yaml:"uptime,omitempty"`
+	UptimeSeconds int64  `json:"uptime_seconds,omitempty" yaml:"uptime_seconds,omitempty"`
+	UptimeHuman   string `json:"uptime_human,omitempty" yaml:"uptime_human,omitempty"`
 }
 
 type statusStorage struct {
-	Name  string `json:"name" yaml:"name"`
-	Type  string `json:"type" yaml:"type"`
-	Total int64  `json:"total" yaml:"total"`
-	Used  int64  `json:"used" yaml:"used"`
-	Avail int64  `json:"avail" yaml:"avail"`
+	Name       string `json:"name" yaml:"name"`
+	Type       string `json:"type" yaml:"type"`
+	Total      int64  `json:"total" yaml:"total"`
+	Used       int64  `json:"used" yaml:"used"`
+	Avail      int64  `json:"avail" yaml:"avail"`
+	TotalHuman string `json:"total_human,omitempty" yaml:"total_human,omitempty"`
+	UsedHuman  string `json:"used_human,omitempty" yaml:"used_human,omitempty"`
+	AvailHuman string `json:"avail_human,omitempty" yaml:"avail_human,omitempty"`
 }
 
 func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -936,6 +956,8 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 				sn := statusNode{Name: n.Name, Status: n.Status}
 				if n.Uptime != nil {
 					sn.Uptime = n.Uptime.String()
+					sn.UptimeSeconds = int64(*n.Uptime / time.Second)
+					sn.UptimeHuman = formatUptime(*n.Uptime)
 				}
 				overview.NodesDetail = append(overview.NodesDetail, sn)
 			}
@@ -971,13 +993,17 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 	if si, ok := prov.(domain.StorageInspector); ok {
 		if stors, err := si.Storage(ctx); err == nil {
 			for _, s := range stors {
-				overview.Storage = append(overview.Storage, statusStorage{
+				st := statusStorage{
 					Name:  s.Name,
 					Type:  s.Type,
 					Total: s.Total,
 					Used:  s.Used,
 					Avail: s.Avail,
-				})
+				}
+				st.TotalHuman = formatBytes(st.Total)
+				st.UsedHuman = formatBytes(st.Used)
+				st.AvailHuman = formatBytes(st.Avail)
+				overview.Storage = append(overview.Storage, st)
 			}
 		}
 	}

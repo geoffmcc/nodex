@@ -280,8 +280,10 @@ func runNodesAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 func writeNodesAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.Node]) error {
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
+		decorateNodeResults(&out)
 		return output.WriteJSON(cmdCtx.Writer, out)
 	case output.FormatYAML:
+		decorateNodeResults(&out)
 		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
 		headers := []string{"PROFILE", "NAME", "STATUS", "IP", "ROLE", "UPTIME"}
@@ -359,8 +361,10 @@ func runVMsAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 func writeVMsAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.VM]) error {
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
+		decorateVMResults(&out)
 		return output.WriteJSON(cmdCtx.Writer, out)
 	case output.FormatYAML:
+		decorateVMResults(&out)
 		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
 		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "CPU", "MEMORY", "DISK"}
@@ -435,11 +439,13 @@ func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 func writeContainersAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.Container]) error {
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
+		decorateContainerResults(&out)
 		return output.WriteJSON(cmdCtx.Writer, out)
 	case output.FormatYAML:
+		decorateContainerResults(&out)
 		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
-		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "OS", "MEMORY", "DISK"}
+		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "CPU", "OS", "MEMORY", "DISK"}
 		var rows [][]string
 		for _, r := range out.Results {
 			if !r.Success {
@@ -447,13 +453,13 @@ func writeContainersAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.
 				if r.Error != nil {
 					errDetail = r.Error.Detail
 				}
-				rows = append(rows, []string{r.Profile, "", "", "", "", "", "", fmt.Sprintf("ERROR: %s", errDetail)})
+				rows = append(rows, []string{r.Profile, "", "", "", "", "", "", "", fmt.Sprintf("ERROR: %s", errDetail)})
 				continue
 			}
 			sort.Slice(r.Data, func(i, j int) bool { return r.Data[i].Name < r.Data[j].Name })
 			for _, c := range r.Data {
 				rows = append(rows, []string{r.Profile, c.ID, c.Name, c.Status, c.Node,
-					c.OS, formatBytes(c.Memory), formatBytes(c.Disk)})
+					fmt.Sprintf("%d", c.CPU), c.OS, formatBytes(c.Memory), formatBytes(c.Disk)})
 			}
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)

@@ -301,7 +301,7 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 		if err := writeContainerUpdateResult(cmdCtx, prov, profileName, target, true, false, before, before); err != nil {
 			return app.NewExitError(fmt.Errorf("container %s update outcome is ambiguous: %w", target, err), app.ExitAmbiguousOutcome)
 		}
-		return app.NewExitError(fmt.Errorf("container %s update outcome is ambiguous; do not retry until a fresh preflight completes", target), app.ExitAmbiguousOutcome)
+		return app.MarkEmitted(app.NewExitError(fmt.Errorf("container %s update outcome is ambiguous; do not retry until a fresh preflight completes", target), app.ExitAmbiguousOutcome))
 	}
 	verifyResult, err := runContainerOSAnsible(ctx, "verify-container-updates", host, vmid)
 	if err != nil {
@@ -349,7 +349,7 @@ func writeContainerUpdateResult(cmdCtx *Context, prov domain.Provider, profileNa
 		return err
 	}
 	if !result.Success {
-		return app.NewExitError(fmt.Errorf("container update verification failed for %s", target), app.ExitPartialFailure)
+		return app.MarkEmitted(app.NewExitError(fmt.Errorf("container update verification failed for %s", target), app.ExitPartialFailure))
 	}
 	return nil
 }
