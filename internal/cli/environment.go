@@ -48,11 +48,21 @@ func runEnvironmentList(_ context.Context, cmdCtx *Context, args []string) error
 		Name       string `json:"name" yaml:"name"`
 		PVEProfile string `json:"pve_profile,omitempty" yaml:"pve_profile,omitempty"`
 		PBSProfile string `json:"pbs_profile,omitempty" yaml:"pbs_profile,omitempty"`
+		Source     string `json:"source,omitempty" yaml:"source,omitempty"`
 	}
-	entries := make([]envEntry, 0, len(names))
+	entries := make([]envEntry, 0, len(names)+1)
 	for _, name := range names {
 		env := cfg.Environments[name]
 		entries = append(entries, envEntry{Name: name, PVEProfile: env.PVEProfile, PBSProfile: env.PBSProfile})
+	}
+	implicit := ""
+	if len(entries) == 0 {
+		if implicitName, err := implicitEnvironmentName(cmdCtx, cfg); err == nil && implicitName != "" {
+			if env, err := implicitEnvironment(cfg, implicitName); err == nil {
+				implicit = implicitName
+				entries = append(entries, envEntry{Name: implicit, PVEProfile: env.PVEProfile, PBSProfile: env.PBSProfile, Source: "implicit"})
+			}
+		}
 	}
 
 	switch cmdCtx.Opts.Output {
@@ -62,8 +72,11 @@ func runEnvironmentList(_ context.Context, cmdCtx *Context, args []string) error
 		return output.WriteYAML(cmdCtx.Writer, entries)
 	default:
 		if len(entries) == 0 {
-			fmt.Fprintln(cmdCtx.Writer, "No environments configured. Add an \"environments\" section to the configuration (schema version 2).")
+			fmt.Fprintln(cmdCtx.Writer, "No environments configured. Run 'nodex profile create' to set a current profile, or add an \"environments\" section to the configuration (schema version 2).")
 			return nil
+		}
+		if implicit != "" {
+			fmt.Fprintf(cmdCtx.Writer, "Implicit environment %q derived from the current profile (no environments configured).\n\n", implicit)
 		}
 		headers := []string{"NAME", "PVE-PROFILE", "PBS-PROFILE"}
 		rows := make([][]string, 0, len(entries))
@@ -72,6 +85,92 @@ func runEnvironmentList(_ context.Context, cmdCtx *Context, args []string) error
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
+}
+
+// profileNameForEnvironment returns the effective profile name for environment
+// derivation: the --profile override when set, otherwise the current profile.
+func profileNameForEnvironment(cmdCtx *Context, cfg *config.Config) string {
+	if cmdCtx.Opts.Profile != "" {
+		return cmdCtx.Opts.Profile
+	}
+	return cfg.CurrentProfile
+}
+
+// implicitEnvironmentName returns the name of the implicit environment derived
+// from the effective current profile, or "" when environments are explicitly
+// configured (in which case no implicit environment applies) or the current
+// profile's provider does not map to a PVE or PBS slot.
+func implicitEnvironmentName(cmdCtx *Context, cfg *config.Config) (string, error) {
+	if len(cfg.Environments) > 0 {
+		return "", nil
+	}
+	name := profileNameForEnvironment(cmdCtx, cfg)
+	if name == "" {
+		return "", nil
+	}
+	p, ok := cfg.Profiles[name]
+	if !ok {
+		return "", fmt.Errorf("profile %q not found in configuration", name)
+	}
+	switch config.NormalizeProvider(p.Provider) {
+	case config.ProviderProxmox, config.ProviderPBS:
+		return name, nil
+	}
+	return "", nil
+}
+
+// implicitEnvironment builds an Environment from the named profile, mapping the
+// provider type into the PVE or PBS slot.
+func implicitEnvironment(cfg *config.Config, name string) (config.Environment, error) {
+	p, ok := cfg.Profiles[name]
+	if !ok {
+		return config.Environment{}, app.NewExitError(
+			fmt.Errorf("profile %q not found in configuration", name),
+			app.ExitConfig,
+		)
+	}
+	env := config.Environment{}
+	switch config.NormalizeProvider(p.Provider) {
+	case config.ProviderProxmox:
+		env.PVEProfile = name
+	case config.ProviderPBS:
+		env.PBSProfile = name
+	default:
+		return config.Environment{}, app.NewExitError(
+			fmt.Errorf("profile %q provider %q does not map to an environment (pve or pbs)", name, p.Provider),
+			app.ExitConfig,
+		)
+	}
+	return env, nil
+}
+
+// resolveEnvironment returns the named environment. When no environments are
+// configured, the effective current profile derives an implicit environment so
+// health commands are not a dead end on a profile-only configuration.
+func resolveEnvironment(cmdCtx *Context, cfg *config.Config, name string) (config.Environment, error) {
+	if env, ok := cfg.Environments[name]; ok {
+		return env, nil
+	}
+	if len(cfg.Environments) == 0 {
+		implicitName, err := implicitEnvironmentName(cmdCtx, cfg)
+		if err == nil && implicitName != "" {
+			if implicitName == name {
+				return implicitEnvironment(cfg, implicitName)
+			}
+			return config.Environment{}, app.NewExitError(
+				fmt.Errorf("environment %q not found; no environments are configured (current profile derives %q)", name, implicitName),
+				app.ExitConfig,
+			)
+		}
+		return config.Environment{}, app.NewExitError(
+			fmt.Errorf("environment %q not found; no environments or profiles are configured", name),
+			app.ExitConfig,
+		)
+	}
+	return config.Environment{}, app.NewExitError(
+		fmt.Errorf("environment %q not found in configuration", name),
+		app.ExitConfig,
+	)
 }
 
 func runEnvironmentHealth(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -86,12 +185,9 @@ func runEnvironmentBackupHealth(ctx context.Context, cmdCtx *Context, args []str
 // (connection failures become reachability findings, not command failures),
 // and returns the backup-health result. Callers own output and exit codes.
 func evaluateEnvironment(ctx context.Context, cmdCtx *Context, cfg *config.Config, name string, includeGuests bool) (*backuphealth.Result, error) {
-	env, ok := cfg.Environments[name]
-	if !ok {
-		return nil, app.NewExitError(
-			fmt.Errorf("environment %q not found in configuration", name),
-			app.ExitConfig,
-		)
+	env, err := resolveEnvironment(cmdCtx, cfg, name)
+	if err != nil {
+		return nil, err
 	}
 
 	var pve, pbs domain.Provider

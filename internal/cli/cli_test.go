@@ -67,6 +67,27 @@ func TestRun_Help(t *testing.T) {
 	}
 }
 
+func TestRun_TopHelpListsExitCodes(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {}} {
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
+			t.Fatalf("Run(%v): %v", args, err)
+		}
+		out := stdout.String()
+		if !strings.Contains(out, "Exit codes:") {
+			t.Errorf("Run(%v) missing Exit codes section:\n%s", args, out)
+		}
+		for _, want := range []string{
+			"Success", "Config error", "Partial failure", "Timeout",
+			"Interrupted (SIGINT)", "Terminated (SIGTERM)", "130", "143",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("Run(%v) top-level help missing %q:\n%s", args, want, out)
+			}
+		}
+	}
+}
+
 func TestRun_HelpCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), []string{"help", "version"}, &stdout, &stderr)
