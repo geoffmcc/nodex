@@ -55,6 +55,7 @@ func TestGoldenJSON(t *testing.T) {
 		{name: "container_snapshots", args: []string{"--output", "json", "container", "snapshots", "e2e-node/200"}},
 		{name: "storage_list", args: []string{"--output", "json", "storage", "list"}},
 		{name: "storage_show", args: []string{"--output", "json", "storage", "show", "local"}},
+		{name: "storage_show_qualified", args: []string{"--output", "json", "storage", "show", "e2e-node/local"}},
 		{name: "storage_content", args: []string{"--output", "json", "storage", "content", "e2e-node", "local"}},
 		{name: "cluster_status", args: []string{"--output", "json", "cluster", "status"}},
 		{name: "task_list", args: []string{"--output", "json", "task", "list", "e2e-node"}},

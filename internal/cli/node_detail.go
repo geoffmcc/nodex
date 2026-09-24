@@ -340,7 +340,7 @@ func runNodeUpdates(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	updates, err := detail.NodeUpdates(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("get node updates: %w", err)
+		return err
 	}
 	return writeNodeUpdates(cmdCtx, updates)
 }

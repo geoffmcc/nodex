@@ -584,6 +584,31 @@ func TestFindResourceShowTargets(t *testing.T) {
 	}
 }
 
+func TestResolveStorageTargets(t *testing.T) {
+	storages := []domain.Storage{
+		{ID: "storage/proxmox/local-lvm", Name: "local-lvm", Node: "proxmox"},
+		{ID: "storage/proxmox/local", Name: "local", Node: "proxmox"},
+		{ID: "storage/spare/local", Name: "local", Node: "spare"},
+	}
+	for _, target := range []string{"local-lvm", "storage/proxmox/local-lvm"} {
+		if s, err := resolveStorage(storages, target); err != nil || s.ID != "storage/proxmox/local-lvm" {
+			t.Fatalf("resolveStorage(%q) = %+v, %v", target, s, err)
+		}
+	}
+	if s, err := resolveStorage(storages, "proxmox/local"); err != nil || s.ID != "storage/proxmox/local" {
+		t.Fatalf("resolveStorage(node/name) = %+v, %v", s, err)
+	}
+	if s, err := resolveStorage(storages, "spare/local"); err != nil || s.ID != "storage/spare/local" {
+		t.Fatalf("resolveStorage(node/name spare) = %+v, %v", s, err)
+	}
+	if _, err := resolveStorage(storages, "missing/local"); err == nil {
+		t.Fatal("resolveStorage matched an unknown node")
+	}
+	if _, err := resolveStorage(storages, "proxmox/missing"); err == nil {
+		t.Fatal("resolveStorage matched an unknown storage name")
+	}
+}
+
 func TestWriteResourceShowOutput(t *testing.T) {
 	t.Run("vm json", func(t *testing.T) {
 		var stdout bytes.Buffer
@@ -607,6 +632,49 @@ func TestWriteResourceShowOutput(t *testing.T) {
 		out := stdout.String()
 		if !strings.Contains(out, "local-lvm") || !strings.Contains(out, "images,rootdir") {
 			t.Fatalf("table output missing storage fields: %q", out)
+		}
+	})
+}
+
+func TestWriteBackupShowOutput(t *testing.T) {
+	schedule := domain.BackupSchedule{ID: "schedule-1", Storage: "local", Mode: "snapshot", Starttime: "02:00"}
+
+	t.Run("show json is a singular object", func(t *testing.T) {
+		var stdout bytes.Buffer
+		cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: output.FormatJSON}}
+		if err := writeBackupSchedule(cmdCtx, schedule); err != nil {
+			t.Fatalf("writeBackupSchedule: %v", err)
+		}
+		out := strings.TrimSpace(stdout.String())
+		if strings.HasPrefix(out, "[") {
+			t.Fatalf("backup job show emitted an array: %q", out)
+		}
+		if !strings.Contains(out, `"id": "schedule-1"`) {
+			t.Fatalf("JSON output missing schedule fields: %q", out)
+		}
+	})
+
+	t.Run("list json remains an array", func(t *testing.T) {
+		var stdout bytes.Buffer
+		cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: output.FormatJSON}}
+		if err := writeBackupSchedules(cmdCtx, []domain.BackupSchedule{{ID: "a"}, {ID: "b"}}); err != nil {
+			t.Fatalf("writeBackupSchedules: %v", err)
+		}
+		out := strings.TrimSpace(stdout.String())
+		if !strings.HasPrefix(out, "[") {
+			t.Fatalf("backup job list expected an array: %q", out)
+		}
+	})
+
+	t.Run("show table renders a single row", func(t *testing.T) {
+		var stdout bytes.Buffer
+		cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: output.FormatTable}}
+		if err := writeBackupSchedule(cmdCtx, schedule); err != nil {
+			t.Fatalf("writeBackupSchedule table: %v", err)
+		}
+		out := stdout.String()
+		if !strings.Contains(out, "schedule-1") || !strings.Contains(out, "snapshot") {
+			t.Fatalf("table output missing schedule row: %q", out)
 		}
 	})
 }

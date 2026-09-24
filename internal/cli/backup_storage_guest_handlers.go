@@ -298,7 +298,7 @@ func runBackupJobShow(ctx context.Context, cmdCtx *Context, args []string) error
 		return fmt.Errorf("get backup schedule %s: %w", id, err)
 	}
 
-	return writeBackupSchedules(cmdCtx, []domain.BackupSchedule{*schedule})
+	return writeBackupSchedule(cmdCtx, *schedule)
 }
 
 // --- Backup Job Create (Tier 2: disruptive) ---
@@ -1143,6 +1143,19 @@ func parseBackupScheduleArgs(args []string) (domain.BackupScheduleCreateParams, 
 		}
 	}
 	return params, nil
+}
+
+// writeBackupSchedule writes a single backup schedule. JSON/YAML emit the
+// object itself (not a wrapping array) so a singular show mirrors the schema.
+func writeBackupSchedule(cmdCtx *Context, schedule domain.BackupSchedule) error {
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, schedule)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, schedule)
+	default:
+		return writeBackupSchedules(cmdCtx, []domain.BackupSchedule{schedule})
+	}
 }
 
 // writeBackupSchedules writes backup schedule items in the configured output format.

@@ -79,7 +79,7 @@ func runNodeStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	status, err := detail.NodeStatus(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("get node status: %w", err)
+		return err
 	}
 	return writeNodeStatusMap(cmdCtx, status)
 }
@@ -471,9 +471,9 @@ func runStorageShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list storage: %w", err)
 	}
-	storage, ok := findStorage(storages, args[0])
-	if !ok {
-		return app.NewExitError(fmt.Errorf("storage %q not found", args[0]), app.ExitProvider)
+	storage, err := resolveStorage(storages, args[0])
+	if err != nil {
+		return err
 	}
 	return writeStorage(cmdCtx, storage)
 }
@@ -485,6 +485,26 @@ func findStorage(storages []domain.Storage, name string) (domain.Storage, bool) 
 		}
 	}
 	return domain.Storage{}, false
+}
+
+// resolveStorage resolves a storage target given as <name>, <node>/<name>, or
+// the fully-qualified id form storage/<node>/<name>.
+func resolveStorage(storages []domain.Storage, target string) (domain.Storage, error) {
+	notFound := app.NewExitError(fmt.Errorf("storage %q not found", target), app.ExitProvider)
+	if strings.Count(target, "/") == 1 {
+		node, name, _ := strings.Cut(target, "/")
+		for _, storage := range storages {
+			if storage.Node == node && storage.Name == name {
+				return storage, nil
+			}
+		}
+		return domain.Storage{}, notFound
+	}
+	storage, ok := findStorage(storages, target)
+	if !ok {
+		return domain.Storage{}, notFound
+	}
+	return storage, nil
 }
 
 func writeStorage(cmdCtx *Context, storage domain.Storage) error {
