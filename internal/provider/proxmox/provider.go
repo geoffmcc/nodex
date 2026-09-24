@@ -28,6 +28,24 @@ func init() {
 // Provider implements domain.Provider for Proxmox VE.
 type Provider struct {
 	client *client.Client
+
+	sshHost    string
+	sshUser    string
+	sshKeyFile string
+	sshPort    int
+	sftpDial   sftpDialer
+}
+
+// SetSSHConfig configures SSH transfer settings (e.g. SFTP storage download).
+// An empty host falls back to the API endpoint's hostname; port 0 means 22.
+func (p *Provider) SetSSHConfig(host, user, keyFile string, port int) {
+	p.sshHost = host
+	p.sshUser = user
+	p.sshKeyFile = keyFile
+	p.sshPort = port
+	if p.sftpDial == nil {
+		p.sftpDial = realSFTPDial
+	}
 }
 
 // Name returns "proxmox".
@@ -2024,7 +2042,40 @@ func (p *Provider) DownloadContentBody(ctx context.Context, node, storage, volum
 	if p.client == nil {
 		return errors.New(errNotConnected)
 	}
-	return p.client.DownloadContentBody(ctx, node, storage, volumeID, w)
+	if err := p.validateSSHConfig(); err != nil {
+		return err
+	}
+
+	// PVE 9.x has no HTTP volume-download endpoint, so resolve the volume's
+	// node-local path and stream it out over SFTP.
+	remotePath, err := p.client.VolumePath(ctx, node, storage, volumeID)
+	if err != nil {
+		return fmt.Errorf("resolve volume path: %w", err)
+	}
+
+	host := p.sshHost
+	if host == "" {
+		host = p.client.EndpointHost()
+	}
+	port := p.sshPort
+	if port < 1 || port > 65535 {
+		port = 22
+	}
+	dial := p.sftpDial
+	if dial == nil {
+		dial = realSFTPDial
+	}
+	return downloadViaSFTP(ctx, host, p.sshUser, p.sshKeyFile, port, remotePath, w, dial)
+}
+
+func (p *Provider) validateSSHConfig() error {
+	switch {
+	case p.sshUser == "":
+		return fmt.Errorf("storage download over SFTP requires ssh_user in the profile")
+	case p.sshKeyFile == "":
+		return fmt.Errorf("storage download over SFTP requires ssh_key_file in the profile")
+	}
+	return nil
 }
 
 func (p *Provider) DeleteContent(ctx context.Context, node, storage, volumeID string) (string, error) {

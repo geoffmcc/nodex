@@ -142,9 +142,32 @@ func TestUploadCancelledContext(t *testing.T) {
 	}
 }
 
-// TestDownloadContentBodyErrorHandling verifies that non-2xx responses
-// are properly surfaced as errors.
-func TestDownloadContentBodyErrorHandling(t *testing.T) {
+// TestVolumePath verifies that the volume info endpoint is queried and the
+// node-local path is extracted from the response.
+func TestVolumePath(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if !strings.Contains(r.URL.Path, "/nodes/node1/storage/local/content/") {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":{"path":"/var/lib/vz/template/iso/example.iso","size":1048576,"format":"iso"}}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	got, err := c.VolumePath(context.Background(), "node1", "local", "local:iso/example.iso")
+	if err != nil {
+		t.Fatalf("VolumePath: %v", err)
+	}
+	if got != "/var/lib/vz/template/iso/example.iso" {
+		t.Fatalf("VolumePath = %q, want node-local path", got)
+	}
+}
+
+// TestVolumePathErrorHandling verifies that non-2xx responses are surfaced.
+func TestVolumePathErrorHandling(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"errors":[{"message":"volume not found"}]}`))
@@ -152,8 +175,7 @@ func TestDownloadContentBodyErrorHandling(t *testing.T) {
 	defer s.Close()
 
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
-	var buf strings.Builder
-	err := c.DownloadContentBody(context.Background(), "node1", "local", "vol-1", &buf)
+	_, err := c.VolumePath(context.Background(), "node1", "local", "local:iso/example.iso")
 	if err == nil {
 		t.Fatal("expected error for 404 response")
 	}
@@ -162,50 +184,42 @@ func TestDownloadContentBodyErrorHandling(t *testing.T) {
 	}
 }
 
-// TestDownloadContentBodySizeLimit verifies that responses exceeding the max
-// body size are rejected.
-func TestDownloadContentBodySizeLimit(t *testing.T) {
+// TestVolumePathMissingPath verifies that a success response without a path
+// field is rejected rather than returning an empty path.
+func TestVolumePathMissingPath(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(strings.Repeat("X", 1024)))
+		_, _ = w.Write([]byte(`{"data":{"size":0}}`))
 	}))
 	defer s.Close()
 
-	c := &Client{baseURL: s.URL, client: httpclient.New(httpclient.WithMaxBodySize(512))}
-	var buf strings.Builder
-	err := c.DownloadContentBody(context.Background(), "node1", "local", "vol-1", &buf)
-	if err == nil {
-		t.Fatal("expected size limit error")
-	}
-	if !strings.Contains(err.Error(), "exceeds") {
-		t.Fatalf("expected exceed error, got: %v", err)
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.VolumePath(context.Background(), "node1", "local", "local:iso/example.iso")
+	if err == nil || !strings.Contains(err.Error(), "has no node-local path") {
+		t.Fatalf("VolumePath error = %v, want missing path error", err)
 	}
 }
 
-// TestDownloadContentBodyCancelledContext verifies cancellation during download.
-func TestDownloadContentBodyCancelledContext(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Send data very slowly.
-		for i := 0; i < 100; i++ {
-			select {
-			case <-r.Context().Done():
-				return
-			default:
-				_, _ = w.Write([]byte("x"))
-				time.Sleep(10 * time.Millisecond)
+// TestVolumePathArgumentValidation verifies that empty arguments are rejected
+// before any network activity.
+func TestVolumePathArgumentValidation(t *testing.T) {
+	c := &Client{baseURL: "http://example.com/api2/json", client: httpclient.New()}
+	for _, tt := range []struct {
+		name      string
+		node      string
+		storage   string
+		volumeID  string
+		wantMatch string
+	}{
+		{"node", "", "local", "local:iso/x.iso", "node name is required"},
+		{"storage", "node1", "", "local:iso/x.iso", "storage name is required"},
+		{"volume", "node1", "local", "", "volume ID is required"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := c.VolumePath(context.Background(), tt.node, tt.storage, tt.volumeID)
+			if err == nil || !strings.Contains(err.Error(), tt.wantMatch) {
+				t.Fatalf("VolumePath error = %v, want %q", err, tt.wantMatch)
 			}
-		}
-	}))
-	defer s.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
-	defer cancel()
-
-	c := &Client{baseURL: s.URL, client: httpclient.New(httpclient.WithTimeout(100 * time.Millisecond))}
-	var buf strings.Builder
-	err := c.DownloadContentBody(ctx, "node1", "local", "vol-1", &buf)
-	if err == nil {
-		t.Fatal("expected cancellation/timeout error")
+		})
 	}
 }
 
@@ -246,28 +260,30 @@ func TestUploadRejectsUnsupportedContentType(t *testing.T) {
 	}
 }
 
-// TestDownloadContentBodyPathConstruction verifies that volume IDs with special
-// characters produce the correct URL path. url.PathEscape preserves characters
-// that are valid in a URL path per RFC 3986 (including colon).
-func TestDownloadContentBodyPathConstruction(t *testing.T) {
+// TestVolumePathRequestPath verifies the volume ID is encoded into the content
+// info URL (not a /download route, which does not exist on PVE 9.x).
+func TestVolumePathRequestPath(t *testing.T) {
 	var receivedPath string
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedPath = r.URL.Path + "?" + r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		receivedPath = r.URL.EscapedPath()
+		_, _ = w.Write([]byte(`{"data":{"path":"/srv/x"}}`))
 	}))
 	defer s.Close()
 
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
-	var buf strings.Builder
-	volID := "local-lvm:vm-100-disk-0"
-	_ = c.DownloadContentBody(context.Background(), "node-1", "storage-a", volID, &buf)
-
-	if !strings.Contains(receivedPath, "/download") {
-		t.Errorf("path = %s, want /download", receivedPath)
+	_, err := c.VolumePath(context.Background(), "node-1", "storage-a", "local-lvm:vm-100-disk-0")
+	if err != nil {
+		t.Fatalf("VolumePath: %v", err)
 	}
-	if !strings.Contains(receivedPath, "volume=") {
-		t.Errorf("path = %s, missing volume param", receivedPath)
+
+	if strings.Contains(receivedPath, "/download") {
+		t.Errorf("path = %s, must not use the /download route", receivedPath)
+	}
+	if !strings.Contains(receivedPath, "/content/") {
+		t.Errorf("path = %s, want /content/{volume}", receivedPath)
+	}
+	if !strings.Contains(receivedPath, "vm-100-disk-0") {
+		t.Errorf("path = %s, missing volume ID", receivedPath)
 	}
 }
 

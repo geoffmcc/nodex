@@ -182,11 +182,18 @@ const (
 )
 
 // Profile holds connection details for a single provider target.
+// Profile is one named provider configuration. SSH fields are optional and
+// used by providers that ship transfer capabilities over SSH (e.g. Proxmox
+// storage download on PVE 9.x, which has no HTTP volume-download API).
 type Profile struct {
 	Provider      string `yaml:"provider"`
 	Endpoint      string `yaml:"endpoint"`
 	CredentialRef string `yaml:"credential_ref"`
 	CAFile        string `yaml:"ca_file,omitempty"`
+	SSHHost       string `yaml:"ssh_host,omitempty"`
+	SSHUser       string `yaml:"ssh_user,omitempty"`
+	SSHKeyFile    string `yaml:"ssh_key_file,omitempty"`
+	SSHPort       int    `yaml:"ssh_port,omitempty"`
 }
 
 // DefaultConfig returns a new config with the current schema version and empty profiles.

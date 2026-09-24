@@ -262,6 +262,25 @@ func Validate(cfg *Config) error {
 				)
 			}
 		}
+		if p.SSHHost != "" && !hostAddressRegex.MatchString(p.SSHHost) {
+			return app.NewExitError(
+				fmt.Errorf("%w: profile %q invalid ssh_host %q (hostname or IP, no scheme, port, or userinfo)",
+					app.ErrProfileInvalid, name, p.SSHHost),
+				app.ExitConfig,
+			)
+		}
+		if p.SSHUser != "" && strings.ContainsAny(p.SSHUser, " \t:@/\\'\"") {
+			return app.NewExitError(
+				fmt.Errorf("%w: profile %q invalid ssh_user %q", app.ErrProfileInvalid, name, p.SSHUser),
+				app.ExitConfig,
+			)
+		}
+		if p.SSHPort != 0 && (p.SSHPort < 1 || p.SSHPort > 65535) {
+			return app.NewExitError(
+				fmt.Errorf("%w: profile %q ssh_port must be between 1 and 65535", app.ErrProfileInvalid, name),
+				app.ExitConfig,
+			)
+		}
 	}
 
 	if cfg.CurrentProfile != "" {

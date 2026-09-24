@@ -1414,8 +1414,13 @@ func inferUploadContentType(filename string) string {
 	}
 }
 
-// DownloadContent returns the raw bytes of a storage volume via GET /nodes/{node}/storage/{storage}/download.
-func (c *Client) DownloadContent(ctx context.Context, node, storage, volumeID string) (string, error) {
+// VolumePath resolves the node-local filesystem path of a storage volume via
+// GET /nodes/{node}/storage/{storage}/content/{volume}.
+//
+// PVE 9.x exposes no HTTP volume-download endpoint (the /download route
+// returns 501), so transfers resolve this path and stream it out over a
+// transport such as SFTP.
+func (c *Client) VolumePath(ctx context.Context, node, storage, volumeID string) (string, error) {
 	if node == "" {
 		return "", fmt.Errorf("node name is required")
 	}
@@ -1425,57 +1430,15 @@ func (c *Client) DownloadContent(ctx context.Context, node, storage, volumeID st
 	if volumeID == "" {
 		return "", fmt.Errorf("volume ID is required")
 	}
-	// Return the download URL so the caller can stream the content directly.
-	// Proxmox returns raw content, not JSON, for this endpoint.
-	downloadURL := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download?volume=" + url.QueryEscape(volumeID)
-	return downloadURL, nil
-}
-
-// DownloadContentBody downloads storage content and writes the raw body to the provided writer.
-func (c *Client) DownloadContentBody(ctx context.Context, node, storage, volumeID string, w io.Writer) error {
-	if node == "" {
-		return fmt.Errorf("node name is required")
+	var resp ContentPathResponse
+	path := "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/content/" + url.PathEscape(volumeID)
+	if err := c.get(ctx, path, &resp); err != nil {
+		return "", err
 	}
-	if storage == "" {
-		return fmt.Errorf("storage name is required")
+	if resp.Data.Path == "" {
+		return "", fmt.Errorf("volume %q has no node-local path", volumeID)
 	}
-	if volumeID == "" {
-		return fmt.Errorf("volume ID is required")
-	}
-
-	u := c.baseURL + "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/download?volume=" + url.QueryEscape(volumeID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "PVEAPIToken="+c.token)
-	}
-
-	resp, err := c.client.Do(ctx, req)
-	if err != nil {
-		return fmt.Errorf("execute request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, truncated := readLimited(resp.Body, c.client.MaxErrorBodySize())
-		msg := redact.String(output.SanitizeTerminal(string(body)))
-		if truncated {
-			msg += "... [truncated]"
-		}
-		return fmt.Errorf("API error %d: %s", resp.StatusCode, msg)
-	}
-
-	limited := io.LimitReader(resp.Body, c.client.MaxBodySize()+1)
-	n, err := io.Copy(w, limited)
-	if err != nil {
-		return fmt.Errorf("download: %w", err)
-	}
-	if n > c.client.MaxBodySize() {
-		return fmt.Errorf("download exceeds %d bytes", c.client.MaxBodySize())
-	}
-	return nil
+	return resp.Data.Path, nil
 }
 
 // DeleteContent deletes a storage volume via DELETE /nodes/{node}/storage/{storage}/content/{volume}.
@@ -2703,6 +2666,12 @@ func (c *Client) ScheduleReplication(ctx context.Context, node, id string) error
 // Close releases resources held by the client.
 func (c *Client) Close() error {
 	return nil
+}
+
+// EndpointHost returns the hostname (no port) extracted from the configured
+// endpoint, used as the default SSH target for transfer features.
+func (c *Client) EndpointHost() string {
+	return c.endpointHost
 }
 
 func (c *Client) get(ctx context.Context, path string, result any) error {

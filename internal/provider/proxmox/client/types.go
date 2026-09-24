@@ -538,6 +538,21 @@ type StorageContentItem struct {
 // StorageContent is a convenience alias.
 type StorageContent = StorageContentResponse
 
+// ContentPathResponse is the response from GET /nodes/{node}/storage/{storage}/content/{volume}.
+type ContentPathResponse struct {
+	Data ContentPathItem `json:"data"`
+}
+
+// ContentPathItem describes a single storage volume at its node-local path.
+// PVE 9.x exposes no HTTP download endpoint; transfers use Path over a
+// separate transport (e.g. SFTP).
+type ContentPathItem struct {
+	Path   string `json:"path"`
+	Format string `json:"format,omitempty"`
+	Size   int64  `json:"size,omitempty"`
+	Used   int64  `json:"used,omitempty"`
+}
+
 // TaskListResponse is the response from /nodes/{node}/tasks.
 type TaskListResponse struct {
 	Data []TaskListItem `json:"data"`
