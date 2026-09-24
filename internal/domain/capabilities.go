@@ -276,11 +276,18 @@ type NodeService struct {
 
 // NodeNetwork represents a network interface on a node.
 type NodeNetwork struct {
-	Name   string `json:"name" yaml:"name"`
-	Type   string `json:"type" yaml:"type"`
-	Status string `json:"status" yaml:"status"`
-	IP     string `json:"ip,omitempty" yaml:"ip,omitempty"`
-	MAC    string `json:"mac,omitempty" yaml:"mac,omitempty"`
+	Name            string `json:"name" yaml:"name"`
+	Type            string `json:"type" yaml:"type"`
+	Status          string `json:"status" yaml:"status"`
+	IP              string `json:"ip,omitempty" yaml:"ip,omitempty"`
+	MAC             string `json:"mac,omitempty" yaml:"mac,omitempty"`
+	BridgePorts     string `json:"bridge_ports,omitempty" yaml:"bridge_ports,omitempty"`
+	BridgeVLANAware bool   `json:"bridge_vlan_aware,omitempty" yaml:"bridge_vlan_aware,omitempty"`
+	BridgeVLANs     string `json:"bridge_vlans,omitempty" yaml:"bridge_vlans,omitempty"`
+	VLANID          int    `json:"vlan_id,omitempty" yaml:"vlan_id,omitempty"`
+	VLANDevice      string `json:"vlan_device,omitempty" yaml:"vlan_device,omitempty"`
+	MTU             int    `json:"mtu,omitempty" yaml:"mtu,omitempty"`
+	Comment         string `json:"comment,omitempty" yaml:"comment,omitempty"`
 }
 
 // NodeDNS represents DNS configuration for a node.

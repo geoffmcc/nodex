@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "name": "eno1",
+    "type": "eth",
+    "status": "up",
+    "mac": "aa:bb:cc:dd:ee:01",
+    "mtu": 1500
+  },
+  {
+    "name": "vmbr0",
+    "type": "bridge",
+    "status": "up",
+    "ip": "10.47.60.200/24",
+    "mac": "aa:bb:cc:dd:ee:02",
+    "bridge_ports": "eno1",
+    "bridge_vlan_aware": true,
+    "bridge_vlans": "10 20 100-110"
+  },
+  {
+    "name": "vlan10",
+    "type": "vlan",
+    "status": "up",
+    "vlan_id": 10,
+    "vlan_device": "vmbr0"
+  }
+]

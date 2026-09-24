@@ -143,7 +143,7 @@ func (p ConfirmationPolicy) Check(yes, force, nonInteractive bool) ConfirmationR
 		if !yes {
 			r.Message += " Use --yes to confirm."
 		}
-		if yes && !force {
+		if !force {
 			r.Message += " Use --force for double confirmation."
 		}
 		return r
@@ -168,7 +168,7 @@ func (p ConfirmationPolicy) Check(yes, force, nonInteractive bool) ConfirmationR
 			if !yes {
 				r.Message += " Use --yes to confirm."
 			}
-			if yes && !force {
+			if !force {
 				r.Message += " Use --force for double confirmation."
 			}
 			r.Message += fmt.Sprintf(" Then type %q to confirm.", p.TypeConfirmTarget)
@@ -186,7 +186,7 @@ func (p ConfirmationPolicy) Check(yes, force, nonInteractive bool) ConfirmationR
 		if !yes {
 			r.Message += " Use --yes to confirm."
 		}
-		if yes && !force {
+		if !force {
 			r.Message += " Use --force for double confirmation."
 		}
 		return r

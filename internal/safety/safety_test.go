@@ -85,6 +85,9 @@ func TestDisruptiveRequiresYesAndForce(t *testing.T) {
 	if !result.DoubleConfirmRequired {
 		t.Error("disruptive should require double confirm")
 	}
+	if !contains(result.Message, "--yes") || !contains(result.Message, "--force") {
+		t.Errorf("disruptive without flags should mention both --yes and --force: %q", result.Message)
+	}
 
 	// With --yes only.
 	result = policy.Check(true, false, false)

@@ -877,11 +877,18 @@ func mapNodeNetwork(item client.NodeNetworkItem) domain.NodeNetwork {
 		ip = item.CIDR
 	}
 	return domain.NodeNetwork{
-		Name:   name,
-		Type:   item.Type,
-		Status: status,
-		IP:     ip,
-		MAC:    item.MAC,
+		Name:            name,
+		Type:            item.Type,
+		Status:          status,
+		IP:              ip,
+		MAC:             item.MAC,
+		BridgePorts:     item.BridgePorts,
+		BridgeVLANAware: item.BridgeVLANAware == 1,
+		BridgeVLANs:     item.BridgeVids,
+		VLANID:          item.VLANID,
+		VLANDevice:      item.VLANRawDevice,
+		MTU:             item.MTU,
+		Comment:         item.Comments,
 	}
 }
 

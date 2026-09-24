@@ -718,15 +718,22 @@ type NodeNetworkResponse struct {
 
 // NodeNetworkItem represents a network interface on a node.
 type NodeNetworkItem struct {
-	Name   string `json:"name"`
-	Iface  string `json:"iface,omitempty"`
-	Type   string `json:"type"`
-	Status string `json:"status"`
-	Active int    `json:"active,omitempty"`
-	Method string `json:"method,omitempty"`
-	IP     string `json:"ip,omitempty"`
-	CIDR   string `json:"cidr,omitempty"`
-	MAC    string `json:"mac,omitempty"`
+	Name            string `json:"name"`
+	Iface           string `json:"iface,omitempty"`
+	Type            string `json:"type"`
+	Status          string `json:"status"`
+	Active          int    `json:"active,omitempty"`
+	Method          string `json:"method,omitempty"`
+	IP              string `json:"ip,omitempty"`
+	CIDR            string `json:"cidr,omitempty"`
+	MAC             string `json:"mac,omitempty"`
+	BridgePorts     string `json:"bridge_ports,omitempty"`
+	BridgeVLANAware int    `json:"bridge_vlan_aware,omitempty"`
+	BridgeVids      string `json:"bridge_vids,omitempty"`
+	VLANID          int    `json:"vlan-id,omitempty"`
+	VLANRawDevice   string `json:"vlan-raw-device,omitempty"`
+	MTU             int    `json:"mtu,omitempty"`
+	Comments        string `json:"comments,omitempty"`
 }
 
 // NodeDNSResponse is the response from /nodes/{node}/dns.

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
@@ -85,10 +86,22 @@ func writeNodeNetwork(cmdCtx *Context, interfaces []domain.NodeNetwork) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, interfaces)
 	default:
-		headers := []string{"NAME", "TYPE", "STATUS", "IP", "MAC"}
+		headers := []string{"NAME", "TYPE", "STATUS", "IP", "MAC", "PORTS", "VLAN-AWARE", "VLANS"}
 		rows := make([][]string, 0, len(interfaces))
 		for _, iface := range interfaces {
-			rows = append(rows, []string{iface.Name, iface.Type, iface.Status, iface.IP, iface.MAC})
+			ports := iface.BridgePorts
+			if ports == "" && iface.Type == "vlan" && iface.VLANDevice != "" {
+				ports = "on " + iface.VLANDevice
+			}
+			vlanAware := ""
+			if iface.BridgeVLANAware {
+				vlanAware = "yes"
+			}
+			vlans := iface.BridgeVLANs
+			if vlans == "" && iface.Type == "vlan" && iface.VLANID != 0 {
+				vlans = strconv.Itoa(iface.VLANID)
+			}
+			rows = append(rows, []string{iface.Name, iface.Type, iface.Status, iface.IP, iface.MAC, ports, vlanAware, vlans})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}

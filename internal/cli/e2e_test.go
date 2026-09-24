@@ -185,7 +185,12 @@ func (p *e2eMockProvider) NodeServices(_ context.Context, node string) ([]domain
 	return nil, nil
 }
 func (p *e2eMockProvider) NodeNetwork(_ context.Context, node string) ([]domain.NodeNetwork, error) {
-	return nil, nil
+	return []domain.NodeNetwork{
+		{Name: "eno1", Type: "eth", Status: "up", MAC: "aa:bb:cc:dd:ee:01", MTU: 1500},
+		{Name: "vmbr0", Type: "bridge", Status: "up", IP: "10.47.60.200/24", MAC: "aa:bb:cc:dd:ee:02",
+			BridgePorts: "eno1", BridgeVLANAware: true, BridgeVLANs: "10 20 100-110"},
+		{Name: "vlan10", Type: "vlan", Status: "up", VLANID: 10, VLANDevice: "vmbr0"},
+	}, nil
 }
 func (p *e2eMockProvider) NodeDNS(_ context.Context, node string) (*domain.NodeDNS, error) {
 	return &domain.NodeDNS{DNS1: "8.8.8.8"}, nil

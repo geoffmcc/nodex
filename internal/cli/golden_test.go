@@ -236,6 +236,7 @@ func TestGoldenTable(t *testing.T) {
 		{name: "node_list", args: []string{"--output", "table", "node", "list"}},
 		{name: "vm_list", args: []string{"--output", "table", "vm", "list"}},
 		{name: "node_status", args: []string{"--output", "table", "node", "status", "e2e-node"}},
+		{name: "node_network", args: []string{"--output", "table", "node", "network", "e2e-node"}},
 		{name: "storage_list", args: []string{"--output", "table", "storage", "list"}},
 		{name: "task_list", args: []string{"--output", "table", "task", "list", "e2e-node"}},
 		{name: "ha_list", args: []string{"--output", "table", "ha", "list"}},
