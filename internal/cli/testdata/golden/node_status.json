@@ -15,5 +15,7 @@
   "node": "e2e-node",
   "pveversion": "pve-manager/8.1.0",
   "status": "online",
-  "uptime": 12345
+  "uptime": 12345,
+  "uptime_human": "3h25m45s",
+  "uptime_seconds": 12345
 }

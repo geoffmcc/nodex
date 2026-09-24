@@ -29,7 +29,7 @@ func runBackupList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	backups, err := bi.Backups(ctx, node)
 	if err != nil {
-		return fmt.Errorf("list backups: %w", err)
+		return err
 	}
 	return writeBackups(cmdCtx, applyLimit(backups, cmdCtx.Opts.Limit))
 }

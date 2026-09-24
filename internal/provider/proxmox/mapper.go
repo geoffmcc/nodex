@@ -68,6 +68,7 @@ func MapContainer(res client.ClusterResource) domain.Container {
 		Name:   res.Name,
 		Status: res.Status,
 		Node:   res.Node,
+		CPU:    res.MaxCPU,
 		Memory: res.MaxMem,
 		Disk:   res.MaxDisk,
 		IP:     res.IP,

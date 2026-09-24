@@ -6,13 +6,23 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/provider"
 )
 
 const e2eMockProviderName = "nodex-e2e-mock"
+
+// e2eNodeUptime is a stable uptime used by the node mock so JSON goldens are
+// deterministic (217h = 781200s).
+var e2eNodeUptime = 217 * time.Hour
+
+// e2eTaskFailure forces the mock Task to report a failed task for tests that
+// exercise failure-path output. Tests must reset it (defer) and run serially.
+var e2eTaskFailure = false
 
 func init() {
 	provider.Register(e2eMockProviderName, func() domain.Provider { return &e2eMockProvider{} })
@@ -50,13 +60,13 @@ func (p *e2eMockProvider) Nodes(_ context.Context) ([]domain.Node, error) {
 	if !p.connected {
 		return nil, nil
 	}
-	return []domain.Node{{ID: "node/e2e-node", Name: "e2e-node", Status: "online", Role: "node", Platform: "mock"}}, nil
+	return []domain.Node{{ID: "node/e2e-node", Name: "e2e-node", Status: "online", Role: "node", Platform: "mock", Uptime: &e2eNodeUptime}}, nil
 }
 func (p *e2eMockProvider) VMs(_ context.Context) ([]domain.VM, error) {
 	return []domain.VM{{ID: "e2e-node/100", Name: "e2e-vm", Status: "running", Node: "e2e-node", CPU: 2, Memory: 1024, Disk: 2048}}, nil
 }
 func (p *e2eMockProvider) Containers(_ context.Context) ([]domain.Container, error) {
-	return []domain.Container{{ID: "e2e-node/200", Name: "e2e-ct", Status: "running", Node: "e2e-node", OS: "debian", Memory: 512, Disk: 1024}}, nil
+	return []domain.Container{{ID: "e2e-node/200", Name: "e2e-ct", Status: "running", Node: "e2e-node", CPU: 1, OS: "debian", Memory: 512, Disk: 1024}}, nil
 }
 func (p *e2eMockProvider) Storage(_ context.Context) ([]domain.Storage, error) {
 	return []domain.Storage{{ID: "storage/e2e-node/local", Name: "local", Type: "dir", Status: "available", Node: "e2e-node", Total: 4096, Used: 1024, Avail: 3072}}, nil
@@ -94,11 +104,15 @@ func (p *e2eMockProvider) Tasks(_ context.Context, node string) ([]domain.Task, 
 	}, nil
 }
 func (p *e2eMockProvider) Task(_ context.Context, node, upid string) (*domain.Task, error) {
+	status := "OK"
+	if e2eTaskFailure {
+		status = "ERROR"
+	}
 	return &domain.Task{
 		UPID:      upid,
 		Type:      "vzdump",
 		State:     "stopped",
-		Status:    "OK",
+		Status:    status,
 		Node:      node,
 		StartTime: 1700000000,
 		EndTime:   1700000010,
@@ -171,7 +185,12 @@ func (p *e2eMockProvider) NodeServices(_ context.Context, node string) ([]domain
 	return nil, nil
 }
 func (p *e2eMockProvider) NodeNetwork(_ context.Context, node string) ([]domain.NodeNetwork, error) {
-	return nil, nil
+	return []domain.NodeNetwork{
+		{Name: "eno1", Type: "eth", Status: "up", MAC: "aa:bb:cc:dd:ee:01", MTU: 1500},
+		{Name: "vmbr0", Type: "bridge", Status: "up", IP: "10.47.60.200/24", MAC: "aa:bb:cc:dd:ee:02",
+			BridgePorts: "eno1", BridgeVLANAware: true, BridgeVLANs: "10 20 100-110"},
+		{Name: "vlan10", Type: "vlan", Status: "up", VLANID: 10, VLANDevice: "vmbr0"},
+	}, nil
 }
 func (p *e2eMockProvider) NodeDNS(_ context.Context, node string) (*domain.NodeDNS, error) {
 	return &domain.NodeDNS{DNS1: "8.8.8.8"}, nil
@@ -447,6 +466,53 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestMutationFailureIsEmitted verifies nit #15: when a --wait mutation fails
+// after its OperationResult envelope has been written, the returned error is
+// marked as emitted so JSON mode does not print a duplicate error document,
+// while the exit code and envelope contents remain intact.
+func TestMutationFailureIsEmitted(t *testing.T) {
+	isolateConfigAndHome(t)
+	t.Setenv("NODEX_E2E_TOKEN", "e2e-token")
+	cfg := config.DefaultConfig()
+	cfg.CurrentProfile = "e2e"
+	cfg.Profiles["e2e"] = config.Profile{
+		Provider:      e2eMockProviderName,
+		Endpoint:      "https://e2e.example.invalid",
+		CredentialRef: "env:e2e",
+	}
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("ConfigPath: %v", err)
+	}
+	if err := config.WriteTo(cfg, path); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	e2eTaskFailure = true
+	defer func() { e2eTaskFailure = false }()
+
+	var stdout, stderr bytes.Buffer
+	err = Run(context.Background(), []string{"--yes", "--wait", "--output", "json", "vm", "start", "e2e-node/101"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected a failure error")
+	}
+	if !app.IsEmitted(err) {
+		t.Fatalf("expected error to be marked emitted: %v", err)
+	}
+	if got := app.ExitCodeFromError(err); got != app.ExitTaskFailure {
+		t.Fatalf("ExitCodeFromError = %d, want %d", got, app.ExitTaskFailure)
+	}
+	out := stdout.String()
+	for _, want := range []string{`"success": false`, `"class": "task_failure"`, `"exit": 16`, `"upid": "UPID:e2e-node/`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Count(out, `"class":`) != 1 {
+		t.Fatalf("expected exactly one error class in the envelope, got:\n%s", out)
 	}
 }
 

@@ -12,7 +12,9 @@
           "node": "e2e-node",
           "cpu": 2,
           "memory": 1024,
-          "disk": 2048
+          "disk": 2048,
+          "memory_human": "1.0 KiB",
+          "disk_human": "2.0 KiB"
         }
       ],
       "duration": "0s"
@@ -28,7 +30,9 @@
           "node": "e2e-node",
           "cpu": 2,
           "memory": 1024,
-          "disk": 2048
+          "disk": 2048,
+          "memory_human": "1.0 KiB",
+          "disk_human": "2.0 KiB"
         }
       ],
       "duration": "0s"

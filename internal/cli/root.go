@@ -534,6 +534,45 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --password-stdin     Read password from stdin instead of interactive prompt")
 	fmt.Fprintln(w, "  --confirm-target     Exact target text for non-interactive destructive confirmation")
 	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Exit codes:")
+	codes := []struct {
+		code    int
+		meaning string
+	}{
+		{0, "Success"},
+		{1, "General error"},
+		{2, "Usage error"},
+		{3, "Config error"},
+		{4, "Credential error"},
+		{5, "Authentication failed"},
+		{6, "Authorization denied"},
+		{7, "Network error"},
+		{8, "TLS error"},
+		{9, "Incompatibility"},
+		{10, "Unsupported capability"},
+		{11, "Partial failure"},
+		{12, "Provider error"},
+		{13, "Not found"},
+		{14, "Timeout"},
+		{15, "Cancelled"},
+		{16, "Task failure"},
+		{17, "Validation error"},
+		{18, "Ambiguous outcome"},
+		{19, "Rate limited"},
+		{20, "Output error"},
+		{21, "Conflict"},
+		{130, "Interrupted (SIGINT)"},
+		{143, "Terminated (SIGTERM)"},
+	}
+	// Two-column layout; canonical source is internal/app/errors.go.
+	for i := 0; i < len(codes); i += 2 {
+		line := fmt.Sprintf("  %-3d %-22s", codes[i].code, codes[i].meaning)
+		if i+1 < len(codes) {
+			line += fmt.Sprintf("  %-3d %s", codes[i+1].code, codes[i+1].meaning)
+		}
+		fmt.Fprintln(w, line)
+	}
+	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Run 'nodex help <command>' or 'nodex <command> --help' for details on a specific command.")
 }
 

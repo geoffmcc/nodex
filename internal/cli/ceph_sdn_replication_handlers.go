@@ -35,7 +35,7 @@ func runCephStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	status, err := ceph.CephStatus(ctx, node)
 	if err != nil {
-		return fmt.Errorf("get ceph status: %w", err)
+		return err
 	}
 	return writeCephStatusTable(cmdCtx, status)
 }

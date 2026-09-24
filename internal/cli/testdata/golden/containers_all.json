@@ -10,9 +10,12 @@
           "name": "e2e-ct",
           "status": "running",
           "node": "e2e-node",
+          "cpu": 1,
           "os": "debian",
           "memory": 512,
-          "disk": 1024
+          "disk": 1024,
+          "memory_human": "512 B",
+          "disk_human": "1.0 KiB"
         }
       ],
       "duration": "0s"
@@ -26,9 +29,12 @@
           "name": "e2e-ct",
           "status": "running",
           "node": "e2e-node",
+          "cpu": 1,
           "os": "debian",
           "memory": 512,
-          "disk": 1024
+          "disk": 1024,
+          "memory_human": "512 B",
+          "disk_human": "1.0 KiB"
         }
       ],
       "duration": "0s"

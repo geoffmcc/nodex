@@ -7,6 +7,9 @@
     "node": "e2e-node",
     "total": 4096,
     "used": 1024,
-    "avail": 3072
+    "avail": 3072,
+    "total_human": "4.0 KiB",
+    "used_human": "1.0 KiB",
+    "avail_human": "3.0 KiB"
   }
 ]

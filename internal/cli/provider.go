@@ -179,6 +179,14 @@ func connectProfileWithOptions(ctx context.Context, cmdCtx *Context, profileName
 		)
 	}
 
+	// Optional SSH transfer configuration (e.g. PVE storage download streams
+	// over SFTP). Providers that support it opt in via SetSSHConfig.
+	if sc, ok := prov.(interface {
+		SetSSHConfig(host, user, keyFile string, port int)
+	}); ok {
+		sc.SetSSHConfig(p.SSHHost, p.SSHUser, p.SSHKeyFile, p.SSHPort)
+	}
+
 	cleanup := func() { _ = prov.Close() }
 	return prov, cleanup, nil
 }

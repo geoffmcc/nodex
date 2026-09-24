@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
@@ -84,10 +86,22 @@ func writeNodeNetwork(cmdCtx *Context, interfaces []domain.NodeNetwork) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, interfaces)
 	default:
-		headers := []string{"NAME", "TYPE", "STATUS", "IP", "MAC"}
+		headers := []string{"NAME", "TYPE", "STATUS", "IP", "MAC", "PORTS", "VLAN-AWARE", "VLANS"}
 		rows := make([][]string, 0, len(interfaces))
 		for _, iface := range interfaces {
-			rows = append(rows, []string{iface.Name, iface.Type, iface.Status, iface.IP, iface.MAC})
+			ports := iface.BridgePorts
+			if ports == "" && iface.Type == "vlan" && iface.VLANDevice != "" {
+				ports = "on " + iface.VLANDevice
+			}
+			vlanAware := ""
+			if iface.BridgeVLANAware {
+				vlanAware = "yes"
+			}
+			vlans := iface.BridgeVLANs
+			if vlans == "" && iface.Type == "vlan" && iface.VLANID != 0 {
+				vlans = strconv.Itoa(iface.VLANID)
+			}
+			rows = append(rows, []string{iface.Name, iface.Type, iface.Status, iface.IP, iface.MAC, ports, vlanAware, vlans})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
@@ -158,6 +172,7 @@ func writeNodeTime(cmdCtx *Context, nodeTime *domain.NodeTime) error {
 	if nodeTime == nil {
 		nodeTime = &domain.NodeTime{}
 	}
+	nodeTime.LocalHuman = nodeTimeLocalHuman(nodeTime)
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
 		return output.WriteJSON(cmdCtx.Writer, nodeTime)
@@ -168,9 +183,25 @@ func writeNodeTime(cmdCtx *Context, nodeTime *domain.NodeTime) error {
 			{"TIMEZONE", nodeTime.TimeZone},
 			{"LOCAL", nodeTime.Local},
 			{"EPOCH", fmt.Sprintf("%d", nodeTime.Epoch)},
+			{"LOCAL HUMAN", nodeTime.LocalHuman},
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
+}
+
+// nodeTimeLocalHuman renders the node's epoch as an RFC3339 timestamp in its
+// configured time zone, falling back to UTC when the zone is unknown.
+func nodeTimeLocalHuman(nodeTime *domain.NodeTime) string {
+	if nodeTime == nil || nodeTime.Epoch == 0 {
+		return ""
+	}
+	loc := time.UTC
+	if nodeTime.TimeZone != "" {
+		if l, err := time.LoadLocation(nodeTime.TimeZone); err == nil {
+			loc = l
+		}
+	}
+	return time.Unix(nodeTime.Epoch, 0).In(loc).Format(time.RFC3339)
 }
 
 func runNodeDisks(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -309,7 +340,7 @@ func runNodeUpdates(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	updates, err := detail.NodeUpdates(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("get node updates: %w", err)
+		return err
 	}
 	return writeNodeUpdates(cmdCtx, updates)
 }

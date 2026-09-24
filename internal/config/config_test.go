@@ -114,6 +114,52 @@ func TestValidateProfileName(t *testing.T) {
 	}
 }
 
+func TestValidateProfileSSHFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile Profile
+		valid   bool
+	}{
+		{"empty ssh fields", Profile{Provider: "proxmox", Endpoint: "https://example.com"}, true},
+		{"valid ssh fields", Profile{Provider: "proxmox", Endpoint: "https://example.com",
+			SSHHost: "10.0.0.5:2222", SSHUser: "root", SSHKeyFile: "/home/user/.ssh/key", SSHPort: 22}, true},
+		{"hostname ssh host", Profile{Provider: "proxmox", Endpoint: "https://example.com",
+			SSHHost: "pve.local"}, true},
+		{"key only", Profile{Provider: "proxmox", Endpoint: "https://example.com",
+			SSHKeyFile: "/home/user/.ssh/key"}, true},
+		{"bad ssh host", Profile{Provider: "proxmox", Endpoint: "https://example.com",
+			SSHHost: "bad host!"}, false},
+		{"ssh user with slash", Profile{Provider: "proxmox", Endpoint: "https://example.com",
+			SSHUser: "root/x"}, false},
+		{"ssh user with colon", Profile{Provider: "proxmox", Endpoint: "https://example.com",
+			SSHUser: "root:admin"}, false},
+		{"ssh port zero", Profile{Provider: "proxmox", Endpoint: "https://example.com",
+			SSHPort: 0}, true},
+		{"ssh port too large", Profile{Provider: "proxmox", Endpoint: "https://example.com",
+			SSHPort: 65536}, false},
+		{"ssh port negative", Profile{Provider: "proxmox", Endpoint: "https://example.com",
+			SSHPort: -1}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Version: 1,
+				Profiles: map[string]Profile{
+					"test": tt.profile,
+				},
+			}
+			err := Validate(cfg)
+			if tt.valid && err != nil {
+				t.Errorf("expected valid, got error: %v", err)
+			}
+			if !tt.valid && err == nil {
+				t.Error("expected invalid, got nil error")
+			}
+		})
+	}
+}
+
 func TestValidateProviderNormalized(t *testing.T) {
 	cfg := &Config{
 		Version: 1,

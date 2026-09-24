@@ -1,0 +1,4 @@
+NAME    TYPE    STATUS  IP               MAC                PORTS     VLAN-AWARE  VLANS
+eno1    eth     up                       aa:bb:cc:dd:ee:01                        
+vmbr0   bridge  up      10.47.60.200/24  aa:bb:cc:dd:ee:02  eno1      yes         10 20 100-110
+vlan10  vlan    up                                          on vmbr0              10

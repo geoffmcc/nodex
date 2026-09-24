@@ -7,7 +7,7 @@ MEMORY      2.0 GiB
 MAX MEMORY  8.0 GiB
 DISK        10.0 GiB
 MAX DISK    100.0 GiB
-UPTIME      12345
+UPTIME      3h25m45s
 LEVEL       
 KVERSION    6.8.0
 PVEVERSION  pve-manager/8.1.0
