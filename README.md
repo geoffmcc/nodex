@@ -98,7 +98,7 @@ nodex task               Inspect tasks
 nodex status             Show cluster status overview
 nodex cluster            Cluster status and log
 nodex event              List cluster events
-nodex log                Show node syslog
+nodex log                Show recent node syslog (--last/--grep/--follow)
 nodex doctor             Check system health
 nodex backup             List, create, and restore backups
 nodex firewall           Inspect and manage firewall rules

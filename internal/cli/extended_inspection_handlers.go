@@ -29,22 +29,71 @@ func runHAStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("get HA status: %w", err)
 	}
-	return writeHAStatusTable(cmdCtx, status)
+	// A standalone host has no cluster, so a zero quorum with an "unknown"
+	// status is expected rather than a fault. Report the cluster name and
+	// whether HA applies at all so an operator does not chase a phantom
+	// partition (nit #36).
+	quorum := detectQuorum(ctx, prov)
+	return writeHAStatusTable(cmdCtx, newHAStatusView(status, quorum))
 }
 
-func writeHAStatusTable(cmdCtx *Context, status *domain.HAStatus) error {
+// haStatusView is the CLI projection of HA status. It adds the cluster
+// context an operator needs to interpret a zero quorum.
+type haStatusView struct {
+	Quorum int    `json:"quorum" yaml:"quorum"`
+	Status string `json:"status" yaml:"status"`
+	// Enabled reports whether the HA subsystem applies to this host at all.
+	Enabled bool `json:"enabled" yaml:"enabled"`
+	// Cluster is the cluster name, empty on a standalone host.
+	Cluster string `json:"cluster" yaml:"cluster"`
+	// Standalone reports that no cluster exists, so Quorum is not meaningful.
+	Standalone bool `json:"standalone" yaml:"standalone"`
+	// QuorumKnown reports whether Quorum is a real reading.
+	QuorumKnown bool `json:"quorum_known" yaml:"quorum_known"`
+}
+
+func newHAStatusView(status *domain.HAStatus, q quorumInfo) *haStatusView {
 	if status == nil {
 		status = &domain.HAStatus{}
 	}
+	return &haStatusView{
+		Quorum:      status.Quorum,
+		Status:      status.Status,
+		Enabled:     !q.Standalone && q.Known,
+		Cluster:     q.Name,
+		Standalone:  q.Standalone,
+		QuorumKnown: q.Known,
+	}
+}
+
+func writeHAStatusTable(cmdCtx *Context, view *haStatusView) error {
+	if view == nil {
+		view = &haStatusView{}
+	}
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
-		return output.WriteJSON(cmdCtx.Writer, status)
+		return output.WriteJSON(cmdCtx.Writer, view)
 	case output.FormatYAML:
-		return output.WriteYAML(cmdCtx.Writer, status)
+		return output.WriteYAML(cmdCtx.Writer, view)
 	default:
+		quorum := strconv.Itoa(view.Quorum)
+		switch {
+		case view.QuorumKnown:
+			// keep the numeric reading
+		case view.Standalone:
+			quorum = "n/a (standalone host)"
+		default:
+			quorum = "unavailable"
+		}
+		cluster := view.Cluster
+		if cluster == "" {
+			cluster = "-"
+		}
 		rows := [][]string{
-			{"QUORUM", fmt.Sprintf("%d", status.Quorum)},
-			{"STATUS", status.Status},
+			{"QUORUM", quorum},
+			{"STATUS", view.Status},
+			{"ENABLED", fmt.Sprintf("%t", view.Enabled)},
+			{"CLUSTER", cluster},
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
@@ -214,6 +263,90 @@ func writeSDNVNetsTable(cmdCtx *Context, vnets []domain.SDNVNet) error {
 				vlan = fmt.Sprintf("%d", v.VLAN)
 			}
 			rows = append(rows, []string{v.Name, v.Zone, vlan, v.Alias})
+		}
+		return output.WriteTable(cmdCtx.Writer, headers, rows)
+	}
+}
+
+func runSDNSubnets(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex sdn subnets"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	sdn, err := requireSDN(prov)
+	if err != nil {
+		return err
+	}
+	subnets, err := sdn.SDNSubnets(ctx)
+	if err != nil {
+		return fmt.Errorf("get SDN subnets: %w", err)
+	}
+	return writeSDNSubnetsTable(cmdCtx, subnets)
+}
+
+func writeSDNSubnetsTable(cmdCtx *Context, subnets []domain.SDNSubnet) error {
+	if subnets == nil {
+		subnets = []domain.SDNSubnet{}
+	}
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, subnets)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, subnets)
+	default:
+		headers := []string{"SUBNET", "TYPE", "VNET", "ZONE", "CIDR", "GATEWAY"}
+		rows := make([][]string, 0, len(subnets))
+		for _, s := range subnets {
+			rows = append(rows, []string{s.Name, s.Type, s.VNet, s.Zone, s.CIDR, s.Gateway})
+		}
+		return output.WriteTable(cmdCtx.Writer, headers, rows)
+	}
+}
+
+func runSDNControllers(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex sdn controllers"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	sdn, err := requireSDN(prov)
+	if err != nil {
+		return err
+	}
+	controllers, err := sdn.SDNControllers(ctx)
+	if err != nil {
+		return fmt.Errorf("get SDN controllers: %w", err)
+	}
+	return writeSDNControllersTable(cmdCtx, controllers)
+}
+
+func writeSDNControllersTable(cmdCtx *Context, controllers []domain.SDNController) error {
+	if controllers == nil {
+		controllers = []domain.SDNController{}
+	}
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, controllers)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, controllers)
+	default:
+		headers := []string{"NAME", "TYPE", "STATE", "ASN"}
+		rows := make([][]string, 0, len(controllers))
+		for _, c := range controllers {
+			asn := ""
+			if c.ASN > 0 {
+				asn = strconv.Itoa(c.ASN)
+			}
+			rows = append(rows, []string{c.Name, c.Type, c.State, asn})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}

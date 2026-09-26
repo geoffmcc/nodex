@@ -105,6 +105,53 @@ func runProviderCapabilities(_ context.Context, cmdCtx *Context, args []string) 
 	}
 }
 
+// lookupProfileEntry loads config and reports which profile a command would
+// use, without contacting any endpoint. An empty profileName resolves to the
+// configured current profile. This is the cheap, offline half of
+// connectProfile, used to reject impossible command/provider pairings before
+// any connection attempt.
+func lookupProfileEntry(profileName string) (string, config.Profile, error) {
+	cfg, err := config.Read()
+	if err != nil {
+		return "", config.Profile{}, err
+	}
+
+	name := profileName
+	if name == "" {
+		name = cfg.CurrentProfile
+	}
+	if name == "" {
+		return "", config.Profile{}, app.NewExitError(
+			fmt.Errorf("%w: no profile specified and no current profile", app.ErrNoProfile),
+			app.ExitConfig,
+		)
+	}
+
+	p, ok := cfg.Profiles[name]
+	if !ok {
+		return "", config.Profile{}, app.NewExitError(
+			fmt.Errorf("%w: profile %q not found", app.ErrProfileNotFound, name),
+			app.ExitConfig,
+		)
+	}
+	return name, p, nil
+}
+
+// profileProviderType reports the normalized provider type backing a profile
+// without connecting. Unknown provider names are returned as-is so callers can
+// explain the mismatch rather than silently treating them as one known type.
+func profileProviderType(profileName string) (string, string, error) {
+	name, p, err := lookupProfileEntry(profileName)
+	if err != nil {
+		return "", "", err
+	}
+	providerType := p.Provider
+	if config.IsKnownProvider(config.NormalizeProvider(providerType)) {
+		providerType = config.NormalizeProvider(providerType)
+	}
+	return name, providerType, nil
+}
+
 // connectProfile loads a profile and connects a provider.
 // Returns the connected provider and a cleanup function.
 func connectProfile(ctx context.Context, cmdCtx *Context, profileName string) (domain.Provider, func(), error) {

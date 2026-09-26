@@ -1262,14 +1262,26 @@ func writeAccessUsers(cmdCtx *Context, users []domain.AccessUser) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, users)
 	default:
-		headers := []string{"USERID", "ENABLED", "EMAIL", "FIRSTNAME", "LASTNAME", "COMMENT"}
+		headers := []string{"USERID", "ENABLED", "EMAIL", "FIRSTNAME", "LASTNAME", "GROUPS", "TOKENS", "COMMENT"}
 		rows := make([][]string, 0, len(users))
 		for _, u := range users {
 			enabled := "no"
 			if u.Enable != 0 {
 				enabled = "yes"
 			}
-			rows = append(rows, []string{u.UserID, enabled, u.Email, u.FirstName, u.LastName, u.Comment})
+			// "-" means the server did not report the value, which is not the
+			// same as a genuine zero.
+			tokens := "-"
+			if u.TokenCount != nil {
+				tokens = strconv.Itoa(*u.TokenCount)
+			}
+			groups := "-"
+			if len(u.Groups) > 0 {
+				groups = strings.Join(u.Groups, ",")
+			}
+			rows = append(rows, []string{
+				u.UserID, enabled, u.Email, u.FirstName, u.LastName, groups, tokens, u.Comment,
+			})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}

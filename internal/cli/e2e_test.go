@@ -248,6 +248,12 @@ func (p *e2eMockProvider) SDNZones(_ context.Context) ([]domain.SDNZone, error) 
 func (p *e2eMockProvider) SDNVNets(_ context.Context) ([]domain.SDNVNet, error) {
 	return nil, nil
 }
+func (p *e2eMockProvider) SDNSubnets(_ context.Context) ([]domain.SDNSubnet, error) {
+	return nil, nil
+}
+func (p *e2eMockProvider) SDNControllers(_ context.Context) ([]domain.SDNController, error) {
+	return nil, nil
+}
 func (p *e2eMockProvider) VMSnapshotConfig(_ context.Context, node string, vmid int, name string) (map[string]interface{}, error) {
 	return map[string]interface{}{"name": name, "vmid": vmid, "parent": "current"}, nil
 }
@@ -417,7 +423,10 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "event list", args: []string{"--output", "json", "event", "list"}, want: []string{`"type": "node"`, `"message": "node online"`, `"id": "node/e2e-node"`}},
 		{name: "log", args: []string{"--output", "json", "log", "e2e-node"}, want: []string{`"n": 1`, `"t": "system startup"`, `"n": 2`}},
 		{name: "backup list", args: []string{"--output", "json", "backup", "list", "e2e-node"}, want: []string{`"type": "vzdump"`, `"state": "stopped"`, `"node": "e2e-node"`}},
-		{name: "firewall list", args: []string{"--output", "json", "firewall", "list"}, want: []string{`"action": "ACCEPT"`, `"dport": "22"`, `"comment": "SSH"`}},
+		{name: "firewall cluster-rules", args: []string{"--output", "json", "firewall", "cluster-rules"}, want: []string{`"action": "ACCEPT"`, `"dport": "22"`, `"comment": "SSH"`}},
+		// `list` and `rules` are documented aliases for `cluster-rules` (nit #34).
+		{name: "firewall list alias", args: []string{"--output", "json", "firewall", "list"}, want: []string{`"action": "ACCEPT"`, `"dport": "22"`, `"comment": "SSH"`}},
+		{name: "firewall rules alias", args: []string{"--output", "json", "firewall", "rules"}, want: []string{`"action": "ACCEPT"`, `"dport": "22"`, `"comment": "SSH"`}},
 		{name: "ha list", args: []string{"--output", "json", "ha", "list"}, want: []string{`"type": "vm"`, `"state": "started"`, `"group": "default"`}},
 		{name: "ha groups", args: []string{"--output", "json", "ha", "groups"}, want: []string{`"id": "default"`, `"nodes": "e2e-node"`, `"comment": "Default HA group"`}},
 		{name: "pools list", args: []string{"--output", "json", "pools", "list"}, want: []string{`"poolid": "admins"`, `"comment": "Admin resources"`, `"qemu/100"`}},

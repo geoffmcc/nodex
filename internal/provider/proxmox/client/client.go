@@ -697,6 +697,24 @@ func (c *Client) GetSDNVNets(ctx context.Context) ([]SDNVNetItem, error) {
 	return resp.Data, nil
 }
 
+// GetSDNSubnets returns SDN subnets.
+func (c *Client) GetSDNSubnets(ctx context.Context) ([]SDNSubnetItem, error) {
+	var resp SDNSubnetsResponse
+	if err := c.get(ctx, "/cluster/sdn/subnets", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// GetSDNControllers returns SDN controllers.
+func (c *Client) GetSDNControllers(ctx context.Context) ([]SDNControllerItem, error) {
+	var resp SDNControllersResponse
+	if err := c.get(ctx, "/cluster/sdn/controllers", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
 // GetVMSnapshotConfig returns configuration for a specific VM snapshot.
 func (c *Client) GetVMSnapshotConfig(ctx context.Context, node string, vmid int, name string) (map[string]interface{}, error) {
 	if node == "" {
@@ -2199,10 +2217,23 @@ func (c *Client) UpdateFirewallOptions(ctx context.Context, opts FirewallOptions
 // --- Phase 5: Identity ---
 
 // GetUsers returns all users from GET /access/users.
+//
+// full=1 asks PVE to include group memberships and API token details, which are
+// otherwise omitted. It is a v2+ parameter, so a server that rejects it falls
+// back to the plain index rather than failing the whole command.
 func (c *Client) GetUsers(ctx context.Context) ([]AccessUserItem, error) {
 	var resp AccessUsersResponse
-	if err := c.get(ctx, "/access/users", &resp); err != nil {
-		return nil, err
+	if err := c.get(ctx, "/access/users?full=1", &resp); err != nil {
+		switch app.HTTPStatusFromError(err) {
+		case http.StatusBadRequest, http.StatusNotImplemented,
+			http.StatusMethodNotAllowed, http.StatusInternalServerError:
+			resp = AccessUsersResponse{}
+			if fallbackErr := c.get(ctx, "/access/users", &resp); fallbackErr != nil {
+				return nil, err
+			}
+		default:
+			return nil, err
+		}
 	}
 	return resp.Data, nil
 }

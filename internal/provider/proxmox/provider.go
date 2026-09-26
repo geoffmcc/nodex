@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 
 	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/domain"
@@ -1272,8 +1273,51 @@ func (p *Provider) SDNVNets(ctx context.Context) ([]domain.SDNVNet, error) {
 	return result, nil
 }
 
-// --- Phase 6: Ceph, SDN Mutation, Replication ---
+// SDNSubnets returns SDN subnets.
+func (p *Provider) SDNSubnets(ctx context.Context) ([]domain.SDNSubnet, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetSDNSubnets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get SDN subnets: %w", err)
+	}
+	result := make([]domain.SDNSubnet, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.SDNSubnet{
+			Name:    item.Subnet,
+			Type:    item.Type,
+			VNet:    item.VNet,
+			Zone:    item.Zone,
+			CIDR:    item.CIDR,
+			Gateway: item.Gateway,
+		})
+	}
+	return result, nil
+}
 
+// SDNControllers returns SDN controllers.
+func (p *Provider) SDNControllers(ctx context.Context) ([]domain.SDNController, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetSDNControllers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get SDN controllers: %w", err)
+	}
+	result := make([]domain.SDNController, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.SDNController{
+			Name:  item.Name,
+			Type:  item.Type,
+			State: item.State,
+			ASN:   item.Asn,
+		})
+	}
+	return result, nil
+}
+
+// --- Phase 6: Ceph, SDN Mutation, Replication ---
 // CephStatus returns Ceph cluster health status.
 func (p *Provider) CephStatus(ctx context.Context, node string) (*domain.CephStatus, error) {
 	if p.client == nil {
@@ -2418,22 +2462,45 @@ func (p *Provider) Users(ctx context.Context) ([]domain.AccessUser, error) {
 	}
 	result := make([]domain.AccessUser, 0, len(items))
 	for _, item := range items {
-		tokens := 0
+		// Token detail is only present when the server reports it; keep nil so
+		// "unknown" stays distinguishable from a genuine zero.
+		var tokenCount *int
 		if item.Tokens != nil {
-			tokens = *item.Tokens
+			n := len(item.Tokens)
+			tokenCount = &n
 		}
 		result = append(result, domain.AccessUser{
-			UserID:    item.UserID,
-			Comment:   item.Comment,
-			Email:     item.Email,
-			Enable:    item.Enable,
-			Expire:    item.Expire,
-			FirstName: item.FirstName,
-			LastName:  item.LastName,
-			Tokens:    tokens,
+			UserID:     item.UserID,
+			Comment:    item.Comment,
+			Email:      item.Email,
+			Enable:     item.Enable,
+			Expire:     item.Expire,
+			FirstName:  item.FirstName,
+			LastName:   item.LastName,
+			Groups:     splitCSV(item.Groups),
+			TokenCount: tokenCount,
 		})
 	}
 	return result, nil
+}
+
+// splitCSV splits a comma-separated PVE list field, returning nil for an empty
+// value so an absent field and an empty field are both omitted from output.
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (p *Provider) Groups(ctx context.Context) ([]domain.AccessGroup, error) {
