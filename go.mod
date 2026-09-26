@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/gorilla/websocket v1.5.3
-	github.com/pkg/sftp v1.13.9
+	github.com/pkg/sftp v1.13.11
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.56.0
 	golang.org/x/term v0.46.0
