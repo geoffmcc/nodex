@@ -56,6 +56,7 @@ jobs:
         working-directory: dist
         run: sha256sum -c checksums.txt
       - name: Verify release signature bundle
+        working-directory: dist
         run: |
           cosign verify-blob \
             --bundle checksums.txt.sigstore.json \
