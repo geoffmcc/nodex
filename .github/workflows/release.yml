@@ -3,19 +3,98 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  # Escape hatch for re-running a release whose tail failed (signature
+  # verification, attestation, or a transient upload error).
+  #
+  # A tag push mints a new version. If the pipeline then fails after the
+  # artifacts are built, re-cutting a tag is the only way to retry today --
+  # which burns a version number on a bug that has nothing to do with the
+  # code. This trigger re-runs the release against a tag that already
+  # exists, so a failed tail costs a re-run instead of v0.1.4.
+  #
+  # Before dispatching, delete the draft left behind by the failed run.
+  # GoReleaser will not overwrite an existing release for the same tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)release, e.g. v0.1.3"
+        required: true
+        type: string
 
 permissions:
   contents: write
   id-token: write
   attestations: write
 
+# One release per tag. Without this, a tag push and a manual re-run can
+# race and both try to create a release for the same tag.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # Resolve which tag is being released before anything is checked out.
+      # On a tag push the ref already is the tag; on dispatch it comes from
+      # the input. Validating here means a typo'd or hostile input fails in
+      # seconds rather than after a full toolchain build.
+      - name: Resolve release tag
+        id: release
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+          PUSH_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          set -euo pipefail
+          tag="${PUSH_TAG:-$DISPATCH_TAG}"
+          if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::refusing to release: '$tag' is not a vMAJOR.MINOR.PATCH tag"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Releasing $tag"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Always build from the tag itself, never from the dispatch branch,
+          # so the artifacts and the version GoReleaser stamps both come from
+          # the tagged commit.
+          ref: ${{ steps.release.outputs.tag }}
           fetch-depth: 0
+      - name: Verify checkout matches tag
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          tagged="$(git rev-list -n1 "$TAG")"
+          if [ "$head" != "$tagged" ]; then
+            echo "::error::HEAD $head does not match $TAG ($tagged)"
+            exit 1
+          fi
+          echo "Verified $TAG -> $head"
+      # The signing identity is derived from the ref that started the run, so
+      # a re-run dispatched from a branch signs as @refs/heads/<branch> while
+      # a tag push signs as @refs/tags/<tag>. Pin whichever one actually
+      # applies instead of widening the pattern to accept any ref.
+      - name: Resolve expected signer identity
+        id: identity
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          REF: ${{ github.ref }}
+          REF_TYPE: ${{ github.ref_type }}
+          REPO: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          base="${REPO}/.github/workflows/release.yml"
+          if [ "$REF_TYPE" = "tag" ]; then
+            # Tightened from the original 'v.*': only a well-formed version
+            # tag may sign.
+            echo "regexp=^${base}@refs/tags/${TAG}$" >> "$GITHUB_OUTPUT"
+          else
+            echo "regexp=^${base}@refs/${REF#refs/}$" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Expecting signer: ^${base}@refs/${REF#refs/}"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27.1"
@@ -57,10 +136,13 @@ jobs:
         run: sha256sum -c checksums.txt
       - name: Verify release signature bundle
         working-directory: dist
+        env:
+          EXPECTED_IDENTITY: ${{ steps.identity.outputs.regexp }}
         run: |
+          set -euo pipefail
           cosign verify-blob \
             --bundle checksums.txt.sigstore.json \
-            --certificate-identity-regexp 'https://github.com/geoffmcc/nodex/.github/workflows/release.yml@refs/tags/v.*' \
+            --certificate-identity-regexp "$EXPECTED_IDENTITY" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             checksums.txt
       - name: Attest release checksums
