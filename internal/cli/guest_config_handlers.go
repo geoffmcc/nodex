@@ -138,7 +138,7 @@ func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Pr
 	if tr.Error != nil {
 		result.Success = false
 		// Classify the error: timeout, cancellation, or ambiguous outcome.
-		exitCode := classifyTaskError(tr.Error, upid)
+		exitCode := classifyTaskError(tr.Error)
 		result.Error = &output.ResultError{
 			Class:  exitClassFromCode(exitCode),
 			Exit:   exitCode,
@@ -780,7 +780,7 @@ func runCTSnapshotDispatch(ctx context.Context, cmdCtx *Context, args []string) 
 // the outcome is ambiguous: we submitted but don't know the final state.
 // For cancellation errors, returns ExitCancellation.
 // For other errors, returns ExitTaskFailure.
-func classifyTaskError(err error, upid string) int {
+func classifyTaskError(err error) int {
 	if err == nil {
 		return app.ExitSuccess
 	}

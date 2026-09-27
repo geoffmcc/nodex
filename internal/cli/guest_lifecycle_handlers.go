@@ -272,7 +272,7 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 	opResult.Waited = true
 	if tr.Error != nil {
 		opResult.Success = false
-		exitCode := classifyTaskError(tr.Error, upid)
+		exitCode := classifyTaskError(tr.Error)
 		opResult.Error = &output.ResultError{
 			Class:  exitClassFromCode(exitCode),
 			Exit:   exitCode,

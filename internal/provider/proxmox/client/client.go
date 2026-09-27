@@ -1656,6 +1656,9 @@ func (c *Client) console(ctx context.Context, node, guestType string, vmid int, 
 	if c.token != "" {
 		header.Set("Authorization", "PVEAPIToken="+c.token)
 	}
+	//nolint:bodyclose // bodyclose is a false positive here: gorilla/websocket
+	// replaces the handshake response body with a NopCloser on every return
+	// path, so the discarded *http.Response cannot leak a connection.
 	conn, _, err := dialer.DialContext(ctx, wsURL, header)
 	if err != nil {
 		// Websocket errors can include the request URL, so scrub the ticket

@@ -22,7 +22,7 @@ func sanitizeTerminalValue(rv reflect.Value) any {
 	if !rv.IsValid() {
 		return nil
 	}
-	if rv.Kind() == reflect.Interface || rv.Kind() == reflect.Ptr {
+	if rv.Kind() == reflect.Interface || rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
 			return nil
 		}
@@ -102,12 +102,12 @@ func sanitizeTerminalValue(rv reflect.Value) any {
 				continue
 			}
 			vv := reflect.ValueOf(val)
-			if dst.Kind() == reflect.Ptr && vv.Kind() != reflect.Ptr {
+			if dst.Kind() == reflect.Pointer && vv.Kind() != reflect.Pointer {
 				ptr := reflect.New(vv.Type())
 				ptr.Elem().Set(vv)
 				vv = ptr
 			}
-			if dst.Kind() != reflect.Ptr && vv.Kind() == reflect.Ptr && !vv.IsNil() {
+			if dst.Kind() != reflect.Pointer && vv.Kind() == reflect.Pointer && !vv.IsNil() {
 				vv = vv.Elem()
 			}
 			if vv.Type().AssignableTo(dst.Type()) {
