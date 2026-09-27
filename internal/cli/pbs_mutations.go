@@ -152,7 +152,7 @@ func pbsWriteMutationResult(ctx context.Context, cmdCtx *Context, prov domain.Pr
 	opResult.Waited = true
 	if tr.Error != nil {
 		opResult.Success = false
-		exitCode := classifyTaskError(tr.Error, upid)
+		exitCode := classifyTaskError(tr.Error)
 		opResult.Error = &output.ResultError{
 			Class:  exitClassFromCode(exitCode),
 			Exit:   exitCode,

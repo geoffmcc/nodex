@@ -180,6 +180,9 @@ func checkProfile(ctx context.Context, cmdCtx *Context, name string, p config.Pr
 	}
 }
 
+// sortResults orders results by name.
+//
+//nolint:gosec // G602 is a false positive: the inner loop starts at i+1 and both loops are bounded by len(results), so every index is in range.
 func sortResults(results []checkResult) {
 	for i := 0; i < len(results); i++ {
 		for j := i + 1; j < len(results); j++ {

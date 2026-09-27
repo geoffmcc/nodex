@@ -71,7 +71,7 @@ func sanitize(v any, checkRedactable bool) any {
 
 	// 0. Handle nil pointers and nil interfaces early so we never
 	//    call methods on nil receivers.
-	if rv.Kind() == reflect.Ptr || rv.Kind() == reflect.Interface {
+	if rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface {
 		if rv.IsNil() {
 			return nil
 		}
@@ -91,7 +91,7 @@ func sanitize(v any, checkRedactable bool) any {
 	}
 
 	// 3. Dereference pointers (keep checkRedactable on the pointed-to value).
-	if rv.Kind() == reflect.Ptr {
+	if rv.Kind() == reflect.Pointer {
 		return sanitize(rv.Elem().Interface(), checkRedactable)
 	}
 
@@ -152,7 +152,7 @@ func sanitize(v any, checkRedactable bool) any {
 			}
 			sv := reflect.ValueOf(sanitized)
 			// If the field expects a pointer but we got a value, wrap it.
-			if of.Kind() == reflect.Ptr && sv.Kind() != reflect.Ptr {
+			if of.Kind() == reflect.Pointer && sv.Kind() != reflect.Pointer {
 				if sv.CanAddr() {
 					sv = sv.Addr()
 				} else {
@@ -162,7 +162,7 @@ func sanitize(v any, checkRedactable bool) any {
 				}
 			}
 			// If the field expects a value but we got a pointer, dereference.
-			if of.Kind() != reflect.Ptr && sv.Kind() == reflect.Ptr && !sv.IsNil() {
+			if of.Kind() != reflect.Pointer && sv.Kind() == reflect.Pointer && !sv.IsNil() {
 				sv = sv.Elem()
 			}
 			if sv.Type().AssignableTo(of.Type()) {

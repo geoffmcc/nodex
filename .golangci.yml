@@ -26,6 +26,21 @@ linters:
       - third_party$
       - builtin$
       - examples$
+    rules:
+      # Test fixtures legitimately use permissive modes, temp paths, and
+      # fake credentials. t.TempDir() is already 0700, so the permission
+      # and file-inclusion rules below only produce noise in _test.go.
+      - linters:
+          - gosec
+        path: _test\.go
+        text: "G101|G120|G301|G302|G304|G306|G710"
+      # httptest servers discard the response and intentionally ignore
+      # errors from Close/Write on throwaway fixtures.
+      - linters:
+          - bodyclose
+          - errcheck
+          - errorlint
+        path: _test\.go
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
