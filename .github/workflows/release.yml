@@ -33,11 +33,11 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Install staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
       - name: Staticcheck
         run: staticcheck ./...
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
       - name: Govulncheck
         run: govulncheck ./...
       - name: Install Syft
