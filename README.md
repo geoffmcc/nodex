@@ -137,7 +137,7 @@ Global flags may appear at any position in the command line: `nodex --output jso
 
 ## Requirements
 
-- Go 1.26.7 for building from source
+- Go 1.27.1 for building from source
 - A Proxmox VE endpoint reachable over HTTPS
 - A Proxmox API token with appropriate permissions
 
