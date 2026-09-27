@@ -366,6 +366,28 @@ Inspect cluster state. Safety: Tier 0.
 
 Cluster initialization posts `clustername` and `link0` to `/cluster/config` and returns the provider worker UPID. It is a destructive cluster and corosync operation, not a reversible configuration change. The join endpoint `/cluster/config/join` also requires a peer root password; the existing profile API token is not equivalent, so Nodex fails closed before making a join request.
 
+#### Standalone hosts
+
+A Proxmox VE host that is not a cluster member reports no `type: "cluster"`
+entry from `/cluster/status`. Nodex treats a successful cluster-status query
+that returns no cluster entry as **standalone** and reports it explicitly
+instead of presenting a zero quorum as a fault.
+
+`nodex status`, `nodex cluster status`, and `nodex ha status` all distinguish
+three states, and a failed or unsupported cluster-status query is always
+reported as *unavailable* — never as *standalone*:
+
+| State | Meaning |
+|-------|---------|
+| `standalone` | The host was confirmed not to be a cluster member; a zero quorum is expected. |
+| `n/a — standalone host` | Quorum and HA are not applicable on a standalone host. |
+| `unavailable` | The cluster state could not be determined; the reason is reported. |
+
+`nodex node services <node>` also annotates `corosync` and `pmxcfs` on a
+standalone host. These services are not part of a standalone deployment, so they
+are reported as not applicable with an explanatory note while the raw provider
+state and `active` flag are preserved.
+
 ### `nodex event`
 
 List cluster events. Safety: Tier 0.
@@ -376,10 +398,31 @@ nodex event list
 
 ### `nodex log`
 
-Show node syslog. Safety: Tier 0.
+Show the most recent node syslog entries. Safety: Tier 0.
 
 ```bash
-nodex log --node <node>
+nodex log <node> [--last <n>] [--grep <regexp>] [--follow]
+```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--last <n>` | 50 | Show only the `n` most recent entries. `--last 0` removes the cap. |
+| `--grep <regexp>` | none | Show only entries whose text matches this Go regular expression. Matching is case-sensitive. |
+| `--follow` | off | Stream matching entries as they arrive until interrupted. Text output only. |
+
+The global `--limit` flag is also accepted and behaves like `--last` for this
+command, because a log limit conventionally means the most recent N entries.
+
+Proxmox's `/nodes/{node}/syslog` returns only the line number and message text,
+with no timestamps, so time-window filters such as `--since`/`--until` are not
+available. Use `--last` and `--grep` to narrow the output instead.
+
+```bash
+# last 200 lines
+nodex log proxmox --last 200
+
+# only corosync or pveproxy messages, streaming live
+nodex log proxmox --grep 'corosync|pveproxy' --follow
 ```
 
 ### `nodex doctor`
@@ -419,11 +462,24 @@ Inspect and manage backups.
 
 Inspect and manage firewall rules.
 
+**Command naming**: the plural noun is always the read-only list and the
+singular noun is always the mutate verb. `firewall security-groups` lists and
+`firewall security-group` creates/deletes; `firewall group` remains as a legacy
+alias for `firewall security-group`.
+
+**Rule scopes**: firewall rules exist at three scopes, each with its own command
+so the scope is always explicit in the command name. `firewall cluster-rules`
+reads `/cluster/firewall/rules`; `firewall node-rules <node>` and
+`firewall vm-rules <node>/<vmid>` read the node and guest scopes. `firewall list`
+and `firewall rules` are documented aliases for `firewall cluster-rules`.
+
 **Read-only commands** (Tier 0):
 
 | Command | Description |
 |---------|-------------|
-| `firewall list` | List cluster firewall rules |
+| `firewall cluster-rules` | List cluster-wide firewall rules |
+| `firewall list` | Alias for `firewall cluster-rules` |
+| `firewall rules` | Alias for `firewall cluster-rules` |
 | `firewall aliases` | List firewall aliases |
 | `firewall ipsets` | List firewall IP sets |
 | `firewall ipset <name>` | Show IP set entries |
@@ -445,8 +501,10 @@ Inspect and manage firewall rules.
 | `firewall ipset entry add <name> <cidr>` | Add IP set entry |
 | `firewall ipset entry remove <name> <cidr>` | Remove IP set entry |
 | `firewall ipset delete <name>` | Delete an IP set |
-| `firewall group create <name>` | Create a security group |
-| `firewall group delete <name>` | Delete a security group |
+| `firewall security-group create <name>` | Create a security group |
+| `firewall security-group delete <name>` | Delete a security group |
+| `firewall group create <name>` | Create a security group (legacy alias) |
+| `firewall group delete <name>` | Delete a security group (legacy alias) |
 | `firewall options update <params...>` | Update firewall options |
 
 ### `nodex ha`
@@ -460,9 +518,17 @@ Inspect HA resources. Safety: Tier 0.
 | `ha status` | Show HA status |
 | `ha current` | Show current HA resource state |
 
+`ha status` reports `standalone`, `cluster`, and `quorum_known` so a standalone
+host is distinguishable from a cluster whose quorum could not be read. `enabled`
+is `false` on a standalone host, where the HA subsystem does not apply.
+
 ### `nodex sdn`
 
 Inspect and manage SDN.
+
+**Command naming**: the plural noun is always the read-only list and the
+singular noun is always the mutate verb, so every resource has a matching
+`list <plural>` and `manage <singular>` pair.
 
 **Read-only commands** (Tier 0):
 
@@ -470,6 +536,8 @@ Inspect and manage SDN.
 |---------|-------------|
 | `sdn zones` | List SDN zones |
 | `sdn vnets` | List SDN VNets |
+| `sdn subnets` | List SDN subnets |
+| `sdn controllers` | List SDN controllers |
 
 **Mutation commands** (varies by operation):
 
@@ -537,7 +605,23 @@ Exit codes: `healthy` and `warning` exit 0; `blocked`, `unknown`, `unsupported`,
 
 ### `nodex pbs`
 
-Inspect a Proxmox Backup Server (read-only). Requires a profile with `provider: pbs` (see the configuration reference). Running a `pbs` command against a non-PBS profile fails with the unsupported-capability exit code (10).
+Inspect a Proxmox Backup Server (read-only). Requires a profile with `provider: pbs` (see the configuration reference).
+
+The whole `pbs` group is gated before any connection attempt. When the selected
+profile's provider exposes no PBS capability — the common case on a PVE-only
+setup — every `pbs` subcommand fails immediately with exit code 10 and one
+actionable message instead of a bare "unsupported capability" error:
+
+```console
+$ nodex pbs datastore list
+Error: unsupported capability: pbs commands require a profile whose provider
+supports PBS, but profile "pve" uses provider "proxmox"; select a pbs profile
+with --profile <name> or `nodex profile use <name>`, or add one with
+`nodex profile add <name> --provider pbs`
+```
+
+`nodex pbs help` and `nodex help pbs` still list every subcommand regardless of
+the selected profile, so discovery is never blocked.
 
 ```bash
 nodex pbs status
@@ -614,16 +698,47 @@ Inspect and manage network configuration.
 
 Inspect and manage identity and access control.
 
+**Command naming**: the plural noun is always the read-only list and the
+singular noun is always the mutate verb. Proxmox VE exposes no create or delete
+API for roles or groups, so `access roles` and `access groups` are read-only and
+have no singular counterpart by design.
+
 **Read-only commands** (Tier 0):
 
 | Command | Description |
 |---------|-------------|
-| `access users` | List users |
+| `access users` | List users (see [user discovery columns](#access-users-discovery-columns)) |
 | `access groups` | List groups |
 | `access roles` | List roles |
 | `access acl` | List ACL entries |
 | `access domains` | List authentication domains |
 | `access tokens <user>` | List API tokens for a user |
+
+#### `access users` discovery columns
+
+`nodex access users` requests `full=1` so PVE includes group memberships and API
+token details, which the plain index omits. The table gains two columns:
+
+| Column | Meaning |
+|--------|---------|
+| `GROUPS` | Realm groups the user belongs to |
+| `TOKENS` | Number of API tokens the user owns |
+
+Both columns are honest about missing data. PVE only returns these fields to
+callers with sufficient privileges, so a value that was not reported renders as
+`-` in the table and is **omitted entirely** from JSON/YAML output:
+
+```console
+$ nodex access users
+USERID       ENABLED  EMAIL  FIRSTNAME  LASTNAME  GROUPS       TOKENS  COMMENT
+root@pam     yes                          -        admins,ops  2
+svc@pve      no                           -        -           0
+quiet@pve    no                           -        -           -
+```
+
+A reported `0` and an unreported count are genuinely different states, and the
+output preserves that distinction. If a PVE release rejects `full=1`, the command
+silently falls back to the plain index and those columns show `-` for everyone.
 
 **Mutation commands** (Tier 4 — Security Admin, requires `--expert`):
 

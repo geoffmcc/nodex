@@ -1,4 +1,8 @@
 {
   "quorum": 1,
-  "status": "online"
+  "status": "online",
+  "enabled": true,
+  "cluster": "e2e",
+  "standalone": false,
+  "quorum_known": true
 }

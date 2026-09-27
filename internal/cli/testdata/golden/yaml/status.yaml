@@ -3,6 +3,7 @@ version: test
 nodes: 1
 quorum: 3
 quorum_known: true
+standalone: false
 nodes_detail:
     - name: e2e-node
       status: online
@@ -28,3 +29,4 @@ ha:
     status: online
     quorum: 1
     quorum_known: true
+    standalone: false

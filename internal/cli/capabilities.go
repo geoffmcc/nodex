@@ -4,8 +4,72 @@ import (
 	"fmt"
 
 	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/provider"
 )
+
+// --- Command/provider gating ---
+
+// implementsAnyPBS reports whether prov satisfies at least one PBS capability
+// interface. It uses a type switch on the concrete provider value so it works for
+// every registered provider without connecting.
+func implementsAnyPBS(prov domain.Provider) bool {
+	switch prov.(type) {
+	case domain.PBSSystemInspector,
+		domain.PBSDatastoreInspector,
+		domain.PBSSnapshotInspector,
+		domain.PBSTaskInspector,
+		domain.PBSJobInspector,
+		domain.PBSGCInspector,
+		domain.PBSVerifyRunner,
+		domain.PBSSyncRunner,
+		domain.PBSPruneRunner,
+		domain.PBSGCRunner:
+		return true
+	}
+	return false
+}
+
+// requirePBSProfile rejects the whole `nodex pbs` group before any connection
+// attempt when the selected profile's provider exposes no PBS capability at all.
+//
+// Gating at dispatch time means a user who read `nodex pbs help` gets one
+// actionable message naming the remediation commands, instead of every
+// subcommand independently failing with a bare "unsupported capability" dead end
+// (nit #35). Providers that do implement any PBS capability — including alternate
+// and test implementations — pass through to normal per-subcommand capability
+// checks.
+func requirePBSProfile(profileName string) error {
+	name, providerType, err := profileProviderType(profileName)
+	if err != nil {
+		return err
+	}
+
+	// An unregistered or unknown provider type is reported by the normal connect
+	// path, which gives a better message than a capability guess.
+	if !config.IsKnownProvider(providerType) {
+		return nil
+	}
+
+	// Only report the capability mismatch when the provider was actually
+	// resolved and positively lacks PBS support. A registry miss falls through
+	// to the connect path instead of guessing.
+	prov, err := provider.Get(providerType)
+	if err == nil && !implementsAnyPBS(prov) {
+		return app.NewExitError(
+			fmt.Errorf(
+				"%w: pbs commands require a profile whose provider supports PBS, "+
+					"but profile %q uses provider %q; "+
+					"select a pbs profile with --profile <name> or `nodex profile use <name>`, "+
+					"or add one with `nodex profile add <name> --provider %s`",
+				app.ErrUnsupportedCap, name, providerType, config.ProviderPBS,
+			),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return nil
+}
 
 // --- Core inspection helpers ---
 

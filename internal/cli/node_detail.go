@@ -29,6 +29,10 @@ func runNodeServices(ctx context.Context, cmdCtx *Context, args []string) error 
 	if err != nil {
 		return fmt.Errorf("get node services: %w", err)
 	}
+	// Cluster-only services such as corosync always read as dead on a
+	// standalone host. Annotate them so the state is not mistaken for a fault
+	// (nit #28). A failed cluster query leaves the output untouched.
+	annotateStandaloneServices(services, detectQuorum(ctx, prov))
 	return writeNodeServices(cmdCtx, services)
 }
 
@@ -42,14 +46,14 @@ func writeNodeServices(cmdCtx *Context, services []domain.NodeService) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, services)
 	default:
-		headers := []string{"NAME", "STATE", "ACTIVE"}
+		headers := []string{"NAME", "STATE", "ACTIVE", "NOTE"}
 		rows := make([][]string, 0, len(services))
 		for _, s := range services {
-			active := ""
+			active := "no"
 			if s.Active {
 				active = "yes"
 			}
-			rows = append(rows, []string{s.Name, s.State, active})
+			rows = append(rows, []string{s.Name, s.State, active, s.Note})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}

@@ -304,13 +304,42 @@ func TestProfileNamesSorted(t *testing.T) {
 	}
 }
 
-func TestUpdateConcurrentMutations(t *testing.T) {
+// isolateConfigDir redirects config resolution to a temporary directory on every
+// platform and returns the config file path inside it.
+//
+// XDG_CONFIG_HOME alone is not sufficient: config.Dir() honors it only on linux,
+// while darwin resolves to ~/Library/Application Support/Nodex and windows to
+// %AppData%\Nodex. Without the remaining variables this test would read and
+// overwrite the real user config on those platforms.
+func isolateConfigDir(t *testing.T) string {
+	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
+	home := filepath.Join(dir, "home")
+	xdg := filepath.Join(dir, "xdg")
+	appData := filepath.Join(dir, "appdata")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("AppData", appData)
+	for _, d := range []string{home, xdg, appData} {
+		if err := os.MkdirAll(d, 0o750); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
 	path, err := ConfigPath()
 	if err != nil {
 		t.Fatalf("ConfigPath: %v", err)
 	}
+	// Fail loudly rather than silently operating on the real user config.
+	rel, err := filepath.Rel(dir, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		t.Fatalf("ConfigPath() = %q, want a path under %q; the test would touch the real user config", path, dir)
+	}
+	return path
+}
+
+func TestUpdateConcurrentMutations(t *testing.T) {
+	path := isolateConfigDir(t)
 	if err := WriteTo(DefaultConfig(), path); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}

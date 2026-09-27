@@ -1111,6 +1111,34 @@ type SDNVNetItem struct {
 	Alias string `json:"alias,omitempty"`
 }
 
+// SDNSubnetsResponse is the response from /cluster/sdn/subnets.
+type SDNSubnetsResponse struct {
+	Data []SDNSubnetItem `json:"data"`
+}
+
+// SDNSubnetItem represents an SDN subnet.
+type SDNSubnetItem struct {
+	Subnet  string `json:"subnet"`
+	Type    string `json:"type,omitempty"`
+	VNet    string `json:"vnet,omitempty"`
+	Zone    string `json:"zone,omitempty"`
+	CIDR    string `json:"cidr,omitempty"`
+	Gateway string `json:"gateway,omitempty"`
+}
+
+// SDNControllersResponse is the response from /cluster/sdn/controllers.
+type SDNControllersResponse struct {
+	Data []SDNControllerItem `json:"data"`
+}
+
+// SDNControllerItem represents an SDN controller.
+type SDNControllerItem struct {
+	Name  string `json:"controller"`
+	Type  string `json:"type,omitempty"`
+	State string `json:"status,omitempty"`
+	Asn   int    `json:"asn,omitempty"`
+}
+
 // VMSnapshotConfigResponse is the response from /nodes/{node}/qemu/{vmid}/snapshot/{name}/config.
 type VMSnapshotConfigResponse struct {
 	Data map[string]interface{} `json:"data"`
@@ -1288,15 +1316,29 @@ type AccessUsersResponse struct {
 }
 
 // AccessUserItem represents a single user.
+//
+// With full=1, PVE additionally returns `groups` as a comma-separated string and
+// `tokens` as an array of token objects (not a count), so Tokens is a slice here.
+// Without full=1 both fields are absent.
 type AccessUserItem struct {
-	UserID    string `json:"userid"`
-	Comment   string `json:"comment,omitempty"`
-	Email     string `json:"email,omitempty"`
-	Enable    int    `json:"enable,omitempty"`
-	Expire    int64  `json:"expire,omitempty"`
-	FirstName string `json:"firstname,omitempty"`
-	LastName  string `json:"lastname,omitempty"`
-	Tokens    *int   `json:"tokens,omitempty"`
+	UserID    string                `json:"userid"`
+	Comment   string                `json:"comment,omitempty"`
+	Email     string                `json:"email,omitempty"`
+	Enable    int                   `json:"enable,omitempty"`
+	Expire    int64                 `json:"expire,omitempty"`
+	FirstName string                `json:"firstname,omitempty"`
+	LastName  string                `json:"lastname,omitempty"`
+	Groups    string                `json:"groups,omitempty"`
+	Tokens    []AccessUserTokenItem `json:"tokens,omitempty"`
+}
+
+// AccessUserTokenItem is one API token belonging to a user, as returned by
+// GET /access/users?full=1.
+type AccessUserTokenItem struct {
+	TokenID string `json:"tokenid"`
+	Comment string `json:"comment,omitempty"`
+	Expire  int64  `json:"expire,omitempty"`
+	PrivSep int    `json:"privsep,omitempty"`
 }
 
 // AccessGroupsResponse is the response from GET /access/groups.

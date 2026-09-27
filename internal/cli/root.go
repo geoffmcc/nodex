@@ -57,6 +57,11 @@ type command struct {
 	sub   map[string]*command
 	meta  *OperationMeta
 	bound bool
+	// gate, when set, runs after the group and its subcommand are resolved but
+	// before the handler connects to anything. It rejects impossible
+	// command/provider pairings with an actionable message instead of letting
+	// every subcommand fail the same way.
+	gate func(opts Options) error
 }
 
 var commands = map[string]*command{}
@@ -202,14 +207,21 @@ func init() {
 		&command{name: "job", short: "Manage backup job schedules", run: runBackupJobDispatch},
 	)
 	register("firewall", "Manage firewall", nil,
-		&command{name: "list", short: "List firewall rules", run: runFirewallList},
-		&command{name: "rule", short: "Manage firewall rules", run: runFirewallRuleDispatch},
+		// Plural commands are read-only; singular commands mutate.
+		// The three rule scopes are distinct names: cluster-rules, node-rules,
+		// and vm-rules. `list` and `rules` are legacy aliases for
+		// `cluster-rules` (nit #34).
+		&command{name: "cluster-rules", short: "List cluster-wide firewall rules", run: runFirewallClusterRules},
+		&command{name: "list", short: "List cluster-wide firewall rules (alias for cluster-rules)", run: runFirewallClusterRules},
+		&command{name: "rules", short: "List cluster-wide firewall rules (alias for cluster-rules)", run: runFirewallClusterRules},
+		&command{name: "rule", short: "Manage cluster-wide firewall rules", run: runFirewallRuleDispatch},
 		&command{name: "aliases", short: "List firewall aliases", run: runFirewallAliases},
 		&command{name: "alias", short: "Manage firewall aliases", run: runFirewallAliasDispatch},
 		&command{name: "ipsets", short: "List firewall IP sets", run: runFirewallIPSets},
 		&command{name: "ipset", short: "Manage firewall IP sets", run: runFirewallIPSetDispatch},
 		&command{name: "security-groups", short: "List firewall security groups", run: runFirewallSecurityGroups},
-		&command{name: "group", short: "Manage firewall security groups", run: runFirewallGroupDispatch},
+		&command{name: "security-group", short: "Manage firewall security groups", run: runFirewallGroupDispatch},
+		&command{name: "group", short: "Manage firewall security groups (legacy alias for security-group)", run: runFirewallGroupDispatch},
 		&command{name: "options", short: "Manage firewall options", run: runFirewallOptionsDispatch},
 		&command{name: "node-rules", short: "List node-level firewall rules", run: runFirewallNodeRules},
 		&command{name: "vm-rules", short: "List VM-level firewall rules", run: runFirewallVMRules},
@@ -221,8 +233,11 @@ func init() {
 		&command{name: "current", short: "Show current HA resource state", run: runHACurrent},
 	)
 	register("sdn", "Manage SDN", nil,
+		// Plural commands are read-only; singular commands mutate.
 		&command{name: "zones", short: "List SDN zones", run: runSDNZones},
 		&command{name: "vnets", short: "List SDN VNets", run: runSDNVNets},
+		&command{name: "subnets", short: "List SDN subnets", run: runSDNSubnets},
+		&command{name: "controllers", short: "List SDN controllers", run: runSDNControllers},
 		&command{name: "zone", short: "Manage SDN zones", run: runSDNZoneDispatch},
 		&command{name: "vnet", short: "Manage SDN VNets", run: runSDNVNetDispatch},
 		&command{name: "subnet", short: "Manage SDN subnets", run: runSDNSubnetDispatch},
@@ -237,13 +252,16 @@ func init() {
 		&command{name: "revert", short: "Revert pending network changes", run: runNetworkRevert},
 	)
 	register("access", "Manage access and identity", nil,
-		&command{name: "users", short: "Manage users", run: runAccessUsersDispatch},
-		&command{name: "groups", short: "Manage groups", run: runAccessGroupsDispatch},
-		&command{name: "roles", short: "Manage roles", run: runAccessRolesDispatch},
-		&command{name: "acl", short: "Manage ACL entries", run: runAccessACLDispatch},
-		&command{name: "domains", short: "Manage authentication domains", run: runAccessDomainsDispatch},
-		&command{name: "tokens", short: "Manage API tokens", run: runAccessTokensDispatch},
-		&command{name: "user", short: "Manage individual users", run: runAccessUserDispatch},
+		// Plural commands are read-only; `user` is the mutate verb. PVE
+		// exposes no create/delete API for roles or groups, so those stay
+		// read-only with no singular counterpart.
+		&command{name: "users", short: "List users", run: runAccessUsersDispatch},
+		&command{name: "groups", short: "List groups", run: runAccessGroupsDispatch},
+		&command{name: "roles", short: "List roles", run: runAccessRolesDispatch},
+		&command{name: "acl", short: "List ACL entries", run: runAccessACLDispatch},
+		&command{name: "domains", short: "List authentication domains", run: runAccessDomainsDispatch},
+		&command{name: "tokens", short: "List API tokens for a user", run: runAccessTokensDispatch},
+		&command{name: "user", short: "Create or delete individual users", run: runAccessUserDispatch},
 	)
 	register("ceph", "Manage Ceph storage", nil,
 		&command{name: "status", short: "Show Ceph cluster status", run: runCephStatus},
@@ -280,6 +298,9 @@ func init() {
 		&command{name: "sync", short: "Inspect PBS sync jobs", run: runPBSSyncDispatch},
 		&command{name: "garbage-collection", short: "Inspect PBS garbage collection", run: runPBSGCDispatch},
 	)
+	// The whole group is gated: on a PVE-only profile every subcommand would
+	// otherwise fail identically with a bare "unsupported capability".
+	commands["pbs"].gate = func(opts Options) error { return requirePBSProfile(opts.Profile) }
 	register("replication", "Manage replication jobs", nil,
 		&command{name: "list", short: "List replication jobs", run: runReplicationList},
 		&command{name: "show", short: "Show replication job details", run: runReplicationShow},
@@ -382,6 +403,13 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			fmt.Errorf("unknown command: %s", name),
 			app.ExitUsage,
 		)
+	}
+
+	// Reject impossible group/provider pairings before any connection attempt.
+	if cmd.gate != nil {
+		if err := cmd.gate(cmdCtx.Opts); err != nil {
+			return err
+		}
 	}
 
 	// Handle subcommands.

@@ -116,9 +116,14 @@ type BackupProvider interface {
 }
 
 // SDNProvider exposes SDN topology.
+//
+// Every SDN resource has both a plural read method and singular mutation verbs,
+// so `sdn <plural>` always lists and `sdn <singular>` always mutates.
 type SDNProvider interface {
 	SDNZones(ctx context.Context) ([]SDNZone, error)
 	SDNVNets(ctx context.Context) ([]SDNVNet, error)
+	SDNSubnets(ctx context.Context) ([]SDNSubnet, error)
+	SDNControllers(ctx context.Context) ([]SDNController, error)
 }
 
 // PoolProvider exposes resource pool management.
@@ -272,6 +277,12 @@ type NodeService struct {
 	Name   string `json:"name" yaml:"name"`
 	State  string `json:"state" yaml:"state"`
 	Active bool   `json:"active" yaml:"active"`
+	// NotApplicable marks services that only exist on a clustered host but were
+	// observed on a standalone node, where a "dead" state is expected rather
+	// than a fault.
+	NotApplicable bool `json:"not_applicable,omitempty" yaml:"not_applicable,omitempty"`
+	// Note carries the human explanation for NotApplicable.
+	Note string `json:"note,omitempty" yaml:"note,omitempty"`
 }
 
 // NodeNetwork represents a network interface on a node.
@@ -403,6 +414,24 @@ type SDNVNet struct {
 	Zone  string `json:"zone" yaml:"zone"`
 	VLAN  int    `json:"vlan,omitempty" yaml:"vlan,omitempty"`
 	Alias string `json:"alias,omitempty" yaml:"alias,omitempty"`
+}
+
+// SDNSubnet represents an SDN subnet.
+type SDNSubnet struct {
+	Name    string `json:"name" yaml:"name"`
+	Type    string `json:"type" yaml:"type"`
+	VNet    string `json:"vnet" yaml:"vnet"`
+	Zone    string `json:"zone" yaml:"zone"`
+	CIDR    string `json:"cidr,omitempty" yaml:"cidr,omitempty"`
+	Gateway string `json:"gateway,omitempty" yaml:"gateway,omitempty"`
+}
+
+// SDNController represents an SDN controller.
+type SDNController struct {
+	Name  string `json:"name" yaml:"name"`
+	Type  string `json:"type" yaml:"type"`
+	State string `json:"state,omitempty" yaml:"state,omitempty"`
+	ASN   int    `json:"asn,omitempty" yaml:"asn,omitempty"`
 }
 
 // --- Ceph, SDN Mutation, and Replication provider interfaces ---
@@ -699,7 +728,13 @@ type AccessUser struct {
 	Expire    int64  `json:"expire,omitempty" yaml:"expire,omitempty"`
 	FirstName string `json:"firstname,omitempty" yaml:"firstname,omitempty"`
 	LastName  string `json:"lastname,omitempty" yaml:"lastname,omitempty"`
-	Tokens    int    `json:"tokens,omitempty" yaml:"tokens,omitempty"`
+	// Groups lists realm group memberships. It is empty when the server does not
+	// report group information, which is not the same as "no groups".
+	Groups []string `json:"groups,omitempty" yaml:"groups,omitempty"`
+	// TokenCount is the number of API tokens owned by the user. It is nil when
+	// the server does not report token information, so consumers can tell
+	// "unknown" apart from a genuine zero.
+	TokenCount *int `json:"tokens,omitempty" yaml:"tokens,omitempty"`
 }
 
 // AccessGroup represents a Proxmox VE group.

@@ -1174,6 +1174,12 @@ func TestWritePhase13NilHandling(t *testing.T) {
 			if err := writeSDNVNetsTable(ctx, nil); err != nil {
 				t.Fatalf("writeSDNVNetsTable nil: %v", err)
 			}
+			if err := writeSDNSubnetsTable(ctx, nil); err != nil {
+				t.Fatalf("writeSDNSubnetsTable nil: %v", err)
+			}
+			if err := writeSDNControllersTable(ctx, nil); err != nil {
+				t.Fatalf("writeSDNControllersTable nil: %v", err)
+			}
 		})
 	}
 }

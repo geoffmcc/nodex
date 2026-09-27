@@ -59,9 +59,12 @@ func writeBackups(cmdCtx *Context, backups []domain.Backup) error {
 	}
 }
 
-func runFirewallList(ctx context.Context, cmdCtx *Context, args []string) error {
+// runFirewallClusterRules lists cluster-wide firewall rules from
+// /cluster/firewall/rules. Node- and VM-scoped rules have their own commands so
+// the three scopes are always distinguishable by name (nit #34).
+func runFirewallClusterRules(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) != 0 {
-		return app.NewExitError(fmt.Errorf("usage: nodex firewall list"), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex firewall cluster-rules"), app.ExitUsage)
 	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {

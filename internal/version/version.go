@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+// unknownSentinel is the placeholder used for metadata not supplied at build
+// time.
+const unknownSentinel = "unknown"
+
 // These variables are set at build time via -ldflags.
 var (
 	Version   = "dev"
@@ -31,11 +35,26 @@ func Current() Info {
 		BuildDate: BuildDate,
 		GoVersion: GoVersion,
 	}
+	info, _ := debug.ReadBuildInfo()
+	// The Go toolchain records its own version in build info for every build
+	// since Go 1.18, so this works without an ldflag. Release builds set the
+	// other fields via ldflags and return early below, so the fallback has to
+	// happen first to keep "Go:" accurate in packaged binaries.
+	base = applyBuildInfoGoVersion(base, info)
 	if base.Version != "dev" {
 		return base
 	}
-	info, _ := debug.ReadBuildInfo()
 	return resolve(base, info)
+}
+
+// applyBuildInfoGoVersion fills in the Go version from build information when no
+// ldflag supplied one. An explicit ldflag always wins.
+func applyBuildInfoGoVersion(base Info, build *debug.BuildInfo) Info {
+	if base.GoVersion != unknownSentinel || build == nil || build.GoVersion == "" {
+		return base
+	}
+	base.GoVersion = build.GoVersion
+	return base
 }
 
 func resolve(base Info, build *debug.BuildInfo) Info {

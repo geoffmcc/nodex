@@ -191,3 +191,39 @@ func buildInfo(version, goVersion string, settings ...debug.BuildSetting) *debug
 func setting(key, value string) debug.BuildSetting {
 	return debug.BuildSetting{Key: key, Value: value}
 }
+
+// Regression guard: release builds set Version/Commit/BuildDate via ldflags and
+// return early from Current(), so the Go version must come from build info
+// before that early return. Relying on an ldflag here made `goreleaser build`
+// fail outright whenever GOVERSION was not exported.
+func TestApplyBuildInfoGoVersionFillsReleaseBuilds(t *testing.T) {
+	got := applyBuildInfoGoVersion(
+		Info{Version: "v0.1.0", Commit: "abc", BuildDate: "2026-07-13T01:00:00Z", GoVersion: "unknown"},
+		buildInfo("v0.0.0", "go1.27.1"),
+	)
+	if got.GoVersion != "go1.27.1" {
+		t.Fatalf("GoVersion = %q, want go1.27.1", got.GoVersion)
+	}
+	if got.Version != "v0.1.0" || got.Commit != "abc" {
+		t.Fatalf("ldflags metadata disturbed: %+v", got)
+	}
+}
+
+func TestApplyBuildInfoGoVersionKeepsExplicitLdflag(t *testing.T) {
+	got := applyBuildInfoGoVersion(
+		Info{Version: "v0.1.0", GoVersion: "go1.25.12"},
+		buildInfo("v0.0.0", "go1.27.1"),
+	)
+	if got.GoVersion != "go1.25.12" {
+		t.Fatalf("GoVersion = %q, want the explicit ldflag value", got.GoVersion)
+	}
+}
+
+func TestApplyBuildInfoGoVersionHandlesMissingData(t *testing.T) {
+	if got := applyBuildInfoGoVersion(Info{GoVersion: "unknown"}, nil); got.GoVersion != "unknown" {
+		t.Errorf("nil build info changed GoVersion to %q", got.GoVersion)
+	}
+	if got := applyBuildInfoGoVersion(Info{GoVersion: "unknown"}, buildInfo("v0.0.0", "")); got.GoVersion != "unknown" {
+		t.Errorf("empty build GoVersion changed it to %q", got.GoVersion)
+	}
+}

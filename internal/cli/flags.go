@@ -43,6 +43,7 @@ var handlerFlags = map[string]flagSet{
 			"--password", "--secret",
 		},
 	},
+	"log": {exact: []string{"--last", "--grep", "--follow"}},
 	"certification run": {
 		exact: []string{"--environment", "--suite", "--node", "--name", "--storage", "--vmid", "--ledger"},
 	},

@@ -671,9 +671,10 @@ func buildRegistry() []OperationMeta {
 
 	// --- firewall ---
 	ops = append(ops, OperationMeta{
-		Path: "firewall list", Description: "List firewall rules",
-		Inspection: true, Scope: ScopeFirewall, SafetyTier: safety.TierObservation,
-		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "FirewallInspector", HandlerFunc: "runFirewallList",
+		Path: "firewall cluster-rules", Aliases: []string{"firewall list", "firewall rules"},
+		Description: "List cluster-wide firewall rules",
+		Inspection:  true, Scope: ScopeFirewall, SafetyTier: safety.TierObservation,
+		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "FirewallInspector", HandlerFunc: "runFirewallClusterRules",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "firewall aliases", Description: "List firewall aliases",
@@ -751,6 +752,16 @@ func buildRegistry() []OperationMeta {
 		Path: "sdn vnets", Description: "List SDN VNets",
 		Inspection: true, Scope: ScopeSDN, SafetyTier: safety.TierObservation,
 		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "SDNProvider", HandlerFunc: "runSDNVNets",
+	})
+	ops = append(ops, OperationMeta{
+		Path: "sdn subnets", Description: "List SDN subnets",
+		Inspection: true, Scope: ScopeSDN, SafetyTier: safety.TierObservation,
+		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "SDNProvider", HandlerFunc: "runSDNSubnets",
+	})
+	ops = append(ops, OperationMeta{
+		Path: "sdn controllers", Description: "List SDN controllers",
+		Inspection: true, Scope: ScopeSDN, SafetyTier: safety.TierObservation,
+		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "SDNProvider", HandlerFunc: "runSDNControllers",
 	})
 	sdnMutations := []struct {
 		op, desc, handler string
@@ -870,7 +881,7 @@ func buildRegistry() []OperationMeta {
 		{Path: "firewall rule", Description: "Manage firewall rules (routing)", Inspection: true, Scope: ScopeFirewall, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runFirewallRuleDispatch"},
 		{Path: "firewall alias", Description: "Manage firewall aliases (routing)", Inspection: true, Scope: ScopeFirewall, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runFirewallAliasDispatch"},
 		{Path: "firewall ipset", Description: "Manage firewall IP sets (routing)", Inspection: true, Scope: ScopeFirewall, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runFirewallIPSetDispatch"},
-		{Path: "firewall group", Description: "Manage firewall security groups (routing)", Inspection: true, Scope: ScopeFirewall, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runFirewallGroupDispatch"},
+		{Path: "firewall group", Aliases: []string{"firewall security-group"}, Description: "Manage firewall security groups (routing)", Inspection: true, Scope: ScopeFirewall, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runFirewallGroupDispatch"},
 		{Path: "firewall options", Description: "Manage firewall options (routing)", Inspection: true, Scope: ScopeFirewall, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runFirewallOptionsDispatch"},
 		{Path: "backup job", Description: "Manage backup job schedules (routing)", Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runBackupJobDispatch"},
 		{Path: "sdn zone", Description: "Manage SDN zones (routing)", Inspection: true, Scope: ScopeSDN, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runSDNZoneDispatch"},
@@ -1043,6 +1054,12 @@ func LookupOperation(path string) *OperationMeta {
 			operation := cloneOperation(operationRegistry[i])
 			return &operation
 		}
+		for _, alias := range operationRegistry[i].Aliases {
+			if alias == path {
+				operation := cloneOperation(operationRegistry[i])
+				return &operation
+			}
+		}
 	}
 	return nil
 }
@@ -1111,10 +1128,14 @@ func ValidateRegistry() []error {
 		treePathSet[p] = true
 	}
 
-	// Collect registry paths.
+	// Collect registry paths. Aliases are first-class registry paths, so they
+	// satisfy command-tree binding the same way a canonical Path does.
 	regEntrySet := make(map[string]bool)
 	for _, op := range operationRegistry {
 		regEntrySet[op.Path] = true
+		for _, alias := range op.Aliases {
+			regEntrySet[alias] = true
+		}
 	}
 
 	// Build the set of all dispatch sub-ops (for cross-referencing).

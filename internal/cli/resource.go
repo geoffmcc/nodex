@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -913,11 +914,14 @@ func writeSnapshotList(cmdCtx *Context, snaps []domain.Snapshot) error {
 }
 
 type statusOverview struct {
-	Cluster     string          `json:"cluster" yaml:"cluster"`
-	Version     string          `json:"version" yaml:"version"`
-	Nodes       int             `json:"nodes" yaml:"nodes"`
-	Quorum      int             `json:"quorum" yaml:"quorum"`
-	QuorumKnown bool            `json:"quorum_known" yaml:"quorum_known"`
+	Cluster     string `json:"cluster" yaml:"cluster"`
+	Version     string `json:"version" yaml:"version"`
+	Nodes       int    `json:"nodes" yaml:"nodes"`
+	Quorum      int    `json:"quorum" yaml:"quorum"`
+	QuorumKnown bool   `json:"quorum_known" yaml:"quorum_known"`
+	// Standalone reports that the provider confirmed no cluster exists, so a
+	// zero quorum is expected rather than a fault (nit #36).
+	Standalone  bool            `json:"standalone" yaml:"standalone"`
 	NodesDetail []statusNode    `json:"nodes_detail" yaml:"nodes_detail"`
 	VMs         int             `json:"vms" yaml:"vms"`
 	VMsRunning  int             `json:"vms_running" yaml:"vms_running"`
@@ -933,6 +937,9 @@ type statusHA struct {
 	Status      string `json:"status" yaml:"status"`
 	Quorum      int    `json:"quorum" yaml:"quorum"`
 	QuorumKnown bool   `json:"quorum_known" yaml:"quorum_known"`
+	// Standalone mirrors statusOverview.Standalone so a single HA block is
+	// unambiguous on its own.
+	Standalone bool `json:"standalone" yaml:"standalone"`
 }
 
 type statusNode struct {
@@ -1036,16 +1043,10 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	// Query cluster status for quorum information.
-	if cp, ok := prov.(domain.ClusterStatusProvider); ok {
-		if cs, err := cp.ClusterStatuses(ctx); err == nil {
-			for _, item := range cs {
-				if item.Type == "cluster" {
-					overview.Quorum = item.Quorate
-					overview.QuorumKnown = true
-				}
-			}
-		}
-	}
+	quorum := detectQuorum(ctx, prov)
+	overview.Quorum = quorum.Quorum
+	overview.QuorumKnown = quorum.Known
+	overview.Standalone = quorum.Standalone
 
 	// Query HA status if available.
 	if hp, ok := prov.(domain.HAProvider); ok {
@@ -1054,6 +1055,7 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 				Status:      ha.Status,
 				Quorum:      ha.Quorum,
 				QuorumKnown: ha.Status != "unknown",
+				Standalone:  quorum.Standalone,
 			}
 		}
 	}
@@ -1070,18 +1072,24 @@ func writeStatus(cmdCtx *Context, overview *statusOverview) error {
 	default:
 		w := cmdCtx.Writer
 		fmt.Fprintf(w, "Cluster: %s  Version: %s  Nodes: %d", overview.Cluster, overview.Version, overview.Nodes)
-		if overview.QuorumKnown {
+		switch {
+		case overview.QuorumKnown:
 			fmt.Fprintf(w, "  Quorum: %d", overview.Quorum)
-		} else {
+		case overview.Standalone:
+			fmt.Fprint(w, "  Quorum: n/a (standalone host)")
+		default:
 			fmt.Fprint(w, "  Quorum: unavailable")
 		}
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "VMs: %d running, %d stopped\n", overview.VMsRunning, overview.VMsStopped)
 		fmt.Fprintf(w, "Containers: %d running, %d stopped\n", overview.CTsRunning, overview.CTsStopped)
 		if overview.HA != nil {
-			if overview.HA.QuorumKnown {
+			switch {
+			case overview.HA.QuorumKnown:
 				fmt.Fprintf(w, "HA: %s (quorum: %d)\n", overview.HA.Status, overview.HA.Quorum)
-			} else {
+			case overview.HA.Standalone:
+				fmt.Fprintf(w, "HA: %s (quorum: n/a — standalone host)\n", overview.HA.Status)
+			default:
 				fmt.Fprintf(w, "HA: %s (quorum: unavailable)\n", overview.HA.Status)
 			}
 		}
@@ -1151,14 +1159,136 @@ func writeEventList(cmdCtx *Context, events []domain.Event) error {
 	}
 }
 
+// defaultSyslogEntries caps `nodex log` output. PVE returns the whole ring
+// buffer since boot, which is unusable without a bound.
+const defaultSyslogEntries = 50
+
+// syslogFollowInterval is the poll period for `nodex log --follow`.
+const syslogFollowInterval = 2 * time.Second
+
+// logOptions holds the flags `nodex log` parses for itself.
+type logOptions struct {
+	node   string
+	last   int
+	grep   *regexp.Regexp
+	follow bool
+}
+
+func logUsage() error {
+	return app.NewExitError(
+		fmt.Errorf("usage: nodex log <node> [--last <n>] [--grep <regexp>] [--follow]"),
+		app.ExitUsage,
+	)
+}
+
+// parseLogArgs splits the node positional from the handler-owned log flags.
+// Proxmox's /nodes/{node}/syslog carries no timestamp (only the line number and
+// text), so time-window filters are deliberately absent; --last and --grep
+// cover the "show me the recent/relevant part" case instead.
+func parseLogArgs(args []string, defaultLast int) (logOptions, error) {
+	opts := logOptions{last: defaultLast}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		name, inline, hasInline := strings.Cut(arg, "=")
+		value := func() (string, bool) {
+			if hasInline {
+				return inline, true
+			}
+			if i+1 < len(args) {
+				i++
+				return args[i], true
+			}
+			return "", false
+		}
+		switch name {
+		case "--last":
+			v, ok := value()
+			if !ok {
+				return opts, logUsage()
+			}
+			n, perr := strconv.Atoi(v)
+			if perr != nil {
+				return opts, app.NewExitError(
+					fmt.Errorf("invalid value %q for flag --last: expected a non-negative integer", v),
+					app.ExitUsage,
+				)
+			}
+			if n < 0 {
+				return opts, app.NewExitError(
+					fmt.Errorf("invalid value %q for flag --last: must be non-negative", v),
+					app.ExitUsage,
+				)
+			}
+			opts.last = n
+		case "--grep":
+			v, ok := value()
+			if !ok {
+				return opts, logUsage()
+			}
+			re, perr := regexp.Compile(v)
+			if perr != nil {
+				return opts, app.NewExitError(
+					fmt.Errorf("invalid value %q for flag --grep: %w", v, perr),
+					app.ExitUsage,
+				)
+			}
+			opts.grep = re
+		case "--follow":
+			opts.follow = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return opts, app.NewExitError(
+					fmt.Errorf("unknown flag: %s", name),
+					app.ExitUsage,
+				)
+			}
+			if opts.node != "" {
+				return opts, logUsage()
+			}
+			opts.node = arg
+		}
+	}
+	if opts.node == "" {
+		return opts, logUsage()
+	}
+	return opts, nil
+}
+
+// filterSyslog keeps entries matching the grep pattern. A nil pattern is a
+// no-op so callers can pass opts.grep directly.
+func filterSyslog(entries []domain.SyslogEntry, re *regexp.Regexp) []domain.SyslogEntry {
+	if re == nil {
+		return entries
+	}
+	out := make([]domain.SyslogEntry, 0, len(entries))
+	for _, e := range entries {
+		if re.MatchString(e.Text) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// tailSyslog returns at most n trailing entries. n <= 0 means no cap.
+func tailSyslog(entries []domain.SyslogEntry, n int) []domain.SyslogEntry {
+	if n <= 0 || len(entries) <= n {
+		return entries
+	}
+	return entries[len(entries)-n:]
+}
+
 func runLog(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) != 1 {
-		return app.NewExitError(fmt.Errorf("usage: nodex log <node>"), app.ExitUsage)
+	// An explicit --limit keeps its global meaning; otherwise fall back to
+	// --last, then to the default cap.
+	defaultLast := defaultSyslogEntries
+	if cmdCtx.Opts.Limit > 0 {
+		defaultLast = cmdCtx.Opts.Limit
 	}
-	node := args[0]
-	if node == "" {
-		return app.NewExitError(fmt.Errorf("usage: nodex log <node>"), app.ExitUsage)
+	opts, err := parseLogArgs(args, defaultLast)
+	if err != nil {
+		return err
 	}
+
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -1169,11 +1299,48 @@ func runLog(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	entries, err := sl.Syslog(ctx, node)
+	entries, err := sl.Syslog(ctx, opts.node)
 	if err != nil {
 		return fmt.Errorf("get syslog: %w", err)
 	}
-	return writeSyslog(cmdCtx, applyLimit(entries, cmdCtx.Opts.Limit))
+
+	shown := filterSyslog(tailSyslog(entries, opts.last), opts.grep)
+	if opts.follow {
+		// Streaming a table or a JSON document has no coherent meaning, so
+		// --follow is text-only regardless of --output.
+		return followSyslog(ctx, cmdCtx, sl, opts, shown)
+	}
+	return writeSyslog(cmdCtx, shown)
+}
+
+// followSyslog prints the initial tail then polls for entries newer than the
+// highest line number already emitted, until the context is cancelled.
+func followSyslog(ctx context.Context, cmdCtx *Context, sl domain.SyslogInspector, opts logOptions, initial []domain.SyslogEntry) error {
+	var lastN int64
+	for _, e := range initial {
+		lastN = e.N
+		fmt.Fprintf(cmdCtx.Writer, "%d\t%s\n", e.N, e.Text)
+	}
+	ticker := time.NewTicker(syslogFollowInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+		entries, err := sl.Syslog(ctx, opts.node)
+		if err != nil {
+			return fmt.Errorf("get syslog: %w", err)
+		}
+		for _, e := range filterSyslog(entries, opts.grep) {
+			if e.N <= lastN {
+				continue
+			}
+			lastN = e.N
+			fmt.Fprintf(cmdCtx.Writer, "%d\t%s\n", e.N, e.Text)
+		}
+	}
 }
 
 func writeSyslog(cmdCtx *Context, entries []domain.SyslogEntry) error {

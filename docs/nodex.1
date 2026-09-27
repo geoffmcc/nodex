@@ -248,15 +248,22 @@ List all tasks for a node.
 .SS nodex task show \-\-node \fINODE\fR \fIUPID\fR
 Show task details.
 .SS nodex status
-Show cluster status overview.
+Show cluster status overview. A host confirmed not to be a cluster member is
+reported as \fIstandalone\fR, and quorum is shown as \fBn/a \- standalone host\fR
+rather than as a zero\-value fault. A cluster state that cannot be read is
+reported as \fIunavailable\fR and never as \fIstandalone\fR.
 .SS nodex cluster status
-Show cluster quorum and node health.
+Show cluster quorum and node health. Reports the same \fIstandalone\fR versus
+\fIunavailable\fR distinction as \fBnodex status\fR.
 .SS nodex cluster log
 Show cluster log entries.
 .SS nodex event list
 List cluster events.
-.SS nodex log \-\-node \fINODE\fR
-Show node syslog.
+.SS nodex log \fINODE\fR [\-\-last \fIN\fR] [\-\-grep \fIREGEXP\fR] [\-\-follow]
+Show the most recent node syslog entries (default: last 50). \fB\-\-grep\fR takes a
+Go regular expression and is case-sensitive. \fB\-\-follow\fR streams matching
+entries until interrupted. Proxmox returns no timestamps, so time-window filters
+are unavailable; use \fB\-\-last\fR and \fB\-\-grep\fR instead.
 .SS nodex doctor
 Check system health and connectivity.
 .SS nodex backup list \-\-node \fINODE\fR
@@ -277,8 +284,8 @@ Create a backup job schedule.
 Update a backup job schedule.
 .SS nodex backup job delete \fIID\fR
 Delete a backup job schedule.
-.SS nodex firewall list
-List cluster firewall rules.
+.SS nodex firewall cluster\-rules
+List cluster\-wide firewall rules (\fI/cluster/firewall/rules\fR). \fBfirewall list\fR and \fBfirewall rules\fR are documented aliases.
 .SS nodex firewall aliases
 List firewall aliases.
 .SS nodex firewall ipsets
@@ -297,18 +304,23 @@ Create a firewall rule.
 Update a firewall rule.
 .SS nodex firewall rule delete \fIPOS\fR
 Delete a firewall rule.
-.SS nodex ha list
-List HA resources.
+.SS nodex firewall security\-group
+Manage firewall security groups. \fBfirewall group\fR is a legacy alias.
+.SS nodex ha listList HA resources.
 .SS nodex ha groups
 List HA groups.
 .SS nodex ha status
-Show HA status.
+Show HA status. Reports \fIstandalone\fR, \fIcluster\fR, and \fIquorum_known\fR so a standalone host is distinguishable from an unreadable quorum.
 .SS nodex ha current
 Show current HA resource state.
 .SS nodex sdn zones
 List SDN zones.
 .SS nodex sdn vnets
 List SDN VNets.
+.SS nodex sdn subnets
+List SDN subnets.
+.SS nodex sdn controllers
+List SDN controllers.
 .SS nodex sdn zone create \fITYPE\fR \fIZONE\fR
 Create an SDN zone.
 .SS nodex sdn zone delete \fIZONE\fR
@@ -343,6 +355,12 @@ List configured PVE/PBS environments.
 Check environment infrastructure health (reachability, datastores, tasks). Exits 11 when blocked, unknown, or partially retrieved.
 .SS nodex environment backup\-health \fINAME\fR
 Check environment backup health including per\-guest backup coverage, age, and verification. Exits 11 when blocked, unknown, or partially retrieved.
+.SS nodex pbs
+Inspect Proxmox Backup Server (read\-only). Requires a profile whose provider supports
+PBS. The whole \fBpbs\fR group is gated before any connection attempt: on a PVE\-only
+profile every subcommand exits 10 with one actionable message naming
+\fBnodex profile add <name> \-\-provider pbs\fR, instead of a bare unsupported\-capability
+error. \fBnodex pbs help\fR still lists every subcommand regardless of profile.
 .SS nodex pbs status
 Show Proxmox Backup Server host status (requires a profile with provider pbs).
 .SS nodex pbs version
@@ -386,7 +404,10 @@ Apply (reload) the node's pending network configuration (requires \-\-yes \-\-fo
 .SS nodex network revert \fINODE\fR
 Discard the node's pending network changes (requires \-\-yes \-\-force).
 .SS nodex access users
-List users.
+List users. The table includes \fBGROUPS\fR and \fBTOKENS\fR discovery columns; a
+value the server did not report is shown as \fB\-\fR rather than 0. JSON/YAML omit
+the \fBtokens\fR and \fBgroups\fR fields entirely when unreported, so an absent field
+means "unknown", not zero. Requires read access to \fB/access/users\fR.
 .SS nodex access groups
 List groups.
 .SS nodex access roles
