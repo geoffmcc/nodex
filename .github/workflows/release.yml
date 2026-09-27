@@ -48,6 +48,7 @@ jobs:
         run: goreleaser check --config .goreleaser.yaml
       - name: Build release artifacts
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           GOVERSION: ${{ steps.go-version.outputs.version }}
           SOURCE_DATE_EPOCH: 0
         run: goreleaser release --clean
