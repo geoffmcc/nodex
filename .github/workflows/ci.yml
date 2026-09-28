@@ -79,6 +79,34 @@ jobs:
       - name: Validate release configuration
         run: goreleaser check --config .goreleaser.yaml
 
+  # Workflow edits are otherwise unvalidated. release-config only checks
+  # .goreleaser.yaml, so a broken or unsafe change to these files merges on
+  # eyeball review alone -- which is how the v0.1.1 signature-verification
+  # bug and the stale signer-identity regexp both reached main.
+  #
+  # actionlint validates the workflow schema and expression contexts, and
+  # delegates inline `run:` blocks to shellcheck. Among other things it
+  # rejects expressions inlined into shell, which is the script-injection
+  # class of bug.
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.1"
+      # actionlint silently skips its shellcheck integration when shellcheck
+      # is absent. Fail loudly instead, so a runner image change cannot
+      # quietly reduce coverage on the release workflow.
+      - name: Confirm shellcheck is available
+        run: |
+          command -v shellcheck
+          shellcheck --version
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Lint workflow files
+        run: actionlint
+
   golangci:
     runs-on: ubuntu-latest
     steps:
