@@ -15,11 +15,45 @@ Every management command is protected by a five-tier safety model. Read-only com
 
 ## Quick start
 
-Install with Go:
+### Prebuilt binaries
+
+Signed binaries for Linux, macOS, and Windows on both amd64 and arm64 are attached to every [release](https://github.com/geoffmcc/nodex/releases/latest). No Go toolchain required.
+
+Download the archive for your platform, along with `checksums.txt` and `checksums.txt.sigstore.json`. Verify the archive you actually downloaded:
+
+```bash
+# Linux
+sha256sum --ignore-missing -c checksums.txt
+
+# macOS
+shasum --ignore-missing -a 256 -c checksums.txt
+```
+
+`--ignore-missing` skips entries for assets you did not download, so you do not need all of them. Anything you did download is still verified, and a mismatch exits non-zero.
+
+Then confirm the checksum file itself was signed by this repository's release workflow:
+
+```bash
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/geoffmcc/nodex/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+```
+
+The identity is pinned to this repository, this workflow file, and a release tag. You can tighten it further by replacing the version pattern with your exact tag, for example `v0\.1\.2`. If you have the GitHub CLI, `gh attestation verify checksums.txt --repo geoffmcc/nodex` checks the build provenance instead.
+
+Every archive also ships a matching SPDX SBOM.
+
+### Install from source
 
 ```bash
 go install github.com/geoffmcc/nodex/cmd/nodex@latest
 ```
+
+This is a pre-1.0 project and the command surface may change, so pin an exact version if you depend on it: `go install github.com/geoffmcc/nodex/cmd/nodex@v0.1.2`.
+
+### Connect to Proxmox
 
 Create a minimal configuration:
 
@@ -137,9 +171,10 @@ Global flags may appear at any position in the command line: `nodex --output jso
 
 ## Requirements
 
-- Go 1.27.1 for building from source
 - A Proxmox VE endpoint reachable over HTTPS
 - A Proxmox API token with appropriate permissions
+
+Go 1.27.1 is needed only to build from source. The prebuilt binaries need no toolchain.
 
 CI builds and tests on Ubuntu, macOS (Apple Silicon and Intel), and Windows.
 
