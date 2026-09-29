@@ -227,6 +227,7 @@ func init() {
 		&command{name: "ipsets", short: "List firewall IP sets", run: runFirewallIPSets},
 		&command{name: "ipset", short: "Manage firewall IP sets", run: runFirewallIPSetDispatch},
 		&command{name: "security-groups", short: "List firewall security groups", run: runFirewallSecurityGroups},
+		&command{name: "groups", short: "List firewall security groups (alias for security-groups)", run: runFirewallSecurityGroups},
 		&command{name: "security-group", short: "Manage firewall security groups", run: runFirewallGroupDispatch},
 		&command{name: "group", short: "Manage firewall security groups (legacy alias for security-group)", run: runFirewallGroupDispatch},
 		&command{name: "options", short: "Manage firewall options", run: runFirewallOptionsDispatch},
@@ -345,6 +346,12 @@ func bindCommandMetadata() {
 
 // Run parses global flags and dispatches to the appropriate command.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	// Keep the conventional root --version spelling as a short alias for the
+	// version command. Rewrite before global parsing so the flag does not need a
+	// second, divergent version-reporting path.
+	if len(args) > 0 && args[0] == "--version" {
+		args = append([]string{"version"}, args[1:]...)
+	}
 	opts, helpPath, remaining, err := parseGlobal(args)
 	if err != nil {
 		return app.NewExitError(err, app.ExitUsage)
@@ -453,7 +460,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 				return err
 			}
 			return app.NewExitError(
-				fmt.Errorf("unknown %s subcommand: %s", name, subName),
+				fmt.Errorf("unknown %s subcommand: %s (valid: %s)", name, subName, strings.Join(commandSubNames(cmd), ", ")),
 				app.ExitUsage,
 			)
 		}
@@ -498,6 +505,15 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 
 	return nil
+}
+
+func commandSubNames(cmd *command) []string {
+	names := make([]string, 0, len(cmd.sub))
+	for name := range cmd.sub {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // confirmFlagOrder is the fixed order in which inert confirmation flags are
@@ -601,6 +617,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintf(w, "  %-14s %s\n", "help", "Show help for a command")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Global Flags:")
+	fmt.Fprintln(w, "  --version            Show version information")
 	fmt.Fprintln(w, "  --profile <name>     Override current profile")
 	fmt.Fprintln(w, "  --output <format>    Output format: table, json, yaml (default: table/tty, json/non-tty)")
 	fmt.Fprintln(w, "  --timeout <duration> Request timeout (default: 30s)")

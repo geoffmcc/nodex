@@ -1278,9 +1278,12 @@ func writeAccessUsers(cmdCtx *Context, users []domain.AccessUser) error {
 		headers := []string{"USERID", "ENABLED", "EMAIL", "FIRSTNAME", "LASTNAME", "GROUPS", "TOKENS", "COMMENT"}
 		rows := make([][]string, 0, len(users))
 		for _, u := range users {
-			enabled := "no"
-			if u.Enable != 0 {
-				enabled = "yes"
+			enabled := "-"
+			if u.Enable != nil {
+				enabled = "no"
+				if *u.Enable != 0 {
+					enabled = "yes"
+				}
 			}
 			// "-" means the server did not report the value, which is not the
 			// same as a genuine zero.

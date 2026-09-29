@@ -376,6 +376,7 @@ var deterministicBodies = []string{
 	"permission check failed",
 	"parameter verification failed",
 	"not running",
+	"is running",
 }
 
 // isDeterministicBody reports whether a 5xx body names a permanent condition.

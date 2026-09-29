@@ -232,6 +232,29 @@ func TestRealSFTPDialRejectsBadKey(t *testing.T) {
 	}
 }
 
+func TestNodesEnrichesIPFromClusterStatus(t *testing.T) {
+	p := newDownloadProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api2/json/nodes":
+			_, _ = io.WriteString(w, `{"data":[{"id":"node/pve1","node":"pve1","status":"online","type":"node"}]}`)
+		case "/api2/json/cluster/status":
+			_, _ = io.WriteString(w, `{"data":[{"type":"node","id":"node/pve1","name":"pve1","status":"online","ip":"192.0.2.21"}]}`)
+		default:
+			t.Errorf("unexpected request path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	defer p.Close()
+
+	nodes, err := p.Nodes(context.Background())
+	if err != nil {
+		t.Fatalf("Nodes: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].IP != "192.0.2.21" {
+		t.Fatalf("Nodes = %+v, want node IP 192.0.2.21", nodes)
+	}
+}
+
 func TestRealSFTPDialRejectsOverlyReadableKey(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows does not expose POSIX file permission bits")

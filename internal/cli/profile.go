@@ -135,9 +135,9 @@ func runProfileList(_ context.Context, cmdCtx *Context, args []string) error {
 
 	case output.FormatYAML:
 		type profileEntry struct {
-			Name    string `yaml:"name"`
-			Current bool   `yaml:"current"`
-			config.Profile
+			Name           string `yaml:"name"`
+			Current        bool   `yaml:"current"`
+			config.Profile `yaml:",inline"`
 		}
 		var entries []profileEntry
 		for _, name := range names {

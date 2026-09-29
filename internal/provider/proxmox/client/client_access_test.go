@@ -20,7 +20,8 @@ func TestGetUsersRequestsFullAndDecodesGroupAndTokenDetail(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":[
 			{"userid":"root@pam","enable":1,"groups":"admins,ops",
 			 "tokens":[{"tokenid":"t1","expire":0,"privsep":1},{"tokenid":"t2","comment":"ci"}]},
-			{"userid":"svc@pve","enable":0}
+			{"userid":"svc@pve","enable":0},
+			{"userid":"unknown@pve"}
 		]}`))
 	}))
 	defer server.Close()
@@ -36,11 +37,14 @@ func TestGetUsersRequestsFullAndDecodesGroupAndTokenDetail(t *testing.T) {
 	if gotQuery != "full=1" {
 		t.Errorf("query = %q, want full=1", gotQuery)
 	}
-	if len(users) != 2 {
+	if len(users) != 3 {
 		t.Fatalf("len = %d", len(users))
 	}
 
 	root := users[0]
+	if root.Enable == nil || *root.Enable != 1 {
+		t.Errorf("root enable = %v, want pointer to 1", root.Enable)
+	}
 	if root.Groups != "admins,ops" {
 		t.Errorf("groups = %q", root.Groups)
 	}
@@ -61,6 +65,12 @@ func TestGetUsersRequestsFullAndDecodesGroupAndTokenDetail(t *testing.T) {
 	}
 	if users[1].Groups != "" {
 		t.Errorf("absent groups = %q", users[1].Groups)
+	}
+	if users[1].Enable == nil || *users[1].Enable != 0 {
+		t.Errorf("explicit disabled enable = %v, want pointer to 0", users[1].Enable)
+	}
+	if users[2].Enable != nil {
+		t.Errorf("absent enable = %v, want nil", users[2].Enable)
 	}
 }
 

@@ -145,6 +145,67 @@ func TestTailSyslog(t *testing.T) {
 	}
 }
 
+type pagedLogInspector struct {
+	entries []domain.SyslogEntry
+	total   int64
+	starts  []int
+	limits  []int
+}
+
+func (p *pagedLogInspector) Syslog(context.Context, string) ([]domain.SyslogEntry, error) {
+	return p.entries, nil
+}
+
+func (p *pagedLogInspector) SyslogPage(_ context.Context, _ string, start, limit int) ([]domain.SyslogEntry, int64, error) {
+	p.starts = append(p.starts, start)
+	p.limits = append(p.limits, limit)
+	if limit == 0 {
+		return nil, p.total, nil
+	}
+	page := make([]domain.SyslogEntry, 0, limit)
+	for _, entry := range p.entries {
+		if entry.N >= int64(start) && len(page) < limit {
+			page = append(page, entry)
+		}
+	}
+	return page, p.total, nil
+}
+
+func TestLoadSyslogEntriesRequestsRecentRange(t *testing.T) {
+	entries := make([]domain.SyslogEntry, 300)
+	for i := range entries {
+		entries[i].N = int64(i + 1)
+	}
+	pager := &pagedLogInspector{entries: entries, total: int64(len(entries))}
+	got, capped, err := loadSyslogEntries(context.Background(), pager, "pve1", 200)
+	if err != nil {
+		t.Fatalf("loadSyslogEntries: %v", err)
+	}
+	if capped {
+		t.Fatal("200-entry request unexpectedly capped")
+	}
+	if len(got) != 200 || got[0].N != 101 || got[len(got)-1].N != 300 {
+		t.Fatalf("returned range = len %d, first/last %d/%d; want 200 entries 101..300", len(got), got[0].N, got[len(got)-1].N)
+	}
+	if len(pager.starts) != 2 || pager.starts[0] != 0 || pager.limits[0] != 0 || pager.starts[1] != 101 || pager.limits[1] != 200 {
+		t.Fatalf("page requests start=%v limit=%v, want count query then start=101 limit=200", pager.starts, pager.limits)
+	}
+}
+
+func TestLoadSyslogEntriesCapsUnboundedRequests(t *testing.T) {
+	pager := &pagedLogInspector{total: maxProxmoxSyslogEntries + 1}
+	_, capped, err := loadSyslogEntries(context.Background(), pager, "pve1", 0)
+	if err != nil {
+		t.Fatalf("loadSyslogEntries: %v", err)
+	}
+	if !capped {
+		t.Fatal("unbounded request above API max should report truncation")
+	}
+	if got := pager.limits[len(pager.limits)-1]; got != maxProxmoxSyslogEntries {
+		t.Fatalf("requested limit = %d, want cap %d", got, maxProxmoxSyslogEntries)
+	}
+}
+
 // seedLogE2E configures the e2e mock profile used by the syslog commands.
 func seedLogE2E(t *testing.T) {
 	t.Helper()

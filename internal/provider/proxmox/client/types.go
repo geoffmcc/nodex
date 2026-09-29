@@ -607,7 +607,8 @@ type EventItem struct {
 
 // SyslogResponse is the response from /nodes/{node}/syslog.
 type SyslogResponse struct {
-	Data []SyslogItem `json:"data"`
+	Data  []SyslogItem `json:"data"`
+	Total int64        `json:"total"`
 }
 
 // SyslogItem represents a single syslog entry.
@@ -1323,7 +1324,7 @@ type AccessUserItem struct {
 	UserID    string                `json:"userid"`
 	Comment   string                `json:"comment,omitempty"`
 	Email     string                `json:"email,omitempty"`
-	Enable    int                   `json:"enable,omitempty"`
+	Enable    *int                  `json:"enable,omitempty"`
 	Expire    int64                 `json:"expire,omitempty"`
 	FirstName string                `json:"firstname,omitempty"`
 	LastName  string                `json:"lastname,omitempty"`

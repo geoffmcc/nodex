@@ -16,6 +16,7 @@ func formatUptime(d time.Duration) string {
 // machine values. It copies the struct so callers never mutate shared slices.
 func decorateNode(n domain.Node) domain.Node {
 	if n.Uptime != nil {
+		n.UptimeNanos = int64(*n.Uptime)
 		n.UptimeSeconds = int64(*n.Uptime / time.Second)
 		n.UptimeHuman = formatUptime(*n.Uptime)
 	}

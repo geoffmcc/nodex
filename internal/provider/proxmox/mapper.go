@@ -47,6 +47,27 @@ func MapNodes(items []client.NodeItem) []domain.Node {
 	return nodes
 }
 
+func enrichNodeIPs(nodes []domain.Node, status []client.ClusterStatusItem) {
+	ips := make(map[string]string, len(status))
+	for _, item := range status {
+		if item.Type != "node" || item.IP == "" {
+			continue
+		}
+		name := item.Name
+		if name == "" {
+			name = strings.TrimPrefix(item.ID, "node/")
+		}
+		if name != "" {
+			ips[name] = item.IP
+		}
+	}
+	for i := range nodes {
+		if nodes[i].IP == "" {
+			nodes[i].IP = ips[nodes[i].Name]
+		}
+	}
+}
+
 // MapVM converts a client.ClusterResource to a domain.VM.
 func MapVM(res client.ClusterResource) domain.VM {
 	return domain.VM{

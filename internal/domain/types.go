@@ -11,7 +11,8 @@ type Node struct {
 	IP            string            `json:"ip,omitempty" yaml:"ip,omitempty"`
 	Platform      string            `json:"platform" yaml:"platform"` // proxxmox, vmware, etc.
 	Version       string            `json:"version,omitempty" yaml:"version,omitempty"`
-	Uptime        *time.Duration    `json:"uptime,omitempty" yaml:"uptime,omitempty"`
+	Uptime        *time.Duration    `json:"-" yaml:"-"`
+	UptimeNanos   int64             `json:"uptime_nanos,omitempty" yaml:"uptime_nanos,omitempty"`
 	UptimeSeconds int64             `json:"uptime_seconds,omitempty" yaml:"uptime_seconds,omitempty"`
 	UptimeHuman   string            `json:"uptime_human,omitempty" yaml:"uptime_human,omitempty"`
 	Labels        map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`

@@ -978,6 +978,69 @@ func TestGetSyslogRejectsEmptyNode(t *testing.T) {
 	}
 }
 
+func TestGetSyslogPagePassesRangeAndReadsTotal(t *testing.T) {
+	var gotStart, gotLimit string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/pve1/syslog" {
+			t.Fatalf("path = %q, want /nodes/pve1/syslog", r.URL.Path)
+		}
+		gotStart = r.URL.Query().Get("start")
+		gotLimit = r.URL.Query().Get("limit")
+		_, _ = fmt.Fprint(w, `{"data":[{"n":51,"t":"line 51"},{"n":52,"t":"line 52"}],"total":52}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	entries, total, err := c.GetSyslogPage(context.Background(), "pve1", 51, 2)
+	if err != nil {
+		t.Fatalf("GetSyslogPage: %v", err)
+	}
+	if gotStart != "51" || gotLimit != "2" {
+		t.Fatalf("query start=%q limit=%q, want 51/2", gotStart, gotLimit)
+	}
+	if total != 52 || len(entries) != 2 || entries[0].N != 51 || entries[1].N != 52 {
+		t.Fatalf("page=%+v total=%d, want lines 51..52 of 52", entries, total)
+	}
+}
+
+func TestDecodeResponseClassifiesPVE500ResourceErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		exit int
+		want string
+	}{
+		{"missing config", `{"data":null,"message":"Configuration file 'nodes/pve/qemu-server/999999.conf' does not exist\n"}`, app.ExitNotFound, "does not exist"},
+		{"running VM", `{"data":null,"message":"VM 9200 is running - destroy failed\n"}`, app.ExitConflict, "VM 9200 is running"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls int
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = fmt.Fprint(w, tc.body)
+			}))
+			defer s.Close()
+			c := &Client{baseURL: s.URL, client: httpclient.New(httpclient.WithMaxRetries(2))}
+			var result map[string]any
+			err := c.get(context.Background(), "/resource", &result)
+			if err == nil {
+				t.Fatal("expected PVE API error")
+			}
+			var exitErr *app.ExitCoder
+			if !errors.As(err, &exitErr) || exitErr.ExitCode != tc.exit {
+				t.Fatalf("error = %v, want exit %d", err, tc.exit)
+			}
+			if !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), `{"data"`) {
+				t.Fatalf("error = %q, want readable message containing %q without raw JSON", err, tc.want)
+			}
+			if calls != 1 {
+				t.Fatalf("requests = %d, want 1 for deterministic PVE 500", calls)
+			}
+		})
+	}
+}
+
 // --- Exit-code classification integration tests ---
 // These tests use a mock HTTP server to verify that each HTTP status
 // code produces the correct typed ProviderError and maps to the

@@ -562,6 +562,15 @@ func runVMDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err := checkDestructive(cmdCtx, desc, targetID); err != nil {
 		return err
 	}
+	if vi, ok := prov.(domain.VMInspector); ok {
+		vms, err := vi.VMs(ctx)
+		if err != nil {
+			return fmt.Errorf("inspect VM before delete: %w", err)
+		}
+		if err := validateVMDeleteState(vms, targetID); err != nil {
+			return err
+		}
+	}
 
 	upid, err := dp.VMDelete(ctx, node, vmid)
 	if err != nil {
@@ -569,6 +578,20 @@ func runVMDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm delete", fmt.Sprintf("%s/%d", node, vmid), "destructive")
+}
+
+func validateVMDeleteState(vms []domain.VM, target string) error {
+	vm, ok := findVM(vms, target)
+	if !ok {
+		return app.NotFoundError("VM %q", target)
+	}
+	if strings.EqualFold(vm.Status, "running") {
+		return app.NewExitError(
+			fmt.Errorf("VM %s is running; stop it first with: nodex vm stop %s", target, target),
+			app.ExitConflict,
+		)
+	}
+	return nil
 }
 
 // --- Container Delete (Tier 3: destructive) ---

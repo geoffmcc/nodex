@@ -69,6 +69,24 @@ func TestMapNodesHandlesMultipleAndPartialEntries(t *testing.T) {
 	}
 }
 
+func TestEnrichNodeIPsUsesClusterStatusAndPreservesKnownIP(t *testing.T) {
+	nodes := MapNodes([]client.NodeItem{
+		{ID: "node/pve1", Node: "pve1", Type: "node"},
+		{ID: "node/pve2", Node: "pve2", Type: "node", IP: "192.0.2.22"},
+	})
+	enrichNodeIPs(nodes, []client.ClusterStatusItem{
+		{Type: "cluster", Name: "cluster", IP: "192.0.2.99"},
+		{Type: "node", Name: "pve1", IP: "192.0.2.21"},
+		{Type: "node", ID: "node/pve3", IP: "192.0.2.23"},
+	})
+	if nodes[0].IP != "192.0.2.21" {
+		t.Errorf("missing node IP = %q, want 192.0.2.21", nodes[0].IP)
+	}
+	if nodes[1].IP != "192.0.2.22" {
+		t.Errorf("existing node IP overwritten: %q", nodes[1].IP)
+	}
+}
+
 func TestMapGuestResources(t *testing.T) {
 	vm := MapVM(client.ClusterResource{
 		Type:    "qemu",
