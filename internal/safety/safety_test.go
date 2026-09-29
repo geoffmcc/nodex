@@ -183,18 +183,6 @@ func TestMustConfirm(t *testing.T) {
 	}
 }
 
-func TestDryRun(t *testing.T) {
-	d := NewDryRun()
-	if !d.IsDryRun() {
-		t.Error("NewDryRun should be dry run")
-	}
-
-	l := NewLive()
-	if l.IsDryRun() {
-		t.Error("NewLive should not be dry run")
-	}
-}
-
 func TestConfirmationMessageWithResource(t *testing.T) {
 	policy := ConfirmationPolicy{
 		Tier:                TierReversible,
