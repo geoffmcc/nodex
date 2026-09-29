@@ -224,7 +224,7 @@ func validateSchemaValue(value, rawSchema any, doc schemaDocument, path string, 
 
 func resolveSchemaRef(doc schemaDocument, ref string) (schemaDocument, any, error) {
 	current := doc
-	fragment := ""
+	var fragment string
 	if !strings.HasPrefix(ref, "#") {
 		filePart, fragmentPart, _ := strings.Cut(ref, "#")
 		path := filePart

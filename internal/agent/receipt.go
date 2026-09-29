@@ -489,7 +489,7 @@ func (s *Store) Get(id string) (Receipt, error) {
 	if err != nil {
 		return Receipt{}, err
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Load()
 }
 
@@ -579,7 +579,7 @@ func (s *Store) ensureDir() error {
 	}
 	if runtime.GOOS != "windows" {
 		if info.Mode().Perm()&0o077 != 0 {
-			if err := os.Chmod(s.dir, 0o700); err != nil {
+			if err := os.Chmod(s.dir, 0o700); err != nil { // #nosec G302 -- directories need owner search/execute bits; 0700 denies group/other access.
 				return fmt.Errorf("secure receipt directory: %w", err)
 			}
 		}

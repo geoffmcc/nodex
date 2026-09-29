@@ -56,7 +56,7 @@ func TestOperationDiscoveryCoversRegistryAndAliases(t *testing.T) {
 	if securityGroupDelete == nil || securityGroupDelete.Path != "firewall group delete" || !containsString(OperationAliases(*securityGroupDelete), "firewall security-group delete") {
 		t.Fatalf("nested dispatch alias was not projected to its canonical mutation: %+v", securityGroupDelete)
 	}
-	if meta, _, _, _, ok := resolveOperationInvocation([]string{"firewall", "security-group", "delete", "group-a"}); !ok || meta.Path != "firewall group delete" || meta.SafetyTier.String() != "destructive" {
+	if meta, _, _, ok := resolveOperationInvocation([]string{"firewall", "security-group", "delete", "group-a"}); !ok || meta.Path != "firewall group delete" || meta.SafetyTier.String() != "destructive" {
 		t.Fatalf("nested alias did not resolve to the destructive leaf: meta=%+v ok=%v", meta, ok)
 	}
 	stdout.Reset()
@@ -119,7 +119,7 @@ func TestAgentOperationContractsStayInParityWithExistingCLIGrammar(t *testing.T)
 				t.Errorf("%q accepted parameter --%s=<value> is absent from operation discovery", op.Path, name)
 			}
 		}
-		resolved, _, _, _, ok := resolveOperationInvocation(strings.Fields(op.Path))
+		resolved, _, _, ok := resolveOperationInvocation(strings.Fields(op.Path))
 		if !ok || resolved.Path != op.Path {
 			t.Errorf("agent operation resolver does not reach canonical leaf %q: resolved=%+v ok=%v", op.Path, resolved, ok)
 		}

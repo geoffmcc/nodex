@@ -74,7 +74,7 @@ func agentConfigFromContext(ctx context.Context) *config.Config {
 // receipt for supported remote mutations.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	opts, helpPath, remaining, parseErr := parseGlobal(args)
-	if !opts.Agent && !(parseErr != nil && containsAgentFlag(args)) {
+	if !opts.Agent && (parseErr == nil || !containsAgentFlag(args)) {
 		return runNormal(ctx, args, stdout, stderr)
 	}
 	if opts.Agent || containsAgentFlag(args) {
@@ -107,32 +107,32 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 		var err error
 		requestID, err = agent.NewRequestID()
 		if err != nil {
-			return emitAgentFailure(stdout, "", "unknown", agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetryDoNotAutomatic, app.ExitGeneral, "REQUEST_ID_FAILED", err)
+			return emitAgentFailure(stdout, "", "unknown", agent.RetryDoNotAutomatic, app.ExitGeneral, "REQUEST_ID_FAILED", err)
 		}
 	}
 	if !agent.ValidRequestID(requestID) {
-		return emitAgentFailure(stdout, requestID, "unknown", agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUsage, "INVALID_REQUEST_ID", errors.New("request ID must match [A-Za-z0-9][A-Za-z0-9_-]{0,63}"))
+		return emitAgentFailure(stdout, requestID, "unknown", agent.RetrySafe, app.ExitUsage, "INVALID_REQUEST_ID", errors.New("request ID must match [A-Za-z0-9][A-Za-z0-9_-]{0,63}"))
 	}
 	if parseErr != nil {
-		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUsage, "INVALID_ARGUMENTS", parseErr)
+		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.RetrySafe, app.ExitUsage, "INVALID_ARGUMENTS", parseErr)
 	}
 	if agentArgsTooLarge(original) {
-		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUsage, "REQUEST_TOO_LARGE", errors.New("agent-mode arguments exceed 8192 bytes"))
+		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.RetrySafe, app.ExitUsage, "REQUEST_TOO_LARGE", errors.New("agent-mode arguments exceed 8192 bytes"))
 	}
 	if flag, conflict := conflictingGlobalOptions(original); conflict {
-		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConflict, "CONFLICTING_OPTIONS", fmt.Errorf("global option %s was supplied with conflicting values", flag))
+		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.RetrySafe, app.ExitConflict, "CONFLICTING_OPTIONS", fmt.Errorf("global option %s was supplied with conflicting values", flag))
 	}
 	if opts.outputSpecified && opts.Output != output.FormatJSON {
-		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUsage, "CONFLICTING_OUTPUT", errors.New("--agent requires --output json; table and YAML output are incompatible"))
+		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.RetrySafe, app.ExitUsage, "CONFLICTING_OUTPUT", errors.New("--agent requires --output json; table and YAML output are incompatible"))
 	}
 	if opts.nonInteractiveSpecified && !opts.NonInteractive {
-		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUsage, "INTERACTIVE_MODE_CONFLICT", errors.New("--agent cannot be combined with --non-interactive=false"))
+		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.RetrySafe, app.ExitUsage, "INTERACTIVE_MODE_CONFLICT", errors.New("--agent cannot be combined with --non-interactive=false"))
 	}
 	if opts.All || opts.PasswordStdin {
-		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUsage, "INCOMPATIBLE_OPTION", errors.New("--agent does not support --all or --password-stdin"))
+		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.RetrySafe, app.ExitUsage, "INCOMPATIBLE_OPTION", errors.New("--agent does not support --all or --password-stdin"))
 	}
 	if len(remaining) == 0 && len(helpPath) == 0 {
-		return emitAgentFailure(stdout, requestID, "unknown", agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUsage, "COMMAND_REQUIRED", errors.New("a NodeX operation is required"))
+		return emitAgentFailure(stdout, requestID, "unknown", agent.RetrySafe, app.ExitUsage, "COMMAND_REQUIRED", errors.New("a NodeX operation is required"))
 	}
 	if len(helpPath) > 0 {
 		return runNormal(ctx, appendAgentOutputOptions(original, opts), stdout, stderr)
@@ -145,7 +145,7 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 		err := runNormal(ctx, appendAgentOutputOptions(original, opts), &captured, stderr)
 		if err == nil {
 			if captured.truncated {
-				return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitOutputError, "OUTPUT_LIMIT", errors.New("structured management output exceeded the 1 MiB agent response limit"))
+				return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.RetrySafe, app.ExitOutputError, "OUTPUT_LIMIT", errors.New("structured management output exceeded the 1 MiB agent response limit"))
 			}
 			_, writeErr := stdout.Write(captured.Bytes())
 			if writeErr != nil {
@@ -159,32 +159,32 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 			}
 			return app.MarkEmitted(err)
 		}
-		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitCodeFromError(err), errorCode(err), err)
+		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.RetrySafe, app.ExitCodeFromError(err), errorCode(err), err)
 	}
 
-	meta, _, handlerArgs, dispatchArgs, ok := resolveOperationInvocation(remaining)
+	meta, handlerArgs, dispatchArgs, ok := resolveOperationInvocation(remaining)
 	if !ok || meta == nil {
-		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUsage, "UNKNOWN_OPERATION", fmt.Errorf("unknown or incomplete operation path %q", strings.Join(remaining, " ")))
+		return emitAgentFailure(stdout, requestID, operationFromRemaining(remaining), agent.RetrySafe, app.ExitUsage, "UNKNOWN_OPERATION", fmt.Errorf("unknown or incomplete operation path %q", strings.Join(remaining, " ")))
 	}
 	contract := describeOperation(*meta, true)
 	if !contract.AgentSupported {
-		return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUnsupportedCap, "AGENT_MODE_UNSUPPORTED", errors.New(contract.AgentUnsupportedWhy))
+		return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitUnsupportedCap, "AGENT_MODE_UNSUPPORTED", errors.New(contract.AgentUnsupportedWhy))
 	}
 	if flag, conflict := conflictingOperationOptions(meta.Path, handlerArgs); conflict {
-		return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConflict, "CONFLICTING_OPTIONS", fmt.Errorf("operation option %s was supplied with conflicting values", flag))
+		return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitConflict, "CONFLICTING_OPTIONS", fmt.Errorf("operation option %s was supplied with conflicting values", flag))
 	}
 	if meta.Path == "monitor check" && flagValue(dispatchArgs, "--target") == "" {
-		return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUsage, "TARGET_REQUIRED", errors.New("agent-mode monitor check requires exactly one --target"))
+		return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitUsage, "TARGET_REQUIRED", errors.New("agent-mode monitor check requires exactly one --target"))
 	}
 	if meta.Path == "profile diagnose-permissions" && (len(handlerArgs) != 1 || handlerArgs[0] != opts.Profile) ||
 		meta.Path == "profile test" && len(handlerArgs) == 1 && handlerArgs[0] != opts.Profile {
-		return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConflict, "PROFILE_TARGET_MISMATCH", errors.New("the positional profile must exactly match the explicit --profile execution context"))
+		return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitConflict, "PROFILE_TARGET_MISMATCH", errors.New("the positional profile must exactly match the explicit --profile execution context"))
 	}
 	if containsSensitiveArgument(handlerArgs) || meta.SecuritySensitivity == SecCredentials {
-		return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUnsupportedCap, "SECRET_INPUT_UNSUPPORTED", errors.New("secret-bearing arguments are not accepted in agent mode"))
+		return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitUnsupportedCap, "SECRET_INPUT_UNSUPPORTED", errors.New("secret-bearing arguments are not accepted in agent mode"))
 	}
 	if opts.Profile == "" && requiresRemoteProfile(*meta) {
-		return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConfig, "PROFILE_REQUIRED", errors.New("remote agent-mode operations require an explicit --profile; current-profile defaults are not used"))
+		return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitConfig, "PROFILE_REQUIRED", errors.New("remote agent-mode operations require an explicit --profile; current-profile defaults are not used"))
 	}
 
 	var cfg *config.Config
@@ -194,18 +194,18 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 		var err error
 		cfg, err = config.Read()
 		if err != nil {
-			return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitCodeFromError(err), errorCode(err), err)
+			return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitCodeFromError(err), errorCode(err), err)
 		}
 		if !requiresRemoteProfile(*meta) {
 			executionContext = targetContext(*meta, handlerArgs, dispatchArgs, "", "", "", config.Profile{})
 			if meta.Path == "monitor check" {
 				targetName := executionContext.ResourceID
 				if cfg.Monitoring == nil {
-					return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConfig, "MONITOR_TARGET_MISSING", errors.New("monitoring is not configured"))
+					return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitConfig, "MONITOR_TARGET_MISSING", errors.New("monitoring is not configured"))
 				}
 				target, ok := cfg.Monitoring.Targets[targetName]
 				if !ok {
-					return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitNotFound, "MONITOR_TARGET_NOT_FOUND", errors.New("selected monitor target was not found"))
+					return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitNotFound, "MONITOR_TARGET_NOT_FOUND", errors.New("selected monitor target was not found"))
 				}
 				executionContext.ResourceType = "monitor:" + target.Type
 				executionContext.Provider = "monitor:" + target.Type
@@ -219,17 +219,17 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 		} else {
 			p, exists := cfg.Profiles[opts.Profile]
 			if !exists {
-				return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConfig, "PROFILE_NOT_FOUND", fmt.Errorf("profile %q was not found", opts.Profile))
+				return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitConfig, "PROFILE_NOT_FOUND", fmt.Errorf("profile %q was not found", opts.Profile))
 			}
 			endpoint, err := normalizeEndpoint(p.Endpoint)
 			if err != nil {
-				return emitAgentFailure(stdout, requestID, meta.Path, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConfig, "INVALID_PROFILE_ENDPOINT", err)
+				return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitConfig, "INVALID_PROFILE_ENDPOINT", err)
 			}
 			executionContext = targetContext(*meta, handlerArgs, dispatchArgs, opts.Profile, config.NormalizeProvider(p.Provider), endpoint, p)
 			if meta.Path == "container os-update" {
 				hostName, inventoryHost, hostErr := findPVEInventoryHost(cfg, opts.Profile, executionContext.Node)
 				if hostErr != nil {
-					return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConfig, "SSH_TARGET_UNAVAILABLE", hostErr)
+					return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitConfig, "SSH_TARGET_UNAVAILABLE", hostErr)
 				}
 				executionContext.SSHHost = inventoryHost.Address
 				executionContext.SSHUser = inventoryHost.SSHUser
@@ -239,14 +239,14 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 				executionContext.SSHPort = inventoryHost.SSHPort
 			}
 			if !provider.IsRegistered(config.NormalizeProvider(p.Provider)) {
-				return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUnsupportedCap, "PROVIDER_UNAVAILABLE", fmt.Errorf("provider implementation %q is not registered in this build", p.Provider))
+				return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitUnsupportedCap, "PROVIDER_UNAVAILABLE", fmt.Errorf("provider implementation %q is not registered in this build", p.Provider))
 			}
 		}
 	} else {
 		executionContext = targetContext(*meta, handlerArgs, dispatchArgs, "", "", "", config.Profile{})
 	}
 	if !meta.Inspection && requiresRemoteProfile(*meta) && executionContext.ResourceID == "" && executionContext.Node == "" && executionContext.Namespace == "" {
-		return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitUsage, "TARGET_REQUIRED", errors.New("mutation requires an explicit target from the operation arguments"))
+		return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitUsage, "TARGET_REQUIRED", errors.New("mutation requires an explicit target from the operation arguments"))
 	}
 
 	var store *agent.Store
@@ -255,13 +255,13 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 	if !meta.Inspection {
 		store, err = agent.DefaultStore()
 		if err != nil {
-			return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConfig, "RECEIPT_STORE_UNAVAILABLE", err)
+			return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitConfig, "RECEIPT_STORE_UNAVAILABLE", err)
 		}
 		inputArgs := fingerprintArguments(meta.Path, handlerArgs, opts)
 		inputArgs = append(inputArgs, extraFingerprintArgs...)
 		fingerprint, err = store.Fingerprint(meta.Path, inputArgs, executionContext)
 		if err != nil {
-			return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConfig, "FINGERPRINT_KEY_FAILED", err)
+			return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitConfig, "FINGERPRINT_KEY_FAILED", err)
 		}
 	}
 	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
@@ -276,19 +276,19 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 	if !meta.Inspection {
 		lease, err = store.Lock(requestID)
 		if err != nil {
-			return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConfig, "RECEIPT_LOCK_FAILED", err)
+			return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitConfig, "RECEIPT_LOCK_FAILED", err)
 		}
-		defer lease.Close()
+		defer func() { _ = lease.Close() }()
 		existing, loadErr := lease.Load()
 		if loadErr == nil {
 			if existing.InputFingerprint != fingerprint {
-				return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConflict, "REQUEST_ID_CONFLICT", errors.New("request ID already belongs to a different operation, input, or target"))
+				return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitConflict, "REQUEST_ID_CONFLICT", errors.New("request ID already belongs to a different operation, input, or target"))
 			}
 			addAgentWarning(&existing.Result, agent.Warning{Code: "DUPLICATE_REQUEST_ID", Message: "existing result returned; provider operation was not resubmitted"})
 			return writeAgentResult(stdout, existing.Result)
 		}
 		if !errors.Is(loadErr, os.ErrNotExist) {
-			return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConfig, "RECEIPT_READ_FAILED", loadErr)
+			return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitConfig, "RECEIPT_READ_FAILED", loadErr)
 		}
 		// Write-ahead state is deliberately unknown before entering the existing
 		// handler: a process crash at this boundary cannot prove whether the
@@ -300,7 +300,7 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 		result.Retry = agent.RetryReconcileFirst
 		receipt = agent.Receipt{Result: result, InputFingerprint: fingerprint, UpdatedAt: startedAt}
 		if err := lease.Save(receipt); err != nil {
-			return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.SubmissionNotAttempted, agent.ExecutionNotStarted, agent.RetrySafe, app.ExitConfig, "RECEIPT_WRITE_FAILED", fmt.Errorf("mutation was not submitted because its write-ahead receipt could not be persisted: %w", err))
+			return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitConfig, "RECEIPT_WRITE_FAILED", fmt.Errorf("mutation was not submitted because its write-ahead receipt could not be persisted: %w", err))
 		}
 	}
 
@@ -510,13 +510,13 @@ func isAgentManagementPath(remaining []string) bool {
 	return len(remaining) > 0 && (remaining[0] == "agent" || remaining[0] == "operation")
 }
 
-func resolveOperationInvocation(remaining []string) (*OperationMeta, int, []string, []string, bool) {
+func resolveOperationInvocation(remaining []string) (*OperationMeta, []string, []string, bool) {
 	if len(remaining) == 0 {
-		return nil, 0, nil, nil, false
+		return nil, nil, nil, false
 	}
 	c := commands[remaining[0]]
 	if c == nil {
-		return nil, 0, nil, nil, false
+		return nil, nil, nil, false
 	}
 	path := []string{remaining[0]}
 	idx := 1
@@ -557,20 +557,20 @@ func resolveOperationInvocation(remaining []string) (*OperationMeta, int, []stri
 			}
 		}
 		if bestPath == "" {
-			return nil, idx, nil, nil, false
+			return nil, nil, nil, false
 		}
 		meta := LookupOperation(bestPath)
-		return meta, idx + bestTokens, remaining[idx+bestTokens:], remaining[idx:], meta != nil
+		return meta, remaining[idx+bestTokens:], remaining[idx:], meta != nil
 	}
 	meta := LookupOperation(full)
 	if meta == nil || c.run == nil {
-		return nil, idx, nil, nil, false
+		return nil, nil, nil, false
 	}
-	return meta, idx, remaining[idx:], remaining[idx:], true
+	return meta, remaining[idx:], remaining[idx:], true
 }
 
 func operationFromRemaining(remaining []string) string {
-	if meta, _, _, _, ok := resolveOperationInvocation(remaining); ok {
+	if meta, _, _, ok := resolveOperationInvocation(remaining); ok {
 		return meta.Path
 	}
 	if len(remaining) == 0 {
@@ -789,12 +789,13 @@ func targetContext(op OperationMeta, args, dispatchArgs []string, profile, provi
 				c.Node = first
 				c.ResourceID = second
 			}
-			if op.Path == "backup create" {
+			switch op.Path {
+			case "backup create":
 				c.Namespace = second
 				c.RelatedTargets = append(c.RelatedTargets, agent.ResourceTarget{ResourceType: "storage", ResourceID: second})
-			} else if op.Path == "backup content" {
+			case "backup content":
 				c.Namespace = second
-			} else if op.Path == "backup restore" {
+			case "backup restore":
 				if len(args) > 3 {
 					c.Namespace = firstPositional(args[3:])
 				}
@@ -997,12 +998,11 @@ func mutationOutcome(result agent.Result, operation OperationMeta, captured []by
 			if legacy.Error != nil {
 				result.Error = &agent.AgentError{Code: stableErrorCode(legacy.Error.Exit), Message: safeMessage(legacy.Error.Detail), Exit: legacy.Error.Exit}
 			}
-			if legacy.Status == "verified" {
+			switch legacy.Status {
+			case "verified", "no-updates":
 				result.Verification = agent.VerificationPassed
-			} else if legacy.Status == "verification-failed" {
+			case "verification-failed":
 				result.Verification = agent.VerificationFailed
-			} else if legacy.Status == "no-updates" {
-				result.Verification = agent.VerificationPassed
 			}
 		} else if legacy.Success && legacy.Status == "no-updates" {
 			result.Submission = agent.SubmissionNotAttempted
@@ -1093,11 +1093,11 @@ func definitiveProviderReject(err error) bool {
 	return status >= 400 && status < 500 && status != 408
 }
 
-func emitAgentFailure(w io.Writer, requestID, operation string, submission agent.Submission, execution agent.Execution, retry agent.Retry, exit int, code string, err error) error {
-	return emitAgentFailureWithContext(w, requestID, operation, agent.ExecutionContext{}, submission, execution, retry, exit, code, err)
+func emitAgentFailure(w io.Writer, requestID, operation string, retry agent.Retry, exit int, code string, err error) error {
+	return emitAgentFailureWithContext(w, requestID, operation, agent.ExecutionContext{}, retry, exit, code, err)
 }
 
-func emitAgentFailureWithContext(w io.Writer, requestID, operation string, executionContext agent.ExecutionContext, submission agent.Submission, execution agent.Execution, retry agent.Retry, exit int, code string, err error) error {
+func emitAgentFailureWithContext(w io.Writer, requestID, operation string, executionContext agent.ExecutionContext, retry agent.Retry, exit int, code string, err error) error {
 	if !agent.ValidRequestID(requestID) {
 		requestID = "invalid_request"
 	}
@@ -1105,16 +1105,9 @@ func emitAgentFailureWithContext(w io.Writer, requestID, operation string, execu
 	if operation == "" {
 		operation = "unknown"
 	}
-	if submission == agent.SubmissionUnknown {
-		execution = agent.ExecutionUnknown
-		retry = agent.RetryReconcileFirst
-	}
-	if submission == agent.SubmissionRejected {
-		execution = agent.ExecutionNotStarted
-	}
 	r := agent.Result{
 		SchemaVersion: agent.ResultSchemaVersion, RequestID: requestID, Operation: operation, Context: executionContext,
-		Submission: submission, Execution: execution, Verification: agent.VerificationNotRequested,
+		Submission: agent.SubmissionNotAttempted, Execution: agent.ExecutionNotStarted, Verification: agent.VerificationNotRequested,
 		Retry: retry, StartedAt: now, ObservedAt: now,
 		Error: &agent.AgentError{Code: code, Message: safeError(err), Exit: exit},
 	}

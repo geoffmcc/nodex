@@ -119,7 +119,7 @@ func reconcileAgentReceipt(ctx context.Context, cmdCtx *Context, args []string, 
 	if err != nil {
 		return app.NewExitError(err, app.ExitConfig)
 	}
-	defer lease.Close()
+	defer func() { _ = lease.Close() }()
 	receipt, err := lease.Load()
 	if err != nil {
 		return app.NewExitError(err, app.ExitNotFound)
