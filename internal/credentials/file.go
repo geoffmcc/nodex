@@ -34,6 +34,9 @@ func (b *FileBackend) Get(_ context.Context, profile string) (*domain.Credential
 	if err != nil {
 		return nil, fmt.Errorf("read credential file: %w", err)
 	}
+	// Clear the temporary serialized copy after decoding. The returned
+	// Credentials use immutable Go strings and cannot be reliably zeroized.
+	defer clear(data)
 	if err := CheckCredentialFilePermissions(path); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 	}
@@ -62,6 +65,8 @@ func (b *FileBackend) Store(_ context.Context, profile string, creds *domain.Cre
 	if err != nil {
 		return fmt.Errorf("marshal credentials: %w", err)
 	}
+	// Avoid retaining the serialized secret buffer after the atomic write.
+	defer clear(data)
 	path := b.path(profile)
 	tmp, err := os.CreateTemp(b.dir, "."+profile+"-*.tmp")
 	if err != nil {
@@ -129,16 +134,35 @@ func (b *FileBackend) path(profile string) string {
 
 // CheckCredentialFilePermissions checks if a credential file has overly broad permissions.
 func CheckCredentialFilePermissions(path string) error {
+	return CheckSecretFilePermissions(path)
+}
+
+// CheckSecretFilePermissions reports an error when a file holding secret
+// material is accessible to group or other. Windows has no POSIX permission
+// bits, so the check is a no-op there.
+func CheckSecretFilePermissions(path string) error {
 	if runtime.GOOS == "windows" {
 		return nil
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return fmt.Errorf("stat credential file: %w", err)
+		return fmt.Errorf("stat secret file: %w", err)
 	}
 	mode := info.Mode().Perm()
 	if mode&0o077 != 0 {
-		return fmt.Errorf("credential file %s has permissions %o; recommended: 0600", path, mode)
+		return fmt.Errorf("%s has permissions %o; recommended: 0600", path, mode)
 	}
 	return nil
+}
+
+// CredentialFilePath returns the on-disk path the file backend uses for name.
+// An empty dir means the default credential directory.
+func CredentialFilePath(dir, name string) (string, error) {
+	if err := ValidateName(name); err != nil {
+		return "", err
+	}
+	if dir == "" {
+		dir = defaultCredDir()
+	}
+	return filepath.Join(dir, name+".json"), nil
 }

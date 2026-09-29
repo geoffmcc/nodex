@@ -6,11 +6,14 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
+	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // sftpClient is the minimal SFTP surface the provider needs. The injectable
@@ -29,13 +32,23 @@ func realSFTPDial(ctx context.Context, host, user, keyFile string, port int) (sf
 	if port < 1 || port > 65535 {
 		port = 22
 	}
+	if err := credentials.CheckSecretFilePermissions(keyFile); err != nil {
+		return nil, fmt.Errorf("insecure ssh key permissions: %w", err)
+	}
 	pem, err := os.ReadFile(keyFile) // #nosec G304 -- keyFile comes from the validated credential configuration for the selected profile.
 	if err != nil {
 		return nil, fmt.Errorf("read ssh key %s: %w", keyFile, err)
 	}
 	signer, err := ssh.ParsePrivateKey(pem)
+	// The parsed signer owns key material that x/crypto/ssh does not expose for
+	// destruction, but the original PEM byte buffer can be cleared promptly.
+	clear(pem)
 	if err != nil {
 		return nil, fmt.Errorf("parse ssh key %s: %w", keyFile, err)
+	}
+	hostKeyCallback, err := defaultHostKeyCallback()
+	if err != nil {
+		return nil, err
 	}
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
@@ -48,7 +61,7 @@ func realSFTPDial(ctx context.Context, host, user, keyFile string, port int) (sf
 	cfg := &ssh.ClientConfig{
 		User:            user,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // #nosec G106 -- the SFTP host is the operator-selected profile endpoint; host-key pinning is intentionally deferred and tracked for a future hardening pass.
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         15 * time.Second,
 	}
 	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
@@ -64,6 +77,25 @@ func realSFTPDial(ctx context.Context, host, user, keyFile string, port int) (sf
 		return nil, fmt.Errorf("open sftp session with %s: %w", addr, err)
 	}
 	return &sftpAdapter{Client: client}, nil
+}
+
+// defaultHostKeyCallback requires the server key to be present in the
+// operator's standard OpenSSH known_hosts file. The endpoint being configured
+// is not itself proof of the remote host's identity.
+func defaultHostKeyCallback() (ssh.HostKeyCallback, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolve home directory for SSH known_hosts: %w", err)
+	}
+	return hostKeyCallback(filepath.Join(home, ".ssh", "known_hosts"))
+}
+
+func hostKeyCallback(path string) (ssh.HostKeyCallback, error) {
+	callback, err := knownhosts.New(path)
+	if err != nil {
+		return nil, fmt.Errorf("load SSH known_hosts file %s: %w", path, err)
+	}
+	return callback, nil
 }
 
 // sftpAdapter adapts *sftp.Client to the narrow sftpClient interface so fakes

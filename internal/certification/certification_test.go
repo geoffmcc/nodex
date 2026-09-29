@@ -91,6 +91,31 @@ func TestLedgerRoundTripIsSanitizedAndSorted(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsNeverWrittenEmptyLedger(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.json")
+	if err := os.WriteFile(path, []byte(`{"schema":1,"entries":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load empty first-run ledger: %v", err)
+	}
+	if len(l.Entries) != 0 || l.Digest == "" {
+		t.Fatalf("empty ledger = %+v, want no entries and computed digest", l)
+	}
+}
+
+func TestLoadRejectsMissingDigestOnPopulatedLedger(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.json")
+	empty := `{"schema":1,"generation":1,"entries":[]}`
+	if err := os.WriteFile(path, []byte(empty), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "no digest") {
+		t.Fatalf("Load populated-generation ledger error = %v, want missing-digest error", err)
+	}
+}
+
 func TestReserveRequiresCleanupIntent(t *testing.T) {
 	entry := NewEntry(RequiredProfile, "pve-test", 9003, "nodex-cert-intent", "local", time.Unix(3, 0))
 	entry.State = "creating"

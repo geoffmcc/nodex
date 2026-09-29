@@ -61,7 +61,11 @@ type Ledger struct {
 	Digest     string  `json:"digest"`
 }
 
-func New(path string) *Ledger { return &Ledger{Schema: SchemaVersion, Entries: []Entry{}} }
+func New(path string) *Ledger {
+	l := &Ledger{Schema: SchemaVersion, Entries: []Entry{}}
+	l.Digest, _ = ledgerDigest(*l)
+	return l
+}
 
 func Load(path string) (*Ledger, error) {
 	lock, err := config.Lock(path)
@@ -102,6 +106,16 @@ func loadUnlocked(path string) (*Ledger, error) {
 	}
 	sort.Slice(l.Entries, func(i, j int) bool { return l.Entries[i].ID < l.Entries[j].ID })
 	if l.Digest == "" {
+		// A schema-valid, never-written empty ledger has no protected claims to
+		// authenticate. Accept this first-run representation, but continue to
+		// reject a missing digest once it has a generation or any entries.
+		if l.Generation == 0 && l.Entries != nil && len(l.Entries) == 0 {
+			l.Digest, err = ledgerDigest(l)
+			if err != nil {
+				return nil, fmt.Errorf("digest empty certification ledger: %w", err)
+			}
+			return &l, nil
+		}
 		return nil, fmt.Errorf("certification ledger has no digest")
 	}
 	want, err := ledgerDigest(l)

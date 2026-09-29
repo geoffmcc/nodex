@@ -179,6 +179,10 @@ func runCertificationReport(_ context.Context, cmdCtx *Context, args []string) e
 	if err != nil {
 		return app.NewExitError(err, app.ExitValidationError)
 	}
+	if len(l.Entries) == 0 && cmdCtx.Opts.Output != output.FormatJSON && cmdCtx.Opts.Output != output.FormatYAML {
+		_, err := fmt.Fprintln(cmdCtx.Writer, "No certification runs recorded.")
+		return err
+	}
 	return writeCertification(cmdCtx, l)
 }
 
