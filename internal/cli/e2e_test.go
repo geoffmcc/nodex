@@ -23,6 +23,8 @@ var e2eNodeUptime = 217 * time.Hour
 // e2eTaskFailure forces the mock Task to report a failed task for tests that
 // exercise failure-path output. Tests must reset it (defer) and run serially.
 var e2eTaskFailure = false
+var e2eVMStatusOverride string
+var e2eTaskNodeOverride string
 
 func init() {
 	provider.Register(e2eMockProviderName, func() domain.Provider { return &e2eMockProvider{} })
@@ -63,7 +65,11 @@ func (p *e2eMockProvider) Nodes(_ context.Context) ([]domain.Node, error) {
 	return []domain.Node{{ID: "node/e2e-node", Name: "e2e-node", Status: "online", Role: "node", Platform: "mock", Uptime: &e2eNodeUptime}}, nil
 }
 func (p *e2eMockProvider) VMs(_ context.Context) ([]domain.VM, error) {
-	return []domain.VM{{ID: "e2e-node/100", Name: "e2e-vm", Status: "running", Node: "e2e-node", CPU: 2, Memory: 1024, Disk: 2048}}, nil
+	status := e2eVMStatusOverride
+	if status == "" {
+		status = "running"
+	}
+	return []domain.VM{{ID: "e2e-node/100", Name: "e2e-vm", Status: status, Node: "e2e-node", CPU: 2, Memory: 1024, Disk: 2048}}, nil
 }
 func (p *e2eMockProvider) Containers(_ context.Context) ([]domain.Container, error) {
 	return []domain.Container{{ID: "e2e-node/200", Name: "e2e-ct", Status: "running", Node: "e2e-node", CPU: 1, OS: "debian", Memory: 512, Disk: 1024}}, nil
@@ -107,6 +113,9 @@ func (p *e2eMockProvider) Task(_ context.Context, node, upid string) (*domain.Ta
 	status := "OK"
 	if e2eTaskFailure {
 		status = "ERROR"
+	}
+	if e2eTaskNodeOverride != "" {
+		node = e2eTaskNodeOverride
 	}
 	return &domain.Task{
 		UPID:      upid,

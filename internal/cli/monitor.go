@@ -18,9 +18,13 @@ func runMonitorTargets(_ context.Context, cmdCtx *Context, args []string) error 
 	if len(args) != 0 {
 		return app.NewExitError(fmt.Errorf("usage: nodex monitor targets"), app.ExitUsage)
 	}
-	cfg, err := config.Read()
-	if err != nil {
-		return err
+	cfg := cmdCtx.AgentConfig
+	if cfg == nil {
+		var err error
+		cfg, err = config.Read()
+		if err != nil {
+			return err
+		}
 	}
 	targets := map[string]config.MonitorTarget{}
 	if cfg.Monitoring != nil {
@@ -83,9 +87,13 @@ func runMonitorCheck(ctx context.Context, cmdCtx *Context, args []string) error 
 		targetName = args[i+1]
 		i++
 	}
-	cfg, err := config.Read()
-	if err != nil {
-		return err
+	cfg := cmdCtx.AgentConfig
+	if cfg == nil {
+		var err error
+		cfg, err = config.Read()
+		if err != nil {
+			return err
+		}
 	}
 	targets := map[string]config.MonitorTarget{}
 	if cfg.Monitoring != nil {

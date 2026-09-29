@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nodex.dev/schemas/agent-contract-v1.schema.json",
+  "title": "NodeX Agent Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "nodex_version", "input_schema_versions", "output_schema_versions", "features", "outcome_semantics", "retry_rules", "safety_instructions", "trust_boundary"],
+  "properties": {
+    "contract_version": { "type": "string", "const": "1.0.0" },
+    "nodex_version": { "type": "string", "minLength": 1 },
+    "input_schema_versions": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "output_schema_versions": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "features": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "outcome_semantics": { "type": "object", "additionalProperties": { "type": "string" } },
+    "retry_rules": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "safety_instructions": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "trust_boundary": { "type": "string", "minLength": 1 }
+  }
+}

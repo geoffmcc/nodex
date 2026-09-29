@@ -97,9 +97,13 @@ func runProfileList(_ context.Context, cmdCtx *Context, args []string) error {
 	if len(args) != 0 {
 		return app.NewExitError(fmt.Errorf("usage: nodex profile list"), app.ExitUsage)
 	}
-	cfg, err := config.Read()
-	if err != nil {
-		return err
+	cfg := cmdCtx.AgentConfig
+	if cfg == nil {
+		var err error
+		cfg, err = config.Read()
+		if err != nil {
+			return err
+		}
 	}
 
 	names := config.ProfileNames(cfg)
@@ -456,13 +460,20 @@ func runProfileTest(ctx context.Context, cmdCtx *Context, args []string) error {
 		return app.NewExitError(fmt.Errorf("usage: nodex profile test [name]"), app.ExitUsage)
 	}
 
-	cfg, err := config.Read()
-	if err != nil {
-		return err
+	cfg := cmdCtx.AgentConfig
+	if cfg == nil {
+		var err error
+		cfg, err = config.Read()
+		if err != nil {
+			return err
+		}
 	}
 
 	if name == "" {
-		name = cfg.CurrentProfile
+		name = cmdCtx.Opts.Profile
+		if name == "" {
+			name = cfg.CurrentProfile
+		}
 	}
 
 	if name == "" {

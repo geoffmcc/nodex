@@ -159,9 +159,15 @@ func connectProfile(ctx context.Context, cmdCtx *Context, profileName string) (d
 }
 
 func connectProfileWithOptions(ctx context.Context, cmdCtx *Context, profileName string, extra ...httpclient.Option) (domain.Provider, func(), error) {
-	cfg, err := config.Read()
-	if err != nil {
-		return nil, nil, err
+	var cfg *config.Config
+	var err error
+	if cmdCtx != nil && cmdCtx.AgentConfig != nil {
+		cfg = cmdCtx.AgentConfig
+	} else {
+		cfg, err = config.Read()
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	name := profileName
@@ -244,6 +250,12 @@ func connectProfileWithOptions(ctx context.Context, cmdCtx *Context, profileName
 func resolveProfileName(cmdCtx *Context) (string, error) {
 	if cmdCtx.Opts.Profile != "" {
 		return cmdCtx.Opts.Profile, nil
+	}
+	if cmdCtx.AgentConfig != nil {
+		if cmdCtx.AgentConfig.CurrentProfile == "" {
+			return "", fmt.Errorf("no profile configured")
+		}
+		return cmdCtx.AgentConfig.CurrentProfile, nil
 	}
 	cfg, err := config.Read()
 	if err != nil {

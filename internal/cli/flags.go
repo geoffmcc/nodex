@@ -101,34 +101,49 @@ func commandFlagSet(path, region []string) flagSet {
 	if fs, ok := handlerFlags[full]; ok {
 		return fs
 	}
-	if len(region) == 0 {
-		return flagSet{}
-	}
 	ops, ok := knownDispatchCommands[full]
 	if !ok {
-		return flagSet{}
-	}
-	op := full + " " + region[0]
-	for _, candidate := range ops {
-		if candidate == op {
-			if fs, ok := handlerFlags[op]; ok {
-				return fs
-			}
-			break
+		if alias := LookupOperation(full); alias != nil {
+			full = alias.Path
+			ops, ok = knownDispatchCommands[full]
 		}
 	}
-	return flagSet{}
+	if !ok || len(region) == 0 {
+		return flagSet{}
+	}
+	bestLength := 0
+	var best flagSet
+	for _, candidate := range ops {
+		suffix := strings.Fields(strings.TrimPrefix(candidate, full+" "))
+		if len(suffix) == 0 || len(suffix) > len(region) || len(suffix) <= bestLength {
+			continue
+		}
+		matches := true
+		for i := range suffix {
+			if suffix[i] != region[i] {
+				matches = false
+				break
+			}
+		}
+		if !matches {
+			continue
+		}
+		if fs, ok := handlerFlags[candidate]; ok {
+			best, bestLength = fs, len(suffix)
+		}
+	}
+	return best
 }
 
 // globalBoolFlags are global flags that take no value (unless --flag=false).
 var globalBoolFlags = []string{
-	"--no-color", "--non-interactive", "--quiet", "--verbose", "--debug",
+	"--no-color", "--non-interactive", "--quiet", "--verbose", "--debug", "--agent",
 	"--yes", "--force", "--wait", "--expert", "--all", "--password-stdin",
 }
 
 // globalValueFlags are global flags that consume the next token as their value.
 var globalValueFlags = []string{
-	"--profile", "--output", "--timeout", "--limit", "--confirm-target",
+	"--profile", "--output", "--timeout", "--limit", "--confirm-target", "--request-id",
 }
 
 func isGlobalBool(name string) bool {

@@ -108,11 +108,14 @@ func parseGlobal(args []string) (opts Options, helpPath []string, remaining []st
 			switch name {
 			case "profile":
 				opts.Profile = value
+			case "request-id":
+				opts.RequestID = value
 			case "confirm-target":
 				opts.ConfirmTarget = value
 				opts.sawConfirmFlags["--confirm-target"] = true
 			case "output":
 				outFmt = value
+				opts.outputSpecified = true
 			case "timeout":
 				d, perr := time.ParseDuration(value)
 				if perr != nil {
@@ -149,12 +152,15 @@ func parseGlobal(args []string) (opts Options, helpPath []string, remaining []st
 				opts.NoColor = value
 			case "non-interactive":
 				opts.NonInteractive = value
+				opts.nonInteractiveSpecified = true
 			case "quiet":
 				opts.Quiet = value
 			case "verbose":
 				opts.Verbose = value
 			case "debug":
 				opts.Debug = value
+			case "agent":
+				opts.Agent = value
 			case "yes":
 				opts.Yes = value
 				opts.sawConfirmFlags["--yes"] = true

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/logging"
 	"github.com/geoffmcc/nodex/internal/output"
 )
@@ -19,6 +20,8 @@ type Options struct {
 	Profile        string
 	Output         output.Format
 	Timeout        time.Duration
+	Agent          bool
+	RequestID      string
 	NoColor        bool
 	NonInteractive bool
 	Quiet          bool
@@ -38,7 +41,9 @@ type Options struct {
 	// and they therefore had no effect. Presence is tracked separately from
 	// the parsed values because the default of every one of them is the inert
 	// zero value, which is indistinguishable from "not passed".
-	sawConfirmFlags map[string]bool
+	sawConfirmFlags         map[string]bool
+	outputSpecified         bool
+	nonInteractiveSpecified bool
 }
 
 // Context carries global state through command execution.
@@ -52,6 +57,9 @@ type Context struct {
 	// Interactive streams bypass sanitization only for TTY-gated console sessions.
 	InteractiveIn  io.Reader
 	InteractiveOut io.Writer
+	// AgentConfig is the immutable configuration snapshot selected before
+	// agent-mode execution. Provider connections must use this same snapshot.
+	AgentConfig *config.Config
 }
 
 // CommandFunc is the signature for command handlers.
@@ -90,6 +98,19 @@ func init() {
 		&command{name: "parse", short: "Parse a semver version", run: runVersionParse},
 	)
 	register("init", "Initialize nodex configuration", runInit)
+	register("agent", "Machine-readable agent contract and mutation receipts", nil,
+		&command{name: "contract", short: "Show the versioned agent contract", run: runAgentContract},
+		&command{name: "receipt", short: "Inspect or reconcile agent mutation receipts", run: runAgentReceiptDispatch, sub: map[string]*command{
+			"list":      {name: "list", short: "List recent mutation receipts", run: runAgentReceiptList},
+			"show":      {name: "show", short: "Show a mutation receipt", run: runAgentReceiptShow},
+			"refresh":   {name: "refresh", short: "Refresh task execution status", run: runAgentReceiptRefresh},
+			"reconcile": {name: "reconcile", short: "Reconcile an ambiguous outcome without resubmitting", run: runAgentReceiptReconcile},
+		}},
+	)
+	register("operation", "Discover supported operations", nil,
+		&command{name: "list", short: "List operation metadata", run: runOperationList},
+		&command{name: "describe", short: "Describe an operation and its input schema", run: runOperationDescribe},
+	)
 	register("setup", "Guided secure provider setup", runSetup)
 	register("certification", "Run opt-in disposable-environment certification", nil,
 		&command{name: "run", short: "Create, verify, and clean up a certification VM", run: runCertification},
@@ -344,8 +365,10 @@ func bindCommandMetadata() {
 	bind(commands, "")
 }
 
-// Run parses global flags and dispatches to the appropriate command.
-func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+// runNormal parses global flags and dispatches through the existing command
+// tree. Agent mode invokes this exact dispatcher with an immutable config
+// snapshot and a captured stdout stream.
+func runNormal(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	// Keep the conventional root --version spelling as a short alias for the
 	// version command. Rewrite before global parsing so the flag does not need a
 	// second, divergent version-reporting path.
@@ -376,6 +399,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		Stdin:          osIn(),
 		InteractiveIn:  os.Stdin,
 		InteractiveOut: stdout,
+		AgentConfig:    agentConfigFromContext(ctx),
 	}
 
 	// A -h/--help/-help token short-circuits before dispatch (exit 0).
@@ -628,6 +652,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --quiet              Suppress non-essential output")
 	fmt.Fprintln(w, "  --verbose            Info-level stderr output")
 	fmt.Fprintln(w, "  --debug              Debug-level stderr output (redacted)")
+	fmt.Fprintln(w, "  --agent              Opt in to structured JSON execution and mutation receipts")
+	fmt.Fprintln(w, "  --request-id <id>    Stable agent request ID for mutation deduplication")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Mutation Flags:")
 	fmt.Fprintln(w, "  --yes                Confirm reversible operations (Tier 1)")
