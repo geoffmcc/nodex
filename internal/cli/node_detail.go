@@ -6,6 +6,11 @@ import (
 	"strconv"
 	"time"
 
+	// Embed the IANA time zone database next to the code that calls
+	// time.LoadLocation. Windows ships no system tzdata, so without this,
+	// every zone lookup fails and rendered timestamps fall back to UTC.
+	_ "time/tzdata"
+
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
@@ -194,16 +199,23 @@ func writeNodeTime(cmdCtx *Context, nodeTime *domain.NodeTime) error {
 }
 
 // nodeTimeLocalHuman renders the node's epoch as an RFC3339 timestamp in its
-// configured time zone, falling back to UTC when the zone is unknown.
+// configured time zone.
+//
+// When the configured zone cannot be loaded this returns "" rather than a UTC
+// timestamp. A UTC value presented as the node's local time is a plausible
+// but wrong answer, which is worse for a scheduling surface than an absent
+// one: callers can detect the empty field, but cannot detect the skew.
 func nodeTimeLocalHuman(nodeTime *domain.NodeTime) string {
 	if nodeTime == nil || nodeTime.Epoch == 0 {
 		return ""
 	}
 	loc := time.UTC
 	if nodeTime.TimeZone != "" {
-		if l, err := time.LoadLocation(nodeTime.TimeZone); err == nil {
-			loc = l
+		l, err := time.LoadLocation(nodeTime.TimeZone)
+		if err != nil {
+			return ""
 		}
+		loc = l
 	}
 	return time.Unix(nodeTime.Epoch, 0).In(loc).Format(time.RFC3339)
 }

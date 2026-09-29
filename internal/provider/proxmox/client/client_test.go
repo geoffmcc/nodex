@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
@@ -499,7 +500,9 @@ func TestGetNodeTimeDecodesNumericLocalTime(t *testing.T) {
 		if r.URL.Path != "/nodes/proxmox/time" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		_, _ = fmt.Fprint(w, `{"data":{"timezone":"America/New_York","epoch":1784073342,"localtime":1784073342}}`)
+		// PVE returns "time" (true UTC epoch) and "localtime" (same instant
+		// pre-shifted by the node's UTC offset). There is no "epoch" key.
+		_, _ = fmt.Fprint(w, `{"data":{"timezone":"America/New_York","time":1784073342,"localtime":1784058942}}`)
 	}))
 	defer s.Close()
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
@@ -507,18 +510,49 @@ func TestGetNodeTimeDecodesNumericLocalTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetNodeTime: %v", err)
 	}
-	if got.TimeZone != "America/New_York" || got.Epoch != 1784073342 || got.Local != "1784073342" {
+	if got.TimeZone != "America/New_York" || got.Epoch != 1784073342 || got.Local != "1784058942" {
 		t.Fatalf("node time = %+v", got)
 	}
 }
 
-func TestGetNodeTimeDerivesEpochFromLocalTime(t *testing.T) {
+// TestGetNodeTimeEpochIgnoresLocalTime guards the regression where "epoch" was
+// populated from PVE's "localtime", which is offset by the node's UTC offset.
+// The resulting value still looked like a plausible epoch, so the error was
+// silent. A real payload (time + localtime) must yield the true epoch.
+func TestGetNodeTimeEpochIgnoresLocalTime(t *testing.T) {
+	const trueEpoch = 1784073342
+	const localTime = 1784058942 // trueEpoch - 14400 (UTC-4)
 	var data NodeTimeData
-	if err := json.Unmarshal([]byte(`{"timezone":"UTC","localtime":1784073342}`), &data); err != nil {
+	payload := fmt.Sprintf(`{"timezone":"America/New_York","time":%d,"localtime":%d}`, trueEpoch, localTime)
+	if err := json.Unmarshal([]byte(payload), &data); err != nil {
 		t.Fatalf("unmarshal node time: %v", err)
 	}
-	if data.Epoch != 1784073342 {
-		t.Fatalf("epoch = %d, want 1784073342", data.Epoch)
+	if data.Epoch != trueEpoch {
+		t.Errorf("epoch = %d, want %d (must come from time, not localtime)", data.Epoch, trueEpoch)
+	}
+	if data.Epoch == localTime {
+		t.Error("epoch was populated from localtime, reintroducing the UTC-offset skew")
+	}
+	if data.Local != "1784058942" {
+		t.Errorf("local = %q, want %q", data.Local, "1784058942")
+	}
+}
+
+// TestGetNodeTimeEpochNearWallClock is the assertion the original bug would
+// have failed: a reported node epoch should track real time, not wall-clock
+// time minus the node's UTC offset.
+func TestGetNodeTimeEpochNearWallClock(t *testing.T) {
+	now := time.Now().Unix()
+	// Simulate a node in UTC-4 reporting at the current instant.
+	trueEpoch := now
+	localTime := trueEpoch - 14400
+	var data NodeTimeData
+	payload := fmt.Sprintf(`{"timezone":"America/New_York","time":%d,"localtime":%d}`, trueEpoch, localTime)
+	if err := json.Unmarshal([]byte(payload), &data); err != nil {
+		t.Fatalf("unmarshal node time: %v", err)
+	}
+	if drift := data.Epoch - now; drift > 5*60 || drift < -5*60 {
+		t.Errorf("epoch drifted %ds from wall clock; want within 5m", drift)
 	}
 }
 
