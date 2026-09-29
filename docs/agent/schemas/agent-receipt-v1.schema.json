@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nodex.dev/schemas/agent-receipt-v1.schema.json",
+  "title": "NodeX Agent Mutation Receipt v1",
+  "type": "object",
+  "required": ["receipt_id", "input_fingerprint", "updated_at"],
+  "properties": {
+    "receipt_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+    "input_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    { "$ref": "agent-result-v1.schema.json" },
+    {
+      "type": "object",
+      "required": ["receipt_id", "input_fingerprint", "updated_at"],
+      "properties": {
+        "receipt_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+        "input_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  ]
+}

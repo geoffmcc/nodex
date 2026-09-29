@@ -336,7 +336,11 @@ func TestRunProfileSetCredentialsRejectsUnsupportedBackend(t *testing.T) {
 
 func isolateConfigAndHome(t *testing.T) (dir, home string) {
 	t.Helper()
-	dir = t.TempDir()
+	var err error
+	dir, err = filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temporary test directory: %v", err)
+	}
 	home = filepath.Join(dir, "home")
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))
 	t.Setenv("HOME", home)

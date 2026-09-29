@@ -25,10 +25,9 @@ import (
 // The temporary file is created with filePerm (applied via Chmod after
 // creation), synced, closed, and then atomically renamed to dest.
 //
-// On Windows, os.Rename fails if dest already exists and is open. This
-// function handles the overwrite by removing an existing regular-file dest
-// before the rename when overwrite is true. When overwrite is false and dest
-// exists, os.ErrExist is returned.
+// On Windows, overwrite uses same-volume MoveFileEx replacement with
+// MOVEFILE_WRITE_THROUGH instead of removing the old file before rename.
+// When overwrite is false and dest exists, os.ErrExist is returned.
 func WriteFile(dest string, data []byte, overwrite bool, dirPerm, filePerm os.FileMode) error {
 	dir := filepath.Dir(dest)
 	if err := os.MkdirAll(dir, dirPerm); err != nil {
@@ -146,17 +145,11 @@ func WriteStream(dest string, src io.Reader, overwrite bool, dirPerm, filePerm o
 // replaceFile handles the rename and overwrite logic.
 func replaceFile(tmpPath, dest string, overwrite bool) error {
 	if overwrite {
-		// On Windows, os.Rename fails if the target exists (even as a
-		// regular file), so remove it first when overwriting.
 		info, err := os.Lstat(dest)
 		if err == nil {
-			if info.Mode().IsRegular() {
-				if err := os.Remove(dest); err != nil {
-					return fmt.Errorf("atomic write: remove existing file %s: %w", dest, err)
-				}
+			if !info.Mode().IsRegular() {
+				return fmt.Errorf("atomic write: destination %s exists and is not a regular file", dest)
 			}
-			// Non-regular files are left untouched; Rename will fail
-			// with an appropriate error.
 		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("atomic write: stat destination: %w", err)
 		}
@@ -172,7 +165,7 @@ func replaceFile(tmpPath, dest string, overwrite bool) error {
 		}
 	}
 
-	if err := os.Rename(tmpPath, dest); err != nil {
+	if err := platformRename(tmpPath, dest, overwrite); err != nil {
 		return fmt.Errorf("atomic write: rename to destination: %w", err)
 	}
 	return nil

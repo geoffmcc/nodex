@@ -20,11 +20,19 @@ var pbsE2EConflictMode bool
 // pbsE2ERunCalls records mutation invocations so tests can assert that
 // refused operations never executed.
 var pbsE2ERunCalls []string
+var pbsE2ELoseVerifyResponse bool
+var pbsE2EAfterVerifyResponse func()
 
 const pbsE2EMutationUPID = "UPID:pbs-e2e:0000CCCC:0000DDDD:00000003:65f00002:verificationjob:backups:automation@pbs!nodex:"
 
 func (p *pbsE2EMockProvider) PBSRunVerifyJob(_ context.Context, id string) (string, error) {
 	pbsE2ERunCalls = append(pbsE2ERunCalls, "verify-job:"+id)
+	if pbsE2ELoseVerifyResponse {
+		return "", app.NewProviderError(0, "connection dropped after request", io.ErrUnexpectedEOF)
+	}
+	if pbsE2EAfterVerifyResponse != nil {
+		pbsE2EAfterVerifyResponse()
+	}
 	return pbsE2EMutationUPID, nil
 }
 
@@ -58,6 +66,8 @@ func seedPBSMutationTest(t *testing.T) {
 	t.Cleanup(func() {
 		pbsE2ERunCalls = nil
 		pbsE2EConflictMode = false
+		pbsE2ELoseVerifyResponse = false
+		pbsE2EAfterVerifyResponse = nil
 	})
 }
 

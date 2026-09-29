@@ -34,9 +34,13 @@ func runProfileDiagnosePermissions(ctx context.Context, cmdCtx *Context, args []
 		return app.NewExitError(fmt.Errorf("usage: nodex profile diagnose-permissions <profile>"), app.ExitUsage)
 	}
 	name := args[0]
-	cfg, err := config.Read()
-	if err != nil {
-		return err
+	cfg := cmdCtx.AgentConfig
+	if cfg == nil {
+		var err error
+		cfg, err = config.Read()
+		if err != nil {
+			return err
+		}
 	}
 	p, ok := cfg.Profiles[name]
 	if !ok {

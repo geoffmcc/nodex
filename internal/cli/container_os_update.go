@@ -233,9 +233,12 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 	if err != nil {
 		return err
 	}
-	cfg, err := config.Read()
-	if err != nil {
-		return err
+	cfg := cmdCtx.AgentConfig
+	if cfg == nil {
+		cfg, err = config.Read()
+		if err != nil {
+			return err
+		}
 	}
 	hostName, inventoryHost, err := findPVEInventoryHost(cfg, profileName, node)
 	if err != nil {

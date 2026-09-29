@@ -13,6 +13,8 @@ Nodex runs on Linux, macOS, and Windows as a single local binary. It connects di
 
 Every management command is protected by a five-tier safety model. Read-only commands need no confirmation. Reversible operations need `--yes`. Disruptive operations need `--yes --force`. Destructive operations require typing the target identifier. Security administration requires `--expert`.
 
+For machine-readable discovery, structured execution, and mutation receipts, see the [NodeX agent interface](docs/agent-interface.md) and the portable [NODEX_AGENT.md](NODEX_AGENT.md) instructions. Agent mode is opt-in and continues to use these existing confirmations and provider trust settings.
+
 ## Quick start
 
 ### Prebuilt binaries

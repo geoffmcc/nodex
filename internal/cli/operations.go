@@ -119,6 +119,18 @@ func buildRegistry() []OperationMeta {
 	// Preallocate a reasonable capacity. The exact count is ~180 entries.
 	ops := make([]OperationMeta, 0, 200)
 
+	// --- machine-readable discovery and local mutation receipt recovery ---
+	ops = append(ops,
+		OperationMeta{Path: "agent contract", Description: "Show the versioned NodeX agent contract", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"json"}, HandlerFunc: "runAgentContract"},
+		OperationMeta{Path: "agent receipt", Description: "Inspect or reconcile agent mutation receipts (routing)", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptDispatch"},
+		OperationMeta{Path: "agent receipt list", Description: "List recent agent mutation receipts", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptList"},
+		OperationMeta{Path: "agent receipt show", Description: "Show one agent mutation receipt", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptShow"},
+		OperationMeta{Path: "agent receipt refresh", Description: "Refresh task execution status from the bound provider", Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierReversible, OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptRefresh"},
+		OperationMeta{Path: "agent receipt reconcile", Description: "Read-only reconciliation of an ambiguous receipt", Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierReversible, OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptReconcile"},
+		OperationMeta{Path: "operation list", Description: "List supported operation metadata", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"json"}, HandlerFunc: "runOperationList"},
+		OperationMeta{Path: "operation describe", Description: "Describe one operation and its input schema", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"json"}, HandlerFunc: "runOperationDescribe"},
+	)
+
 	// --- version ---
 	ops = append(ops, OperationMeta{
 		Path: "version", Description: "Show version information",
@@ -1049,6 +1061,28 @@ func Operations() []OperationMeta {
 // LookupOperation finds an operation by its full command path.
 // Returns nil if no operation with the given path exists.
 func LookupOperation(path string) *OperationMeta {
+	if operation := lookupOperationExact(path); operation != nil {
+		return operation
+	}
+	parts := strings.Fields(path)
+	for prefixLength := len(parts) - 1; prefixLength > 0; prefixLength-- {
+		prefix := strings.Join(parts[:prefixLength], " ")
+		parent := lookupOperationExact(prefix)
+		if parent == nil {
+			continue
+		}
+		if _, dispatch := knownDispatchCommands[parent.Path]; !dispatch {
+			continue
+		}
+		suffix := strings.Join(parts[prefixLength:], " ")
+		if operation := lookupOperationExact(parent.Path + " " + suffix); operation != nil {
+			return operation
+		}
+	}
+	return nil
+}
+
+func lookupOperationExact(path string) *OperationMeta {
 	for i := range operationRegistry {
 		if operationRegistry[i].Path == path {
 			operation := cloneOperation(operationRegistry[i])
@@ -1062,6 +1096,40 @@ func LookupOperation(path string) *OperationMeta {
 		}
 	}
 	return nil
+}
+
+// OperationAliases includes both explicit leaf aliases and leaf paths formed
+// by appending the same suffix to an alias of a nested dispatch parent.
+func OperationAliases(operation OperationMeta) []string {
+	aliases := append([]string(nil), operation.Aliases...)
+	for parent, children := range knownDispatchCommands {
+		prefix := parent + " "
+		if !strings.HasPrefix(operation.Path, prefix) {
+			continue
+		}
+		suffix := strings.TrimPrefix(operation.Path, prefix)
+		if !containsString(children, operation.Path) {
+			continue
+		}
+		parentMeta := lookupOperationExact(parent)
+		if parentMeta == nil {
+			continue
+		}
+		for _, alias := range parentMeta.Aliases {
+			aliases = append(aliases, alias+" "+suffix)
+		}
+	}
+	seen := make(map[string]bool, len(aliases))
+	unique := aliases[:0]
+	for _, alias := range aliases {
+		if alias == operation.Path || seen[alias] {
+			continue
+		}
+		seen[alias] = true
+		unique = append(unique, alias)
+	}
+	sort.Strings(unique)
+	return unique
 }
 
 // MutationOperations returns all operations that are not inspection-only.
@@ -1235,6 +1303,7 @@ func collectCommandPaths(cmds map[string]*command, prefix string) []string {
 // These are commands that have a handler (run) but internally route to sub-ops.
 // The registry includes entries for both the dispatch and its sub-ops.
 var knownDispatchCommands = map[string][]string{
+	"agent receipt":      {"agent receipt list", "agent receipt show", "agent receipt refresh", "agent receipt reconcile"},
 	"vm snapshot":        {"vm snapshot create", "vm snapshot delete", "vm snapshot rollback"},
 	"container snapshot": {"container snapshot create", "container snapshot delete", "container snapshot rollback"},
 	"vm disk":            {"vm disk resize", "vm disk move"},
