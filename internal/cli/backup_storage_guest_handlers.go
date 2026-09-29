@@ -106,6 +106,17 @@ func checkDestructive(cmdCtx *Context, desc, target string) error {
 		TypeConfirmTarget:   target,
 	}
 	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
+	return resolveConfirmation(cmdCtx, result, target)
+}
+
+// resolveConfirmation turns a ConfirmationResult that still demands
+// confirmation into either success or a refusal. It is shared by every tier
+// that can require type-in confirmation so the --confirm-target, piped-stdin,
+// and interactive paths behave identically across tiers: an operator who
+// learns one command's confirmation rules can rely on them for the next.
+//
+// Callers must have already handled a result with ConfirmationRequired false.
+func resolveConfirmation(cmdCtx *Context, result safety.ConfirmationResult, target string) error {
 	if !result.ConfirmationRequired {
 		return nil // Authorized (all conditions met).
 	}
