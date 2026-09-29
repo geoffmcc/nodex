@@ -28,6 +28,16 @@ func TestRun_NoArgs(t *testing.T) {
 	}
 }
 
+func TestRunVersionFlagAliasesVersionCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"--version"}, &stdout, &stderr); err != nil {
+		t.Fatalf("Run(--version): %v (stderr %q)", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Nodex ") {
+		t.Fatalf("--version output = %q, want version information", stdout.String())
+	}
+}
+
 func TestRunSanitizesDirectHandlerStdoutAndStderr(t *testing.T) {
 	const name = "unsafe-output-test"
 	commands[name] = &command{
@@ -391,21 +401,46 @@ func TestRun_RejectsExtraArgs(t *testing.T) {
 	}
 }
 
-func TestRun_HelpPathTolerant(t *testing.T) {
-	// With multi-level help, help is forgiving: it renders help for the
-	// deepest resolvable prefix and ignores trailing tokens.
+func TestRun_HelpPathRejectsUnknownOrSurplusTokens(t *testing.T) {
 	for _, args := range [][]string{
 		{"help", "version", "extra"},
 		{"help", "vm", "bogus"},
 		{"help", "pbs", "snapshot", "list", "extra"},
 	} {
 		var stdout, stderr bytes.Buffer
-		if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
-			t.Fatalf("Run(%v) failed: %v", args, err)
+		err := Run(context.Background(), args, &stdout, &stderr)
+		if err == nil {
+			t.Fatalf("Run(%v) succeeded, want unknown-path usage error", args)
 		}
-		if !strings.Contains(stdout.String(), "nodex") {
-			t.Errorf("Run(%v) produced no help output", args)
+		var exitErr *app.ExitCoder
+		if !stderrors.As(err, &exitErr) || exitErr.ExitCode != app.ExitUsage {
+			t.Errorf("Run(%v) error = %v, want usage exit", args, err)
 		}
+		if strings.Contains(strings.Join(args, " "), "bogus") && !strings.Contains(stdout.String(), "Valid subcommands:") {
+			t.Errorf("Run(%v) omitted parent subcommand hint: %q", args, stdout.String())
+		}
+	}
+}
+
+func TestFirewallUnknownSubcommandListsValidChoices(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"firewall", "grousp"}, &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "valid:") || !strings.Contains(err.Error(), "groups") {
+		t.Fatalf("error = %v, want valid firewall choices including groups", err)
+	}
+	firewall, exists := GetCommand("firewall")
+	if !exists {
+		t.Fatal("firewall command is not registered")
+	}
+	if _, ok := firewall.sub["groups"]; !ok {
+		t.Fatal("firewall groups list alias is not registered")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	err = Run(context.Background(), []string{"firewall", "list", "extra"}, &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "firewall <cluster-rules|list|rules>") {
+		t.Fatalf("firewall list surplus-argument error = %v, want usage for the accepted aliases", err)
 	}
 }
 

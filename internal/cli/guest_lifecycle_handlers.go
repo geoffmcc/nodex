@@ -182,7 +182,11 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 	}
 
 	// Safety check.
-	desc := fmt.Sprintf("%s %s/%d", resourceType, node, vmid)
+	descType := resourceType
+	if resourceType == "vm" {
+		descType = "VM"
+	}
+	desc := fmt.Sprintf("%s %s/%d", descType, node, vmid)
 	policy := safety.ConfirmationPolicy{
 		Tier:                tier,
 		ResourceDescription: desc,

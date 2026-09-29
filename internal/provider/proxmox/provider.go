@@ -190,7 +190,23 @@ func (p *Provider) Nodes(ctx context.Context) ([]domain.Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
-	return MapNodes(items), nil
+	nodes := MapNodes(items)
+	needsIP := false
+	for _, node := range nodes {
+		if node.IP == "" {
+			needsIP = true
+			break
+		}
+	}
+	if needsIP {
+		// /nodes does not consistently include node IPs. /cluster/status carries
+		// them, so use it as best-effort enrichment without making node listing
+		// fail when that optional endpoint is unavailable.
+		if status, statusErr := p.client.GetClusterStatus(ctx); statusErr == nil {
+			enrichNodeIPs(nodes, status)
+		}
+	}
+	return nodes, nil
 }
 
 // VMs returns all VMs across the cluster.
@@ -649,6 +665,22 @@ func (p *Provider) Syslog(ctx context.Context, node string) ([]domain.SyslogEntr
 	if err != nil {
 		return nil, fmt.Errorf("get syslog: %w", err)
 	}
+	return mapSyslogItems(items), nil
+}
+
+// SyslogPage returns a bounded syslog slice and its total line count.
+func (p *Provider) SyslogPage(ctx context.Context, node string, start, limit int) ([]domain.SyslogEntry, int64, error) {
+	if p.client == nil {
+		return nil, 0, errors.New(errNotConnected)
+	}
+	items, total, err := p.client.GetSyslogPage(ctx, node, start, limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get syslog: %w", err)
+	}
+	return mapSyslogItems(items), total, nil
+}
+
+func mapSyslogItems(items []client.SyslogItem) []domain.SyslogEntry {
 	result := make([]domain.SyslogEntry, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.SyslogEntry{
@@ -656,7 +688,7 @@ func (p *Provider) Syslog(ctx context.Context, node string) ([]domain.SyslogEntr
 			Text: item.T,
 		})
 	}
-	return result, nil
+	return result
 }
 
 // Backups returns backup tasks for a specific node.
@@ -921,7 +953,6 @@ func (p *Provider) NodeTime(ctx context.Context, node string) (*domain.NodeTime,
 	return &domain.NodeTime{
 		TimeZone: data.TimeZone,
 		Epoch:    data.Epoch,
-		Local:    data.Local,
 	}, nil
 }
 

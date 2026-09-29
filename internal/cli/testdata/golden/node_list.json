@@ -5,7 +5,7 @@
     "status": "online",
     "role": "node",
     "platform": "mock",
-    "uptime": 781200000000000,
+    "uptime_nanos": 781200000000000,
     "uptime_seconds": 781200,
     "uptime_human": "217h0m0s"
   }

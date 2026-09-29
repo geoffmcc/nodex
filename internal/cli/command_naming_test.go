@@ -14,7 +14,7 @@ import (
 func TestPluralListsPairWithSingularMutations(t *testing.T) {
 	groups := map[string][]string{
 		"sdn":      {"zones", "vnets", "subnets", "controllers"},
-		"firewall": {"aliases", "ipsets", "security-groups"},
+		"firewall": {"aliases", "ipsets", "security-groups", "groups"},
 		"access":   {"users"},
 	}
 	singulars := map[string][]string{
@@ -93,6 +93,17 @@ func TestFirewallGroupIsLegacyAliasForSecurityGroup(t *testing.T) {
 	}
 	if !strings.Contains(canonical.Description, "security group") {
 		t.Errorf("canonical description should describe security groups, got %q", canonical.Description)
+	}
+}
+
+func TestFirewallGroupsIsPluralListAlias(t *testing.T) {
+	plural := LookupOperation("firewall groups")
+	canonical := LookupOperation("firewall security-groups")
+	if plural == nil || canonical == nil {
+		t.Fatal("firewall groups plural alias or canonical list operation is missing")
+	}
+	if !plural.Inspection || plural.HandlerFunc != canonical.HandlerFunc {
+		t.Fatalf("firewall groups metadata = %+v, want read-only alias of security-groups", plural)
 	}
 }
 

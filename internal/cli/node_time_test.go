@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/output"
 )
 
 func TestNodeTimeLocalHumanRendersInConfiguredZone(t *testing.T) {
@@ -37,6 +40,27 @@ func TestNodeTimeLocalHumanEmptyInputs(t *testing.T) {
 	}
 	if got := nodeTimeLocalHuman(&domain.NodeTime{TimeZone: "UTC"}); got != "" {
 		t.Errorf("zero epoch = %q, want empty", got)
+	}
+}
+
+func TestWriteNodeTimeOmitsRawLocaltime(t *testing.T) {
+	var out bytes.Buffer
+	cmdCtx := &Context{Writer: &out, Opts: Options{Output: output.FormatJSON}}
+	if err := writeNodeTime(cmdCtx, &domain.NodeTime{
+		TimeZone: "UTC",
+		Epoch:    1784073342,
+	}); err != nil {
+		t.Fatalf("writeNodeTime: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if _, exists := got["local"]; exists {
+		t.Fatalf("raw local field unexpectedly emitted: %v", got)
+	}
+	if got["local_human"] == "" {
+		t.Fatalf("local_human missing from output: %v", got)
 	}
 }
 

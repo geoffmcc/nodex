@@ -59,7 +59,7 @@ var leafHelp = map[string]helpEntry{
 	"vm pause":                     {usage: "<node>/<vmid>"},
 	"vm unpause":                   {usage: "<node>/<vmid>"},
 	"vm update":                    {usage: "<node>/<vmid> <key=value>"},
-	"vm delete":                    {usage: "<node>/<vmid>"},
+	"vm delete":                    {desc: "Delete a stopped VM (destructive); the VM must be stopped first", usage: "<node>/<vmid> --yes --force --confirm-target <node>/<vmid>", examples: []string{"proxmox/100 --yes --force --confirm-target proxmox/100"}},
 	"vm cloud-init":                {usage: "<node>/<vmid>"},
 	"vm template":                  {usage: "<node>/<vmid>"},
 	"vm migrate":                   {usage: "<node>/<vmid> <target> [online]"},
@@ -99,7 +99,7 @@ var leafHelp = map[string]helpEntry{
 	"cluster init":                 {usage: "<name> <bind-address>"},
 	"cluster join":                 {usage: "<node-address> <fingerprint>"},
 	"event list":                   {usage: ""},
-	"log":                          {usage: "<node> [--last <n>] [--grep <regexp>] [--follow]", desc: "Show the most recent node syslog entries (default: last 50)", examples: []string{"proxmox", "proxmox --last 200", "proxmox --grep 'corosync|pveproxy' --follow"}},
+	"log":                          {usage: "<node> [--last <n>] [--grep <regexp>] [--follow]", desc: "Show node syslog entries (default: last 50; --last 0: up to 5000)", examples: []string{"proxmox", "proxmox --last 200", "proxmox --grep 'corosync|pveproxy' --follow"}},
 	"pools list":                   {usage: ""},
 	"network show":                 {usage: "<node>"},
 	"network apply":                {usage: "<node>"},
@@ -116,6 +116,7 @@ var leafHelp = map[string]helpEntry{
 	"firewall aliases":             {usage: ""},
 	"firewall ipsets":              {usage: ""},
 	"firewall security-groups":     {usage: ""},
+	"firewall groups":              {usage: "", desc: "List firewall security groups (alias for security-groups)"},
 	"firewall options":             {usage: ""},
 	"firewall node-rules":          {usage: "<node>", desc: "List node-level firewall rules (/nodes/<node>/firewall/rules)"},
 	"firewall vm-rules":            {usage: "<node>/<vmid>", desc: "List VM-level firewall rules"},
@@ -284,6 +285,16 @@ func printCommandHelp(w io.Writer, path []string) bool {
 		}
 		cur = next
 		resolved = append(resolved, p)
+	}
+	if len(resolved) != len(path) {
+		parent := strings.Join(resolved, " ")
+		if cur.sub != nil {
+			fmt.Fprintf(w, "Unknown subcommand %q for %s.\n", path[len(resolved)], parent)
+			fmt.Fprintf(w, "Valid subcommands: %s\n", strings.Join(commandSubNames(cur), ", "))
+		} else {
+			fmt.Fprintf(w, "Unexpected extra help path after %s: %s\n", parent, strings.Join(path[len(resolved):], " "))
+		}
+		return false
 	}
 	full := strings.Join(resolved, " ")
 

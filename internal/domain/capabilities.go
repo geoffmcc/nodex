@@ -62,6 +62,13 @@ type SyslogInspector interface {
 	Syslog(ctx context.Context, node string) ([]SyslogEntry, error)
 }
 
+// PagedSyslogInspector provides bounded syslog ranges and the total number of
+// available lines. It is optional so existing providers can keep implementing
+// the simpler SyslogInspector contract.
+type PagedSyslogInspector interface {
+	SyslogPage(ctx context.Context, node string, start, limit int) ([]SyslogEntry, int64, error)
+}
+
 // BackupInspector provides backup task listing per node.
 type BackupInspector interface {
 	Backups(ctx context.Context, node string) ([]Backup, error)
@@ -312,7 +319,6 @@ type NodeDNS struct {
 type NodeTime struct {
 	TimeZone   string `json:"timezone" yaml:"timezone"`
 	Epoch      int64  `json:"epoch" yaml:"epoch"`
-	Local      string `json:"local,omitempty" yaml:"local,omitempty"`
 	LocalHuman string `json:"local_human,omitempty" yaml:"local_human,omitempty"`
 }
 
@@ -724,7 +730,7 @@ type AccessUser struct {
 	UserID    string `json:"userid" yaml:"userid"`
 	Comment   string `json:"comment,omitempty" yaml:"comment,omitempty"`
 	Email     string `json:"email,omitempty" yaml:"email,omitempty"`
-	Enable    int    `json:"enable" yaml:"enable"`
+	Enable    *int   `json:"enable,omitempty" yaml:"enable,omitempty"`
 	Expire    int64  `json:"expire,omitempty" yaml:"expire,omitempty"`
 	FirstName string `json:"firstname,omitempty" yaml:"firstname,omitempty"`
 	LastName  string `json:"lastname,omitempty" yaml:"lastname,omitempty"`

@@ -112,6 +112,17 @@ func TestRun_ProfileListCredentialRefRedacted(t *testing.T) {
 				var v []map[string]any
 				if err := yaml.Unmarshal(stdout.Bytes(), &v); err != nil {
 					t.Errorf("invalid YAML: %v\n%s", err, out)
+				} else if len(v) != 1 {
+					t.Errorf("YAML entries = %d, want 1: %s", len(v), out)
+				} else {
+					for _, key := range []string{"name", "current", "provider", "endpoint", "credential_ref"} {
+						if _, ok := v[0][key]; !ok {
+							t.Errorf("missing flat YAML key %q in %v", key, v[0])
+						}
+					}
+					if _, nested := v[0]["profile"]; nested {
+						t.Errorf("profile fields unexpectedly nested under profile: %v", v[0])
+					}
 				}
 			}
 		})

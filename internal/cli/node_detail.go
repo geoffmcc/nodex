@@ -190,7 +190,6 @@ func writeNodeTime(cmdCtx *Context, nodeTime *domain.NodeTime) error {
 	default:
 		rows := [][]string{
 			{"TIMEZONE", nodeTime.TimeZone},
-			{"LOCAL", nodeTime.Local},
 			{"EPOCH", fmt.Sprintf("%d", nodeTime.Epoch)},
 			{"LOCAL HUMAN", nodeTime.LocalHuman},
 		}

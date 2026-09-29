@@ -26,6 +26,28 @@ func TestResolver_Resolve_EnvFallback(t *testing.T) {
 	}
 }
 
+func TestResolver_EnvironmentCredentialPrecedesFileFallback(t *testing.T) {
+	dir := t.TempDir()
+	r := NewResolver(dir)
+	fileCreds := &domain.Credentials{Type: "token", TokenID: "file-id", TokenSecret: "file-secret"}
+	data, err := json.Marshal(fileCreds) // #nosec G117 -- synthetic test credentials exercise backend precedence.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "myprofile.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("NODEX_MYPROFILE_TOKEN", "environment-token")
+
+	got, err := r.Resolve(context.Background(), "myprofile", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.Token != "environment-token" || got.TokenID != "" {
+		t.Fatalf("credential = %+v, want environment credential to take precedence", got.Redacted())
+	}
+}
+
 func TestResolver_Resolve_FileFallback(t *testing.T) {
 	dir := t.TempDir()
 	r := NewResolver(dir)

@@ -687,7 +687,7 @@ func buildRegistry() []OperationMeta {
 		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "FirewallProvider", HandlerFunc: "runFirewallIPSets",
 	})
 	ops = append(ops, OperationMeta{
-		Path: "firewall security-groups", Description: "List firewall security groups",
+		Path: "firewall security-groups", Aliases: []string{"firewall groups"}, Description: "List firewall security groups",
 		Inspection: true, Scope: ScopeFirewall, SafetyTier: safety.TierObservation,
 		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "FirewallProvider", HandlerFunc: "runFirewallSecurityGroups",
 	})

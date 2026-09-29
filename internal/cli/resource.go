@@ -1163,6 +1163,11 @@ func writeEventList(cmdCtx *Context, events []domain.Event) error {
 // buffer since boot, which is unusable without a bound.
 const defaultSyslogEntries = 50
 
+// maxProxmoxSyslogEntries is PVE's documented maximum `limit` for one syslog
+// response. Larger requests are capped and reported rather than silently
+// truncated by the server.
+const maxProxmoxSyslogEntries = 5000
+
 // syslogFollowInterval is the poll period for `nodex log --follow`.
 const syslogFollowInterval = 2 * time.Second
 
@@ -1277,6 +1282,40 @@ func tailSyslog(entries []domain.SyslogEntry, n int) []domain.SyslogEntry {
 	return entries[len(entries)-n:]
 }
 
+func loadSyslogEntries(ctx context.Context, inspector domain.SyslogInspector, node string, requested int) ([]domain.SyslogEntry, bool, error) {
+	pager, ok := inspector.(domain.PagedSyslogInspector)
+	if !ok {
+		entries, err := inspector.Syslog(ctx, node)
+		return entries, false, err
+	}
+	_, total, err := pager.SyslogPage(ctx, node, 0, 0)
+	if err != nil {
+		return nil, false, err
+	}
+	if total <= 0 {
+		// Older providers may not expose the PVE `total` envelope field. Keep
+		// their legacy behavior rather than mistaking an unavailable count for
+		// an empty log.
+		entries, fallbackErr := inspector.Syslog(ctx, node)
+		return entries, false, fallbackErr
+	}
+	limit := requested
+	capped := false
+	if limit <= 0 || limit > maxProxmoxSyslogEntries {
+		limit = maxProxmoxSyslogEntries
+		capped = total > maxProxmoxSyslogEntries
+	}
+	if int64(limit) > total {
+		limit = int(total)
+	}
+	start := int(total) - limit + 1
+	if start < 1 {
+		start = 1
+	}
+	entries, _, err := pager.SyslogPage(ctx, node, start, limit)
+	return entries, capped, err
+}
+
 func runLog(ctx context.Context, cmdCtx *Context, args []string) error {
 	// An explicit --limit keeps its global meaning; otherwise fall back to
 	// --last, then to the default cap.
@@ -1299,9 +1338,12 @@ func runLog(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	entries, err := sl.Syslog(ctx, opts.node)
+	entries, capped, err := loadSyslogEntries(ctx, sl, opts.node, opts.last)
 	if err != nil {
 		return err
+	}
+	if capped {
+		fmt.Fprintf(cmdCtx.ErrW, "warning: PVE limits syslog output to the most recent %d entries\n", maxProxmoxSyslogEntries)
 	}
 
 	shown := filterSyslog(tailSyslog(entries, opts.last), opts.grep)

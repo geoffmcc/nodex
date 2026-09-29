@@ -400,15 +400,29 @@ func (c *Client) GetEvents(ctx context.Context) ([]EventItem, error) {
 
 // GetSyslog returns syslog entries for a specific node.
 func (c *Client) GetSyslog(ctx context.Context, node string) ([]SyslogItem, error) {
+	items, _, err := c.GetSyslogPage(ctx, node, 0, 50)
+	return items, err
+}
+
+// GetSyslogPage returns one bounded syslog page and the total available line
+// count. PVE numbers syslog lines from one; start=0 is accepted as the first
+// line and is useful for the count-only limit=0 request.
+func (c *Client) GetSyslogPage(ctx context.Context, node string, start, limit int) ([]SyslogItem, int64, error) {
 	if node == "" {
-		return nil, fmt.Errorf("node name is required")
+		return nil, 0, fmt.Errorf("node name is required")
+	}
+	if start < 0 || limit < 0 {
+		return nil, 0, fmt.Errorf("syslog start and limit must be non-negative")
 	}
 	var resp SyslogResponse
-	path := "/nodes/" + url.PathEscape(node) + "/syslog"
+	query := url.Values{}
+	query.Set("start", strconv.Itoa(start))
+	query.Set("limit", strconv.Itoa(limit))
+	path := "/nodes/" + url.PathEscape(node) + "/syslog?" + query.Encode()
 	if err := c.get(ctx, path, &resp); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return resp.Data, nil
+	return resp.Data, resp.Total, nil
 }
 
 // GetBackupStatus returns backup tasks for a specific node.
@@ -2781,9 +2795,18 @@ func (c *Client) sendMutation(ctx context.Context, method, path string, body url
 func (c *Client) decodeResponse(resp *http.Response, result any) error {
 	if !successCodes[resp.StatusCode] {
 		body, truncated := readLimited(resp.Body, c.client.MaxErrorBodySize())
-		msg := redact.String(output.SanitizeTerminal(string(body)))
+		message := decodeAPIErrorMessage(body)
+		msg := redact.String(output.SanitizeTerminal(message))
 		if truncated {
 			msg += "... [truncated]"
+		}
+		if resp.StatusCode == http.StatusInternalServerError && !truncated {
+			switch {
+			case isPVEAbsentResource(message):
+				return app.NewExitError(fmt.Errorf("%s: %w", msg, app.ErrNotFound), app.ExitNotFound)
+			case isPVERunningResource(message):
+				return app.NewExitError(fmt.Errorf("%s", msg), app.ExitConflict)
+			}
 		}
 		return newProviderError(resp.StatusCode, fmt.Sprintf("API error %d: %s", resp.StatusCode, msg))
 	}
@@ -2803,6 +2826,25 @@ func (c *Client) decodeResponse(resp *http.Response, result any) error {
 		return fmt.Errorf("decode response: trailing data")
 	}
 	return nil
+}
+
+func decodeAPIErrorMessage(body []byte) string {
+	var payload struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &payload) == nil && strings.TrimSpace(payload.Message) != "" {
+		return strings.TrimSpace(payload.Message)
+	}
+	return string(body)
+}
+
+func isPVEAbsentResource(message string) bool {
+	lower := strings.ToLower(message)
+	return strings.Contains(lower, "does not exist") || strings.Contains(lower, "not found") || strings.Contains(lower, "no such file")
+}
+
+func isPVERunningResource(message string) bool {
+	return strings.Contains(strings.ToLower(message), " is running")
 }
 
 // newProviderError creates an app.ProviderError from an HTTP status code and detail.

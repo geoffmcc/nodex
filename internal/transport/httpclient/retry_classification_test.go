@@ -64,6 +64,7 @@ func TestDoDeterministic500IsTerminal(t *testing.T) {
 		"Permission check failed (/var/lib/vz, uid=0)",
 		"Parameter verification failed. vmid: value does not look like an integer",
 		"service is not running",
+		"VM 9200 is running - destroy failed",
 	}
 	for _, message := range cases {
 		t.Run(message[:min(len(message), 24)], func(t *testing.T) {

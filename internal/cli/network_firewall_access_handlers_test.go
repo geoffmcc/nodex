@@ -18,13 +18,14 @@ import (
 func TestWriteAccessUsersTableShowsGroupsAndTokens(t *testing.T) {
 	zero := 0
 	two := 2
+	enabled := 1
 	var stdout bytes.Buffer
 	cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: output.FormatTable}}
 
 	err := writeAccessUsers(cmdCtx, []domain.AccessUser{
 		{
 			UserID:     "root@pam",
-			Enable:     1,
+			Enable:     &enabled,
 			Groups:     []string{"admins", "ops"},
 			TokenCount: &two,
 		},
@@ -88,6 +89,24 @@ func TestWriteAccessUsersStructuredOutputDistinguishesUnknownFromZero(t *testing
 	}
 	if strings.Count(out, `"tokens"`) != 1 {
 		t.Errorf("exactly one user should report a token count: %q", out)
+	}
+}
+
+func TestWriteAccessUsersStructuredOutputDistinguishesEnableStates(t *testing.T) {
+	disabled := 0
+	enabled := 1
+	var stdout bytes.Buffer
+	cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: output.FormatJSON}}
+	if err := writeAccessUsers(cmdCtx, []domain.AccessUser{
+		{UserID: "disabled@pve", Enable: &disabled},
+		{UserID: "enabled@pve", Enable: &enabled},
+		{UserID: "unknown@pve"},
+	}); err != nil {
+		t.Fatalf("writeAccessUsers: %v", err)
+	}
+	out := stdout.String()
+	if strings.Count(out, `"enable"`) != 2 || !strings.Contains(out, `"enable": 0`) || !strings.Contains(out, `"enable": 1`) {
+		t.Fatalf("enable output = %s, want explicit 0/1 and omit unknown", out)
 	}
 }
 
