@@ -754,27 +754,26 @@ type NodeTimeResponse struct {
 }
 
 // NodeTimeData holds time configuration for a node.
+//
+// Epoch comes from PVE's "time" key, which is the true UTC epoch. PVE also
+// returns "localtime", the same instant pre-shifted by the node's UTC offset.
+// That value must not be used as the epoch: rendering it in the node's own zone
+// would double-count the offset and report a time hours in the past.
 type NodeTimeData struct {
 	TimeZone string `json:"timezone"`
-	Epoch    int64  `json:"epoch"`
+	Epoch    int64  `json:"time"`
 	Local    string `json:"localtime,omitempty"`
 }
 
 func (d *NodeTimeData) UnmarshalJSON(data []byte) error {
 	type rawNodeTimeData struct {
 		TimeZone string          `json:"timezone"`
-		Epoch    int64           `json:"epoch"`
+		Epoch    int64           `json:"time"`
 		Local    json.RawMessage `json:"localtime,omitempty"`
 	}
 	var raw rawNodeTimeData
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
-	}
-	if raw.Epoch == 0 && len(raw.Local) > 0 {
-		local := decodeString(raw.Local)
-		if parsed, err := strconv.ParseInt(local, 10, 64); err == nil {
-			raw.Epoch = parsed
-		}
 	}
 	*d = NodeTimeData{TimeZone: raw.TimeZone, Epoch: raw.Epoch, Local: decodeString(raw.Local)}
 	return nil

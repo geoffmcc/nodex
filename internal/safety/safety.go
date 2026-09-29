@@ -1,5 +1,5 @@
-// Package safety provides mutation safety classification, confirmation policy,
-// and dry-run support for Nodex operations.
+// Package safety provides mutation safety classification and confirmation policy
+// for Nodex operations.
 package safety
 
 import (
@@ -252,15 +252,3 @@ func (p ConfirmationPolicy) confirmationMessage() string {
 func (p ConfirmationPolicy) MustConfirm(yes, force bool) bool {
 	return p.Check(yes, force, false).ConfirmationRequired
 }
-
-// DryRun checks if this is a dry-run operation (always Tier 0).
-type DryRun bool
-
-// IsDryRun returns true if this is a dry run.
-func (d DryRun) IsDryRun() bool { return bool(d) }
-
-// NewDryRun creates a dry-run context marker.
-func NewDryRun() DryRun { return DryRun(true) }
-
-// NewLive creates a live-operation context marker.
-func NewLive() DryRun { return DryRun(false) }

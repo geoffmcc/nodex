@@ -60,6 +60,15 @@ profiles:
 | `profiles.<name>.endpoint` | string | required for live commands | empty | HTTPS provider endpoint. |
 | `profiles.<name>.credential_ref` | string | no | empty | Credential backend reference. |
 | `profiles.<name>.ca_file` | string | no | empty | PEM CA certificate file to add to the system trust pool. |
+| `profiles.<name>.ssh_host` | string | no | endpoint hostname | SSH host used for Proxmox SFTP transfers. |
+| `profiles.<name>.ssh_user` | string | no | empty | SSH account; required to enable SFTP transfers. |
+| `profiles.<name>.ssh_key_file` | string | no | empty | Path to the SSH private key; required to enable SFTP transfers. The key is read locally and is never stored in Nodex configuration. |
+| `profiles.<name>.ssh_port` | int | no | 22 | SSH port used for SFTP transfers. |
+
+SFTP host keys are verified against `~/.ssh/known_hosts`; an unrecorded or
+changed host key is rejected. Populate the file out of band before using SFTP.
+`nodex doctor` checks the configured key and known_hosts file for availability;
+the SFTP handshake performs the actual host-key match.
 
 Profile names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`.
 

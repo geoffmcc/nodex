@@ -2,6 +2,7 @@ package proxmox
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -126,11 +127,21 @@ func vmID(res client.ClusterResource) string {
 	return fmt.Sprintf("%s/%d", res.Node, res.VMID)
 }
 
+// splitContent parses a storage content list into a canonical slice.
+//
+// PVE builds the comma-joined string from unordered hash iteration, so the
+// same unchanged state returns a different order on every call. Sorting
+// normalises that at the provider boundary, so repeated `nodex --output json`
+// calls stay byte-comparable. The field is an unordered set of content types
+// semantically, so this is lossless; no consumer can depend on PVE's ordering
+// because PVE does not provide one.
 func splitContent(content string) []string {
 	if content == "" {
 		return nil
 	}
-	return strings.Split(content, ",")
+	out := strings.Split(content, ",")
+	sort.Strings(out)
+	return out
 }
 
 // MapNodeStatus converts a client.NodeStatusData to a domain.Node with extended status.

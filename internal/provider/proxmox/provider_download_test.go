@@ -2,18 +2,24 @@ package proxmox
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/pem"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/provider/proxmox/client"
 	"github.com/geoffmcc/nodex/internal/transport/httpclient"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // fakeSFTP satisfies sftpClient and records the dial/Open sequence.
@@ -223,5 +229,73 @@ func TestRealSFTPDialRejectsBadKey(t *testing.T) {
 	}
 	if _, err := realSFTPDial(context.Background(), "10.0.0.1", "root", bad, 22); err == nil {
 		t.Fatal("expected error for unparseable key file")
+	}
+}
+
+func TestRealSFTPDialRejectsOverlyReadableKey(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose POSIX file permission bits")
+	}
+	keyPath := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(keyPath, []byte("not a private key"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := realSFTPDial(context.Background(), "192.0.2.1", "root", keyPath, 22); err == nil || !strings.Contains(err.Error(), "permissions") {
+		t.Fatalf("realSFTPDial error = %v, want insecure permissions before key parsing/network", err)
+	}
+}
+
+func TestHostKeyCallbackRequiresKnownHost(t *testing.T) {
+	makeSigner := func() ssh.Signer {
+		t.Helper()
+		_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signer, err := ssh.NewSignerFromKey(privateKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return signer
+	}
+
+	trusted := makeSigner()
+	untrusted := makeSigner()
+	knownHostsPath := filepath.Join(t.TempDir(), "known_hosts")
+	line := knownhosts.Line([]string{"pve.example.test"}, trusted.PublicKey())
+	if err := os.WriteFile(knownHostsPath, []byte(line+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	callback, err := hostKeyCallback(knownHostsPath)
+	if err != nil {
+		t.Fatalf("hostKeyCallback: %v", err)
+	}
+	remote := &net.TCPAddr{IP: net.ParseIP("192.0.2.20"), Port: 22}
+	if err := callback("pve.example.test:22", remote, trusted.PublicKey()); err != nil {
+		t.Fatalf("known server key rejected: %v", err)
+	}
+	if err := callback("pve.example.test:22", remote, untrusted.PublicKey()); err == nil {
+		t.Fatal("unknown server key was accepted")
+	}
+
+	nonstandardPath := filepath.Join(t.TempDir(), "known_hosts")
+	nonstandardLine := knownhosts.Line([]string{"[pve.example.test]:2222"}, trusted.PublicKey())
+	if err := os.WriteFile(nonstandardPath, []byte(nonstandardLine+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nonstandardCallback, err := hostKeyCallback(nonstandardPath)
+	if err != nil {
+		t.Fatalf("hostKeyCallback for nonstandard port: %v", err)
+	}
+	nonstandardRemote := &net.TCPAddr{IP: net.ParseIP("192.0.2.20"), Port: 2222}
+	if err := nonstandardCallback("pve.example.test:2222", nonstandardRemote, trusted.PublicKey()); err != nil {
+		t.Fatalf("known server key on nonstandard port rejected: %v", err)
+	}
+}
+
+func TestHostKeyCallbackRequiresKnownHostsFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing_known_hosts")
+	if _, err := hostKeyCallback(path); err == nil {
+		t.Fatal("missing known_hosts file accepted")
 	}
 }

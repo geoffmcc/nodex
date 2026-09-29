@@ -268,3 +268,42 @@ func TestMapVMPreservesTemplateFlag(t *testing.T) {
 		t.Fatal("Template = false, want true")
 	}
 }
+
+// TestSplitContentIsCanonical guards against the upstream-unstable ordering
+// defect: PVE builds the content list from unordered hash iteration, so the
+// same unchanged state returns a different order on each call. Without
+// normalisation, nodex's own JSON output was unstable too.
+func TestSplitContentIsCanonical(t *testing.T) {
+	// The orderings observed from PVE for one unchanged storage.
+	upstream := []string{
+		"iso,import,backup,vztmpl",
+		"vztmpl,backup,iso,import",
+		"import,iso,vztmpl,backup",
+		"vztmpl,import,backup,iso",
+	}
+	want := []string{"backup", "import", "iso", "vztmpl"}
+	for _, in := range upstream {
+		got := splitContent(in)
+		if len(got) != len(want) {
+			t.Fatalf("splitContent(%q) = %v, want %v", in, got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("splitContent(%q) = %v, want %v", in, got, want)
+			}
+		}
+	}
+}
+
+func TestSplitContentEmptyIsNil(t *testing.T) {
+	if got := splitContent(""); got != nil {
+		t.Errorf("splitContent(%q) = %v, want nil", "", got)
+	}
+}
+
+func TestSplitContentSingle(t *testing.T) {
+	got := splitContent("iso")
+	if len(got) != 1 || got[0] != "iso" {
+		t.Errorf("splitContent(%q) = %v, want [iso]", "iso", got)
+	}
+}
