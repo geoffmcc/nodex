@@ -43,6 +43,8 @@ func (f *Formatter) Format() Format {
 }
 
 // WriteRaw writes unformatted data through the redaction pipeline.
+// Redaction is idempotent, so this is safe for data that has already been
+// through redact.Sanitize or a structured writer.
 func (f *Formatter) WriteRaw(data []byte) error {
 	redacted := redact.Bytes(data)
 	_, err := f.w.Write(redacted)

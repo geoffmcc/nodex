@@ -52,8 +52,100 @@ type Redactable interface {
 // Sanitize returns a deep copy of v in which every Redactable value has been
 // replaced by its Redacted() form.  Maps, slices, arrays, structs, and
 // pointers are walked recursively.
+//
+// Sanitize is additionally *key-aware*: a value stored under a map key or
+// struct field whose name denotes a secret (see secretKeyName) is replaced by
+// the redaction marker even when the value is a plain string.  This is what
+// makes structured output safe without relying on byte-level regex rewriting
+// of an already-serialized document: the key survives, only the value is
+// removed, so JSON and YAML stay syntactically valid and machine-readable.
 func Sanitize(v any) any {
 	return sanitize(v, true)
+}
+
+// secretLabelAlt is the set of field/key name fragments that denote a secret.
+// It is the single source of truth shared by the key-aware walk below and the
+// free-text patterns in String.
+const secretLabelAlt = `api[_-]?token|apikey|api[_-]?key|secret[_-]?key|access[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password|passwd|pwd|credential|credentials|passphrase|private[_-]?key|authorization`
+
+// secretLabel is secretLabelAlt wrapped in a capture group so the
+// free-text patterns can preserve the matched key in their replacement.
+const secretLabel = `(` + secretLabelAlt + `)`
+
+// secretKeyName matches a map key or serialized field name that denotes a
+// secret.  The separators bound the fragment so that unrelated names such as
+// "tokenizer" or "monkey" are not treated as secrets.
+var secretKeyName = regexp.MustCompile(`(?i)(^|[._-])(?:` + secretLabelAlt + `)($|[._-])`)
+
+// nonSecretKeys are names that look sensitive but are identifiers or policy
+// metadata that PVE, PBS, and nodex legitimately display.  Redacting them
+// would destroy useful output (and, historically, did: `tokenid` was being
+// replaced alongside real token secrets).
+var nonSecretKeys = map[string]bool{
+	"tokenid":         true,
+	"token_id":        true,
+	"token_name":      true,
+	"tokentype":       true,
+	"token_type":      true,
+	"credential_type": true,
+	"key_type":        true,
+	"key_size":        true,
+	"alg":             true,
+	"password_policy": true,
+}
+
+// isSecretKey reports whether a map key or serialized field name denotes a
+// secret.
+func isSecretKey(name string) bool {
+	if nonSecretKeys[strings.ToLower(name)] {
+		return false
+	}
+	return secretKeyName.MatchString(name)
+}
+
+var secretType = reflect.TypeOf(Secret(""))
+
+// fieldName resolves the name a struct field is serialized under, preferring
+// the JSON tag, then the YAML tag, and finally the Go field name.  Matching
+// on the serialized name means redaction follows exactly what a consumer of
+// the document sees.
+func fieldName(f reflect.StructField) string {
+	for _, tagName := range []string{"json", "yaml"} {
+		tag := f.Tag.Get(tagName)
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if name, _, _ := strings.Cut(tag, ","); name != "" {
+			return name
+		}
+	}
+	return f.Name
+}
+
+// redactTo replaces the value at rv with the redaction marker, converting
+// where that is meaningful.  Numeric and boolean values are deliberately left
+// alone: a count or a flag under a sensitive-looking name is metadata, not a
+// secret, and silently rewriting it would corrupt structured output.
+func redactTo(rv reflect.Value) {
+	if !rv.CanSet() {
+		return
+	}
+	if rv.Type() == secretType {
+		rv.Set(reflect.ValueOf(Secret(redacted)))
+		return
+	}
+	switch rv.Kind() {
+	case reflect.String:
+		rv.SetString(redacted)
+	case reflect.Interface:
+		if rv.NumMethod() == 0 {
+			rv.Set(reflect.ValueOf(redacted))
+		} else {
+			rv.Set(reflect.Zero(rv.Type()))
+		}
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Array, reflect.Struct:
+		rv.Set(reflect.Zero(rv.Type()))
+	}
 }
 
 // sanitize does the recursive work.  The checkRedactable flag controls
@@ -103,9 +195,18 @@ func sanitize(v any, checkRedactable bool) any {
 		for iter.Next() {
 			sk := sanitize(iter.Key().Interface(), true)
 			sv := sanitize(iter.Value().Interface(), true)
-			if sk != nil && sv != nil {
-				out.SetMapIndex(reflect.ValueOf(sk), reflect.ValueOf(sv))
+			if sk == nil || sv == nil {
+				continue
 			}
+			// Key-aware redaction: a secret-named key loses its value even
+			// when the value is a plain string.
+			if key, ok := sk.(string); ok && isSecretKey(key) {
+				slot := reflect.New(rv.Type().Elem()).Elem()
+				slot.Set(reflect.ValueOf(sv))
+				redactTo(slot)
+				sv = slot.Interface()
+			}
+			out.SetMapIndex(reflect.ValueOf(sk), reflect.ValueOf(sv))
 		}
 		return out.Interface()
 
@@ -168,11 +269,35 @@ func sanitize(v any, checkRedactable bool) any {
 			if sv.Type().AssignableTo(of.Type()) {
 				of.Set(sv)
 			}
+			// Key-aware redaction applied last so that a Secret-typed field
+			// still round-trips as a Secret while a plain string under a
+			// secret-named field is masked.
+			if isSecretKey(fieldName(rv.Type().Field(i))) {
+				redactTo(of)
+			}
 		}
 		return out.Interface()
 
 	case reflect.String:
-		return v
+		// String leaves still get the free-text net, because a credential can
+		// be embedded inside an otherwise harmless field (captured stdout, a
+		// server message, a log line). Doing it here rather than after
+		// serialization is what makes structured output safe: the value is
+		// cleaned while it is still a Go string, so the encoder can always
+		// emit valid JSON/YAML around it.
+		//
+		// The result must keep the field's exact type, so a named string type
+		// (e.g. `type Status string`) is rebuilt rather than replaced by a
+		// bare string — otherwise the value stops being assignable to the
+		// field and silently zeroes it.
+		raw := rv.String()
+		cleaned := String(raw)
+		if cleaned == raw {
+			return v
+		}
+		out := reflect.New(rv.Type()).Elem()
+		out.SetString(cleaned)
+		return out.Interface()
 
 	case reflect.Interface:
 		if rv.IsNil() {
@@ -199,44 +324,153 @@ type pattern struct {
 }
 
 // Patterns that indicate sensitive values.
+//
 // These are applied to free-text output (stdout, stderr, logs, error messages)
-// AFTER type-based redaction. They serve as defense-in-depth.
+// AFTER type-based redaction.  They serve as defense-in-depth; the primary
+// mechanism is the type-based, key-aware Sanitize walk above.
+//
+// Two properties are maintained deliberately:
+//
+//  1. Every replacement is structure-preserving.  A pattern rewrites only the
+//     value, never the key or the surrounding punctuation, so a redacted
+//     document remains parseable and a redacted message keeps its grammar.
+//     (Rewriting a whole match with the marker deleted the key as well,
+//     producing output like `" [REDACTED]": "hunter2"`, which is not valid
+//     JSON and which told the reader nothing.)
+//
+//  2. The generic `key: value` form requires a *secret-shaped* value — one
+//     containing a digit or an auth/base64 character.  This is what stops the
+//     defense-in-depth net from destroying diagnostics, where a sensitive
+//     word appears as prose: "read password: EOF" must survive, while
+//     "password: hunter2" and "api_token: a1b2c3d4e5f6" must not.
+//
+//     The equals form and the credential grammars stay unconditional, because
+//     `key=value` is assignment syntax rather than prose and those match with
+//     high confidence.  Values under a secret-named key in structured output
+//     are covered by Sanitize's key-aware walk regardless of their shape.
 var patterns = []pattern{
-	// API tokens and keys in key=value or key:value form.
-	{regexp.MustCompile(`(?i)(api[_-]?token|apikey|api[_-]?key|secret[_-]?key|access[_-]?key)\s*[:=]\s*\S+`), redacted},
-	// Bare token-like values after common markers.
-	{regexp.MustCompile(`(?i)(token|secret|password|passwd|pwd|credential)\s*[:=]\s*\S+`), redacted},
-	// PVE API token format in Authorization header or standalone: PVEAPIToken=user@realm!id=uuid
-	{regexp.MustCompile(`(?i)PVEAPIToken=\S+`), redacted},
-	// PBS API token format in Authorization header or standalone: PBSAPIToken=user@realm!id:uuid
-	{regexp.MustCompile(`(?i)PBSAPIToken=\S+`), redacted},
-	// Proxmox token grammar, PVE form: user@realm!tokenid=uuid
+	// Proxmox token grammar, PVE form: user@realm!tokenid=uuid.
 	{regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+=\S+`), redacted},
 	// Proxmox token grammar, PBS form: user@realm!tokenid:uuid. The secret
 	// tail must look like one (8+ alphanumeric/hyphen chars): PVE and PBS
 	// task UPIDs legitimately end in "user@realm!tokenid:" as a field
 	// terminator, and a bare \S+ here would corrupt every UPID in output.
 	{regexp.MustCompile(`[A-Za-z0-9._-]+@[A-Za-z0-9._-]+![A-Za-z0-9._-]+:[A-Za-z0-9-]{8,}`), redacted},
-	// JSON/YAML field patterns: "password": "value", "token_secret": "value".
-	// The replacement keeps the key and quoting so JSON/YAML documents stay
-	// structurally valid after redaction. Plain "tokenid"/"token_id" is
-	// deliberately not matched: PVE token IDs are identifiers the API and UI
-	// display (and Nodex's own credential prompt echoes them); only secrets
-	// are hidden.
-	{regexp.MustCompile(`(?i)"(token[_-]?(?:secret|value)|password|secret|credential)"\s*:\s*"[^"]*"`), `"$1": "` + redacted + `"`},
-	{regexp.MustCompile(`(?i)'(token[_-]?(?:secret|value)|password|secret|credential)'\s*:\s*'[^']*'`), `'$1': '` + redacted + `'`},
-	// Bearer tokens: Bearer eyJ...
-	{regexp.MustCompile(`(?i)bearer\s+\S+`), redacted},
-	// Basic auth: Basic base64string
-	{regexp.MustCompile(`(?i)basic\s+[A-Za-z0-9+/=]+`), redacted},
-	// Credential-file references: file:profile
-	{regexp.MustCompile(`(?i)"?credential[_-]?ref"?\s*[:=]\s*"?file:\S+`), redacted},
-	// Environment variable patterns: NODEX_*_TOKEN_SECRET=..., NODEX_*_PASSWORD=...
-	{regexp.MustCompile(`(?i)(NODEX|TOKEN|PASSWORD|SECRET|CREDENTIAL)_[A-Za-z0-9_]*=\S+`), redacted},
-	// CSRF and session tokens: PVEAuthCookie, PBSAuthCookie, CSRFPreventionToken
-	{regexp.MustCompile(`(?i)(PVEAuthCookie|PBSAuthCookie|CSRFPreventionToken)=\S+`), redacted},
+	// PVE API token: PVEAPIToken=user@realm!id=uuid
+	{regexp.MustCompile(`(?i)(PVEAPIToken)=\S+`), `$1=` + redacted},
+	// PBS API token: PBSAPIToken=user@realm!id:uuid
+	{regexp.MustCompile(`(?i)(PBSAPIToken)=\S+`), `$1=` + redacted},
+	// CSRF and session cookies: PVEAuthCookie, PBSAuthCookie,
+	// CSRFPreventionToken. Kept ahead of the generic key=value rule so the
+	// match is exact and cannot be cut short by a more permissive pattern.
+	{regexp.MustCompile(`(?i)(PVEAuthCookie|PBSAuthCookie|CSRFPreventionToken)=\S+`), `$1=` + redacted},
+	// Environment assignments: NODEX_*_TOKEN_SECRET=..., NODEX_*_PASSWORD=...
+	{regexp.MustCompile(`(?i)\b(NODEX|TOKEN|PASSWORD|SECRET|CREDENTIAL)(_[A-Za-z0-9_]*)=\S+`), `$1$2=` + redacted},
 	// PEM-encoded private key content.
 	{regexp.MustCompile(`-----BEGIN\s+[A-Z\s]*PRIVATE KEY-----`), redacted},
+	// Bearer tokens: Bearer eyJ...
+	{regexp.MustCompile(`(?i)\b(bearer)\s+\S+`), `$1 ` + redacted},
+	// Basic auth: Basic base64string
+	{regexp.MustCompile(`(?i)\b(basic)\s+[A-Za-z0-9+/=]+`), `$1 ` + redacted},
+}
+
+// labelRule redacts the value introduced by a secret-named key. Unlike the
+// mechanical patterns above it keeps the key, the separator, and the value's
+// original quoting style, because these are the forms that actually appear in
+// serialized documents and in prose.
+//
+// requireSecretShape makes the colon form conditional on the value looking
+// like a credential, so diagnostics such as "read password: EOF" survive while
+// "password: hunter2" and "api_token: a1b2c3d4" do not. It is disabled for the
+// equals form ("=" is assignment syntax, not prose) and for credential_ref,
+// which is always masked.
+type labelRule struct {
+	re                 *regexp.Regexp
+	requireSecretShape bool
+}
+
+// labelRules are applied by redactLabelled after the mechanical patterns.
+// Quoted and bare values are matched separately: a rule that accepts both
+// would let the quoted form swallow the bare one and defeat the
+// secret-shape guard that protects prose.
+var labelRules = []labelRule{
+	// Quoted structured fields: "password": "value", "token_secret": "value",
+	// 'credential_ref': 'value'. Unconditional — a quoted value under a
+	// secret-named key is masked whatever it contains.
+	{
+		re: regexp.MustCompile(`(?i)(["']?\b(?:` + secretLabelAlt + `)[_-]?(?:secret|value|ref)?["']?)(\s*[:=]\s*)("[^"]*"|'[^']*')`),
+	},
+	// Bare assignment form: key=value. Unconditional — "=" is assignment
+	// syntax and does not occur in the prose this net must not damage.
+	{
+		re: regexp.MustCompile(`(?i)\b` + secretLabel + `(\s*=\s*)([^\s,]+)`),
+	},
+	// Bare prose form: key: value. The value must look like a secret
+	// (contains a digit or an auth/base64 character) so that a diagnostic
+	// such as "read password: EOF" or "invalid secret: too short" is left
+	// intact. A short, purely alphabetic value is a word, not a credential.
+	{
+		re:                 regexp.MustCompile(`(?i)\b` + secretLabel + `(\s*:\s*)([^\s,]+)`),
+		requireSecretShape: true,
+	},
+	// Credential-file references: credential_ref: file:profile. Always
+	// masked regardless of the store name's shape, quoted or bare.
+	{
+		re: regexp.MustCompile(`(?i)\b(credential[_-]?ref["']?)(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,]*)`),
+	},
+}
+
+// secretShape matches a value that looks like a credential rather than a
+// word: it contains a digit or an auth/base64 character.
+var secretShape = regexp.MustCompile(`[0-9+/=@]`)
+
+// isRedactedValue reports whether a captured value is already the redaction
+// marker, with optional JSON or YAML quoting.
+//
+// Redaction has to be idempotent. Output passes through the net more than
+// once: the structured writers redact before marshaling, and
+// output.SanitizingWriter then redacts the serialized bytes on the way to
+// stdout. Without this guard the credential_ref rule re-matched the already
+// redacted text — its value group can match zero characters, so on
+// "credential_ref: '[REDACTED]'" it replaced the label and separator, matched
+// nothing, and left the quoted marker behind as:
+// credential_ref: [REDACTED]'[REDACTED]'
+func isRedactedValue(v string) bool {
+	return strings.Trim(v, `"'`) == redacted
+}
+
+// redactLabelled applies the label rules. A match whose value is already
+// redacted is returned byte-identical.
+func redactLabelled(s string) string {
+	for _, rule := range labelRules {
+		s = rule.re.ReplaceAllStringFunc(s, func(m string) string {
+			g := rule.re.FindStringSubmatch(m)
+			if len(g) < 4 {
+				return m
+			}
+			label, sep, val := g[1], g[2], g[3]
+			if isRedactedValue(val) {
+				return m
+			}
+			// An empty bare value carries no secret; leaving it alone keeps
+			// the rule from inventing a redaction in "credential_ref: ".
+			if val == "" {
+				return m
+			}
+			if rule.requireSecretShape && !secretShape.MatchString(val) {
+				return m
+			}
+			switch val[0] {
+			case '"':
+				return label + sep + `"` + redacted + `"`
+			case '\'':
+				return label + sep + `'` + redacted + `'`
+			default:
+				return label + sep + redacted
+			}
+		})
+	}
+	return s
 }
 
 // String redacts sensitive patterns from the input.  This is defense-in-depth
@@ -247,7 +481,7 @@ func String(input string) string {
 	for _, p := range patterns {
 		result = p.re.ReplaceAllString(result, p.replacement)
 	}
-	return result
+	return redactLabelled(result)
 }
 
 // Bytes redacts sensitive patterns from a byte slice.

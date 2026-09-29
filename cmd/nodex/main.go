@@ -34,7 +34,8 @@ func main() {
 	}()
 
 	if err := run(ctx); err != nil {
-		code := emitError(err, wantsJSON(os.Args[1:]), os.Stderr)
+		format := wantsFormat(os.Args[1:])
+		code := emitError(err, format, os.Stderr)
 		if sc := signalExit.Load(); sc != 0 {
 			os.Exit(int(sc))
 		}
@@ -46,18 +47,24 @@ func main() {
 }
 
 // emitError writes err to w and returns the process exit code implied by err.
-// In JSON mode an error that has already been emitted inside an operation
-// result envelope (app.IsEmitted) is suppressed so the stream stays valid
-// JSON; any other error is rendered as a JSON error document. In text mode the
-// error is always printed as a single "Error:" line.
-func emitError(err error, jsonMode bool, w io.Writer) int {
+// In a structured output mode an error that has already been emitted inside an
+// operation result envelope (app.IsEmitted) is suppressed so the stream stays
+// valid; any other error is rendered as a structured error document in the
+// requested format. In text mode the error is always printed as a single
+// "Error:" line.
+func emitError(err error, format output.Format, w io.Writer) int {
 	msg := output.SanitizeTerminal(redact.String(err.Error()))
 	code := app.ExitCodeFromError(err)
-	if jsonMode {
+	switch format {
+	case output.FormatJSON:
 		if !app.IsEmitted(err) {
 			_ = output.WriteErrorJSON(w, msg, "", code)
 		}
-	} else {
+	case output.FormatYAML:
+		if !app.IsEmitted(err) {
+			_ = output.WriteErrorYAML(w, msg, "", code)
+		}
+	default:
 		fmt.Fprintf(w, "Error: %s\n", msg)
 	}
 	return code
@@ -67,15 +74,26 @@ func run(ctx context.Context) error {
 	return cli.Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 }
 
-// wantsJSON checks if --output json appears in the args.
-func wantsJSON(args []string) bool {
+// wantsFormat determines the requested output format from the args, defaulting
+// to text so that an unrecognised value keeps the plain "Error:" line rather
+// than being forced into a structured envelope.
+func wantsFormat(args []string) output.Format {
 	for i, a := range args {
-		if a == "--output" && i+1 < len(args) && strings.EqualFold(args[i+1], "json") {
-			return true
+		var v string
+		switch {
+		case a == "--output" && i+1 < len(args):
+			v = args[i+1]
+		case strings.HasPrefix(a, "--output="):
+			v = strings.TrimPrefix(a, "--output=")
+		default:
+			continue
 		}
-		if strings.HasPrefix(a, "--output=") && strings.EqualFold(strings.TrimPrefix(a, "--output="), "json") {
-			return true
+		switch strings.ToLower(v) {
+		case "json":
+			return output.FormatJSON
+		case "yaml", "yml":
+			return output.FormatYAML
 		}
 	}
-	return false
+	return output.FormatTable
 }

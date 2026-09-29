@@ -41,11 +41,29 @@ func runMonitorTargets(_ context.Context, cmdCtx *Context, args []string) error 
 		target.Address = monitor.SafeAddress(target.Address)
 		safeTargets[name] = target
 	}
+	// Emit a list, not a map. `monitor targets` was the only list-shaped
+	// command in the tree that returned an object, so a consumer iterating
+	// the result (for (const t of doc)) got a silent no-op instead of an
+	// error, and an empty result was `{}` with exit 0 — indistinguishable
+	// from "configured and healthy". The entry flattens the target's fields
+	// in both encoders (encoding/json promotes an anonymous field with no
+	// json tag; yaml.v3 needs the explicit inline flag).
+	type targetEntry struct {
+		Name                 string `json:"name" yaml:"name"`
+		config.MonitorTarget `yaml:",inline"`
+	}
+	entries := make([]targetEntry, 0, len(names))
+	for _, name := range names {
+		entries = append(entries, targetEntry{Name: name, MonitorTarget: safeTargets[name]})
+	}
+	if len(entries) == 0 {
+		fmt.Fprintln(cmdCtx.ErrW, "no monitor targets configured; see nodex monitor check")
+	}
 	if cmdCtx.Opts.Output == output.FormatJSON {
-		return output.WriteJSON(cmdCtx.Writer, safeTargets)
+		return output.WriteJSON(cmdCtx.Writer, entries)
 	}
 	if cmdCtx.Opts.Output == output.FormatYAML {
-		return output.WriteYAML(cmdCtx.Writer, safeTargets)
+		return output.WriteYAML(cmdCtx.Writer, entries)
 	}
 	return output.WriteTable(cmdCtx.Writer, []string{"NAME", "TYPE", "ADDRESS"}, rows)
 }
