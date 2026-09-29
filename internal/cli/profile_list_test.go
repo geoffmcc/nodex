@@ -14,9 +14,12 @@ import (
 
 // writeTestConfig installs a config with one profile whose credential_ref
 // points at a named credential store.
-func writeTestConfig(t *testing.T, dir string) {
+//
+// cfgDir is the directory config.Dir() resolved to, not an assumed XDG path:
+// the product only honours XDG_CONFIG_HOME on linux, so a fixture written to
+// the XDG layout is invisible on darwin and windows.
+func writeTestConfig(t *testing.T, cfgDir string) {
 	t.Helper()
-	cfgDir := filepath.Join(dir, "xdg", "nodex")
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}
@@ -42,8 +45,8 @@ func writeTestConfig(t *testing.T, dir string) {
 // `profile.provider` saw nothing, and the JSON key set for the same value
 // differed from the YAML one.
 func TestRun_ProfileListJSONKeys(t *testing.T) {
-	dir, _ := isolateConfigAndHome(t)
-	writeTestConfig(t, dir)
+	_, cfgDir := isolatedConfigDir(t)
+	writeTestConfig(t, cfgDir)
 
 	var stdout, stderr bytes.Buffer
 	if err := Run(context.Background(), []string{"--output", "json", "profile", "list"}, &stdout, &stderr); err != nil {
@@ -76,8 +79,8 @@ func TestRun_ProfileListJSONKeys(t *testing.T) {
 // when the serialized bytes pass through the redaction net again on the way to
 // stdout.
 func TestRun_ProfileListCredentialRefRedacted(t *testing.T) {
-	dir, _ := isolateConfigAndHome(t)
-	writeTestConfig(t, dir)
+	_, cfgDir := isolatedConfigDir(t)
+	writeTestConfig(t, cfgDir)
 
 	var stdout, stderr bytes.Buffer
 

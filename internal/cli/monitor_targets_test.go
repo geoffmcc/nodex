@@ -14,9 +14,12 @@ import (
 
 // writeMonitorConfig installs a config declaring the given monitor targets as
 // a "monitoring.targets" mapping.
-func writeMonitorConfig(t *testing.T, dir string, targets map[string]map[string]string) {
+//
+// cfgDir is the directory config.Dir() resolved to, not an assumed XDG path:
+// the product only honours XDG_CONFIG_HOME on linux, so a fixture written to
+// the XDG layout is invisible on darwin and windows.
+func writeMonitorConfig(t *testing.T, cfgDir string, targets map[string]map[string]string) {
 	t.Helper()
-	cfgDir := filepath.Join(dir, "xdg", "nodex")
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}
@@ -49,8 +52,8 @@ func writeMonitorConfigFile(t *testing.T, cfgDir, body string) {
 // list-shaped command returning an object, so a consumer iterating the result
 // got a silent no-op instead of an error.
 func TestRun_MonitorTargetsEmitsList(t *testing.T) {
-	dir, _ := isolateConfigAndHome(t)
-	writeMonitorConfig(t, dir, map[string]map[string]string{
+	_, cfgDir := isolatedConfigDir(t)
+	writeMonitorConfig(t, cfgDir, map[string]map[string]string{
 		"pve": {"type": "https", "address": "https://pve.example.com:8006"},
 	})
 
@@ -100,8 +103,8 @@ func TestRun_MonitorTargetsEmitsList(t *testing.T) {
 // list, and that it says so on stderr. Previously this was `{}` with exit 0,
 // indistinguishable from a healthy configuration.
 func TestRun_MonitorTargetsEmptyIsList(t *testing.T) {
-	dir, _ := isolateConfigAndHome(t)
-	writeMonitorConfig(t, dir, nil)
+	_, cfgDir := isolatedConfigDir(t)
+	writeMonitorConfig(t, cfgDir, nil)
 
 	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {

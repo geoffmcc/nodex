@@ -335,6 +335,33 @@ func isolateConfigAndHome(t *testing.T) (dir, home string) {
 	return dir, home
 }
 
+// isolatedConfigDir redirects config resolution to a temporary directory and
+// returns that root together with the directory config.Dir() actually resolves
+// to inside it.
+//
+// XDG_CONFIG_HOME alone is not sufficient: config.Dir() honors it only on linux
+// (internal/config/paths.go), while darwin resolves to
+// ~/Library/Application Support/Nodex and windows to %AppData%\Nodex. A test
+// that seeds a config from an XDG-shaped guess therefore writes somewhere the
+// product never looks, which passes on linux and fails on the other two. Ask
+// config.Dir() for the answer so the fixture and the product cannot disagree.
+func isolatedConfigDir(t *testing.T) (dir, cfgDir string) {
+	t.Helper()
+	dir, _ = isolateConfigAndHome(t)
+	var err error
+	cfgDir, err = config.Dir()
+	if err != nil {
+		t.Fatalf("config.Dir: %v", err)
+	}
+	// Guard against silently reading or writing the real user config on a
+	// platform where the isolation variables above are not the ones consulted.
+	rel, relErr := filepath.Rel(dir, cfgDir)
+	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		t.Fatalf("config.Dir() = %q, want a path under %q; the test would touch the real user config", cfgDir, dir)
+	}
+	return dir, cfgDir
+}
+
 func TestRun_GlobalFlags(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), []string{"--quiet", "version"}, &stdout, &stderr)

@@ -13,31 +13,6 @@ import (
 	"github.com/geoffmcc/nodex/internal/config"
 )
 
-// isolateGateConfigDir redirects config resolution to a temporary directory and
-// returns the directory config.Dir() will resolve to.
-//
-// Setting only XDG_CONFIG_HOME is not sufficient. config.Dir() honors it on
-// linux, but ignores it on darwin (~/Library/Application Support/Nodex) and
-// windows (%AppData%\Nodex), so on those platforms the gate would resolve
-// against the real user config instead of the fixture. isolateConfigAndHome
-// covers all four variables; asking config.Dir() for the result keeps this
-// correct if the platform layout ever changes.
-func isolateGateConfigDir(t *testing.T) string {
-	t.Helper()
-	dir, _ := isolateConfigAndHome(t)
-	cfgDir, err := config.Dir()
-	if err != nil {
-		t.Fatalf("config.Dir: %v", err)
-	}
-	// Guard against silently reading the real user config on a platform where
-	// the isolation variables above are not the ones config.Dir() consults.
-	rel, err := filepath.Rel(dir, cfgDir)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		t.Fatalf("config.Dir() = %q, want a path under %q; the test would read the real user config", cfgDir, dir)
-	}
-	return cfgDir
-}
-
 // writeGateConfig writes an isolated config.yaml with the given current profile.
 func writeGateConfig(t *testing.T, dir, current string, profiles map[string]config.Profile) {
 	t.Helper()
@@ -82,7 +57,7 @@ func gateTestProfiles() map[string]config.Profile {
 // TestPBSGroupGatedOnPVEOnlyProfile verifies nit #35: every pbs subcommand on a
 // PVE-only profile fails with one actionable message instead of a dead end.
 func TestPBSGroupGatedOnPVEOnlyProfile(t *testing.T) {
-	cfgDir := isolateGateConfigDir(t)
+	_, cfgDir := isolatedConfigDir(t)
 	writeGateConfig(t, cfgDir, "pve", gateTestProfiles())
 
 	subcommands := [][]string{
@@ -130,7 +105,7 @@ func TestPBSGroupGatedOnPVEOnlyProfile(t *testing.T) {
 // TestPBSGroupGateHonorsExplicitProfile verifies --profile overrides the current
 // profile for the gate.
 func TestPBSGroupGateHonorsExplicitProfile(t *testing.T) {
-	cfgDir := isolateGateConfigDir(t)
+	_, cfgDir := isolatedConfigDir(t)
 	// Current profile is a valid PBS profile, but --profile selects the PVE one.
 	writeGateConfig(t, cfgDir, "pbs1", gateTestProfiles())
 
@@ -147,7 +122,7 @@ func TestPBSGroupGateHonorsExplicitProfile(t *testing.T) {
 // TestPBSGroupGateAllowsPBSProfile verifies the gate does not fire for a genuine
 // PBS profile; the command proceeds to credential/network handling instead.
 func TestPBSGroupGateAllowsPBSProfile(t *testing.T) {
-	cfgDir := isolateGateConfigDir(t)
+	_, cfgDir := isolatedConfigDir(t)
 	writeGateConfig(t, cfgDir, "pbs1", gateTestProfiles())
 
 	var stdout, stderr bytes.Buffer
@@ -163,7 +138,7 @@ func TestPBSGroupGateAllowsPBSProfile(t *testing.T) {
 // TestPBSGateUnknownProfileKeepsProfileError verifies a missing profile reports
 // the profile problem rather than a misleading provider mismatch.
 func TestPBSGateUnknownProfileKeepsProfileError(t *testing.T) {
-	cfgDir := isolateGateConfigDir(t)
+	_, cfgDir := isolatedConfigDir(t)
 	writeGateConfig(t, cfgDir, "missing", gateTestProfiles())
 
 	var stdout, stderr bytes.Buffer
@@ -182,7 +157,7 @@ func TestPBSGateUnknownProfileKeepsProfileError(t *testing.T) {
 // TestPBSHelpUnaffectedByGate verifies help still lists subcommands regardless of
 // the selected profile, so discovery still works.
 func TestPBSHelpUnaffectedByGate(t *testing.T) {
-	cfgDir := isolateGateConfigDir(t)
+	_, cfgDir := isolatedConfigDir(t)
 	writeGateConfig(t, cfgDir, "pve", gateTestProfiles())
 
 	var stdout, stderr bytes.Buffer
