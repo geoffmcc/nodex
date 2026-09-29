@@ -1,6 +1,7 @@
 package safety
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -296,5 +297,66 @@ func TestNonInteractiveBlocksAllTiers(t *testing.T) {
 				t.Error("non-interactive should require confirmation when flags insufficient")
 			}
 		})
+	}
+}
+
+// Tier 4 is not a claim of data loss. Creating a user or adding an ACL changes
+// identity state but is not "destructive and cannot be undone", and telling an
+// operator otherwise is inaccurate about the consequence they are confirming.
+func TestSecurityAdminDoesNotClaimDestruction(t *testing.T) {
+	policy := ConfirmationPolicy{
+		Tier:                TierSecurityAdmin,
+		ResourceDescription: "create user newuser@pve",
+	}
+	result := policy.Check(false, false, true)
+	if !result.ConfirmationRequired {
+		t.Fatal("tier 4 without flags should still require confirmation")
+	}
+	for _, banned := range []string{"destructive", "cannot be undone", "backup"} {
+		if strings.Contains(strings.ToLower(result.Warning), banned) ||
+			strings.Contains(strings.ToLower(result.Message), banned) {
+			t.Errorf("tier 4 create must not claim destruction (%q): warning=%q message=%q",
+				banned, result.Warning, result.Message)
+		}
+	}
+	if !strings.Contains(result.Warning, "identity") {
+		t.Errorf("warning should describe the actual change, got %q", result.Warning)
+	}
+}
+
+// The wording fix must not become a safety loosening: the flag requirements for
+// tier 4 are unchanged, and tier 3 keeps its destructive wording.
+func TestSecurityAdminRewritePreservesFlagRequirements(t *testing.T) {
+	admin := ConfirmationPolicy{Tier: TierSecurityAdmin, ResourceDescription: "add ACL /"}
+	if !admin.Check(true, false, true).ConfirmationRequired {
+		t.Error("--yes alone should not satisfy tier 4")
+	}
+	if !admin.Check(false, true, true).ConfirmationRequired {
+		t.Error("--force alone should not satisfy tier 4")
+	}
+	if admin.Check(true, true, true).ConfirmationRequired {
+		t.Error("--yes --force should satisfy tier 4, as before")
+	}
+
+	destructive := ConfirmationPolicy{Tier: TierDestructive, ResourceDescription: "destroy disk vmdata"}
+	if got := destructive.Check(false, false, true); !strings.Contains(got.Warning, "cannot be undone") {
+		t.Errorf("tier 3 must keep destructive wording, got %q", got.Warning)
+	}
+}
+
+// Operations that remove identity state opt into type confirmation explicitly.
+func TestSecurityAdminTypeConfirmOptsInToDestructive(t *testing.T) {
+	policy := ConfirmationPolicy{
+		Tier:                TierSecurityAdmin,
+		ResourceDescription: "delete user newuser@pve",
+		RequiresTypeConfirm: true,
+		TypeConfirmTarget:   "newuser@pve",
+	}
+	result := policy.Check(false, false, true)
+	if !result.TypeConfirmRequired {
+		t.Error("type-confirmed tier 4 must require typing the target")
+	}
+	if !strings.Contains(result.Warning, "cannot be undone") {
+		t.Errorf("type-confirmed tier 4 is destructive, got %q", result.Warning)
 	}
 }

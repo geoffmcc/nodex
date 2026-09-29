@@ -148,50 +148,93 @@ func (p ConfirmationPolicy) Check(yes, force, nonInteractive bool) ConfirmationR
 		}
 		return r
 
+	case p.Tier == TierSecurityAdmin:
+		// Tier 4 marks identity, ACL, and privilege state. It is not a claim
+		// that the operation destroys data. Operations that genuinely remove
+		// state (cluster init, user delete) opt into the destructive
+		// treatment with RequiresTypeConfirm; the rest must not be told an
+		// operation "cannot be undone" when that is not true of it.
+		if p.RequiresTypeConfirm {
+			return p.typeConfirmResult(yes, force)
+		}
+		return p.securityAdminResult(yes, force)
+
 	case p.Tier >= TierDestructive:
 		if p.RequiresTypeConfirm {
-			if yes && force {
-				// Type confirmation still required even with flags.
-				r.ConfirmationRequired = true
-				r.TypeConfirmRequired = true
-				r.DoubleConfirmRequired = false // flags handled yes+force
-				r.Warning = "This operation is destructive and cannot be undone."
-				r.Message = fmt.Sprintf("Type %q to confirm: ", p.TypeConfirmTarget)
-				return r
-			}
-			r.ConfirmationRequired = true
-			r.DoubleConfirmRequired = !force || !yes
-			r.TypeConfirmRequired = true
-			r.Warning = "This operation is destructive and cannot be undone. " +
-				"Consider creating a backup first."
-			r.Message = p.confirmationMessage()
-			if !yes {
-				r.Message += " Use --yes to confirm."
-			}
-			if !force {
-				r.Message += " Use --force for double confirmation."
-			}
-			r.Message += fmt.Sprintf(" Then type %q to confirm.", p.TypeConfirmTarget)
-			return r
+			return p.typeConfirmResult(yes, force)
 		}
-
-		// Tier 3+ without type confirmation is still treated as disruptive+.
-		if yes && force {
-			return r
-		}
-		r.ConfirmationRequired = true
-		r.DoubleConfirmRequired = !force || !yes
-		r.Warning = "This operation is destructive and cannot be undone."
-		r.Message = p.confirmationMessage()
-		if !yes {
-			r.Message += " Use --yes to confirm."
-		}
-		if !force {
-			r.Message += " Use --force for double confirmation."
-		}
-		return r
+		return p.destructiveResult(yes, force)
 	}
 
+	return r
+}
+
+// typeConfirmResult covers operations that permanently remove state and
+// require the operator to type the target identifier.
+func (p ConfirmationPolicy) typeConfirmResult(yes, force bool) ConfirmationResult {
+	r := ConfirmationResult{}
+	if yes && force {
+		// Type confirmation still required even with flags.
+		r.ConfirmationRequired = true
+		r.TypeConfirmRequired = true
+		r.DoubleConfirmRequired = false // flags handled yes+force
+		r.Warning = "This operation is destructive and cannot be undone."
+		r.Message = fmt.Sprintf("Type %q to confirm: ", p.TypeConfirmTarget)
+		return r
+	}
+	r.ConfirmationRequired = true
+	r.DoubleConfirmRequired = !force || !yes
+	r.TypeConfirmRequired = true
+	r.Warning = "This operation is destructive and cannot be undone. " +
+		"Consider creating a backup first."
+	r.Message = p.confirmationMessage()
+	if !yes {
+		r.Message += " Use --yes to confirm."
+	}
+	if !force {
+		r.Message += " Use --force for double confirmation."
+	}
+	r.Message += fmt.Sprintf(" Then type %q to confirm.", p.TypeConfirmTarget)
+	return r
+}
+
+// destructiveResult covers permanent removal with no identifier to type back.
+func (p ConfirmationPolicy) destructiveResult(yes, force bool) ConfirmationResult {
+	r := ConfirmationResult{}
+	if yes && force {
+		return r
+	}
+	r.ConfirmationRequired = true
+	r.DoubleConfirmRequired = !force || !yes
+	r.Warning = "This operation is destructive and cannot be undone."
+	r.Message = p.confirmationMessage()
+	if !yes {
+		r.Message += " Use --yes to confirm."
+	}
+	if !force {
+		r.Message += " Use --force for double confirmation."
+	}
+	return r
+}
+
+// securityAdminResult covers identity, ACL, and privilege changes. The flag
+// requirements match the destructive path so this is not a loosening, but the
+// wording describes the actual consequence instead of asserting data loss.
+func (p ConfirmationPolicy) securityAdminResult(yes, force bool) ConfirmationResult {
+	r := ConfirmationResult{}
+	if yes && force {
+		return r
+	}
+	r.ConfirmationRequired = true
+	r.DoubleConfirmRequired = !force || !yes
+	r.Warning = "This operation changes identity, access control, or privilege state."
+	r.Message = p.confirmationMessage()
+	if !yes {
+		r.Message += " Use --yes to confirm."
+	}
+	if !force {
+		r.Message += " Use --force for double confirmation."
+	}
 	return r
 }
 
