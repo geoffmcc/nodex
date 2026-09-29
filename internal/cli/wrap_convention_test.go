@@ -18,7 +18,10 @@ var wrapLiteralRe = regexp.MustCompile(`fmt\.Errorf\(\s*"([^"%\\]*(?:\\.[^"%\\]*
 // collectWrapLiterals maps each operation name to the files that wrap with it.
 func collectWrapLiterals(t *testing.T, dir string) map[string]map[string]bool {
 	t.Helper()
-	out := make(map[string]map[string]bool)
+	// Collect first, then read. Reading inside the Walk callback is a
+	// symlink TOCTOU pattern (gosec G122) and is needless here: the file list
+	// is small and the walk has already pinned down every path.
+	var files []string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -26,9 +29,18 @@ func collectWrapLiterals(t *testing.T, dir string) map[string]map[string]bool {
 		if info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
+		files = append(files, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking %s: %v", dir, err)
+	}
+
+	out := make(map[string]map[string]bool)
+	for _, path := range files {
 		src, readErr := os.ReadFile(path)
 		if readErr != nil {
-			return readErr
+			t.Fatalf("reading %s: %v", path, readErr)
 		}
 		for _, m := range wrapLiteralRe.FindAllStringSubmatch(string(src), -1) {
 			op := m[1]
@@ -37,10 +49,6 @@ func collectWrapLiterals(t *testing.T, dir string) map[string]map[string]bool {
 			}
 			out[op][path] = true
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking %s: %v", dir, err)
 	}
 	return out
 }

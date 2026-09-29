@@ -1107,7 +1107,28 @@ func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) er
 		return app.NewExitError(fmt.Errorf("userid is required"), app.ExitUsage)
 	}
 
-	// Secure password collection.
+	// Authorize before doing anything observable. The Tier 4 gate must not be
+	// reached only after the caller has already typed a password, and an
+	// unauthorized request must not open a connection to the cluster either.
+	desc := fmt.Sprintf("create user %s", userid)
+	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
+		return err
+	}
+
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	ap, err := requireAccess(prov)
+	if err != nil {
+		return err
+	}
+
+	// Secure password collection, once the caller is known to be allowed to
+	// proceed. A secret must never be solicited from someone the command was
+	// going to reject anyway.
 	var password string
 	if cmdCtx.Opts.PasswordStdin {
 		// Bound stdin reads to prevent memory exhaustion.
@@ -1124,22 +1145,6 @@ func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) er
 			return fmt.Errorf("read password: %w", err)
 		}
 		password = pw
-	}
-
-	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	ap, err := requireAccess(prov)
-	if err != nil {
-		return err
-	}
-
-	desc := fmt.Sprintf("create user %s", userid)
-	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
-		return err
 	}
 
 	if err := ap.CreateUser(ctx, userid, password, email, firstname, lastname, comment); err != nil {
@@ -1160,6 +1165,11 @@ func runAccessUserDelete(ctx context.Context, cmdCtx *Context, args []string) er
 		return app.NewExitError(fmt.Errorf("userid is required"), app.ExitUsage)
 	}
 
+	desc := fmt.Sprintf("delete user %s", userid)
+	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
+		return err
+	}
+
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -1168,11 +1178,6 @@ func runAccessUserDelete(ctx context.Context, cmdCtx *Context, args []string) er
 
 	ap, err := requireAccess(prov)
 	if err != nil {
-		return err
-	}
-
-	desc := fmt.Sprintf("delete user %s", userid)
-	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
 		return err
 	}
 
@@ -1226,6 +1231,11 @@ func runAccessACLAdd(ctx context.Context, cmdCtx *Context, args []string) error 
 		return app.NewExitError(fmt.Errorf("either --user or --group is required"), app.ExitUsage)
 	}
 
+	desc := fmt.Sprintf("ACL add path=%s role=%s", path, role)
+	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
+		return err
+	}
+
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -1234,11 +1244,6 @@ func runAccessACLAdd(ctx context.Context, cmdCtx *Context, args []string) error 
 
 	ap, err := requireAccess(prov)
 	if err != nil {
-		return err
-	}
-
-	desc := fmt.Sprintf("ACL add path=%s role=%s", path, role)
-	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
 		return err
 	}
 
