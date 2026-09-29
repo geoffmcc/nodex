@@ -23,6 +23,15 @@ func validTestReceipt(id string) Receipt {
 	}
 }
 
+func canonicalTestDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temporary test directory: %v", err)
+	}
+	return dir
+}
+
 func TestResultValidateRejectsFalseSuccessAndUnsafeRetry(t *testing.T) {
 	r := validTestReceipt("req-outcome")
 	r.Execution = ExecutionSucceeded
@@ -55,7 +64,7 @@ func TestResultValidateAllowsDocumentedOutcomeCombinations(t *testing.T) {
 }
 
 func TestFingerprintSeparatesIdenticalResourceIDsOnDifferentEndpoints(t *testing.T) {
-	store := NewStore(filepath.Join(t.TempDir(), "ledger"))
+	store := NewStore(filepath.Join(canonicalTestDir(t), "ledger"))
 	first := ExecutionContext{Profile: "one", Provider: "proxmox", Endpoint: "https://pve-a.example:8006", ResourceType: "vm", ResourceID: "100", Node: "pve1"}
 	second := first
 	second.Profile = "two"
@@ -95,7 +104,7 @@ func TestFingerprintSeparatesIdenticalResourceIDsOnDifferentEndpoints(t *testing
 }
 
 func TestStoreRoundTripAndRequestIDBinding(t *testing.T) {
-	store := NewStore(filepath.Join(t.TempDir(), "ledger"))
+	store := NewStore(filepath.Join(canonicalTestDir(t), "ledger"))
 	r := validTestReceipt("req_roundtrip")
 	lease, err := store.Lock(r.RequestID)
 	if err != nil {
@@ -123,7 +132,7 @@ func TestStoreRoundTripAndRequestIDBinding(t *testing.T) {
 }
 
 func TestListRecentIsBoundedAndReportsTotal(t *testing.T) {
-	store := NewStore(filepath.Join(t.TempDir(), "ledger"))
+	store := NewStore(filepath.Join(canonicalTestDir(t), "ledger"))
 	for _, id := range []string{"req_recent_a", "req_recent_b"} {
 		lease, err := store.Lock(id)
 		if err != nil {
@@ -144,7 +153,7 @@ func TestListRecentIsBoundedAndReportsTotal(t *testing.T) {
 }
 
 func TestStoreRejectsSymlinkPathsAndOversizedRecords(t *testing.T) {
-	base := t.TempDir()
+	base := canonicalTestDir(t)
 	actual := filepath.Join(base, "real")
 	if err := os.Mkdir(actual, 0o700); err != nil {
 		t.Fatal(err)
@@ -172,7 +181,7 @@ func TestStoreRejectsSymlinkPathsAndOversizedRecords(t *testing.T) {
 }
 
 func TestStoreRejectsSymlinkReceiptAndBroadPermissions(t *testing.T) {
-	base := t.TempDir()
+	base := canonicalTestDir(t)
 	store := NewStore(filepath.Join(base, "ledger"))
 	lease, err := store.Lock("req_file_link")
 	if err != nil {
@@ -211,7 +220,7 @@ func TestStoreRejectsSymlinkReceiptAndBroadPermissions(t *testing.T) {
 }
 
 func TestStoreSerializesConcurrentRequestIDs(t *testing.T) {
-	store := NewStore(filepath.Join(t.TempDir(), "ledger"))
+	store := NewStore(filepath.Join(canonicalTestDir(t), "ledger"))
 	first, err := store.Lock("req_shared")
 	if err != nil {
 		t.Fatal(err)
