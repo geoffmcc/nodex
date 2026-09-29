@@ -2109,3 +2109,51 @@ func TestToHandlerEdgeCases(t *testing.T) {
 		}
 	}
 }
+
+// TestRunWarnsInertConfirmFlagsOnReadOnlyCommand covers §12.7 end to end: the
+// parser is position-independent and cannot reject an inapplicable flag, so a
+// read-only command accepts --yes/--force/--confirm-target and does nothing
+// with them. The warning closes the false-assurance gap without changing the
+// exit code, so automation that passes these flags uniformly keeps working.
+func TestRunWarnsInertConfirmFlagsOnReadOnlyCommand(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	ctx := context.Background()
+
+	var baseOut, baseErr bytes.Buffer
+	if err := Run(ctx, []string{"node", "list"}, &baseOut, &baseErr); err != nil {
+		t.Fatalf("baseline node list: %v", err)
+	}
+
+	var out, errBuf bytes.Buffer
+	err := Run(ctx, []string{"node", "list", "--yes", "--force", "--confirm-target", "proxmox/9200"}, &out, &errBuf)
+	if err != nil {
+		t.Fatalf("node list with confirm flags: %v", err)
+	}
+
+	// stdout must be byte-identical; only stderr gains a warning.
+	if out.String() != baseOut.String() {
+		t.Errorf("stdout changed:\n got: %q\nwant: %q", out.String(), baseOut.String())
+	}
+	for _, flag := range []string{"--yes", "--force", "--confirm-target"} {
+		if !strings.Contains(errBuf.String(), flag+" has no effect on \"node list\"") {
+			t.Errorf("missing warning for %s, stderr: %q", flag, errBuf.String())
+		}
+	}
+}
+
+// TestRunInertConfirmFlagWarningSuppressedByQuiet pins the --quiet contract:
+// the warning is diagnostic output, so quiet silences it.
+func TestRunInertConfirmFlagWarningSuppressedByQuiet(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupMultiProfileConfig(t)
+
+	var out, errBuf bytes.Buffer
+	if err := Run(context.Background(), []string{"--quiet", "node", "list", "--yes"}, &out, &errBuf); err != nil {
+		t.Fatalf("quiet node list: %v", err)
+	}
+	if strings.Contains(errBuf.String(), "has no effect") {
+		t.Errorf("--quiet should suppress the warning, stderr: %q", errBuf.String())
+	}
+}

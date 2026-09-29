@@ -25,6 +25,7 @@ import (
 //     missing global value.
 func parseGlobal(args []string) (opts Options, helpPath []string, remaining []string, err error) {
 	opts.Timeout = 30 * time.Second
+	opts.sawConfirmFlags = map[string]bool{}
 	outFmt := ""
 	var path []string
 	var region []string
@@ -109,6 +110,7 @@ func parseGlobal(args []string) (opts Options, helpPath []string, remaining []st
 				opts.Profile = value
 			case "confirm-target":
 				opts.ConfirmTarget = value
+				opts.sawConfirmFlags["--confirm-target"] = true
 			case "output":
 				outFmt = value
 			case "timeout":
@@ -155,8 +157,10 @@ func parseGlobal(args []string) (opts Options, helpPath []string, remaining []st
 				opts.Debug = value
 			case "yes":
 				opts.Yes = value
+				opts.sawConfirmFlags["--yes"] = true
 			case "force":
 				opts.Force = value
+				opts.sawConfirmFlags["--force"] = true
 			case "wait":
 				opts.Wait = value
 			case "expert":

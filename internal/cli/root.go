@@ -32,6 +32,13 @@ type Options struct {
 	All            bool
 	PasswordStdin  bool
 	ConfirmTarget  string
+
+	// sawConfirmFlags records which confirmation-related globals appeared on
+	// the command line, so Run can warn when the resolved command is read-only
+	// and they therefore had no effect. Presence is tracked separately from
+	// the parsed values because the default of every one of them is the inert
+	// zero value, which is indistinguishable from "not passed".
+	sawConfirmFlags map[string]bool
 }
 
 // Context carries global state through command execution.
@@ -429,13 +436,21 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 				if cmdCtx.Opts.All && len(args) > 1 {
 					return app.NewExitError(fmt.Errorf("unexpected arguments for --all: %s", strings.Join(args[1:], " ")), app.ExitUsage)
 				}
-				return sub.run(ctx, cmdCtx, args[1:])
+				err := sub.run(ctx, cmdCtx, args[1:])
+				if err == nil {
+					warnInertConfirmFlags(cmdCtx.Opts, sub.meta, safeStderr)
+				}
+				return err
 			}
 			if cmd.run != nil {
 				if err := checkAllSupported(cmdCtx.Opts.All, name); err != nil {
 					return err
 				}
-				return cmd.run(ctx, cmdCtx, args)
+				err := cmd.run(ctx, cmdCtx, args)
+				if err == nil {
+					warnInertConfirmFlags(cmdCtx.Opts, cmd.meta, safeStderr)
+				}
+				return err
 			}
 			return app.NewExitError(
 				fmt.Errorf("unknown %s subcommand: %s", name, subName),
@@ -449,7 +464,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			if cmdCtx.Opts.All && len(args) > 0 {
 				return app.NewExitError(fmt.Errorf("unexpected arguments for --all: %s", strings.Join(args, " ")), app.ExitUsage)
 			}
-			return cmd.run(ctx, cmdCtx, args)
+			err := cmd.run(ctx, cmdCtx, args)
+			if err == nil {
+				warnInertConfirmFlags(cmdCtx.Opts, cmd.meta, safeStderr)
+			}
+			return err
 		}
 		printSubcommandUsage(safeStderr, cmd)
 		return app.NewExitError(
@@ -471,10 +490,49 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if cmdCtx.Opts.All && len(args) > 0 {
 			return app.NewExitError(fmt.Errorf("unexpected arguments for --all: %s", strings.Join(args, " ")), app.ExitUsage)
 		}
-		return cmd.run(ctx, cmdCtx, args)
+		err := cmd.run(ctx, cmdCtx, args)
+		if err == nil {
+			warnInertConfirmFlags(cmdCtx.Opts, cmd.meta, safeStderr)
+		}
+		return err
 	}
 
 	return nil
+}
+
+// confirmFlagOrder is the fixed order in which inert confirmation flags are
+// reported, so output is deterministic regardless of command-line order.
+var confirmFlagOrder = []string{"--yes", "--force", "--confirm-target"}
+
+// warnInertConfirmFlags reports confirmation flags that the resolved read-only
+// command could not act on. The parser is position-independent and cannot know
+// whether a flag is applicable, so these are accepted and stored like any
+// other global; without this the user is left believing they armed something
+// that was then discarded.
+//
+// The exit code is deliberately unchanged: a read-only command that ignored
+// --yes/--force/--confirm-target has still succeeded, and rejecting it would
+// break callers that pass the flags uniformly. Quiet suppresses the warning to
+// match the existing --quiet contract.
+func warnInertConfirmFlags(opts Options, meta *OperationMeta, stderr io.Writer) {
+	if meta == nil || !meta.Inspection || opts.Quiet || len(opts.sawConfirmFlags) == 0 {
+		return
+	}
+	// A dispatch parent's metadata describes the router, not the leaf
+	// operation it selects. Several parents are marked Inspection:true even
+	// though they route to mutations (`backup job`, `ceph osd`, `access user`,
+	// ...), so warning from the parent would claim `--yes` was inert on a
+	// command that does honour it. Skip those, exactly as validateInvocation
+	// does, and prefer silence over a false claim.
+	if _, isDispatch := knownDispatchCommands[meta.Path]; isDispatch {
+		return
+	}
+	for _, flag := range confirmFlagOrder {
+		if !opts.sawConfirmFlags[flag] {
+			continue
+		}
+		fmt.Fprintf(stderr, "warning: %s has no effect on %q (read-only command)\n", flag, meta.Path)
+	}
 }
 
 func validateInvocation(opts Options, meta *OperationMeta) error {
