@@ -232,11 +232,20 @@ func TestDoExhaustedRetriesSurfacesPVEMessage(t *testing.T) {
 	}
 }
 
-// TestDoTerminalPathIsFasterThanRetryPath is a timing-free structural check
-// that the reported ~23x regression is gone: terminal statuses cost one
-// request and no backoff at all.
+// TestDoTerminalPathAvoidsBackoff is a timing-free structural check that the
+// reported ~23x regression is gone: a terminal status costs exactly one
+// request and no backoff delay is ever selected.
+//
+// The previous version of this test measured wall-clock elapsed time against a
+// 300ms budget. That is not a property of the client at all — it is a property
+// of how loaded the machine running the test is — so it passed on Linux
+// runners and failed intermittently on slower macOS and Windows runners. The
+// retry delays are 400ms and 1s here, so counting server hits distinguishes
+// "retried" from "did not retry" exactly and instantly.
 func TestDoTerminalPathAvoidsBackoff(t *testing.T) {
+	var calls int32
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
 		w.WriteHeader(http.StatusNotImplemented)
 		_, _ = w.Write([]byte(pveErrorBody("not implemented")))
 	}))
@@ -244,14 +253,14 @@ func TestDoTerminalPathAvoidsBackoff(t *testing.T) {
 
 	c := New(WithMaxRetries(2), WithRetryDelays(400*time.Millisecond, time.Second))
 	req, _ := http.NewRequest(http.MethodGet, s.URL, nil)
-	start := time.Now()
 	resp, err := c.Do(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}
 	_ = resp.Body.Close()
-	// The old path slept 400ms + 800ms; anything near that means it retried.
-	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
-		t.Errorf("terminal 501 took %v, want no backoff", elapsed)
+
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("terminal 501 hit the server %d times, want 1: a retried terminal "+
+			"status sleeps the full 400ms+1s backoff for no possible benefit", got)
 	}
 }
