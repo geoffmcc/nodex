@@ -187,7 +187,7 @@ func runFirewallOptions(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 	opts, err := fw.FirewallOptions(ctx)
 	if err != nil {
-		return fmt.Errorf("get firewall options: %w", err)
+		return err
 	}
 	return writeFirewallOptionsTable(cmdCtx, opts)
 }
@@ -226,7 +226,7 @@ func runFirewallNodeRules(ctx context.Context, cmdCtx *Context, args []string) e
 	}
 	rules, err := fw.NodeFirewallRules(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("get node firewall rules: %w", err)
+		return err
 	}
 	return writeFirewallRules(cmdCtx, rules)
 }
@@ -256,7 +256,7 @@ func runFirewallVMRules(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 	rules, err := fw.VMFirewallRules(ctx, node, vmid)
 	if err != nil {
-		return fmt.Errorf("get VM firewall rules: %w", err)
+		return err
 	}
 	return writeFirewallRules(cmdCtx, rules)
 }

@@ -33,7 +33,7 @@ func runNodeList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	nodes, err := ni.Nodes(ctx)
 	if err != nil {
-		return fmt.Errorf("list nodes: %w", err)
+		return err
 	}
 
 	return writeNodes(cmdCtx, applyLimit(nodes, cmdCtx.Opts.Limit))
@@ -55,11 +55,11 @@ func runNodeShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	nodes, err := ni.Nodes(ctx)
 	if err != nil {
-		return fmt.Errorf("list nodes: %w", err)
+		return err
 	}
 	node, ok := findNode(nodes, args[0])
 	if !ok {
-		return app.NewExitError(fmt.Errorf("node %q not found", args[0]), app.ExitProvider)
+		return app.NotFoundError("node %q", args[0])
 	}
 	return writeNode(cmdCtx, node)
 }
@@ -251,7 +251,7 @@ func runVMShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	vm, ok := findVM(vms, args[0])
 	if !ok {
-		return app.NewExitError(fmt.Errorf("VM %q not found", args[0]), app.ExitProvider)
+		return app.NotFoundError("VM %q", args[0])
 	}
 	return writeVM(cmdCtx, vm)
 }
@@ -365,7 +365,7 @@ func runContainerShow(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 	container, ok := findContainer(containers, args[0])
 	if !ok {
-		return app.NewExitError(fmt.Errorf("container %q not found", args[0]), app.ExitProvider)
+		return app.NotFoundError("container %q", args[0])
 	}
 	return writeContainer(cmdCtx, container)
 }
@@ -491,7 +491,7 @@ func findStorage(storages []domain.Storage, name string) (domain.Storage, bool) 
 // resolveStorage resolves a storage target given as <name>, <node>/<name>, or
 // the fully-qualified id form storage/<node>/<name>.
 func resolveStorage(storages []domain.Storage, target string) (domain.Storage, error) {
-	notFound := app.NewExitError(fmt.Errorf("storage %q not found", target), app.ExitProvider)
+	notFound := app.NotFoundError("storage %q", target)
 	if strings.Count(target, "/") == 1 {
 		node, name, _ := strings.Cut(target, "/")
 		for _, storage := range storages {
@@ -623,7 +623,7 @@ func runVMConfig(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	config, err := vi.VMConfig(ctx, node, vmid)
 	if err != nil {
-		return fmt.Errorf("get vm config: %w", err)
+		return err
 	}
 	return writeConfig(cmdCtx, config)
 }
@@ -653,7 +653,7 @@ func runContainerConfig(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 	config, err := ci.ContainerConfig(ctx, node, vmid)
 	if err != nil {
-		return fmt.Errorf("get container config: %w", err)
+		return err
 	}
 	return writeConfig(cmdCtx, config)
 }
@@ -699,7 +699,7 @@ func runStorageContent(ctx context.Context, cmdCtx *Context, args []string) erro
 	}
 	items, err := si.StorageContent(ctx, node, storage)
 	if err != nil {
-		return fmt.Errorf("get storage content: %w", err)
+		return err
 	}
 	return writeStorageContent(cmdCtx, items)
 }
@@ -805,7 +805,7 @@ func runTaskShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	task, err := ti.Task(ctx, node, upid)
 	if err != nil {
-		return fmt.Errorf("get task: %w", err)
+		return err
 	}
 	return writeTaskDetail(cmdCtx, task)
 }
@@ -855,7 +855,7 @@ func runVMSnapshots(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	snaps, err := sp.VMSnapshots(ctx, node, vmid)
 	if err != nil {
-		return fmt.Errorf("get vm snapshots: %w", err)
+		return err
 	}
 	return writeSnapshotList(cmdCtx, applyLimit(snaps, cmdCtx.Opts.Limit))
 }
@@ -885,7 +885,7 @@ func runContainerSnapshots(ctx context.Context, cmdCtx *Context, args []string) 
 	}
 	snaps, err := sp.ContainerSnapshots(ctx, node, vmid)
 	if err != nil {
-		return fmt.Errorf("get container snapshots: %w", err)
+		return err
 	}
 	return writeSnapshotList(cmdCtx, applyLimit(snaps, cmdCtx.Opts.Limit))
 }
@@ -1301,7 +1301,7 @@ func runLog(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	entries, err := sl.Syslog(ctx, opts.node)
 	if err != nil {
-		return fmt.Errorf("get syslog: %w", err)
+		return err
 	}
 
 	shown := filterSyslog(tailSyslog(entries, opts.last), opts.grep)
@@ -1331,7 +1331,7 @@ func followSyslog(ctx context.Context, cmdCtx *Context, sl domain.SyslogInspecto
 		}
 		entries, err := sl.Syslog(ctx, opts.node)
 		if err != nil {
-			return fmt.Errorf("get syslog: %w", err)
+			return err
 		}
 		for _, e := range filterSyslog(entries, opts.grep) {
 			if e.N <= lastN {

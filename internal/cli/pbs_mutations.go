@@ -307,7 +307,7 @@ func runPBSSyncRun(ctx context.Context, cmdCtx *Context, args []string) error {
 		}
 	}
 	if job == nil {
-		return app.NewExitError(fmt.Errorf("sync job %q not found", jobID), app.ExitNotFound)
+		return app.NotFoundError("sync job %q", jobID)
 	}
 
 	var warnings []string
@@ -370,7 +370,7 @@ func runPBSPruneRun(ctx context.Context, cmdCtx *Context, args []string) error {
 		}
 	}
 	if job == nil {
-		return app.NewExitError(fmt.Errorf("prune job %q not found", jobID), app.ExitNotFound)
+		return app.NotFoundError("prune job %q", jobID)
 	}
 
 	// Pruning permanently removes backup snapshots: destructive tier with

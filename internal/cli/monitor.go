@@ -94,7 +94,7 @@ func runMonitorCheck(ctx context.Context, cmdCtx *Context, args []string) error 
 	if targetName != "" {
 		t, ok := targets[targetName]
 		if !ok {
-			return app.NewExitError(fmt.Errorf("monitor target %q not found", targetName), app.ExitNotFound)
+			return app.NotFoundError("monitor target %q", targetName)
 		}
 		targets = map[string]config.MonitorTarget{targetName: t}
 	}

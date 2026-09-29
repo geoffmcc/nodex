@@ -69,7 +69,7 @@ func runClusterLog(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	entries, err := logProv.ClusterLog(ctx)
 	if err != nil {
-		return fmt.Errorf("get cluster log: %w", err)
+		return err
 	}
 	return writeClusterLog(cmdCtx, applyLimit(entries, cmdCtx.Opts.Limit))
 }

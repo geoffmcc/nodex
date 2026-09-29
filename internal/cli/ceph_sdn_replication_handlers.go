@@ -80,7 +80,7 @@ func runCephOSDList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	osds, err := ceph.CephOSDs(ctx, node)
 	if err != nil {
-		return fmt.Errorf("get ceph osds: %w", err)
+		return err
 	}
 	return writeCephOSDsTable(cmdCtx, osds)
 }
@@ -135,7 +135,7 @@ func runCephMONList(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	mons, err := ceph.CephMONs(ctx, node)
 	if err != nil {
-		return fmt.Errorf("get ceph mons: %w", err)
+		return err
 	}
 	return writeCephMONsTable(cmdCtx, mons)
 }
@@ -184,7 +184,7 @@ func runCephPoolList(ctx context.Context, cmdCtx *Context, args []string) error 
 	}
 	pools, err := ceph.CephPools(ctx, node)
 	if err != nil {
-		return fmt.Errorf("get ceph pools: %w", err)
+		return err
 	}
 	return writeCephPoolsTable(cmdCtx, pools)
 }
@@ -765,7 +765,7 @@ func runReplicationList(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 	jobs, err := rp.ReplicationList(ctx)
 	if err != nil {
-		return fmt.Errorf("get replication jobs: %w", err)
+		return err
 	}
 	return writeReplicationJobsTable(cmdCtx, jobs)
 }
@@ -819,14 +819,14 @@ func runReplicationShow(ctx context.Context, cmdCtx *Context, args []string) err
 	}
 	job, err := rp.ReplicationGet(ctx, id)
 	if err != nil {
-		return fmt.Errorf("get replication job: %w", err)
+		return err
 	}
 	return writeReplicationJobDetail(cmdCtx, job)
 }
 
 func writeReplicationJobDetail(cmdCtx *Context, job *domain.ReplicationJob) error {
 	if job == nil {
-		return app.NewExitError(fmt.Errorf("replication job not found"), app.ExitUsage)
+		return app.NotFoundError("replication job")
 	}
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
