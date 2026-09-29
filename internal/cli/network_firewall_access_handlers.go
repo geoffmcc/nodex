@@ -1046,7 +1046,13 @@ func runAccessTokensList(ctx context.Context, cmdCtx *Context, args []string) er
 // checkSecurityAdmin verifies Tier 4 authorization. Returns nil if authorized.
 // Requires --expert flag. Prints prompts to stderr when interactive confirmation
 // is required but not provided. Returns error if not authorized.
-func checkSecurityAdmin(cmdCtx *Context, desc string) error {
+//
+// Most Tier 4 operations change identity, access control, or privilege state
+// without destroying anything, so they are confirmed with --yes --force and no
+// typed target. Operations that genuinely remove state pass a typeTarget and
+// additionally require the operator to type that exact value, matching the
+// treatment Tier 3 gives irreversible work.
+func checkSecurityAdmin(cmdCtx *Context, desc, typeTarget string) error {
 	if !cmdCtx.Opts.Expert {
 		return app.NewExitError(
 			fmt.Errorf("%w: identity operations require --expert flag (Tier 4: Security Administration)", safety.ErrExpertRequired),
@@ -1057,18 +1063,12 @@ func checkSecurityAdmin(cmdCtx *Context, desc string) error {
 		Tier:                safety.TierSecurityAdmin,
 		ResourceDescription: desc,
 	}
+	if typeTarget != "" {
+		policy.RequiresTypeConfirm = true
+		policy.TypeConfirmTarget = typeTarget
+	}
 	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
-	if !result.ConfirmationRequired {
-		return nil // Authorized via flags.
-	}
-	if cmdCtx.Opts.NonInteractive {
-		return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
-	}
-	if result.Warning != "" {
-		fmt.Fprintf(cmdCtx.ErrW, "WARNING: %s\n", result.Warning)
-	}
-	fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
-	return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
+	return resolveConfirmation(cmdCtx, result, typeTarget)
 }
 
 func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -1107,7 +1107,30 @@ func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) er
 		return app.NewExitError(fmt.Errorf("userid is required"), app.ExitUsage)
 	}
 
-	// Secure password collection.
+	// Authorize before doing anything observable. The Tier 4 gate must not be
+	// reached only after the caller has already typed a password, and an
+	// unauthorized request must not open a connection to the cluster either.
+	desc := fmt.Sprintf("create user %s", userid)
+	// Creating a user adds identity state; it does not remove any, so no
+	// typed target is required.
+	if err := checkSecurityAdmin(cmdCtx, desc, ""); err != nil {
+		return err
+	}
+
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	ap, err := requireAccess(prov)
+	if err != nil {
+		return err
+	}
+
+	// Secure password collection, once the caller is known to be allowed to
+	// proceed. A secret must never be solicited from someone the command was
+	// going to reject anyway.
 	var password string
 	if cmdCtx.Opts.PasswordStdin {
 		// Bound stdin reads to prevent memory exhaustion.
@@ -1124,22 +1147,6 @@ func runAccessUserCreate(ctx context.Context, cmdCtx *Context, args []string) er
 			return fmt.Errorf("read password: %w", err)
 		}
 		password = pw
-	}
-
-	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	ap, err := requireAccess(prov)
-	if err != nil {
-		return err
-	}
-
-	desc := fmt.Sprintf("create user %s", userid)
-	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
-		return err
 	}
 
 	if err := ap.CreateUser(ctx, userid, password, email, firstname, lastname, comment); err != nil {
@@ -1160,6 +1167,15 @@ func runAccessUserDelete(ctx context.Context, cmdCtx *Context, args []string) er
 		return app.NewExitError(fmt.Errorf("userid is required"), app.ExitUsage)
 	}
 
+	desc := fmt.Sprintf("delete user %s", userid)
+	// Deleting a user permanently removes identity and credential state that
+	// cannot be recovered, so the operator must type the userid itself. This
+	// matches the TypeConfirm metadata recorded for this operation in
+	// operations.go, which is what the help text and registry report.
+	if err := checkSecurityAdmin(cmdCtx, desc, userid); err != nil {
+		return err
+	}
+
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -1168,11 +1184,6 @@ func runAccessUserDelete(ctx context.Context, cmdCtx *Context, args []string) er
 
 	ap, err := requireAccess(prov)
 	if err != nil {
-		return err
-	}
-
-	desc := fmt.Sprintf("delete user %s", userid)
-	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
 		return err
 	}
 
@@ -1226,6 +1237,13 @@ func runAccessACLAdd(ctx context.Context, cmdCtx *Context, args []string) error 
 		return app.NewExitError(fmt.Errorf("either --user or --group is required"), app.ExitUsage)
 	}
 
+	desc := fmt.Sprintf("ACL add path=%s role=%s", path, role)
+	// Granting a role changes privilege state but removes nothing, so no
+	// typed target is required.
+	if err := checkSecurityAdmin(cmdCtx, desc, ""); err != nil {
+		return err
+	}
+
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -1234,11 +1252,6 @@ func runAccessACLAdd(ctx context.Context, cmdCtx *Context, args []string) error 
 
 	ap, err := requireAccess(prov)
 	if err != nil {
-		return err
-	}
-
-	desc := fmt.Sprintf("ACL add path=%s role=%s", path, role)
-	if err := checkSecurityAdmin(cmdCtx, desc); err != nil {
 		return err
 	}
 

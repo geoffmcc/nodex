@@ -27,7 +27,7 @@ func runHAStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	status, err := ha.HAStatus(ctx)
 	if err != nil {
-		return fmt.Errorf("get HA status: %w", err)
+		return err
 	}
 	// A standalone host has no cluster, so a zero quorum with an "unknown"
 	// status is expected rather than a fault. Report the cluster name and
@@ -115,7 +115,7 @@ func runHACurrent(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	current, err := ha.HACurrent(ctx)
 	if err != nil {
-		return fmt.Errorf("get HA current: %w", err)
+		return err
 	}
 	return writeHACurrentTable(cmdCtx, current)
 }
@@ -160,7 +160,7 @@ func runBackupContent(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 	items, err := bkp.BackupContent(ctx, node, storage)
 	if err != nil {
-		return fmt.Errorf("get backup content: %w", err)
+		return err
 	}
 	return writeBackupContentTable(cmdCtx, items)
 }
@@ -200,7 +200,7 @@ func runSDNZones(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	zones, err := sdn.SDNZones(ctx)
 	if err != nil {
-		return fmt.Errorf("get SDN zones: %w", err)
+		return err
 	}
 	return writeSDNZonesTable(cmdCtx, zones)
 }
@@ -240,7 +240,7 @@ func runSDNVNets(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	vnets, err := sdn.SDNVNets(ctx)
 	if err != nil {
-		return fmt.Errorf("get SDN vnets: %w", err)
+		return err
 	}
 	return writeSDNVNetsTable(cmdCtx, vnets)
 }
@@ -284,7 +284,7 @@ func runSDNSubnets(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	subnets, err := sdn.SDNSubnets(ctx)
 	if err != nil {
-		return fmt.Errorf("get SDN subnets: %w", err)
+		return err
 	}
 	return writeSDNSubnetsTable(cmdCtx, subnets)
 }
@@ -324,7 +324,7 @@ func runSDNControllers(ctx context.Context, cmdCtx *Context, args []string) erro
 	}
 	controllers, err := sdn.SDNControllers(ctx)
 	if err != nil {
-		return fmt.Errorf("get SDN controllers: %w", err)
+		return err
 	}
 	return writeSDNControllersTable(cmdCtx, controllers)
 }
@@ -384,7 +384,7 @@ func runVMSnapshotConfig(ctx context.Context, cmdCtx *Context, args []string) er
 	}
 	config, err := snap.VMSnapshotConfig(ctx, node, vmid, name)
 	if err != nil {
-		return fmt.Errorf("get VM snapshot config: %w", err)
+		return err
 	}
 	return writeConfig(cmdCtx, config)
 }
@@ -421,7 +421,7 @@ func runContainerSnapshotConfig(ctx context.Context, cmdCtx *Context, args []str
 	}
 	config, err := snap.ContainerSnapshotConfig(ctx, node, vmid, name)
 	if err != nil {
-		return fmt.Errorf("get container snapshot config: %w", err)
+		return err
 	}
 	return writeConfig(cmdCtx, config)
 }

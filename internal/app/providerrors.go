@@ -88,8 +88,36 @@ func IsAuthorizationError(err error) bool {
 	return errors.As(err, &pe) && pe.StatusCode == http.StatusForbidden
 }
 
-// IsNotFoundError reports whether the error chain contains a 404 status.
+// ErrNotFound marks a resource that does not exist.
+//
+// A lookup can resolve without any HTTP status at all: nodex lists the
+// resources, matches locally, and the name is simply absent. There is no
+// ProviderError to classify, so before this sentinel such an outcome could
+// only be recognised by string-matching its message. That is fragile, and it
+// had already produced a user-visible contradiction — `container show`
+// exited 13 for a missing container via one path and 12 via another, for the
+// identical request.
+var ErrNotFound = errors.New("not found")
+
+// NotFoundError returns an error for a resource that does not exist. The
+// result carries ExitNotFound and wraps ErrNotFound, so ExitCodeFromError
+// resolves it structurally and errors.Is(err, app.ErrNotFound) matches it.
+//
+// Callers pass the identifying detail rather than a finished sentence: the
+// sentinel supplies the "not found" wording, so the message never says it
+// twice. The result reads like the os package's wrapped sentinels —
+// `node "pve1": not found`.
+func NotFoundError(format string, args ...any) *ExitCoder {
+	detail := fmt.Sprintf(format, args...)
+	return NewExitError(fmt.Errorf("%s: %w", detail, ErrNotFound), ExitNotFound)
+}
+
+// IsNotFoundError reports whether the error chain means "the resource does
+// not exist", covering both a provider 404 and a client-side lookup miss.
 func IsNotFoundError(err error) bool {
+	if errors.Is(err, ErrNotFound) {
+		return true
+	}
 	var pe *ProviderError
 	return errors.As(err, &pe) && pe.StatusCode == http.StatusNotFound
 }

@@ -1,12 +1,14 @@
 package httpclient
 
 import (
+	"bytes"
 	"context"
 	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -316,15 +318,29 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 		}
 
 		if resp.StatusCode >= 500 {
-			body, truncated := readRetryErrorBody(resp.Body, RetryErrorBodySize)
-			_ = resp.Body.Close()
-			lastErr = fmt.Errorf("server error: %d", resp.StatusCode)
-			if body != "" {
-				if truncated {
-					body += "... [truncated]"
-				}
-				lastErr = fmt.Errorf("server error: %d: %s", resp.StatusCode, body)
+			// 501 and every other permanent 5xx are terminal by
+			// classification: the response is final, so it is handed back
+			// unretried for the caller to decode. Replacing it with a retry
+			// artifact is what buried the real PVE message.
+			if !isRetryableStatus(resp.StatusCode) && resp.StatusCode != http.StatusInternalServerError {
+				return resp, nil
 			}
+
+			// 502/503/504 always retry; a 500 retries only when its body does
+			// not name a permanent condition. The body is read exactly once
+			// and either restored onto the response or turned into the
+			// recorded error.
+			raw, truncated, err := readBody(resp.Body, RetryErrorBodySize)
+			_ = resp.Body.Close()
+			if err != nil {
+				lastErr = fmt.Errorf("server error: %d: read body: %w", resp.StatusCode, err)
+				continue
+			}
+			if resp.StatusCode == http.StatusInternalServerError && !truncated && isDeterministicBody(string(raw)) {
+				restoreBody(resp, raw)
+				return resp, nil
+			}
+			lastErr = serverError(resp.StatusCode, raw, truncated)
 			continue
 		}
 
@@ -333,22 +349,111 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 	return nil, fmt.Errorf("max retries exceeded: %w", lastErr)
 }
 
-func readRetryErrorBody(r io.Reader, limit int64) (string, bool) {
-	body, err := io.ReadAll(io.LimitReader(r, limit+1))
-	if err != nil || len(body) == 0 {
-		return "", false
+// isRetryableStatus reports whether a 5xx status is worth retrying.
+//
+// Only 502, 503 and 504 describe a condition that can plausibly clear by
+// itself. Everything else in the 5xx range is either permanent by definition
+// (501 Not Implemented, per RFC 9110) or specific to a single request, and
+// retrying it only spends the backoff budget to reach a conclusion that
+// cannot change.
+func isRetryableStatus(status int) bool {
+	switch status {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
 	}
-	truncated := int64(len(body)) > limit
+}
+
+// deterministicBodies are response bodies that describe a permanent condition.
+// A 500 carrying one of these will fail identically on every subsequent
+// attempt, so the retry budget buys nothing but latency.
+var deterministicBodies = []string{
+	"binary not installed",
+	"does not exist",
+	"not found",
+	"no such file",
+	"permission check failed",
+	"parameter verification failed",
+	"not running",
+}
+
+// isDeterministicBody reports whether a 5xx body names a permanent condition.
+func isDeterministicBody(body string) bool {
+	lower := strings.ToLower(body)
+	for _, marker := range deterministicBodies {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// serverError builds the error recorded for a retried response from its
+// already-read body. The decoded PVE `message` is preferred over the raw
+// document, because it is the actionable part:
+// `{"message":"binary not installed: /usr/bin/ceph-mon"}` tells the operator
+// what to do, where the raw JSON does not.
+func serverError(status int, raw []byte, truncated bool) error {
+	body := sanitizeErrorBody(raw)
+	if body == "" {
+		return fmt.Errorf("server error: %d", status)
+	}
+	if message := decodeMessage(body); message != "" {
+		body = message
+	}
 	if truncated {
-		body = body[:limit]
+		body += "... [truncated]"
+	}
+	return fmt.Errorf("server error: %d: %s", status, body)
+}
+
+// decodeMessage extracts the `message` field from a PVE error body, returning
+// "" when the body is not that shape. Proxmox reports API errors as
+// {"message": "...", "data": null}; the message is prose, so it needs no
+// further unwrapping.
+func decodeMessage(body string) string {
+	var payload struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Message)
+}
+
+// readBody reads up to limit bytes, reporting whether more were available.
+func readBody(r io.Reader, limit int64) ([]byte, bool, error) {
+	body, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if int64(len(body)) > limit {
+		return body[:limit], true, nil
+	}
+	return body, false, nil
+}
+
+// restoreBody puts a previously read body back on resp so that the caller's
+// decoder sees it as an unread response.
+func restoreBody(resp *http.Response, body []byte) {
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	resp.ContentLength = int64(len(body))
+}
+
+// sanitizeErrorBody strips control characters and redacts a captured error
+// body, returning "" for an empty result.
+func sanitizeErrorBody(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
 	}
 	cleaned := strings.TrimSpace(strings.Map(func(r rune) rune {
 		if r < 0x20 && r != '\n' && r != '\r' && r != '\t' {
 			return -1
 		}
 		return r
-	}, string(body)))
-	return redact.String(cleaned), truncated
+	}, string(raw)))
+	return redact.String(cleaned)
 }
 
 // jitteredDelay calculates a jittered delay for the given attempt.

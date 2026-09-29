@@ -835,7 +835,7 @@ func buildRegistry() []OperationMeta {
 
 	accessMutations := []OperationMeta{
 		{Path: "access user create", Description: "Create a user", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresExpert: true, SecuritySensitivity: SecIdentity, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessUserCreate"},
-		{Path: "access user delete", Description: "Delete a user", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresExpert: true, SecuritySensitivity: SecIdentity, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessUserDelete"},
+		{Path: "access user delete", Description: "Delete a user", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresTypeConfirm: true, RequiresExpert: true, SecuritySensitivity: SecIdentity, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessUserDelete"},
 		{Path: "access acl add", Description: "Add an ACL entry", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresExpert: true, SecuritySensitivity: SecAccess, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessACLAdd"},
 	}
 	ops = append(ops, accessMutations...)

@@ -185,15 +185,21 @@ const (
 // Profile is one named provider configuration. SSH fields are optional and
 // used by providers that ship transfer capabilities over SSH (e.g. Proxmox
 // storage download on PVE 9.x, which has no HTTP volume-download API).
+//
+// Both json and yaml tags are declared. Profile is embedded directly into the
+// structured output of `profile list`, and a struct tagged for YAML only
+// serializes under PascalCase field names in JSON — so `provider` came back as
+// "Provider" and `credential_ref` as "CredentialRef", giving a different key
+// set in JSON than in YAML for the same value.
 type Profile struct {
-	Provider      string `yaml:"provider"`
-	Endpoint      string `yaml:"endpoint"`
-	CredentialRef string `yaml:"credential_ref"`
-	CAFile        string `yaml:"ca_file,omitempty"`
-	SSHHost       string `yaml:"ssh_host,omitempty"`
-	SSHUser       string `yaml:"ssh_user,omitempty"`
-	SSHKeyFile    string `yaml:"ssh_key_file,omitempty"`
-	SSHPort       int    `yaml:"ssh_port,omitempty"`
+	Provider      string `json:"provider" yaml:"provider"`
+	Endpoint      string `json:"endpoint" yaml:"endpoint"`
+	CredentialRef string `json:"credential_ref" yaml:"credential_ref"`
+	CAFile        string `json:"ca_file,omitempty" yaml:"ca_file,omitempty"`
+	SSHHost       string `json:"ssh_host,omitempty" yaml:"ssh_host,omitempty"`
+	SSHUser       string `json:"ssh_user,omitempty" yaml:"ssh_user,omitempty"`
+	SSHKeyFile    string `json:"ssh_key_file,omitempty" yaml:"ssh_key_file,omitempty"`
+	SSHPort       int    `json:"ssh_port,omitempty" yaml:"ssh_port,omitempty"`
 }
 
 // DefaultConfig returns a new config with the current schema version and empty profiles.

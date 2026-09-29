@@ -819,3 +819,173 @@ func TestAccessTokensListJSONStaysValid(t *testing.T) {
 		t.Errorf("secret must be redacted in place:\n%s", out)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Free-text redaction must not damage diagnostics
+//
+// The defense-in-depth patterns are a last-resort net for free text. A net
+// that rewrites "read password: EOF" into "read [REDACTED]" destroys the
+// only diagnostic the operator was given, so the `key: value` form is matched
+// only when the value is shaped like a credential.
+// ---------------------------------------------------------------------------
+
+func TestStringPreservesDiagnosticMessages(t *testing.T) {
+	cases := []string{
+		"read password: EOF",
+		"read token: connection reset by peer",
+		"invalid secret: too short",
+		"credential: file not found",
+		"user 'admin@pve!monitor' logged in",
+		"status: ok, expire: 0, privsep: 1",
+	}
+	for _, in := range cases {
+		if got := String(in); got != in {
+			t.Errorf("String(%q) = %q, want unchanged", in, got)
+		}
+	}
+}
+
+func TestStringStillRedactsCredentialShapes(t *testing.T) {
+	cases := []string{
+		"password: hunter2",
+		"api_token: secret123abc",
+		"credential_ref: file:home",
+		"PASSWORD=my-real-password",
+		"NODEX_DEFAULT_TOKEN_SECRET=supersecret",
+		"CSRFPreventionToken=abc123def456",
+		"PVEAuthCookie=some-session-value",
+		`"password": "hunter2"`,
+		`"token_secret": "abc-secret-123"`,
+		"token=abcdef123456",
+	}
+	for _, in := range cases {
+		if got := String(in); !ContainsRedacted(got) {
+			t.Errorf("String(%q) = %q, want redaction", in, got)
+		}
+	}
+}
+
+func TestSanitizeRedactsSecretNamedKeys(t *testing.T) {
+	type creds struct {
+		Token    string `json:"token"`
+		TokenID  string `json:"tokenid"`
+		Password string `json:"password"`
+		Host     string `json:"host"`
+	}
+	c := creds{Token: "plain-string-secret", TokenID: "monitor", Password: "hunter2", Host: "pve.local"}
+
+	out, ok := Sanitize(c).(creds)
+	if !ok {
+		t.Fatal("Sanitize did not return creds")
+	}
+	if out.Token != redacted {
+		t.Errorf("Token = %q, want %q", out.Token, redacted)
+	}
+	if out.Password != redacted {
+		t.Errorf("Password = %q, want %q", out.Password, redacted)
+	}
+	if out.Host != "pve.local" {
+		t.Errorf("Host = %q, want pve.local", out.Host)
+	}
+	// PVE token IDs are identifiers, not secrets, and must stay visible.
+	if out.TokenID != "monitor" {
+		t.Errorf("TokenID = %q, want monitor", out.TokenID)
+	}
+}
+
+func TestSanitizeRedactsSecretNamedMapKeys(t *testing.T) {
+	in := map[string]string{
+		"api_token": "a1b2c3d4e5",
+		"host":      "pve.local",
+	}
+	out, ok := Sanitize(in).(map[string]string)
+	if !ok {
+		t.Fatal("Sanitize did not return map[string]string")
+	}
+	if out["api_token"] != redacted {
+		t.Errorf("api_token = %q, want %q", out["api_token"], redacted)
+	}
+	if out["host"] != "pve.local" {
+		t.Errorf("host = %q, want pve.local", out["host"])
+	}
+}
+
+// TestStringIsIdempotent pins that redaction is a fixed point.
+//
+// Output legitimately passes through the net more than once: the structured
+// writers redact before marshaling, and output.SanitizingWriter then redacts
+// the serialized bytes on the way to stdout. Before this was enforced, the
+// credential_ref rule re-matched text that was already redacted — its value
+// group can match zero characters, so on YAML
+//
+//	credential_ref: '[REDACTED]'
+//
+// it replaced the label and separator, matched nothing, and left the quoted
+// marker behind:
+//
+//	credential_ref: [REDACTED]'[REDACTED]'
+func TestStringIsIdempotent(t *testing.T) {
+	inputs := []string{
+		`{"token_secret": "abc123", "host": "pve.local"}`,
+		"credential_ref: '[REDACTED]'\nprovider: proxmox\n",
+		`{"credential_ref": "[REDACTED]"}`,
+		"password: hunter2",
+		"read password: EOF",
+		"token_secret=abc123",
+		"user@pve!monitor=a1b2c3d4-e5f6-7890",
+		"user@pam!monitor:a1b2c3d4-e5f6-7890",
+		"Bearer eyJhbGciOiJIUzI1NiJ9.abc",
+		"NODEX_PVE_TOKEN_SECRET=abc123",
+		"plain message with no secrets",
+		"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+		"credential_ref: file:production",
+		`"password": "[REDACTED]"`,
+	}
+	for _, in := range inputs {
+		t.Run(in, func(t *testing.T) {
+			once := String(in)
+			twice := String(once)
+			if once != twice {
+				t.Errorf("redaction is not idempotent:\n once:  %q\n twice: %q", once, twice)
+			}
+		})
+	}
+}
+
+// TestStringRedactsCredentialRefInPlace pins the credential_ref rule, which is
+// unconditional because a credential-store reference is a secret locator even
+// when the store name carries no credential-shaped characters.
+func TestStringRedactsCredentialRefInPlace(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"bare", "credential_ref: file:production", "credential_ref: " + redacted},
+		{"single quoted yaml", "credential_ref: 'file:production'", "credential_ref: '" + redacted + "'"},
+		{"double quoted json", `{"credential_ref": "file:production"}`, `{"credential_ref": "[REDACTED]"}`},
+		{"equals", "credential_ref=file:production", "credential_ref=" + redacted},
+		{"empty value left alone", "credential_ref: ", "credential_ref: "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := String(tt.in); got != tt.want {
+				t.Errorf("String(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestLabelRulesRespectWordBoundaries guards the quoting/suffix logic against
+// matching identifiers that merely start with a sensitive word.
+func TestLabelRulesRespectWordBoundaries(t *testing.T) {
+	for _, in := range []string{
+		`{"tokenizer": "keep-me-1"}`,
+		`{"password_hash": "keep-me-1"}`,
+		`{"mytoken": "keep-me-1"}`,
+	} {
+		if got := String(in); got != in {
+			t.Errorf("String(%q) = %q, want unchanged", in, got)
+		}
+	}
+}

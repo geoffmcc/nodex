@@ -27,7 +27,7 @@ func runNodeServices(ctx context.Context, cmdCtx *Context, args []string) error 
 	}
 	services, err := detail.NodeServices(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("get node services: %w", err)
+		return err
 	}
 	// Cluster-only services such as corosync always read as dead on a
 	// standalone host. Annotate them so the state is not mistaken for a fault
@@ -75,7 +75,7 @@ func runNodeNetwork(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	interfaces, err := detail.NodeNetwork(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("get node network: %w", err)
+		return err
 	}
 	return writeNodeNetwork(cmdCtx, interfaces)
 }
@@ -167,7 +167,7 @@ func runNodeTime(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	nodeTime, err := detail.NodeTime(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("get node time: %w", err)
+		return err
 	}
 	return writeNodeTime(cmdCtx, nodeTime)
 }
@@ -224,7 +224,7 @@ func runNodeDisks(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	disks, err := detail.NodeDisks(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("get node disks: %w", err)
+		return err
 	}
 	return writeNodeDisks(cmdCtx, disks)
 }
@@ -264,7 +264,7 @@ func runNodeCertificates(ctx context.Context, cmdCtx *Context, args []string) er
 	}
 	certs, err := detail.NodeCertificates(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("get node certificates: %w", err)
+		return err
 	}
 	return writeNodeCertificates(cmdCtx, certs)
 }
@@ -304,7 +304,7 @@ func runNodeSubscription(ctx context.Context, cmdCtx *Context, args []string) er
 	}
 	sub, err := detail.NodeSubscription(ctx, args[0])
 	if err != nil {
-		return fmt.Errorf("get node subscription: %w", err)
+		return err
 	}
 	return writeNodeSubscription(cmdCtx, sub)
 }

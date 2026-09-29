@@ -258,7 +258,7 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 	target := fmt.Sprintf("%s/%d", node, vmid)
 	container, ok := findContainer(containers, target)
 	if !ok {
-		return app.NewExitError(fmt.Errorf("container %q not found", target), app.ExitNotFound)
+		return app.NotFoundError("container %q", target)
 	}
 	if container.Status != "running" {
 		return app.NewExitError(fmt.Errorf("container %s is %s; it must be running for pct OS update", target, container.Status), app.ExitValidationError)

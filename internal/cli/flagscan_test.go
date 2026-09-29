@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -230,5 +231,120 @@ func TestNextArg(t *testing.T) {
 	}
 	if v, ok := nextArg(nil, 0); ok || v != "" {
 		t.Errorf("nextArg(nil, 0) = %q, %v; want empty, false", v, ok)
+	}
+}
+
+func TestParseGlobalRecordsConfirmFlagPresence(t *testing.T) {
+	// §12.7: parseGlobal cannot know whether a confirmation flag is
+	// applicable, so it records presence separately from the parsed value.
+	// `--yes=false` still counts as "passed" even though Yes is false.
+	opts, _, _, err := parseGlobal([]string{"vm", "list", "--yes=false", "--confirm-target", "proxmox/1"})
+	if err != nil {
+		t.Fatalf("parseGlobal: %v", err)
+	}
+	if opts.Yes {
+		t.Error("Yes = true, want false for --yes=false")
+	}
+	for _, flag := range []string{"--yes", "--confirm-target"} {
+		if !opts.sawConfirmFlags[flag] {
+			t.Errorf("sawConfirmFlags[%q] = false, want true", flag)
+		}
+	}
+	if opts.sawConfirmFlags["--force"] {
+		t.Error("sawConfirmFlags[\"--force\"] = true, want false when not passed")
+	}
+}
+
+func TestParseGlobalNoConfirmFlagsWhenAbsent(t *testing.T) {
+	opts, _, _, err := parseGlobal([]string{"vm", "list"})
+	if err != nil {
+		t.Fatalf("parseGlobal: %v", err)
+	}
+	if len(opts.sawConfirmFlags) != 0 {
+		t.Errorf("sawConfirmFlags = %v, want empty", opts.sawConfirmFlags)
+	}
+}
+
+func TestWarnInertConfirmFlagsNamesEachFlagInFixedOrder(t *testing.T) {
+	// §12.7: one line per inert flag, in a deterministic order, and the exit
+	// code is unchanged. Ordering is asserted so output does not depend on
+	// command-line order.
+	opts, _, _, err := parseGlobal([]string{"vm", "list", "--confirm-target", "proxmox/1", "--force", "--yes"})
+	if err != nil {
+		t.Fatalf("parseGlobal: %v", err)
+	}
+	meta := LookupOperation("vm list")
+	if meta == nil {
+		t.Fatal("LookupOperation(\"vm list\") = nil")
+	}
+	if !meta.Inspection {
+		t.Fatalf("vm list is not read-only; test premise broken (Inspection=%v)", meta.Inspection)
+	}
+
+	var stderr bytes.Buffer
+	warnInertConfirmFlags(opts, meta, &stderr)
+	got := stderr.String()
+	want := "warning: --yes has no effect on \"vm list\" (read-only command)\n" +
+		"warning: --force has no effect on \"vm list\" (read-only command)\n" +
+		"warning: --confirm-target has no effect on \"vm list\" (read-only command)\n"
+	if got != want {
+		t.Errorf("warning output =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestWarnInertConfirmFlagsQuietAndMutationCases(t *testing.T) {
+	quietOpts, _, _, err := parseGlobal([]string{"--quiet", "vm", "list", "--yes"})
+	if err != nil {
+		t.Fatalf("parseGlobal: %v", err)
+	}
+	var stderr bytes.Buffer
+	warnInertConfirmFlags(quietOpts, LookupOperation("vm list"), &stderr)
+	if stderr.Len() != 0 {
+		t.Errorf("--quiet should suppress the warning, got: %q", stderr.String())
+	}
+
+	mutationOpts, _, _, err := parseGlobal([]string{"vm", "start", "proxmox/1", "--yes"})
+	if err != nil {
+		t.Fatalf("parseGlobal: %v", err)
+	}
+	var mutErr bytes.Buffer
+	warnInertConfirmFlags(mutationOpts, LookupOperation("vm start"), &mutErr)
+	if mutErr.Len() != 0 {
+		t.Errorf("mutation command must not warn, got: %q", mutErr.String())
+	}
+
+	noMeta, _, _, err := parseGlobal([]string{"vm", "list", "--yes"})
+	if err != nil {
+		t.Fatalf("parseGlobal: %v", err)
+	}
+	var nilMetaErr bytes.Buffer
+	warnInertConfirmFlags(noMeta, nil, &nilMetaErr)
+	if nilMetaErr.Len() != 0 {
+		t.Errorf("nil metadata must not warn, got: %q", nilMetaErr.String())
+	}
+}
+
+func TestWarnInertConfirmFlagsSilentForDispatchParents(t *testing.T) {
+	// Several dispatch parents are Inspection:true but route to mutations
+	// (e.g. `backup job` -> `backup job delete`). Their metadata describes the
+	// router, not the leaf, so warning here would falsely claim --yes was
+	// inert on a command that does use it. Silence is the correct answer.
+	for _, path := range []string{"backup job", "ceph osd", "access user", "vm snapshot"} {
+		meta := LookupOperation(path)
+		if meta == nil {
+			t.Fatalf("LookupOperation(%q) = nil", path)
+		}
+		if !meta.Inspection {
+			t.Fatalf("%q is not Inspection:true; test premise broken", path)
+		}
+		opts, _, _, err := parseGlobal([]string{path, "--yes", "--force"})
+		if err != nil {
+			t.Fatalf("parseGlobal: %v", err)
+		}
+		var stderr bytes.Buffer
+		warnInertConfirmFlags(opts, meta, &stderr)
+		if stderr.Len() != 0 {
+			t.Errorf("dispatch parent %q must not warn, got: %q", path, stderr.String())
+		}
 	}
 }
