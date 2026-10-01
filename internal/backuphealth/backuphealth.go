@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/task"
 )
 
 // Status classifies a check outcome. Severity ordering (least to most
@@ -385,8 +386,11 @@ func (s *Service) checkPVEBackupTasks(ctx context.Context, now time.Time, retrie
 			if t.EndTime > 0 && int64(t.EndTime) < cutoff {
 				continue
 			}
+			// A vzdump that completed with warnings succeeded; it is not a
+			// failed backup. Use the canonical task classification rule so a
+			// warning-bearing backup is never reported as a failure.
 			status := strings.ToUpper(t.Status)
-			if status != "" && status != "OK" && status != "RUNNING" {
+			if status != "" && !task.Success(status) && status != "RUNNING" {
 				failures = append(failures, fmt.Sprintf("%s on %s (%s)", t.UPID, n.Name, t.Status))
 			}
 		}

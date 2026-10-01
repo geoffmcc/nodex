@@ -22,6 +22,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/provider"
 	"github.com/geoffmcc/nodex/internal/redact"
 	"github.com/geoffmcc/nodex/internal/safety"
+	"github.com/geoffmcc/nodex/internal/task"
 )
 
 type agentConfigKey struct{}
@@ -1277,7 +1278,7 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 		}
 		if taskStatus.EndTime == 0 {
 			state = "running"
-		} else if taskStatus.ExitStatus == "OK" {
+		} else if task.Success(taskStatus.ExitStatus) {
 			state, status = "succeeded", taskStatus.ExitStatus
 		} else if taskStatus.ExitStatus != "" {
 			state, status = "failed", taskStatus.ExitStatus
@@ -1307,7 +1308,7 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 		case "running":
 			state = "running"
 		case "stopped":
-			if taskInfo.Status == "OK" {
+			if task.Success(taskInfo.Status) {
 				state, status = "succeeded", taskInfo.Status
 			} else if taskInfo.Status != "" {
 				state, status = "failed", taskInfo.Status

@@ -26,6 +26,16 @@ var e2eTaskFailure = false
 var e2eVMStatusOverride string
 var e2eTaskNodeOverride string
 
+// pbsE2ETaskExitStatusOverride replaces the exit status the PBS mock reports for
+// a completed task, so task-status classification can be exercised against
+// values other than "OK". Tests must reset it and run serially.
+var pbsE2ETaskExitStatusOverride string
+
+// e2eTaskStatusOverride replaces the terminal task status the Proxmox e2e mock
+// reports, so the TaskInspector reconciliation path can be exercised against
+// values other than "OK". Tests must reset it and run serially.
+var e2eTaskStatusOverride string
+
 func init() {
 	provider.Register(e2eMockProviderName, func() domain.Provider { return &e2eMockProvider{} })
 }
@@ -113,6 +123,9 @@ func (p *e2eMockProvider) Task(_ context.Context, node, upid string) (*domain.Ta
 	status := "OK"
 	if e2eTaskFailure {
 		status = "ERROR"
+	}
+	if e2eTaskStatusOverride != "" {
+		status = e2eTaskStatusOverride
 	}
 	if e2eTaskNodeOverride != "" {
 		node = e2eTaskNodeOverride
