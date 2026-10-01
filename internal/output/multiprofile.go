@@ -105,6 +105,11 @@ func ClassifyToResultError(err error) *ResultError {
 // errorClassLabel maps exit codes to short, stable, machine-readable labels.
 func errorClassLabel(code int) string {
 	switch code {
+	case app.ExitUsage:
+		// Usage/input failures (bad args, refused or unreadable confirmation)
+		// are distinct from a network failure. Without this they fell to the
+		// default "error" label, which hid the actionable cause.
+		return "usage"
 	case app.ExitAuth:
 		return "auth"
 	case app.ExitAuthorization:

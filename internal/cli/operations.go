@@ -88,6 +88,13 @@ type OperationMeta struct {
 	// RequiresTypeConfirm is true when typed-target verification is required.
 	RequiresTypeConfirm bool
 
+	// ConfirmTargetFormat documents how to derive the exact string that
+	// --confirm-target (or the type-in prompt) must equal for this operation.
+	// It documents the format only: static discovery cannot know the runtime
+	// target, so it must never claim a concrete value. Empty when the
+	// operation does not require type-in confirmation.
+	ConfirmTargetFormat string
+
 	// RequiresExpert is true when --expert is required (Tier 4).
 	RequiresExpert bool
 
@@ -168,8 +175,8 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops,
 		OperationMeta{Path: "monitor targets", Description: "List configured monitoring targets", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMonitorTargets"},
 		OperationMeta{Path: "monitor check", Description: "Check configured monitoring targets", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMonitorCheck"},
-		OperationMeta{Path: "certification run", Description: "Run an opt-in disposable certification transaction", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertification"},
-		OperationMeta{Path: "certification cleanup", Description: "Recover pending certification cleanup", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationCleanup"},
+		OperationMeta{Path: "certification run", Description: "Run an opt-in disposable certification transaction", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the certification ledger entry ID, which selects the entry to act on", Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertification"},
+		OperationMeta{Path: "certification cleanup", Description: "Recover pending certification cleanup", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the certification ledger entry ID, matched against entries in the certification ledger", Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationCleanup"},
 		OperationMeta{Path: "certification report", Description: "Show the sanitized certification ledger", Inspection: true, Scope: ScopeCert, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationReport"},
 	)
 
@@ -354,6 +361,7 @@ func buildRegistry() []OperationMeta {
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDestructive,
 		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
+		ConfirmTargetFormat: "the guest target <node>/<vmid> exactly as passed on the command line (for example proxmox/100)",
 		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
 		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "DeleteProvider", HandlerFunc: "runVMDelete",
@@ -401,6 +409,7 @@ func buildRegistry() []OperationMeta {
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDestructive,
 		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
+		ConfirmTargetFormat: "the snapshot name only (for example pre-upgrade), not node/VMID/name",
 		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
 		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "SnapshotMutationProvider", HandlerFunc: "runVMSnapshotDelete",
@@ -477,6 +486,7 @@ func buildRegistry() []OperationMeta {
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDestructive,
 		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
+		ConfirmTargetFormat: "the guest target <node>/<vmid> exactly as passed on the command line (for example proxmox/9610)",
 		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
 		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "DeleteProvider", HandlerFunc: "runCTDelete",
@@ -523,6 +533,7 @@ func buildRegistry() []OperationMeta {
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDestructive,
 		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
+		ConfirmTargetFormat: "the snapshot name only (for example nx4fu-snap1), not node/VMID/name",
 		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
 		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "SnapshotMutationProvider", HandlerFunc: "runCTSnapshotDelete",
@@ -570,6 +581,7 @@ func buildRegistry() []OperationMeta {
 		Inspection: false, Scope: ScopeStorage, SafetyTier: safety.TierDestructive,
 		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
+		ConfirmTargetFormat: "the volume ID only (for example vm-100-disk-1), not node/storage/volume",
 		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
 		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "StorageMutationProvider", HandlerFunc: "runStorageDelete",
@@ -587,8 +599,8 @@ func buildRegistry() []OperationMeta {
 		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterLogProvider", HandlerFunc: "runClusterLog",
 	})
 	ops = append(ops,
-		OperationMeta{Path: "cluster init", Description: "Initialize a Proxmox cluster (destructive)", Inspection: false, Scope: ScopeCluster, SafetyTier: safety.TierSecurityAdmin, RiskDimensions: []RiskDimension{RiskDataLoss, RiskServiceDown, RiskNetworkLock}, RequiresTypeConfirm: true, RequiresExpert: true, ProducesUPID: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterAdministrationProvider", HandlerFunc: "runClusterInit"},
-		OperationMeta{Path: "cluster join", Description: "Preflight a Proxmox cluster join (execution refused without safe peer credential)", Inspection: false, Scope: ScopeCluster, SafetyTier: safety.TierSecurityAdmin, RiskDimensions: []RiskDimension{RiskServiceDown, RiskNetworkLock}, RequiresTypeConfirm: true, RequiresExpert: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterAdministrationProvider", HandlerFunc: "runClusterJoin"},
+		OperationMeta{Path: "cluster init", Description: "Initialize a Proxmox cluster (destructive)", Inspection: false, Scope: ScopeCluster, SafetyTier: safety.TierSecurityAdmin, RiskDimensions: []RiskDimension{RiskDataLoss, RiskServiceDown, RiskNetworkLock}, RequiresTypeConfirm: true, ConfirmTargetFormat: "the cluster name argument", RequiresExpert: true, ProducesUPID: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterAdministrationProvider", HandlerFunc: "runClusterInit"},
+		OperationMeta{Path: "cluster join", Description: "Preflight a Proxmox cluster join (execution refused without safe peer credential)", Inspection: false, Scope: ScopeCluster, SafetyTier: safety.TierSecurityAdmin, RiskDimensions: []RiskDimension{RiskServiceDown, RiskNetworkLock}, RequiresTypeConfirm: true, ConfirmTargetFormat: "the node address argument used to join the cluster", RequiresExpert: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterAdministrationProvider", HandlerFunc: "runClusterJoin"},
 	)
 
 	// --- event ---
@@ -677,6 +689,7 @@ func buildRegistry() []OperationMeta {
 		Path: "backup job delete", Description: "Delete a backup schedule (destructive)",
 		Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDestructive,
 		RequiresTypeConfirm: true,
+		ConfirmTargetFormat: "the backup job ID only (for example nightly)",
 		OutputModes:         []string{"table"},
 		CapabilityInterface: "BackupMutationProvider", HandlerFunc: "runBackupJobDelete",
 	})
@@ -718,19 +731,20 @@ func buildRegistry() []OperationMeta {
 		op, desc, capIface, handler string
 		tier                        safety.Tier
 		destructive                 bool
+		confirmTargetFormat         string
 	}{
-		{"firewall rule create", "Create a firewall rule", "FirewallMutationProvider", "runFirewallRuleCreate", safety.TierDisruptive, false},
-		{"firewall rule update", "Update a firewall rule", "FirewallMutationProvider", "runFirewallRuleUpdate", safety.TierDisruptive, false},
-		{"firewall rule delete", "Delete a firewall rule", "FirewallMutationProvider", "runFirewallRuleDelete", safety.TierDestructive, true},
-		{"firewall alias create", "Create a firewall alias", "FirewallMutationProvider", "runFirewallAliasCreate", safety.TierDisruptive, false},
-		{"firewall alias delete", "Delete a firewall alias", "FirewallMutationProvider", "runFirewallAliasDelete", safety.TierDestructive, true},
-		{"firewall ipset create", "Create a firewall IP set", "FirewallMutationProvider", "runFirewallIPSetCreate", safety.TierDisruptive, false},
-		{"firewall ipset entry add", "Add an IP set entry", "FirewallMutationProvider", "runFirewallIPSetEntryAdd", safety.TierDisruptive, false},
-		{"firewall ipset entry remove", "Remove an IP set entry", "FirewallMutationProvider", "runFirewallIPSetEntryRemove", safety.TierDestructive, true},
-		{"firewall ipset delete", "Delete a firewall IP set", "FirewallMutationProvider", "runFirewallIPSetDelete", safety.TierDestructive, true},
-		{"firewall group create", "Create a security group", "FirewallMutationProvider", "runFirewallGroupCreate", safety.TierDisruptive, false},
-		{"firewall group delete", "Delete a security group", "FirewallMutationProvider", "runFirewallGroupDelete", safety.TierDestructive, true},
-		{"firewall options update", "Update firewall options", "FirewallMutationProvider", "runFirewallOptionsUpdate", safety.TierDisruptive, false},
+		{"firewall rule create", "Create a firewall rule", "FirewallMutationProvider", "runFirewallRuleCreate", safety.TierDisruptive, false, ""},
+		{"firewall rule update", "Update a firewall rule", "FirewallMutationProvider", "runFirewallRuleUpdate", safety.TierDisruptive, false, ""},
+		{"firewall rule delete", "Delete a firewall rule", "FirewallMutationProvider", "runFirewallRuleDelete", safety.TierDestructive, true, `derived from scope and position: "cluster-rule-<pos>" for cluster scope, "<node>-rule-<pos>" for node scope, or "<node>-<vmid>-rule-<pos>" for VM scope`},
+		{"firewall alias create", "Create a firewall alias", "FirewallMutationProvider", "runFirewallAliasCreate", safety.TierDisruptive, false, ""},
+		{"firewall alias delete", "Delete a firewall alias", "FirewallMutationProvider", "runFirewallAliasDelete", safety.TierDestructive, true, "the alias name argument"},
+		{"firewall ipset create", "Create a firewall IP set", "FirewallMutationProvider", "runFirewallIPSetCreate", safety.TierDisruptive, false, ""},
+		{"firewall ipset entry add", "Add an IP set entry", "FirewallMutationProvider", "runFirewallIPSetEntryAdd", safety.TierDisruptive, false, ""},
+		{"firewall ipset entry remove", "Remove an IP set entry", "FirewallMutationProvider", "runFirewallIPSetEntryRemove", safety.TierDestructive, true, "the IP set name and CIDR joined by a hyphen (for example myipset-10.0.0.0-8)"},
+		{"firewall ipset delete", "Delete a firewall IP set", "FirewallMutationProvider", "runFirewallIPSetDelete", safety.TierDestructive, true, "the IP set name argument"},
+		{"firewall group create", "Create a security group", "FirewallMutationProvider", "runFirewallGroupCreate", safety.TierDisruptive, false, ""},
+		{"firewall group delete", "Delete a security group", "FirewallMutationProvider", "runFirewallGroupDelete", safety.TierDestructive, true, "the security group name argument"},
+		{"firewall options update", "Update firewall options", "FirewallMutationProvider", "runFirewallOptionsUpdate", safety.TierDisruptive, false, ""},
 	}
 	for _, v := range fwMutations {
 		meta := OperationMeta{
@@ -741,6 +755,7 @@ func buildRegistry() []OperationMeta {
 		}
 		if v.destructive {
 			meta.RequiresTypeConfirm = true
+			meta.ConfirmTargetFormat = v.confirmTargetFormat
 		}
 		ops = append(ops, meta)
 	}
@@ -778,15 +793,16 @@ func buildRegistry() []OperationMeta {
 	sdnMutations := []struct {
 		op, desc, handler string
 		destructive       bool
+		confirmFormat     string
 	}{
-		{"sdn zone create", "Create an SDN zone", "runSDNZoneCreate", false},
-		{"sdn zone delete", "Delete an SDN zone", "runSDNZoneDelete", true},
-		{"sdn vnet create", "Create an SDN VNet", "runSDNVNetCreate", false},
-		{"sdn vnet delete", "Delete an SDN VNet", "runSDNVNetDelete", true},
-		{"sdn subnet create", "Create an SDN subnet", "runSDNSubnetCreate", false},
-		{"sdn subnet delete", "Delete an SDN subnet", "runSDNSubnetDelete", true},
-		{"sdn controller create", "Create an SDN controller", "runSDNControllerCreate", false},
-		{"sdn controller delete", "Delete an SDN controller", "runSDNControllerDelete", true},
+		{"sdn zone create", "Create an SDN zone", "runSDNZoneCreate", false, ""},
+		{"sdn zone delete", "Delete an SDN zone", "runSDNZoneDelete", true, "the SDN zone name"},
+		{"sdn vnet create", "Create an SDN VNet", "runSDNVNetCreate", false, ""},
+		{"sdn vnet delete", "Delete an SDN VNet", "runSDNVNetDelete", true, "the SDN VNet name"},
+		{"sdn subnet create", "Create an SDN subnet", "runSDNSubnetCreate", false, ""},
+		{"sdn subnet delete", "Delete an SDN subnet", "runSDNSubnetDelete", true, "`<vnet>/<subnet>` combining the VNet and subnet names (for example prod/lan)"},
+		{"sdn controller create", "Create an SDN controller", "runSDNControllerCreate", false, ""},
+		{"sdn controller delete", "Delete an SDN controller", "runSDNControllerDelete", true, "the SDN controller name"},
 	}
 	for _, v := range sdnMutations {
 		tier := safety.TierDisruptive
@@ -801,6 +817,7 @@ func buildRegistry() []OperationMeta {
 		}
 		if v.destructive {
 			meta.RequiresTypeConfirm = true
+			meta.ConfirmTargetFormat = v.confirmFormat
 		}
 		ops = append(ops, meta)
 	}
@@ -847,7 +864,7 @@ func buildRegistry() []OperationMeta {
 
 	accessMutations := []OperationMeta{
 		{Path: "access user create", Description: "Create a user", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresExpert: true, SecuritySensitivity: SecIdentity, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessUserCreate"},
-		{Path: "access user delete", Description: "Delete a user", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresTypeConfirm: true, RequiresExpert: true, SecuritySensitivity: SecIdentity, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessUserDelete"},
+		{Path: "access user delete", Description: "Delete a user", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresTypeConfirm: true, ConfirmTargetFormat: "the user ID being deleted", RequiresExpert: true, SecuritySensitivity: SecIdentity, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessUserDelete"},
 		{Path: "access acl add", Description: "Add an ACL entry", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresExpert: true, SecuritySensitivity: SecAccess, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessACLAdd"},
 	}
 	ops = append(ops, accessMutations...)
@@ -865,9 +882,9 @@ func buildRegistry() []OperationMeta {
 		{Path: "ceph osd create", Description: "Create a Ceph OSD", Inspection: false, Scope: ScopeCeph, SafetyTier: safety.TierDisruptive, RiskDimensions: []RiskDimension{RiskDataLoss}, Waitable: true, ProducesUPID: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "CephMutationProvider", HandlerFunc: "runCephOSDCreate"},
 		{Path: "ceph osd out", Description: "Mark Ceph OSD out", Inspection: false, Scope: ScopeCeph, SafetyTier: safety.TierDisruptive, RiskDimensions: []RiskDimension{RiskServiceDown}, OutputModes: []string{"table"}, CapabilityInterface: "CephMutationProvider", HandlerFunc: "runCephOSDOut"},
 		{Path: "ceph osd in", Description: "Mark Ceph OSD in", Inspection: false, Scope: ScopeCeph, SafetyTier: safety.TierReversible, OutputModes: []string{"table"}, CapabilityInterface: "CephMutationProvider", HandlerFunc: "runCephOSDIn"},
-		{Path: "ceph osd destroy", Description: "Destroy a Ceph OSD", Inspection: false, Scope: ScopeCeph, SafetyTier: safety.TierDestructive, RiskDimensions: []RiskDimension{RiskDataLoss}, RequiresTypeConfirm: true, Waitable: true, ProducesUPID: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "CephMutationProvider", HandlerFunc: "runCephOSDDestroy"},
+		{Path: "ceph osd destroy", Description: "Destroy a Ceph OSD", Inspection: false, Scope: ScopeCeph, SafetyTier: safety.TierDestructive, RiskDimensions: []RiskDimension{RiskDataLoss}, RequiresTypeConfirm: true, ConfirmTargetFormat: "<node>/osd.<id> combining node and OSD ID (for example pve1/osd.3)", Waitable: true, ProducesUPID: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "CephMutationProvider", HandlerFunc: "runCephOSDDestroy"},
 		{Path: "ceph pool create", Description: "Create a Ceph pool", Inspection: false, Scope: ScopeCeph, SafetyTier: safety.TierDisruptive, Waitable: true, ProducesUPID: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "CephMutationProvider", HandlerFunc: "runCephPoolCreate"},
-		{Path: "ceph pool destroy", Description: "Destroy a Ceph pool", Inspection: false, Scope: ScopeCeph, SafetyTier: safety.TierDestructive, RiskDimensions: []RiskDimension{RiskDataLoss}, RequiresTypeConfirm: true, Waitable: true, ProducesUPID: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "CephMutationProvider", HandlerFunc: "runCephPoolDestroy"},
+		{Path: "ceph pool destroy", Description: "Destroy a Ceph pool", Inspection: false, Scope: ScopeCeph, SafetyTier: safety.TierDestructive, RiskDimensions: []RiskDimension{RiskDataLoss}, RequiresTypeConfirm: true, ConfirmTargetFormat: "<node>/<pool-name> combining node and pool name (for example pve1/ceph-pool)", Waitable: true, ProducesUPID: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "CephMutationProvider", HandlerFunc: "runCephPoolDestroy"},
 	}
 	ops = append(ops, cephMutations...)
 
@@ -877,7 +894,7 @@ func buildRegistry() []OperationMeta {
 		{Path: "replication show", Description: "Show replication job details", Inspection: true, Scope: ScopeRepl, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ReplicationProvider", HandlerFunc: "runReplicationShow"},
 		{Path: "replication create", Description: "Create a replication job", Inspection: false, Scope: ScopeRepl, SafetyTier: safety.TierDisruptive, OutputModes: []string{"table"}, CapabilityInterface: "ReplicationProvider", HandlerFunc: "runReplicationCreate"},
 		{Path: "replication update", Description: "Update a replication job", Inspection: false, Scope: ScopeRepl, SafetyTier: safety.TierDisruptive, OutputModes: []string{"table"}, CapabilityInterface: "ReplicationProvider", HandlerFunc: "runReplicationUpdate"},
-		{Path: "replication delete", Description: "Delete a replication job", Inspection: false, Scope: ScopeRepl, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, OutputModes: []string{"table"}, CapabilityInterface: "ReplicationProvider", HandlerFunc: "runReplicationDelete"},
+		{Path: "replication delete", Description: "Delete a replication job", Inspection: false, Scope: ScopeRepl, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the replication job ID only (for example repl-1)", OutputModes: []string{"table"}, CapabilityInterface: "ReplicationProvider", HandlerFunc: "runReplicationDelete"},
 		{Path: "replication schedule", Description: "Schedule replication job now", Inspection: false, Scope: ScopeRepl, SafetyTier: safety.TierReversible, OutputModes: []string{"table"}, CapabilityInterface: "ReplicationProvider", HandlerFunc: "runReplicationSchedule"},
 	}
 	ops = append(ops, replOps...)
@@ -1038,7 +1055,8 @@ func buildRegistry() []OperationMeta {
 		{Path: "pbs prune run", Description: "Run a PBS prune job (removes snapshots)",
 			Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDestructive,
 			RiskDimensions: []RiskDimension{RiskDataLoss}, RequiresTypeConfirm: true,
-			Waitable: true, ProducesUPID: true, UsesOperationResult: true,
+			ConfirmTargetFormat: "the PBS job ID only (for example prune-nightly)",
+			Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
 			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSPruneRunner", HandlerFunc: "runPBSPruneRun"},
 		{Path: "pbs garbage-collection run", Description: "Run PBS garbage collection on a datastore",
 			Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDisruptive,

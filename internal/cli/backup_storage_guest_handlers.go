@@ -3,7 +3,9 @@ package cli
 import (
 	"bufio"
 	"context"
+	stderrors "errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -145,8 +147,21 @@ func resolveConfirmation(cmdCtx *Context, result safety.ConfirmationResult, targ
 		fmt.Fprintf(cmdCtx.ErrW, "%s", result.Message)
 		reader := bufio.NewReader(cmdCtx.Stdin)
 		typed, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("read confirmation: %w", err)
+		// A terminal always supplies the newline, but piped stdin frequently
+		// does not (`printf '%s' proxmox/9610`). ReadString returns the data
+		// alongside io.EOF in that case, so accept it as a real answer rather
+		// than discarding a correct confirmation.
+		if err != nil && !(stderrors.Is(err, io.EOF) && typed != "") {
+			// Genuinely unreadable input, or EOF with nothing typed. This is a
+			// confirmation/input failure: wrap it so it classifies as usage.
+			// Returning it untyped lets the exit-code string heuristics match
+			// the literal "EOF" in classifyNetwork and report exit 7 /
+			// class "network", which misdirects callers toward retrying a
+			// network outage instead of supplying the confirmation.
+			return app.NewExitError(
+				fmt.Errorf("read confirmation: %w", err),
+				app.ExitUsage,
+			)
 		}
 		typed = strings.TrimSpace(typed)
 		if typed != target {
