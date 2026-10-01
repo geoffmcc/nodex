@@ -582,11 +582,19 @@ type SnapshotListResponse struct {
 }
 
 // SnapshotListItem represents a single snapshot.
+//
+// Proxmox VE reports the snapshot creation time on this endpoint as "snaptime",
+// not "ctime" (which is what the storage content endpoint uses). Decoding
+// "ctime" here silently yielded a zero creation time for every snapshot, and
+// the description written by "snapshot create" was dropped entirely because no
+// field existed for it. The "current" pseudo-snapshot carries no time at all.
 type SnapshotListItem struct {
-	Name   string `json:"name"`
-	VMID   int    `json:"vmid,omitempty"`
-	Ctime  int    `json:"ctime,omitempty"`
-	Parent string `json:"parent,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	VMID        int    `json:"vmid,omitempty"`
+	Ctime       int    `json:"ctime,omitempty"`
+	Snaptime    int    `json:"snaptime,omitempty"`
+	Parent      string `json:"parent,omitempty"`
 }
 
 // EventListResponse is the response from /cluster/events.

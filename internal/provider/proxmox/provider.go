@@ -592,15 +592,26 @@ func (p *Provider) VMSnapshots(ctx context.Context, node string, vmid int) ([]do
 	result := make([]domain.Snapshot, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.Snapshot{
-			Name:   item.Name,
-			VMID:   vmid,
-			Ctime:  item.Ctime,
-			Parent: item.Parent,
-			Node:   node,
-			Target: fmt.Sprintf("%s/%d", node, vmid),
+			Name:        item.Name,
+			VMID:        vmid,
+			Ctime:       snapshotCtime(item),
+			Parent:      item.Parent,
+			Description: item.Description,
+			Node:        node,
+			Target:      fmt.Sprintf("%s/%d", node, vmid),
 		})
 	}
 	return result, nil
+}
+
+// snapshotCtime returns a snapshot's creation time. Proxmox VE reports it as
+// "snaptime" on the snapshot endpoint; "ctime" is retained as a fallback so
+// recorded fixtures and other endpoints that do use "ctime" still resolve.
+func snapshotCtime(item client.SnapshotListItem) int {
+	if item.Snaptime != 0 {
+		return item.Snaptime
+	}
+	return item.Ctime
 }
 
 // ContainerSnapshots returns snapshots for a container.
@@ -615,12 +626,13 @@ func (p *Provider) ContainerSnapshots(ctx context.Context, node string, vmid int
 	result := make([]domain.Snapshot, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.Snapshot{
-			Name:   item.Name,
-			VMID:   vmid,
-			Ctime:  item.Ctime,
-			Parent: item.Parent,
-			Node:   node,
-			Target: fmt.Sprintf("%s/%d", node, vmid),
+			Name:        item.Name,
+			VMID:        vmid,
+			Ctime:       snapshotCtime(item),
+			Parent:      item.Parent,
+			Description: item.Description,
+			Node:        node,
+			Target:      fmt.Sprintf("%s/%d", node, vmid),
 		})
 	}
 	return result, nil
