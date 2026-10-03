@@ -649,10 +649,24 @@ func TestAgentReceiptRefreshRejectsProviderTaskFromWrongNode(t *testing.T) {
 	}
 	var receipt agent.Receipt
 	if err := json.Unmarshal(stdout.Bytes(), &receipt); err != nil {
-		t.Fatalf("decode unknown receipt: %v\n%s", err, stdout.String())
+		t.Fatalf("decode receipt: %v\n%s", err, stdout.String())
 	}
-	if receipt.Submission != agent.SubmissionUnknown || receipt.Execution != agent.ExecutionUnknown || receipt.Error == nil || receipt.Error.Code != "RECONCILIATION_UNAVAILABLE" {
+	// The foreign task must not be used to settle the receipt, but the
+	// recorded acceptance survives: it was established at submission time and
+	// is not retracted by a later inability to observe completion.
+	if receipt.Error == nil || receipt.Error.Code != "RECONCILIATION_UNAVAILABLE" {
 		t.Fatalf("mismatched task identity was guessed: %+v", receipt.Result)
+	}
+	if receipt.Submission != agent.SubmissionAccepted {
+		t.Errorf("submission = %q, want accepted; a failed observation must not erase known acceptance", receipt.Submission)
+	}
+	if receipt.Execution == agent.ExecutionSucceeded || receipt.Execution == agent.ExecutionFailed {
+		t.Errorf("execution = %q; a task from another node is not evidence about this receipt", receipt.Execution)
+	}
+	for _, a := range receipt.NextActions {
+		if a.Operation == "agent receipt reconcile" {
+			t.Errorf("next action %q was already attempted and cannot succeed", a.Operation)
+		}
 	}
 }
 

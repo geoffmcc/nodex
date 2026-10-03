@@ -1260,9 +1260,16 @@ func resolveExplicitProfile(name string) (*config.Config, agent.ExecutionContext
 	return cfg, c, nil
 }
 
+// errTaskReconciliationUnavailable marks a reconciliation attempt that cannot
+// succeed now or on any later retry of the same receipt: the evidence needed is
+// structurally absent, or the provider reported an identity that does not match
+// the receipt. Callers use this to avoid recommending a repeat of an action that
+// is already known to be unavailable.
+var errTaskReconciliationUnavailable = errors.New("task reconciliation is unavailable for this receipt")
+
 func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt) error {
 	if r.TaskID == "" {
-		return errors.New("receipt has no provider task ID; reliable task reconciliation is unsupported")
+		return fmt.Errorf("%w: receipt has no provider task ID", errTaskReconciliationUnavailable)
 	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
@@ -1270,7 +1277,7 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 	}
 	defer cleanup()
 	if prov.Name() != r.Context.Provider {
-		return errors.New("resolved provider does not match the receipt")
+		return fmt.Errorf("%w: resolved provider %q does not match the receipt", errTaskReconciliationUnavailable, prov.Name())
 	}
 	var state string
 	var status string
@@ -1280,7 +1287,7 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 			return err
 		}
 		if taskStatus == nil || taskStatus.UPID != r.TaskID {
-			return errors.New("provider task response did not match the receipt task ID")
+			return fmt.Errorf("%w: provider task response did not match the receipt task ID", errTaskReconciliationUnavailable)
 		}
 		if taskStatus.EndTime == 0 {
 			state = "running"
