@@ -64,6 +64,29 @@ type ClusterResourcesResponse struct {
 	Data []ClusterResource `json:"data"`
 }
 
+// GuestStatusResponse is the response from a guest's /status/current endpoint.
+//
+// This is the authoritative single-guest read. The /cluster/resources listing
+// aggregates guest state and can lag behind a completed lifecycle task by
+// several seconds, so it must not be used to confirm that a specific guest
+// reached a requested state.
+type GuestStatusResponse struct {
+	Data GuestStatusData `json:"data"`
+}
+
+// GuestStatusData holds one guest's current status.
+type GuestStatusData struct {
+	Status string `json:"status"`
+	// VMID is absent from some responses and is injected from the request.
+	VMID int `json:"vmid"`
+	// Name is present on current Proxmox versions and is left empty otherwise
+	// rather than being invented.
+	Name string `json:"name,omitempty"`
+	// QMPStatus carries the QEMU-level state for virtual machines. It is empty
+	// for containers.
+	QMPStatus string `json:"qmpstatus,omitempty"`
+}
+
 // ClusterResource represents a single resource from the cluster.
 type ClusterResource struct {
 	ID        string  `json:"id"`

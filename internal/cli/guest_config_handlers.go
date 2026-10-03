@@ -178,17 +178,7 @@ func runMutationWithPostcondition(ctx context.Context, cmdCtx *Context, prov dom
 	}
 
 	// The task completed, so the postcondition is now meaningful to check.
-	outcome := verify(ctx)
-	result.Verification = "failed"
-	if outcome.Verified {
-		result.Verification = "verified"
-	}
-	if outcome.Changed != nil {
-		result.Changed = outcome.Changed
-	}
-	if outcome.Detail != "" {
-		result.Warnings = append(result.Warnings, outcome.Detail)
-	}
+	applyPostcondition(&result, verify(ctx))
 	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 }
 

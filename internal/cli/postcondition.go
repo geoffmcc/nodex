@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/output"
 )
 
 // --- Postcondition verification for completed mutations ---
@@ -43,6 +45,11 @@ const postconditionSettleWindow = 3 * time.Second
 type postconditionOutcome struct {
 	// Verified is true when the requested end state was observed.
 	Verified bool
+	// Unverifiable is true when the postcondition could not be checked at all,
+	// for example because the provider exposes no suitable read or the read was
+	// denied. It is deliberately distinct from a checked-but-contradicted
+	// outcome: being unable to look is not evidence that the operation failed.
+	Unverifiable bool
 	// Changed is non-nil only when evidence supports it, which for a deletion
 	// requires the resource to have been observed beforehand.
 	Changed *bool
@@ -52,6 +59,31 @@ type postconditionOutcome struct {
 
 // postconditionVerifier checks one operation's postcondition.
 type postconditionVerifier func(ctx context.Context) postconditionOutcome
+
+// applyPostcondition records a verification outcome on a result.
+//
+// The three outcomes are kept distinct because they mean different things:
+// a confirmed end state, a checked-and-contradicted end state, and a check
+// that could not be performed. Collapsing the last two would report an
+// inability to look as an operation failure.
+func applyPostcondition(result *output.OperationResult, outcome postconditionOutcome) {
+	switch {
+	case outcome.Verified:
+		result.Verification = "verified"
+	case outcome.Unverifiable:
+		result.Verification = "unsupported"
+	default:
+		result.Verification = "failed"
+	}
+	if outcome.Changed != nil {
+		result.Changed = outcome.Changed
+	}
+	// A confirmed postcondition is reported by Verification itself, so only
+	// report the detail when it explains an unresolved discrepancy.
+	if outcome.Detail != "" && !outcome.Verified {
+		result.Warnings = append(result.Warnings, outcome.Detail)
+	}
+}
 
 // presenceState describes what a single authoritative read established.
 type presenceState int
@@ -124,6 +156,62 @@ func observePresence(ctx context.Context, probe resourceProbe) (presenceState, e
 	}
 }
 
+// --- Lifecycle state verification ---
+//
+// A completed start/stop task is not evidence that the guest reached the
+// requested state. The cluster-wide listing that most reads use aggregates
+// guest status and can keep reporting the previous state for several seconds
+// after the task finishes, so lifecycle postconditions are confirmed with the
+// per-guest status endpoint instead.
+
+// guestStateVerifier builds a verifier that confirms a guest reached a
+// requested lifecycle state.
+//
+// priorState is the observation taken before the mutation. It separates "the
+// guest was already in that state, so nothing changed" from "the operation
+// moved it there".
+func guestStateVerifier(prov domain.Provider, resourceType, node string, vmid int, desired string, priorState presenceState, priorStatus string) postconditionVerifier {
+	label := fmt.Sprintf("%s %s/%d", resourceType, node, vmid)
+
+	return func(ctx context.Context) postconditionOutcome {
+		insp, supported := prov.(domain.GuestStatusInspector)
+		if !supported {
+			return postconditionOutcome{Unverifiable: true}
+		}
+		deadline := time.Now().Add(postconditionSettleWindow)
+		for {
+			observed, err := insp.GuestStatus(ctx, node, resourceType, vmid)
+			switch {
+			case err != nil:
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s status could not be read after the operation: %v", label, err)}
+			case strings.EqualFold(observed, desired):
+				out := postconditionOutcome{Verified: true, Detail: fmt.Sprintf("%s is %s", label, observed)}
+				// Causation needs a prior observation: a guest seen in
+				// another state was moved by this operation, a guest already
+				// in this state was not, and a guest whose prior state was
+				// never read leaves changed unknown.
+				if priorState == presencePresent {
+					changed := !strings.EqualFold(priorStatus, desired)
+					out.Changed = &changed
+				}
+				return out
+			}
+
+			if !time.Now().Before(deadline) {
+				return postconditionOutcome{
+					Detail: fmt.Sprintf("%s was %q after the operation completed and %s of settling, expected %q",
+						label, observed, postconditionSettleWindow, desired),
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s could not be confirmed before the deadline: %v", label, ctx.Err())}
+			case <-time.After(postconditionPollInterval):
+			}
+		}
+	}
+}
+
 // absenceVerifier builds a verifier for operations whose postcondition is that
 // a resource is gone.
 //
@@ -138,7 +226,9 @@ func absenceVerifier(probe resourceProbe, target string, priorState presenceStat
 			state, err := observePresence(ctx, probe)
 			switch {
 			case err != nil:
-				return postconditionOutcome{Detail: fmt.Sprintf("%s could not be read after the operation: %v", target, err)}
+				// The read proved nothing, so absence cannot be claimed in
+				// either direction.
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s could not be read after the operation: %v", target, err)}
 			case state == presenceAbsent:
 				out := postconditionOutcome{Verified: true, Detail: fmt.Sprintf("%s no longer exists", target)}
 				if priorState == presencePresent {
@@ -156,7 +246,7 @@ func absenceVerifier(probe resourceProbe, target string, priorState presenceStat
 			}
 			select {
 			case <-ctx.Done():
-				return postconditionOutcome{Detail: fmt.Sprintf("%s could not be confirmed before the deadline: %v", target, ctx.Err())}
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s could not be confirmed before the deadline: %v", target, ctx.Err())}
 			case <-time.After(postconditionPollInterval):
 			}
 		}

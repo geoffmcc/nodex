@@ -310,6 +310,38 @@ func (p *Provider) VMConfig(ctx context.Context, node string, vmid int) (map[str
 	return vmConfigToMap(config), nil
 }
 
+// GuestStatus returns the authoritative current status of a single guest.
+func (p *Provider) GuestStatus(ctx context.Context, node, guestType string, vmid int) (string, error) {
+	// Validate the guest type before the connection state: an unknown type is a
+	// caller error regardless of whether the provider is connected.
+	segment, err := guestStatusSegment(guestType)
+	if err != nil {
+		return "", err
+	}
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	status, err := p.client.GetGuestStatus(ctx, node, segment, vmid)
+	if err != nil {
+		return "", fmt.Errorf("get guest status: %w", err)
+	}
+	return status.Status, nil
+}
+
+// guestStatusSegment maps the domain-facing guest names onto the transport path
+// segment, so callers use the vocabulary the domain exposes rather than
+// Proxmox's internal names.
+func guestStatusSegment(guestType string) (string, error) {
+	switch strings.ToLower(guestType) {
+	case "vm", "qemu":
+		return "qemu", nil
+	case "container", "ct", "lxc":
+		return "lxc", nil
+	default:
+		return "", fmt.Errorf("unsupported guest type %q", guestType)
+	}
+}
+
 // ContainerConfig returns configuration for a specific container.
 func (p *Provider) ContainerConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error) {
 	if p.client == nil {

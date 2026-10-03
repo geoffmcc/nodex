@@ -367,6 +367,16 @@ func runContainerShow(ctx context.Context, cmdCtx *Context, args []string) error
 	if !ok {
 		return app.NotFoundError("container %q", args[0])
 	}
+	// The listing aggregates guest status and can lag a completed lifecycle
+	// task, so a single-container read is corrected from the authoritative
+	// per-guest endpoint when one is available.
+	if insp, supported := prov.(domain.GuestStatusInspector); supported {
+		if node, vmid, parsed := parseNodeVMID(args[0]); parsed == nil {
+			if status, err := insp.GuestStatus(ctx, node, "container", vmid); err == nil && status != "" {
+				container.Status = status
+			}
+		}
+	}
 	return writeContainer(cmdCtx, container)
 }
 

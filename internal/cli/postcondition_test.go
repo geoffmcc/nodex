@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/agent"
@@ -254,6 +255,9 @@ func TestPostconditionVerificationOverridesProviderTaskStatus(t *testing.T) {
 	}{
 		{"absence confirmed", "verified", agent.VerificationPassed},
 		{"postcondition contradicted", "failed", agent.VerificationFailed},
+		// An unreadable postcondition is not a failure: the receipt must not
+		// claim the state was disproven when it simply could not be read.
+		{"postcondition unreadable", "unsupported", agent.VerificationUnsupported},
 		{"no check attempted", "", agent.VerificationUnsupported},
 	}
 	for _, tc := range cases {
@@ -284,4 +288,192 @@ func TestPostconditionVerificationOverridesProviderTaskStatus(t *testing.T) {
 
 func (p *otherSnapshotsProvider) ContainerSnapshots(_ context.Context, _ string, _ int) ([]domain.Snapshot, error) {
 	return []domain.Snapshot{{Name: "unrelated"}}, nil
+}
+
+// --- Lifecycle state verification tests ---
+//
+// A finished lifecycle task proves the task ran, not that the guest reached the
+// requested state. These tests pin that the state is observed from the
+// authoritative per-guest read, and that an inability to read it is reported as
+// unverifiable rather than as failure.
+
+// scriptedGuestProvider replays a fixed sequence of per-guest statuses.
+type scriptedGuestProvider struct {
+	bareProvider
+	statuses []string
+	errs     []error
+	calls    int
+}
+
+func (p *scriptedGuestProvider) GuestStatus(_ context.Context, _ string, _ string, _ int) (string, error) {
+	i := p.calls
+	p.calls++
+	if i < len(p.errs) && p.errs[i] != nil {
+		return "", p.errs[i]
+	}
+	if i >= len(p.statuses) {
+		return "", fmt.Errorf("read %d: script exhausted", i+1)
+	}
+	return p.statuses[i], nil
+}
+
+func TestGuestStateVerifierConfirmsReachedState(t *testing.T) {
+	prov := &scriptedGuestProvider{statuses: []string{"running"}}
+
+	out := guestStateVerifier(prov, "vm", "proxmox", 101, "running", presencePresent, "stopped")(context.Background())
+	if !out.Verified {
+		t.Fatalf("expected verified, got %+v", out)
+	}
+	if out.Unverifiable {
+		t.Fatalf("a confirmed read must not be reported as unverifiable: %+v", out)
+	}
+	if out.Changed == nil || !*out.Changed {
+		t.Fatalf("moving a guest from stopped to running must report changed, got %+v", out.Changed)
+	}
+}
+
+func TestGuestStateVerifierReportsNoChangeWhenAlreadyDesired(t *testing.T) {
+	prov := &scriptedGuestProvider{statuses: []string{"running"}}
+
+	out := guestStateVerifier(prov, "vm", "proxmox", 100, "running", presencePresent, "running")(context.Background())
+	if !out.Verified {
+		t.Fatalf("expected verified, got %+v", out)
+	}
+	if out.Changed == nil || *out.Changed {
+		t.Fatalf("a guest already in the requested state was not changed, got %+v", out.Changed)
+	}
+}
+
+func TestGuestStateVerifierKeepsChangeUnknownWhenPriorReadFailed(t *testing.T) {
+	prov := &scriptedGuestProvider{statuses: []string{"running"}}
+
+	out := guestStateVerifier(prov, "vm", "proxmox", 101, "running", presenceUnknown, "")(context.Background())
+	if !out.Verified {
+		t.Fatalf("expected verified, got %+v", out)
+	}
+	if out.Changed != nil {
+		t.Fatalf("without a prior observation change must stay unknown, got %v", *out.Changed)
+	}
+}
+
+func TestGuestStateVerifierRejectsStaleReadsUntilDesired(t *testing.T) {
+	prov := &scriptedGuestProvider{statuses: []string{"stopped", "stopped", "running"}}
+
+	out := guestStateVerifier(prov, "vm", "proxmox", 101, "running", presencePresent, "stopped")(context.Background())
+	if !out.Verified {
+		t.Fatalf("a stale read must be retried, not accepted: %+v", out)
+	}
+	if prov.calls != 3 {
+		t.Fatalf("expected the verifier to poll through stale reads, made %d reads", prov.calls)
+	}
+}
+
+func TestGuestStateVerifierFailsWhenStateContradictsAfterSettling(t *testing.T) {
+	prov := &scriptedGuestProvider{statuses: []string{"stopped", "stopped", "stopped", "stopped", "stopped", "stopped", "stopped", "stopped", "stopped", "stopped"}}
+
+	out := guestStateVerifier(prov, "vm", "proxmox", 101, "running", presencePresent, "stopped")(context.Background())
+	if out.Verified {
+		t.Fatal("must not claim verified while the guest is still stopped")
+	}
+	if out.Unverifiable {
+		t.Fatalf("a contradicted check is a failure, not an inability to check: %+v", out)
+	}
+	if out.Detail == "" {
+		t.Fatal("a failed postcondition must explain the observed state")
+	}
+}
+
+func TestGuestStateVerifierDenialIsUnverifiableNotFailure(t *testing.T) {
+	prov := &scriptedGuestProvider{
+		errs: []error{&app.ProviderError{StatusCode: http.StatusForbidden, Detail: "permission denied"}},
+	}
+
+	out := guestStateVerifier(prov, "vm", "proxmox", 101, "running", presencePresent, "stopped")(context.Background())
+	if out.Verified {
+		t.Fatal("a denied read proves nothing and must not verify")
+	}
+	if !out.Unverifiable {
+		t.Fatalf("a denied read must be unverifiable, not a reported failure: %+v", out)
+	}
+}
+
+func TestGuestStateVerifierUnsupportedProviderIsUnverifiable(t *testing.T) {
+	out := guestStateVerifier(&bareProvider{}, "vm", "proxmox", 101, "running", presencePresent, "stopped")(context.Background())
+	if out.Verified || !out.Unverifiable {
+		t.Fatalf("a provider without per-guest status must be unverifiable: %+v", out)
+	}
+}
+
+func TestGuestStateVerifierStopsWhenContextIsCancelled(t *testing.T) {
+	prov := &scriptedGuestProvider{statuses: []string{"stopped"}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	out := guestStateVerifier(prov, "vm", "proxmox", 101, "running", presencePresent, "stopped")(ctx)
+	if out.Verified || !out.Unverifiable {
+		t.Fatalf("a cancelled check must not claim verification: %+v", out)
+	}
+}
+
+func TestApplyPostconditionMapsOutcomesToDistinctVerdicts(t *testing.T) {
+	changed := true
+	tests := []struct {
+		name    string
+		outcome postconditionOutcome
+		want    string
+	}{
+		{"confirmed", postconditionOutcome{Verified: true}, "verified"},
+		{"contradicted", postconditionOutcome{}, "failed"},
+		{"unreadable", postconditionOutcome{Unverifiable: true, Detail: "denied"}, "unsupported"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var result output.OperationResult
+			applyPostcondition(&result, tt.outcome)
+			if result.Verification != tt.want {
+				t.Fatalf("got %q, want %q", result.Verification, tt.want)
+			}
+		})
+	}
+
+	// An unverifiable read must still surface why it could not be checked.
+	var warned output.OperationResult
+	applyPostcondition(&warned, postconditionOutcome{Unverifiable: true, Detail: "permission denied"})
+	if len(warned.Warnings) != 1 {
+		t.Fatalf("expected the unresolved detail to be surfaced, got %v", warned.Warnings)
+	}
+
+	// A confirmed postcondition is reported by Verification, not as a warning.
+	var quiet output.OperationResult
+	applyPostcondition(&quiet, postconditionOutcome{Verified: true, Changed: &changed, Detail: "vm is running"})
+	if len(quiet.Warnings) != 0 {
+		t.Fatalf("a confirmed postcondition must not add warnings, got %v", quiet.Warnings)
+	}
+	if quiet.Changed == nil || !*quiet.Changed {
+		t.Fatal("changed evidence must be preserved")
+	}
+}
+
+// --- Single-guest read correctness ---
+//
+// A single-container read must not report a stale aggregate status, because that
+// is exactly what made a completed lifecycle task look like it had not applied.
+
+func TestContainerShowUsesAuthoritativeStatus(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	// The mock listing still reports the container as running while the
+	// authoritative per-guest read reports it stopped, which is the lag the
+	// listing-based read would have surfaced.
+	e2eContainerStatusOverride = "stopped"
+	defer func() { e2eContainerStatusOverride = "" }()
+
+	var out, errOut strings.Builder
+	if err := Run(context.Background(), []string{"--output", "json", "container", "show", "e2e-node/200"}, &out, &errOut); err != nil {
+		t.Fatalf("container show: %v (stderr: %s)", err, errOut.String())
+	}
+	if !strings.Contains(out.String(), `"status": "stopped"`) {
+		t.Fatalf("expected the authoritative status, got: %s", out.String())
+	}
 }

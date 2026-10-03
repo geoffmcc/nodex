@@ -94,10 +94,22 @@ func lifecycleDesiredState(resourceType, operation string) string {
 	return ""
 }
 
-// currentGuestStatus returns the reported status of a guest when the provider
-// exposes guest state and the guest is listed. ok=false means the state could
-// not be determined and callers should proceed with a normal submit.
+// currentGuestStatus returns the reported status of a guest. ok=false means the
+// state could not be determined and callers should proceed with a normal submit.
+//
+// The per-guest status endpoint is preferred because the cluster-wide listing
+// aggregates guest state and can still report the previous value for several
+// seconds after a lifecycle task completes. The listing remains a fallback so
+// providers without a per-guest read keep working, at the cost of a possibly
+// stale answer.
 func currentGuestStatus(ctx context.Context, prov domain.Provider, resourceType, node string, vmid int) (string, bool) {
+	if insp, ok := prov.(domain.GuestStatusInspector); ok {
+		status, err := insp.GuestStatus(ctx, node, resourceType, vmid)
+		if err == nil {
+			return status, true
+		}
+		return "", false
+	}
 	id := fmt.Sprintf("%s/%d", node, vmid)
 	if resourceType == "vm" {
 		vi, ok := prov.(domain.VMInspector)
@@ -205,15 +217,19 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 
 	// Idempotent pre-check: if the guest is already in the desired state,
 	// report success with a note and skip submission entirely.
+	priorStatus, priorKnown := "", false
 	if desired := lifecycleDesiredState(resourceType, operation); desired != "" {
-		if state, ok := currentGuestStatus(ctx, prov, resourceType, node, vmid); ok && strings.EqualFold(state, desired) {
-			profileName, _ := resolveProfileName(cmdCtx)
-			opResult := output.NewOperationResult(resourceType+" "+operation, prov.Name(), profileName)
-			opResult.Target = fmt.Sprintf("%s/%d", node, vmid)
-			opResult.Safety = tier.String()
-			opResult.Success = true
-			opResult.Status = fmt.Sprintf("already %s", state)
-			return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
+		if state, ok := currentGuestStatus(ctx, prov, resourceType, node, vmid); ok {
+			priorStatus, priorKnown = state, true
+			if strings.EqualFold(state, desired) {
+				profileName, _ := resolveProfileName(cmdCtx)
+				opResult := output.NewOperationResult(resourceType+" "+operation, prov.Name(), profileName)
+				opResult.Target = fmt.Sprintf("%s/%d", node, vmid)
+				opResult.Safety = tier.String()
+				opResult.Success = true
+				opResult.Status = fmt.Sprintf("already %s", state)
+				return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
+			}
 		}
 	}
 
@@ -309,6 +325,18 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 		))
 	}
 	opResult.Status = "OK"
+
+	// A finished lifecycle task is not evidence the guest reached the requested
+	// state, so confirm it with a per-guest read when the operation has one.
+	desired := lifecycleDesiredState(resourceType, operation)
+	if desired == "" {
+		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
+	}
+	priorState := presenceUnknown
+	if priorKnown {
+		priorState = presencePresent
+	}
+	applyPostcondition(&opResult, guestStateVerifier(prov, resourceType, node, vmid, desired, priorState, priorStatus)(ctx))
 	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
 }
 

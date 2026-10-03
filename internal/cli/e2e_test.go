@@ -36,12 +36,51 @@ var pbsE2ETaskExitStatusOverride string
 // values other than "OK". Tests must reset it and run serially.
 var e2eTaskStatusOverride string
 
+// e2eGuestStatusOverride replaces the status the e2e mock reports from its
+// per-guest status read. Tests must reset it and run serially.
+var e2eGuestStatusOverride string
+
+// e2eContainerStatusOverride replaces the container per-guest status the e2e
+// mock reports, so VM and container lifecycle paths can be driven independently.
+var e2eContainerStatusOverride string
+
+// e2eGuestStatusError makes the e2e mock's per-guest status read fail with this
+// HTTP status, so unverifiable postconditions can be exercised. Tests must reset
+// it and run serially.
+var e2eGuestStatusError int
+
 func init() {
 	provider.Register(e2eMockProviderName, func() domain.Provider { return &e2eMockProvider{} })
 }
 
 type e2eMockProvider struct {
 	connected bool
+	// guestStatus tracks per-guest state so lifecycle submissions can be
+	// observed to change it, the way a real provider's task would.
+	guestStatus map[string]string
+}
+
+// guestKey identifies one guest in the e2e mock's status map.
+func guestKey(guestType string, vmid int) string {
+	return fmt.Sprintf("%s:%d", guestType, vmid)
+}
+
+// defaultGuestStatus mirrors the real cluster: some guests exist only in the
+// authoritative per-guest read, so listing-based reads cannot see them.
+func defaultGuestStatus(guestType string, vmid int) string {
+	switch guestKey(guestType, vmid) {
+	case "vm:101", "container:201":
+		return "stopped"
+	default:
+		return "running"
+	}
+}
+
+func (p *e2eMockProvider) setGuestStatus(guestType string, vmid int, status string) {
+	if p.guestStatus == nil {
+		p.guestStatus = map[string]string{}
+	}
+	p.guestStatus[guestKey(guestType, vmid)] = status
 }
 
 func (p *e2eMockProvider) Name() string                   { return e2eMockProviderName }
@@ -83,6 +122,32 @@ func (p *e2eMockProvider) VMs(_ context.Context) ([]domain.VM, error) {
 }
 func (p *e2eMockProvider) Containers(_ context.Context) ([]domain.Container, error) {
 	return []domain.Container{{ID: "e2e-node/200", Name: "e2e-ct", Status: "running", Node: "e2e-node", CPU: 1, OS: "debian", Memory: 512, Disk: 1024}}, nil
+}
+
+// GuestStatus reports the per-guest authoritative status, mirroring the real
+// provider's use of /status/current rather than the cluster listing.
+//
+// Unlike the listing mocks, this answers for any guest that exists, including
+// guests absent from the listing, which is what lets the "submit" paths verify
+// their postcondition.
+func (p *e2eMockProvider) GuestStatus(_ context.Context, _ string, guestType string, vmid int) (string, error) {
+	if e2eGuestStatusError != 0 {
+		return "", &app.ProviderError{StatusCode: e2eGuestStatusError, Detail: "guest status unavailable"}
+	}
+	if e2eGuestStatusOverride != "" {
+		return e2eGuestStatusOverride, nil
+	}
+	if guestType == "container" && e2eContainerStatusOverride != "" {
+		return e2eContainerStatusOverride, nil
+	}
+	if status, ok := p.guestStatus[guestKey(guestType, vmid)]; ok {
+		return status, nil
+	}
+	status := defaultGuestStatus(guestType, vmid)
+	if e2eVMStatusOverride != "" && guestType != "container" {
+		status = e2eVMStatusOverride
+	}
+	return status, nil
 }
 func (p *e2eMockProvider) Storage(_ context.Context) ([]domain.Storage, error) {
 	return []domain.Storage{{ID: "storage/e2e-node/local", Name: "local", Type: "dir", Status: "available", Node: "e2e-node", Total: 4096, Used: 1024, Avail: 3072}}, nil
@@ -299,12 +364,15 @@ func (p *e2eMockProvider) ClusterLog(_ context.Context) ([]domain.ClusterLogEntr
 
 // LifecycleProvider methods
 func (p *e2eMockProvider) VMStart(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("vm", vmid, "running")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12345, 1700000000), nil
 }
 func (p *e2eMockProvider) VMStop(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("vm", vmid, "stopped")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12346, 1700000000), nil
 }
 func (p *e2eMockProvider) VMShutdown(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("vm", vmid, "stopped")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12347, 1700000000), nil
 }
 func (p *e2eMockProvider) VMReset(_ context.Context, node string, vmid int) (string, error) {
@@ -314,33 +382,42 @@ func (p *e2eMockProvider) VMReboot(_ context.Context, node string, vmid int) (st
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12349, 1700000000), nil
 }
 func (p *e2eMockProvider) VMSuspend(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("vm", vmid, "suspended")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12350, 1700000000), nil
 }
 func (p *e2eMockProvider) VMResume(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("vm", vmid, "running")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12351, 1700000000), nil
 }
 func (p *e2eMockProvider) VMPause(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("vm", vmid, "paused")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12352, 1700000000), nil
 }
 func (p *e2eMockProvider) VMUnpause(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("vm", vmid, "running")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12353, 1700000000), nil
 }
 func (p *e2eMockProvider) CTStart(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("container", vmid, "running")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12354, 1700000000), nil
 }
 func (p *e2eMockProvider) CTStop(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("container", vmid, "stopped")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12355, 1700000000), nil
 }
 func (p *e2eMockProvider) CTShutdown(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("container", vmid, "stopped")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12356, 1700000000), nil
 }
 func (p *e2eMockProvider) CTReboot(_ context.Context, node string, vmid int) (string, error) {
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12357, 1700000000), nil
 }
 func (p *e2eMockProvider) CTSuspend(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("container", vmid, "suspended")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12358, 1700000000), nil
 }
 func (p *e2eMockProvider) CTResume(_ context.Context, node string, vmid int) (string, error) {
+	p.setGuestStatus("container", vmid, "running")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12359, 1700000000), nil
 }
 
