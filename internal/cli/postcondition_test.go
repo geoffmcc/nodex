@@ -477,3 +477,94 @@ func TestContainerShowUsesAuthoritativeStatus(t *testing.T) {
 		t.Fatalf("expected the authoritative status, got: %s", out.String())
 	}
 }
+
+// --- Deletion postconditions ---
+//
+// A completed delete task proves the task ran, not that the resource is gone.
+// These cover both guest families and both resource kinds, because container
+// delete was verified first and VM delete must not be left claiming no
+// postcondition at all.
+
+func TestDeletionPostconditionsAreVerified(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		// confirm is the exact value this command requires for type-in
+		// confirmation, which differs per operation.
+		confirm string
+		// statusOverride changes the cluster listing's reported status,
+		// which the VM delete precondition reads before allowing deletion.
+		statusOverride string
+	}{
+		{
+			name: "vm-delete",
+			// Deleting a running VM is refused by a precondition that this
+			// change does not alter, so the guest must read as stopped.
+			args:           []string{"vm", "delete", "e2e-node/100"},
+			confirm:        "e2e-node/100",
+			statusOverride: "stopped",
+		},
+		{
+			name:    "vm-snapshot-delete",
+			args:    []string{"vm", "snapshot", "delete", "e2e-node/100", "before-upgrade"},
+			confirm: "before-upgrade",
+		},
+		{
+			name:    "container-delete",
+			args:    []string{"container", "delete", "e2e-node/200"},
+			confirm: "e2e-node/200",
+		},
+		{
+			name:    "container-snapshot-delete",
+			args:    []string{"container", "snapshot", "delete", "e2e-node/200", "clean"},
+			confirm: "clean",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateConfigAndHome(t)
+			setupE2EConfig(t)
+
+			if tc.statusOverride != "" {
+				e2eVMStatusOverride = tc.statusOverride
+				defer func() { e2eVMStatusOverride = "" }()
+			}
+
+			args := []string{"--output", "json", "--yes", "--force", "--wait", "--confirm-target", tc.confirm}
+			args = append(args, tc.args...)
+			var out, errOut strings.Builder
+			if err := Run(context.Background(), args, &out, &errOut); err != nil {
+				t.Fatalf("%s: %v (stderr: %s)", tc.name, err, errOut.String())
+			}
+			raw := out.String()
+			for _, want := range []string{`"status": "OK"`, `"verification": "verified"`, `"changed": true`} {
+				if !strings.Contains(raw, want) {
+					t.Errorf("expected %q in output: %s", want, raw)
+				}
+			}
+			// A verified absence is not a warning.
+			if strings.Contains(raw, `"warnings"`) {
+				t.Errorf("a verified postcondition must not add warnings: %s", raw)
+			}
+		})
+	}
+}
+
+// An unreadable deletion check must not be reported as a surviving resource:
+// absence that could not be read is unknown, not proof either way.
+func TestDeletionPostconditionUnreadableIsNotFailure(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var out, errOut strings.Builder
+	args := []string{"--output", "json", "--yes", "--force", "--wait", "--confirm-target", "missing-snapshot",
+		"vm", "snapshot", "delete", "e2e-node/100", "missing-snapshot"}
+	if err := Run(context.Background(), args, &out, &errOut); err != nil {
+		t.Fatalf("vm snapshot delete: %v (stderr: %s)", err, errOut.String())
+	}
+	raw := out.String()
+	if strings.Contains(raw, `"verification": "failed"`) {
+		t.Errorf("an unverifiable deletion must not be reported as failed: %s", raw)
+	}
+}

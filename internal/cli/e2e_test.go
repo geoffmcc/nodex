@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -58,11 +59,55 @@ type e2eMockProvider struct {
 	// guestStatus tracks per-guest state so lifecycle submissions can be
 	// observed to change it, the way a real provider's task would.
 	guestStatus map[string]string
+	// deletedGuests and deletedSnapshots let a deletion be observed by the
+	// authoritative single-resource reads. Without this the mock would still
+	// report the guest or snapshot as present after deleting it, and a correct
+	// postcondition check would be recorded as a failure.
+	deletedGuests    map[string]bool
+	deletedSnapshots map[string]bool
 }
 
 // guestKey identifies one guest in the e2e mock's status map.
 func guestKey(guestType string, vmid int) string {
 	return fmt.Sprintf("%s:%d", guestType, vmid)
+}
+
+// snapshotKey identifies one named snapshot of one guest.
+func snapshotKey(guestType string, vmid int, name string) string {
+	return fmt.Sprintf("%s:%d:%s", guestType, vmid, name)
+}
+
+func (p *e2eMockProvider) markGuestDeleted(guestType string, vmid int) {
+	if p.deletedGuests == nil {
+		p.deletedGuests = map[string]bool{}
+	}
+	p.deletedGuests[guestKey(guestType, vmid)] = true
+}
+
+func (p *e2eMockProvider) markSnapshotDeleted(guestType string, vmid int, name string) {
+	if p.deletedSnapshots == nil {
+		p.deletedSnapshots = map[string]bool{}
+	}
+	p.deletedSnapshots[snapshotKey(guestType, vmid, name)] = true
+}
+
+// guestGone reports whether the mock was told this guest no longer exists.
+func (p *e2eMockProvider) guestGone(guestType string, vmid int) bool {
+	return p.deletedGuests[guestKey(guestType, vmid)]
+}
+
+// snapshotGone reports whether the mock was told this snapshot was removed.
+func (p *e2eMockProvider) snapshotGone(guestType string, vmid int, name string) bool {
+	return p.deletedSnapshots[snapshotKey(guestType, vmid, name)]
+}
+
+// notFound builds the error a real provider returns for a removed resource, so
+// absence is distinguishable from a denied or unreadable request.
+func notFound(format string, args ...interface{}) error {
+	return &app.ProviderError{
+		StatusCode: http.StatusNotFound,
+		Detail:     fmt.Sprintf(format, args...),
+	}
 }
 
 // defaultGuestStatus mirrors the real cluster: some guests exist only in the
@@ -140,6 +185,10 @@ func (p *e2eMockProvider) GuestStatus(_ context.Context, _ string, guestType str
 	if guestType == "container" && e2eContainerStatusOverride != "" {
 		return e2eContainerStatusOverride, nil
 	}
+	// A deleted guest has no status to report, and a real provider answers 404.
+	if p.guestGone(guestType, vmid) {
+		return "", notFound("%s %d does not exist", guestType, vmid)
+	}
 	if status, ok := p.guestStatus[guestKey(guestType, vmid)]; ok {
 		return status, nil
 	}
@@ -156,6 +205,9 @@ func (p *e2eMockProvider) Cluster(_ context.Context) (*domain.Cluster, error) {
 	return &domain.Cluster{Name: "e2e", Version: "test", Nodes: 1}, nil
 }
 func (p *e2eMockProvider) VMConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
+	if p.guestGone("vm", vmid) {
+		return nil, notFound("VM %s/%d does not exist", node, vmid)
+	}
 	return map[string]interface{}{
 		"vmid":   vmid,
 		"name":   "e2e-vm",
@@ -164,6 +216,9 @@ func (p *e2eMockProvider) VMConfig(_ context.Context, node string, vmid int) (ma
 	}, nil
 }
 func (p *e2eMockProvider) ContainerConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
+	if p.guestGone("container", vmid) {
+		return nil, notFound("container %s/%d does not exist", node, vmid)
+	}
 	return map[string]interface{}{
 		"vmid":     vmid,
 		"hostname": "e2e-ct",
@@ -206,15 +261,29 @@ func (p *e2eMockProvider) Task(_ context.Context, node, upid string) (*domain.Ta
 	}, nil
 }
 func (p *e2eMockProvider) VMSnapshots(_ context.Context, node string, vmid int) ([]domain.Snapshot, error) {
-	return []domain.Snapshot{
+	all := []domain.Snapshot{
 		{Name: "before-upgrade", VMID: vmid, Ctime: 1700000000, Parent: "current", Node: node, Target: fmt.Sprintf("%s/%d", node, vmid)},
 		{Name: "current", VMID: vmid, Ctime: 1700000010, Node: node, Target: fmt.Sprintf("%s/%d", node, vmid)},
-	}, nil
+	}
+	return filterDeletedSnapshots(p, "vm", vmid, all), nil
 }
 func (p *e2eMockProvider) ContainerSnapshots(_ context.Context, node string, vmid int) ([]domain.Snapshot, error) {
-	return []domain.Snapshot{
+	all := []domain.Snapshot{
 		{Name: "clean", VMID: vmid, Ctime: 1700000000, Node: node, Target: fmt.Sprintf("%s/%d", node, vmid)},
-	}, nil
+	}
+	return filterDeletedSnapshots(p, "container", vmid, all), nil
+}
+
+// filterDeletedSnapshots drops snapshots the mock was told were removed.
+func filterDeletedSnapshots(p *e2eMockProvider, guestType string, vmid int, all []domain.Snapshot) []domain.Snapshot {
+	remaining := make([]domain.Snapshot, 0, len(all))
+	for _, s := range all {
+		if p.snapshotGone(guestType, vmid, s.Name) {
+			continue
+		}
+		remaining = append(remaining, s)
+	}
+	return remaining
 }
 func (p *e2eMockProvider) Events(_ context.Context) ([]domain.Event, error) {
 	return []domain.Event{
@@ -436,6 +505,7 @@ func (p *e2eMockProvider) VMSnapshotCreate(_ context.Context, node string, vmid 
 }
 
 func (p *e2eMockProvider) VMSnapshotDelete(_ context.Context, node string, vmid int, name string) (string, error) {
+	p.markSnapshotDeleted("vm", vmid, name)
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12363, 1700000000), nil
 }
 
@@ -448,6 +518,7 @@ func (p *e2eMockProvider) CTSnapshotCreate(_ context.Context, node string, vmid 
 }
 
 func (p *e2eMockProvider) CTSnapshotDelete(_ context.Context, node string, vmid int, name string) (string, error) {
+	p.markSnapshotDeleted("container", vmid, name)
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12366, 1700000000), nil
 }
 
@@ -456,10 +527,12 @@ func (p *e2eMockProvider) CTSnapshotRollback(_ context.Context, node string, vmi
 }
 
 func (p *e2eMockProvider) VMDelete(_ context.Context, node string, vmid int) (string, error) {
+	p.markGuestDeleted("vm", vmid)
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12368, 1700000000), nil
 }
 
 func (p *e2eMockProvider) CTDelete(_ context.Context, node string, vmid int) (string, error) {
+	p.markGuestDeleted("container", vmid)
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12369, 1700000000), nil
 }
 

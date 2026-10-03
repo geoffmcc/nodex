@@ -121,6 +121,47 @@ func probeContainer(ctx context.Context, prov domain.Provider, node string, vmid
 	}
 }
 
+// probeVM reports whether a VM exists, using the single-resource config
+// endpoint rather than the cluster-wide listing, for the same reason as
+// probeContainer: a lagging inventory entry would wrongly suggest the VM
+// survived its own deletion.
+func probeVM(ctx context.Context, prov domain.Provider, node string, vmid int) resourceProbe {
+	return func(ctx context.Context) presenceState {
+		insp, ok := prov.(domain.VMInspector)
+		if !ok {
+			return presenceUnknown
+		}
+		if _, err := insp.VMConfig(ctx, node, vmid); err != nil {
+			if app.HTTPStatusFromError(err) == http.StatusNotFound {
+				return presenceAbsent
+			}
+			return presenceUnknown
+		}
+		return presencePresent
+	}
+}
+
+// probeVMSnapshot reports whether a named snapshot of a still-existing VM
+// exists.
+func probeVMSnapshot(ctx context.Context, prov domain.Provider, node string, vmid int, name string) resourceProbe {
+	return func(ctx context.Context) presenceState {
+		insp, ok := prov.(domain.SnapshotInspector)
+		if !ok {
+			return presenceUnknown
+		}
+		snaps, err := insp.VMSnapshots(ctx, node, vmid)
+		if err != nil {
+			return presenceUnknown
+		}
+		for _, s := range snaps {
+			if s.Name == name {
+				return presencePresent
+			}
+		}
+		return presenceAbsent
+	}
+}
+
 // probeContainerSnapshot reports whether a named snapshot of a still-existing
 // container exists.
 func probeContainerSnapshot(ctx context.Context, prov domain.Provider, node string, vmid int, name string) resourceProbe {

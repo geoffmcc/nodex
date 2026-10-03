@@ -387,12 +387,18 @@ func runVMSnapshotDelete(ctx context.Context, cmdCtx *Context, args []string) er
 		return err
 	}
 
+	// Observe the snapshot beforehand so the postcondition check can report
+	// whether anything was actually removed.
+	prior, _ := observePresence(ctx, probeVMSnapshot(ctx, prov, node, vmid, name))
+
 	upid, err := sp.VMSnapshotDelete(ctx, node, vmid, name)
 	if err != nil {
 		return fmt.Errorf("delete VM snapshot %s/%d/%s: %w", node, vmid, name, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm snapshot delete", fmt.Sprintf("%s/%d", node, vmid), "destructive")
+	target := fmt.Sprintf("snapshot %q of VM %s/%d", name, node, vmid)
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm snapshot delete", fmt.Sprintf("%s/%d", node, vmid), "destructive",
+		absenceVerifier(probeVMSnapshot(ctx, prov, node, vmid, name), target, prior))
 }
 
 // --- VM Snapshot Rollback (Tier 2: disruptive) ---
@@ -607,12 +613,17 @@ func runVMDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 		}
 	}
 
+	// Observe the guest beforehand so the postcondition check can say whether
+	// anything was actually removed.
+	prior, _ := observePresence(ctx, probeVM(ctx, prov, node, vmid))
+
 	upid, err := dp.VMDelete(ctx, node, vmid)
 	if err != nil {
 		return fmt.Errorf("delete VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm delete", fmt.Sprintf("%s/%d", node, vmid), "destructive")
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm delete", fmt.Sprintf("%s/%d", node, vmid), "destructive",
+		absenceVerifier(probeVM(ctx, prov, node, vmid), fmt.Sprintf("VM %s/%d", node, vmid), prior))
 }
 
 func validateVMDeleteState(vms []domain.VM, target string) error {
