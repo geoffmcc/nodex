@@ -66,6 +66,13 @@ type OperationResult struct {
 	// Status is a provider-defined status string (e.g., "OK" for Proxmox tasks).
 	Status string `json:"status,omitempty" yaml:"status,omitempty"`
 
+	// Verification reports whether the requested postcondition was observed
+	// after the operation completed. It is deliberately separate from Status:
+	// a provider task reporting success is not evidence that the intended
+	// state was reached. Values are "verified", "failed", or "unsupported".
+	// Empty means no postcondition check was attempted.
+	Verification string `json:"verification,omitempty" yaml:"verification,omitempty"`
+
 	// Warnings holds human-readable warnings for the operation.
 	Warnings []string `json:"warnings,omitempty" yaml:"warnings,omitempty"`
 

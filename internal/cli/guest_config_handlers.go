@@ -96,6 +96,15 @@ func requireCloudInit(prov domain.Provider) (domain.CloudInitProvider, error) {
 // runMutationWithPolling writes an OperationResult to stdout and, when --wait
 // is set, polls the provider task until completion.
 func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Provider, node, upid, operation, target, safetyTier string) error {
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, operation, target, safetyTier, nil)
+}
+
+// runMutationWithPostcondition waits for the provider task to complete and,
+// when the operation has an observable postcondition, confirms that state
+// afterwards. Verification never alters the task verdict: a task that
+// succeeded with an unproven postcondition stays a successful submission with
+// an explicit verification result.
+func runMutationWithPostcondition(ctx context.Context, cmdCtx *Context, prov domain.Provider, node, upid, operation, target, safetyTier string, verify postconditionVerifier) error {
 	profileName, _ := resolveProfileName(cmdCtx)
 
 	result := output.NewOperationResult(operation, prov.Name(), profileName)
@@ -164,6 +173,22 @@ func runMutationWithPolling(ctx context.Context, cmdCtx *Context, prov domain.Pr
 		))
 	}
 	result.Status = "OK"
+	if verify == nil {
+		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
+	}
+
+	// The task completed, so the postcondition is now meaningful to check.
+	outcome := verify(ctx)
+	result.Verification = "failed"
+	if outcome.Verified {
+		result.Verification = "verified"
+	}
+	if outcome.Changed != nil {
+		result.Changed = outcome.Changed
+	}
+	if outcome.Detail != "" {
+		result.Warnings = append(result.Warnings, outcome.Detail)
+	}
 	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 }
 
@@ -502,12 +527,18 @@ func runCTSnapshotDelete(ctx context.Context, cmdCtx *Context, args []string) er
 		return err
 	}
 
+	// Observe the snapshot beforehand so the postcondition check can report
+	// whether anything was actually removed.
+	prior, _ := observePresence(ctx, probeContainerSnapshot(ctx, prov, node, vmid, name))
+
 	upid, err := sp.CTSnapshotDelete(ctx, node, vmid, name)
 	if err != nil {
 		return fmt.Errorf("delete container snapshot %s/%d/%s: %w", node, vmid, name, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container snapshot delete", fmt.Sprintf("%s/%d", node, vmid), "destructive")
+	target := fmt.Sprintf("snapshot %q of container %s/%d", name, node, vmid)
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container snapshot delete", fmt.Sprintf("%s/%d", node, vmid), "destructive",
+		absenceVerifier(probeContainerSnapshot(ctx, prov, node, vmid, name), target, prior))
 }
 
 // --- Container Snapshot Rollback (Tier 2: disruptive) ---
@@ -637,12 +668,17 @@ func runCTDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 		return err
 	}
 
+	// Observe the guest beforehand so the postcondition check can say whether
+	// anything was actually removed.
+	prior, _ := observePresence(ctx, probeContainer(ctx, prov, node, vmid))
+
 	upid, err := dp.CTDelete(ctx, node, vmid)
 	if err != nil {
 		return fmt.Errorf("delete container %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container delete", fmt.Sprintf("%s/%d", node, vmid), "destructive")
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container delete", fmt.Sprintf("%s/%d", node, vmid), "destructive",
+		absenceVerifier(probeContainer(ctx, prov, node, vmid), fmt.Sprintf("container %s/%d", node, vmid), prior))
 }
 
 // --- VM Cloud-Init (Tier 1: reversible) ---

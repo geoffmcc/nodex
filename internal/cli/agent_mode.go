@@ -1011,6 +1011,15 @@ func mutationOutcome(result agent.Result, operation OperationMeta, captured []by
 			case "verification-failed":
 				result.Verification = agent.VerificationFailed
 			}
+			// An explicit postcondition verdict takes precedence over the
+			// provider status string, so a completed task is not mistaken for
+			// a verified outcome.
+			switch legacy.Verification {
+			case "verified":
+				result.Verification = agent.VerificationPassed
+			case "failed":
+				result.Verification = agent.VerificationFailed
+			}
 		} else if legacy.Success && legacy.Status == "no-updates" {
 			result.Submission = agent.SubmissionNotAttempted
 			result.Execution = agent.ExecutionSucceeded
