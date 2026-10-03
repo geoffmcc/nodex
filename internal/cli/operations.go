@@ -467,7 +467,10 @@ func buildRegistry() []OperationMeta {
 		Path: "container update", Description: "Update container configuration",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
 		RiskDimensions: []RiskDimension{RiskServiceDown},
-		Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
+		// The Proxmox LXC config endpoint applies inline and returns no task,
+		// so this operation produces no UPID and is verified by readback of the
+		// requested fields rather than by task polling.
+		Waitable: true, ProducesUPID: false, UsesOperationResult: true,
 		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "ConfigProvider", HandlerFunc: "runCTUpdate",
 	})

@@ -265,9 +265,23 @@ func runCTUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
+	// PVE applies an LXC config change inline and returns no task, so there is
+	// nothing to poll. Verify the requested fields by readback instead of
+	// reporting an unobservable outcome.
+	//
+	// The prior state is captured before the mutation so "changed" can be
+	// reported truthfully. Reading it only afterwards cannot be interpreted:
+	// a matching readback proves the request took effect, not that the value
+	// differed beforehand.
+	before, beforeErr := readbackContainerConfig(ctx, prov, node, vmid)
+
 	upid, err := cp.CTConfigUpdate(ctx, node, vmid, params)
 	if err != nil {
 		return fmt.Errorf("update container %s/%d: %w", node, vmid, err)
+	}
+
+	if upid == "" {
+		return runSynchronousConfigUpdate(ctx, cmdCtx, prov, "container update", fmt.Sprintf("%s/%d", node, vmid), node, vmid, params, before, beforeErr)
 	}
 
 	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container update", fmt.Sprintf("%s/%d", node, vmid), "reversible")

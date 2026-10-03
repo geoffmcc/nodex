@@ -974,7 +974,13 @@ func mutationOutcome(result agent.Result, operation OperationMeta, captured []by
 		}
 		if legacy.Submitted {
 			result.Submission = agent.SubmissionAccepted
-			if legacy.Waited {
+			if legacy.Synchronous {
+				// The provider applied the change inline and returned no task,
+				// so there is no task to poll and nothing to reconcile. Report
+				// the completion the endpoint actually guarantees rather than
+				// degrading it to an unobserved asynchronous outcome.
+				result.Execution = agent.ExecutionSucceeded
+			} else if legacy.Waited {
 				if legacy.Success {
 					result.Execution = agent.ExecutionSucceeded
 				} else if legacy.Error != nil && legacy.Error.Class == "verification_failed" {
