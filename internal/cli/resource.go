@@ -367,6 +367,16 @@ func runContainerShow(ctx context.Context, cmdCtx *Context, args []string) error
 	if !ok {
 		return app.NotFoundError("container %q", args[0])
 	}
+	// The listing aggregates guest status and can lag a completed lifecycle
+	// task, so a single-container read is corrected from the authoritative
+	// per-guest endpoint when one is available.
+	if insp, supported := prov.(domain.GuestStatusInspector); supported {
+		if node, vmid, parsed := parseNodeVMID(args[0]); parsed == nil {
+			if status, err := insp.GuestStatus(ctx, node, "container", vmid); err == nil && status != "" {
+				container.Status = status
+			}
+		}
+	}
 	return writeContainer(cmdCtx, container)
 }
 
@@ -900,17 +910,28 @@ func writeSnapshotList(cmdCtx *Context, snaps []domain.Snapshot) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, snaps)
 	default:
-		headers := []string{"NAME", "PARENT", "CREATED"}
+		headers := []string{"NAME", "PARENT", "CREATED", "DESCRIPTION"}
 		rows := make([][]string, 0, len(snaps))
 		for _, s := range snaps {
 			rows = append(rows, []string{
 				s.Name,
 				s.Parent,
-				fmt.Sprintf("%d", s.Ctime),
+				formatSnapshotTime(s.Ctime),
+				s.Description,
 			})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
+}
+
+// formatSnapshotTime renders a snapshot epoch as a readable UTC timestamp. The
+// Proxmox VE "current" pseudo-snapshot carries no time, so an unset value is
+// left blank rather than shown as the Unix epoch.
+func formatSnapshotTime(epoch int) string {
+	if epoch <= 0 {
+		return ""
+	}
+	return time.Unix(int64(epoch), 0).UTC().Format(time.RFC3339)
 }
 
 type statusOverview struct {

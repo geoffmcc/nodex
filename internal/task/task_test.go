@@ -154,6 +154,36 @@ func TestPollerSuccess(t *testing.T) {
 	}
 }
 
+func TestSuccess(t *testing.T) {
+	tests := []struct {
+		name   string
+		status string
+		want   bool
+	}{
+		{"plain success", "OK", true},
+		{"single warning", "WARNINGS: 1", true},
+		{"multiple warnings", "WARNINGS: 3", true},
+		{"zero warnings", "WARNINGS: 0", true},
+		{"surrounding whitespace", "  WARNINGS: 1  ", true},
+		{"empty status", "", false},
+		{"running", "running", false},
+		{"generic error", "error", false},
+		{"exit message", "command 'lxc-checkpoint -n 9500' failed: exit code 1", false},
+		// A bare prefix without a count must not be treated as success, and a
+		// status that merely contains the word must not match.
+		{"bare prefix", "WARNINGS:", true},
+		{"contains warnings", "task reported warnings and failed", false},
+		{"lowercase ok", "ok", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Success(tt.status); got != tt.want {
+				t.Errorf("Success(%q) = %v, want %v", tt.status, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPollerWarningIsSuccess(t *testing.T) {
 	mock := &mockTaskClient{
 		statuses: []*TaskStatus{

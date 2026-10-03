@@ -184,11 +184,15 @@ func (p *pbsE2EMockProvider) PBSTasks(_ context.Context, filter domain.PBSTaskFi
 }
 
 func (p *pbsE2EMockProvider) PBSTaskStatus(_ context.Context, upid string) (*domain.PBSTaskStatus, error) {
+	exitStatus := "OK"
+	if pbsE2ETaskExitStatusOverride != "" {
+		exitStatus = pbsE2ETaskExitStatusOverride
+	}
 	return &domain.PBSTaskStatus{
 		UPID: upid, Node: "pbs-e2e", PID: 4660,
 		WorkerType: "garbage_collection", WorkerID: "backups",
 		User: "automation@pbs!nodex", StartTime: 1752000000, EndTime: 1752000300,
-		Status: "stopped", ExitStatus: "OK",
+		Status: "stopped", ExitStatus: exitStatus,
 	}, nil
 }
 

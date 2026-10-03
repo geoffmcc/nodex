@@ -845,6 +845,48 @@ func TestGetVMSnapshotsDecodesList(t *testing.T) {
 	}
 }
 
+// TestGetVMSnapshotsDecodesSnaptimeAndDescription uses the real payload shape
+// captured from Proxmox VE (evidence 61-independent-pve-snapshot-api).
+//
+// The snapshot endpoint reports the creation time as "snaptime" and returns a
+// "description"; it never returns "ctime". Decoding "ctime" alone silently
+// dropped both, so the creation time was zero for every snapshot and any
+// description written at create time was lost on read-back.
+func TestGetVMSnapshotsDecodesSnaptimeAndDescription(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/qemu/100/snapshot" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[`+
+			`{"description":"","name":"nx4-base","snaptime":1790869735},`+
+			`{"description":"marker text for round-trip test\n","name":"nx4-desc","parent":"nx4-base","snaptime":1790869776},`+
+			`{"description":"You are here!","digest":"bc6e01c2","name":"current","parent":"nx4-desc","running":0}`+
+			`]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	snaps, err := c.GetVMSnapshots(context.Background(), "proxmox", 100)
+	if err != nil {
+		t.Fatalf("GetVMSnapshots: %v", err)
+	}
+	if len(snaps) != 3 {
+		t.Fatalf("len(snaps) = %d, want 3", len(snaps))
+	}
+	if snaps[0].Snaptime != 1790869735 {
+		t.Errorf("snaps[0].Snaptime = %d, want 1790869735", snaps[0].Snaptime)
+	}
+	if got := snaps[1].Description; got != "marker text for round-trip test\n" {
+		t.Errorf("snaps[1].Description = %q, want the stored description", got)
+	}
+	if snaps[1].Parent != "nx4-base" || snaps[1].Snaptime != 1790869776 {
+		t.Errorf("snaps[1] = %+v", snaps[1])
+	}
+	// The "current" pseudo-snapshot carries no time at all.
+	if snaps[2].Snaptime != 0 {
+		t.Errorf("snaps[2].Snaptime = %d, want 0 for the current pseudo-snapshot", snaps[2].Snaptime)
+	}
+}
+
 func TestGetVMSnapshotsRejectsEmptyNode(t *testing.T) {
 	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
 	_, err := c.GetVMSnapshots(context.Background(), "", 100)

@@ -64,6 +64,29 @@ type ClusterResourcesResponse struct {
 	Data []ClusterResource `json:"data"`
 }
 
+// GuestStatusResponse is the response from a guest's /status/current endpoint.
+//
+// This is the authoritative single-guest read. The /cluster/resources listing
+// aggregates guest state and can lag behind a completed lifecycle task by
+// several seconds, so it must not be used to confirm that a specific guest
+// reached a requested state.
+type GuestStatusResponse struct {
+	Data GuestStatusData `json:"data"`
+}
+
+// GuestStatusData holds one guest's current status.
+type GuestStatusData struct {
+	Status string `json:"status"`
+	// VMID is absent from some responses and is injected from the request.
+	VMID int `json:"vmid"`
+	// Name is present on current Proxmox versions and is left empty otherwise
+	// rather than being invented.
+	Name string `json:"name,omitempty"`
+	// QMPStatus carries the QEMU-level state for virtual machines. It is empty
+	// for containers.
+	QMPStatus string `json:"qmpstatus,omitempty"`
+}
+
 // ClusterResource represents a single resource from the cluster.
 type ClusterResource struct {
 	ID        string  `json:"id"`
@@ -582,11 +605,19 @@ type SnapshotListResponse struct {
 }
 
 // SnapshotListItem represents a single snapshot.
+//
+// Proxmox VE reports the snapshot creation time on this endpoint as "snaptime",
+// not "ctime" (which is what the storage content endpoint uses). Decoding
+// "ctime" here silently yielded a zero creation time for every snapshot, and
+// the description written by "snapshot create" was dropped entirely because no
+// field existed for it. The "current" pseudo-snapshot carries no time at all.
 type SnapshotListItem struct {
-	Name   string `json:"name"`
-	VMID   int    `json:"vmid,omitempty"`
-	Ctime  int    `json:"ctime,omitempty"`
-	Parent string `json:"parent,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	VMID        int    `json:"vmid,omitempty"`
+	Ctime       int    `json:"ctime,omitempty"`
+	Snaptime    int    `json:"snaptime,omitempty"`
+	Parent      string `json:"parent,omitempty"`
 }
 
 // EventListResponse is the response from /cluster/events.

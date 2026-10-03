@@ -310,6 +310,38 @@ func (p *Provider) VMConfig(ctx context.Context, node string, vmid int) (map[str
 	return vmConfigToMap(config), nil
 }
 
+// GuestStatus returns the authoritative current status of a single guest.
+func (p *Provider) GuestStatus(ctx context.Context, node, guestType string, vmid int) (string, error) {
+	// Validate the guest type before the connection state: an unknown type is a
+	// caller error regardless of whether the provider is connected.
+	segment, err := guestStatusSegment(guestType)
+	if err != nil {
+		return "", err
+	}
+	if p.client == nil {
+		return "", errors.New(errNotConnected)
+	}
+	status, err := p.client.GetGuestStatus(ctx, node, segment, vmid)
+	if err != nil {
+		return "", fmt.Errorf("get guest status: %w", err)
+	}
+	return status.Status, nil
+}
+
+// guestStatusSegment maps the domain-facing guest names onto the transport path
+// segment, so callers use the vocabulary the domain exposes rather than
+// Proxmox's internal names.
+func guestStatusSegment(guestType string) (string, error) {
+	switch strings.ToLower(guestType) {
+	case "vm", "qemu":
+		return "qemu", nil
+	case "container", "ct", "lxc":
+		return "lxc", nil
+	default:
+		return "", fmt.Errorf("unsupported guest type %q", guestType)
+	}
+}
+
 // ContainerConfig returns configuration for a specific container.
 func (p *Provider) ContainerConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error) {
 	if p.client == nil {
@@ -592,15 +624,26 @@ func (p *Provider) VMSnapshots(ctx context.Context, node string, vmid int) ([]do
 	result := make([]domain.Snapshot, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.Snapshot{
-			Name:   item.Name,
-			VMID:   vmid,
-			Ctime:  item.Ctime,
-			Parent: item.Parent,
-			Node:   node,
-			Target: fmt.Sprintf("%s/%d", node, vmid),
+			Name:        item.Name,
+			VMID:        vmid,
+			Ctime:       snapshotCtime(item),
+			Parent:      item.Parent,
+			Description: item.Description,
+			Node:        node,
+			Target:      fmt.Sprintf("%s/%d", node, vmid),
 		})
 	}
 	return result, nil
+}
+
+// snapshotCtime returns a snapshot's creation time. Proxmox VE reports it as
+// "snaptime" on the snapshot endpoint; "ctime" is retained as a fallback so
+// recorded fixtures and other endpoints that do use "ctime" still resolve.
+func snapshotCtime(item client.SnapshotListItem) int {
+	if item.Snaptime != 0 {
+		return item.Snaptime
+	}
+	return item.Ctime
 }
 
 // ContainerSnapshots returns snapshots for a container.
@@ -615,12 +658,13 @@ func (p *Provider) ContainerSnapshots(ctx context.Context, node string, vmid int
 	result := make([]domain.Snapshot, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.Snapshot{
-			Name:   item.Name,
-			VMID:   vmid,
-			Ctime:  item.Ctime,
-			Parent: item.Parent,
-			Node:   node,
-			Target: fmt.Sprintf("%s/%d", node, vmid),
+			Name:        item.Name,
+			VMID:        vmid,
+			Ctime:       snapshotCtime(item),
+			Parent:      item.Parent,
+			Description: item.Description,
+			Node:        node,
+			Target:      fmt.Sprintf("%s/%d", node, vmid),
 		})
 	}
 	return result, nil

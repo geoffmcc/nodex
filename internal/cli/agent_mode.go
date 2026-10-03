@@ -22,6 +22,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/provider"
 	"github.com/geoffmcc/nodex/internal/redact"
 	"github.com/geoffmcc/nodex/internal/safety"
+	"github.com/geoffmcc/nodex/internal/task"
 )
 
 type agentConfigKey struct{}
@@ -973,7 +974,13 @@ func mutationOutcome(result agent.Result, operation OperationMeta, captured []by
 		}
 		if legacy.Submitted {
 			result.Submission = agent.SubmissionAccepted
-			if legacy.Waited {
+			if legacy.Synchronous {
+				// The provider applied the change inline and returned no task,
+				// so there is no task to poll and nothing to reconcile. Report
+				// the completion the endpoint actually guarantees rather than
+				// degrading it to an unobserved asynchronous outcome.
+				result.Execution = agent.ExecutionSucceeded
+			} else if legacy.Waited {
 				if legacy.Success {
 					result.Execution = agent.ExecutionSucceeded
 				} else if legacy.Error != nil && legacy.Error.Class == "verification_failed" {
@@ -1002,6 +1009,15 @@ func mutationOutcome(result agent.Result, operation OperationMeta, captured []by
 			case "verified", "no-updates":
 				result.Verification = agent.VerificationPassed
 			case "verification-failed":
+				result.Verification = agent.VerificationFailed
+			}
+			// An explicit postcondition verdict takes precedence over the
+			// provider status string, so a completed task is not mistaken for
+			// a verified outcome.
+			switch legacy.Verification {
+			case "verified":
+				result.Verification = agent.VerificationPassed
+			case "failed":
 				result.Verification = agent.VerificationFailed
 			}
 		} else if legacy.Success && legacy.Status == "no-updates" {
@@ -1253,9 +1269,16 @@ func resolveExplicitProfile(name string) (*config.Config, agent.ExecutionContext
 	return cfg, c, nil
 }
 
+// errTaskReconciliationUnavailable marks a reconciliation attempt that cannot
+// succeed now or on any later retry of the same receipt: the evidence needed is
+// structurally absent, or the provider reported an identity that does not match
+// the receipt. Callers use this to avoid recommending a repeat of an action that
+// is already known to be unavailable.
+var errTaskReconciliationUnavailable = errors.New("task reconciliation is unavailable for this receipt")
+
 func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt) error {
 	if r.TaskID == "" {
-		return errors.New("receipt has no provider task ID; reliable task reconciliation is unsupported")
+		return fmt.Errorf("%w: receipt has no provider task ID", errTaskReconciliationUnavailable)
 	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
@@ -1263,7 +1286,7 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 	}
 	defer cleanup()
 	if prov.Name() != r.Context.Provider {
-		return errors.New("resolved provider does not match the receipt")
+		return fmt.Errorf("%w: resolved provider %q does not match the receipt", errTaskReconciliationUnavailable, prov.Name())
 	}
 	var state string
 	var status string
@@ -1273,11 +1296,11 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 			return err
 		}
 		if taskStatus == nil || taskStatus.UPID != r.TaskID {
-			return errors.New("provider task response did not match the receipt task ID")
+			return fmt.Errorf("%w: provider task response did not match the receipt task ID", errTaskReconciliationUnavailable)
 		}
 		if taskStatus.EndTime == 0 {
 			state = "running"
-		} else if taskStatus.ExitStatus == "OK" {
+		} else if task.Success(taskStatus.ExitStatus) {
 			state, status = "succeeded", taskStatus.ExitStatus
 		} else if taskStatus.ExitStatus != "" {
 			state, status = "failed", taskStatus.ExitStatus
@@ -1307,7 +1330,7 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 		case "running":
 			state = "running"
 		case "stopped":
-			if taskInfo.Status == "OK" {
+			if task.Success(taskInfo.Status) {
 				state, status = "succeeded", taskInfo.Status
 			} else if taskInfo.Status != "" {
 				state, status = "failed", taskInfo.Status

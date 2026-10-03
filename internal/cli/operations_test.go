@@ -50,6 +50,53 @@ func TestOperations_TypeConfirmRequiresDestructiveOrHigher(t *testing.T) {
 	}
 }
 
+func TestOperations_TypeConfirmPublishesTargetFormat(t *testing.T) {
+	// P2-B: discovery must let a caller derive the confirmation value. A
+	// type-in operation with no published format leaves the caller guessing.
+	// The two guest operations below are the ones proven non-interactive in
+	// non-interactive in the Nits-4 evidence.
+	for _, op := range Operations() {
+		if op.RequiresTypeConfirm && op.ConfirmTargetFormat == "" {
+			t.Errorf("%q requires type confirm but publishes no ConfirmTargetFormat", op.Path)
+		}
+	}
+}
+
+func TestOperations_ConfirmTargetFormatMatchesHandlerTarget(t *testing.T) {
+	// Pin the derivation rules the handlers actually use. A wrong format is
+	// worse than none: it makes a correct caller refuse a valid operation.
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"vm delete", "node>/<vmid>"},
+		{"container delete", "node>/<vmid>"},
+		{"vm snapshot delete", "snapshot name only"},
+		{"container snapshot delete", "snapshot name only"},
+		{"storage delete", "volume ID only"},
+		{"backup job delete", "backup job ID only"},
+	}
+	for _, tt := range tests {
+		op := LookupOperation(tt.path)
+		if op == nil {
+			t.Fatalf("LookupOperation(%q) = nil", tt.path)
+		}
+		if !strings.Contains(op.ConfirmTargetFormat, tt.want) {
+			t.Errorf("%q format = %q, want it to contain %q", tt.path, op.ConfirmTargetFormat, tt.want)
+		}
+	}
+}
+
+func TestOperations_ConfirmTargetFormatAbsentWithoutTypeConfirm(t *testing.T) {
+	// A format on a non-type-in operation would imply a confirmation value
+	// that is never compared.
+	for _, op := range Operations() {
+		if !op.RequiresTypeConfirm && op.ConfirmTargetFormat != "" {
+			t.Errorf("%q does not require type confirm but publishes format %q", op.Path, op.ConfirmTargetFormat)
+		}
+	}
+}
+
 func TestOperations_ExpertRequiresSecurityAdmin(t *testing.T) {
 	for _, op := range Operations() {
 		if op.RequiresExpert && op.SafetyTier != safety.TierSecurityAdmin {
@@ -394,6 +441,43 @@ func TestOperations_AliasesAndPathsAreUnique(t *testing.T) {
 				t.Errorf("operation path %q is claimed by %q and %q", path, previous, op.Path)
 			}
 			seen[path] = op.Path
+		}
+	}
+}
+
+func TestOperations_TypeConfirmContractPublishesTargetFormat(t *testing.T) {
+	// P2-B acceptance: help, discovery metadata, and execution must agree on
+	// the confirmation value. This pins the two machine-readable surfaces an
+	// agent actually consumes; the help side is pinned in help_test.go.
+	for _, op := range Operations() {
+		if !op.RequiresTypeConfirm {
+			continue
+		}
+		c := describeOperation(op, false)
+		if c.ConfirmationTargetFormat != op.ConfirmTargetFormat {
+			t.Errorf("%q: contract format %q != registry format %q",
+				op.Path, c.ConfirmationTargetFormat, op.ConfirmTargetFormat)
+		}
+		if op.ConfirmTargetFormat == "" {
+			t.Errorf("%q: contract exposes an empty confirmation target format", op.Path)
+		}
+	}
+}
+
+func TestOperations_TypeConfirmContractStatesRuntimeResolution(t *testing.T) {
+	// The format is derivable from arguments, but the concrete value is not.
+	// A caller must not treat the published format as a predicted target.
+	for _, op := range Operations() {
+		if !op.RequiresTypeConfirm {
+			continue
+		}
+		c := describeOperation(op, false)
+		joined := strings.Join(c.Constraints, "\n")
+		if !strings.Contains(joined, "not predicted by this contract") {
+			t.Errorf("%q: constraints omit the runtime-resolution caveat", op.Path)
+		}
+		if !strings.Contains(joined, op.ConfirmTargetFormat) {
+			t.Errorf("%q: constraints omit the published format", op.Path)
 		}
 	}
 }

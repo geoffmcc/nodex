@@ -51,32 +51,37 @@ type AgentFlag struct {
 }
 
 type OperationContract struct {
-	ID                     string          `json:"id"`
-	Path                   string          `json:"path"`
-	Aliases                []string        `json:"aliases,omitempty"`
-	Description            string          `json:"description"`
-	ArgumentSyntax         string          `json:"argument_syntax"`
-	Arguments              []AgentArgument `json:"arguments"`
-	Flags                  []AgentFlag     `json:"flags"`
-	InputSchema            map[string]any  `json:"input_schema"`
-	Constraints            []string        `json:"constraints,omitempty"`
-	TargetRequirement      string          `json:"target_requirement"`
-	LocalSideEffects       []string        `json:"local_side_effects"`
-	RemoteSideEffects      []string        `json:"remote_side_effects"`
-	SafetyTier             string          `json:"safety_tier"`
-	Risks                  []string        `json:"risks"`
-	Confirmation           []string        `json:"confirmation_requirements"`
-	ProviderInterface      string          `json:"provider_interface,omitempty"`
-	Interactive            bool            `json:"interactive"`
-	SubmitsTask            bool            `json:"submits_task"`
-	Verification           []string        `json:"verification"`
-	Recovery               []string        `json:"recovery"`
-	StructuredOutput       []string        `json:"structured_output"`
-	LegacyOutputModes      []string        `json:"legacy_output_modes"`
-	AgentSupported         bool            `json:"agent_supported"`
-	AgentUnsupportedWhy    string          `json:"agent_unsupported_reason,omitempty"`
-	ProviderSupportNote    string          `json:"provider_support_note"`
-	ProviderPermissionNote string          `json:"provider_permission_note"`
+	ID                string          `json:"id"`
+	Path              string          `json:"path"`
+	Aliases           []string        `json:"aliases,omitempty"`
+	Description       string          `json:"description"`
+	ArgumentSyntax    string          `json:"argument_syntax"`
+	Arguments         []AgentArgument `json:"arguments"`
+	Flags             []AgentFlag     `json:"flags"`
+	InputSchema       map[string]any  `json:"input_schema"`
+	Constraints       []string        `json:"constraints,omitempty"`
+	TargetRequirement string          `json:"target_requirement"`
+	LocalSideEffects  []string        `json:"local_side_effects"`
+	RemoteSideEffects []string        `json:"remote_side_effects"`
+	SafetyTier        string          `json:"safety_tier"`
+	Risks             []string        `json:"risks"`
+	Confirmation      []string        `json:"confirmation_requirements"`
+	// ConfirmationTargetFormat documents how to derive the exact
+	// --confirm-target value for type-in confirmation operations. It describes
+	// the format only; the runtime value is resolved from command arguments at
+	// execution time and is deliberately not predicted here.
+	ConfirmationTargetFormat string   `json:"confirmation_target_format,omitempty"`
+	ProviderInterface        string   `json:"provider_interface,omitempty"`
+	Interactive              bool     `json:"interactive"`
+	SubmitsTask              bool     `json:"submits_task"`
+	Verification             []string `json:"verification"`
+	Recovery                 []string `json:"recovery"`
+	StructuredOutput         []string `json:"structured_output"`
+	LegacyOutputModes        []string `json:"legacy_output_modes"`
+	AgentSupported           bool     `json:"agent_supported"`
+	AgentUnsupportedWhy      string   `json:"agent_unsupported_reason,omitempty"`
+	ProviderSupportNote      string   `json:"provider_support_note"`
+	ProviderPermissionNote   string   `json:"provider_permission_note"`
 }
 
 type OperationSummary struct {
@@ -268,7 +273,8 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 		Constraints:       operationConstraints(op),
 		TargetRequirement: targetRequirement(op), LocalSideEffects: localEffects, RemoteSideEffects: remoteEffects,
 		SafetyTier: op.SafetyTier.String(), Risks: riskNames(op.RiskDimensions), Confirmation: confirmation,
-		ProviderInterface: op.CapabilityInterface, Interactive: interactive, SubmitsTask: op.ProducesUPID,
+		ConfirmationTargetFormat: op.ConfirmTargetFormat,
+		ProviderInterface:        op.CapabilityInterface, Interactive: interactive, SubmitsTask: op.ProducesUPID,
 		Verification: verification, Recovery: recovery, StructuredOutput: agentStructuredOutput(supported), LegacyOutputModes: append([]string(nil), op.OutputModes...),
 		AgentSupported: supported, AgentUnsupportedWhy: unsupportedWhy,
 		ProviderSupportNote:    "Provider implementation support is described by provider_interface/capabilities; this is not a live readiness or authorization check.",
@@ -658,6 +664,12 @@ func operationConstraints(op OperationMeta) []string {
 	}
 	if op.RequiresTypeConfirm {
 		constraints = append(constraints, "--confirm-target must match exactly the target string computed by the existing handler, after the required confirmation flags")
+		if op.ConfirmTargetFormat != "" {
+			// Publish the derivation rule so a caller can construct the value.
+			// Describe the format only; the runtime target is not knowable here.
+			constraints = append(constraints, "confirmation target format: "+op.ConfirmTargetFormat)
+			constraints = append(constraints, "the confirmation target is resolved from the command arguments at runtime and is not predicted by this contract")
+		}
 	}
 	if op.SafetyTier >= safety.TierDisruptive {
 		constraints = append(constraints, "--force requires --yes")

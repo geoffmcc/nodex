@@ -195,6 +195,7 @@ func TestErrorClassLabel(t *testing.T) {
 		code int
 		want string
 	}{
+		{app.ExitUsage, "usage"},
 		{app.ExitAuth, "auth"},
 		{app.ExitAuthorization, "authorization"},
 		{app.ExitNetwork, "network"},

@@ -40,6 +40,18 @@ type ClusterInspector interface {
 	Cluster(ctx context.Context) (*Cluster, error)
 }
 
+// GuestStatusInspector reports the current status of a single guest.
+//
+// This is deliberately separate from VMInspector and ContainerInspector: those
+// list guests by aggregating cluster-wide state, which can lag a completed
+// lifecycle task. Confirming that one specific guest reached a requested state
+// requires a per-resource read.
+//
+// guestType is "vm" or "container".
+type GuestStatusInspector interface {
+	GuestStatus(ctx context.Context, node, guestType string, vmid int) (string, error)
+}
+
 // TaskInspector provides task listing and detail retrieval.
 type TaskInspector interface {
 	Tasks(ctx context.Context, node string) ([]Task, error)

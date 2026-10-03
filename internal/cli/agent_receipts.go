@@ -107,6 +107,38 @@ func runAgentReceiptReconcile(ctx context.Context, cmdCtx *Context, args []strin
 	return reconcileAgentReceipt(ctx, cmdCtx, args, "agent receipt reconcile")
 }
 
+// achievableReceiptActions returns recovery steps that can actually be carried
+// out for this receipt.
+//
+// It never offers `agent receipt reconcile`, which is the operation that just
+// failed. When task reconciliation is structurally unavailable there is no
+// provider evidence that could make a repeat attempt succeed, so re-recommending
+// it would leave the caller looping on a step that cannot work. Inspecting the
+// stored receipt remains possible and is what a caller needs to decide what to
+// do next.
+func achievableReceiptActions(receipt *agent.Receipt, reconciliationAvailable bool) []agent.NextAction {
+	showArgs := map[string]any{"request_id": receipt.RequestID}
+	if receipt.Context.Profile != "" {
+		showArgs["profile"] = receipt.Context.Profile
+	}
+
+	unresolved := receipt.Execution == agent.ExecutionUnknown || receipt.Execution == agent.ExecutionRunning
+	if !unresolved {
+		return nil
+	}
+
+	actions := make([]agent.NextAction, 1, 2)
+	actions[0] = agent.NextAction{Operation: "agent receipt show", Arguments: showArgs}
+	if !reconciliationAvailable || receipt.TaskID == "" {
+		return actions
+	}
+	refreshArgs := map[string]any{"request_id": receipt.RequestID}
+	if receipt.Context.Profile != "" {
+		refreshArgs["profile"] = receipt.Context.Profile
+	}
+	return append(actions, agent.NextAction{Operation: "agent receipt refresh", Arguments: refreshArgs})
+}
+
 func reconcileAgentReceipt(ctx context.Context, cmdCtx *Context, args []string, operation string) error {
 	if len(args) != 1 || !agent.ValidRequestID(args[0]) {
 		return app.NewExitError(fmt.Errorf("usage: nodex %s <request-id>", operation), app.ExitUsage)
@@ -153,18 +185,37 @@ func reconcileAgentReceipt(ctx context.Context, cmdCtx *Context, args []string, 
 		return output.WriteJSON(cmdCtx.Writer, receipt)
 	}
 	if err := taskExecutionStatus(ctx, cmdCtx, &receipt); err != nil {
-		knownTerminal := receipt.Submission == agent.SubmissionAccepted && (receipt.Execution == agent.ExecutionSucceeded || receipt.Execution == agent.ExecutionFailed)
 		receipt.Error = &agent.AgentError{Code: "RECONCILIATION_UNAVAILABLE", Message: safeError(err), Exit: app.ExitCodeFromError(err)}
-		if knownTerminal {
-			receipt.Retry = agent.RetryDoNotAutomatic
+
+		// Acceptance is a historical fact: it was established when the
+		// provider took the request. A later inability to observe completion
+		// is a new observation about evidence, not a retraction of that fact.
+		// Erasing it would replace "we know it was submitted" with "we do not
+		// know anything", which is strictly less true.
+		terminal := receipt.Submission == agent.SubmissionAccepted &&
+			(receipt.Execution == agent.ExecutionSucceeded || receipt.Execution == agent.ExecutionFailed)
+		if terminal {
 			addAgentWarning(&receipt.Result, agent.Warning{Code: "REFRESH_UNAVAILABLE", Message: "the latest read-only refresh failed; the previously observed terminal execution outcome was retained"})
+		} else if receipt.Submission == agent.SubmissionAccepted {
+			addAgentWarning(&receipt.Result, agent.Warning{Code: "REFRESH_UNAVAILABLE", Message: "the latest read-only refresh could not observe completion; the recorded acceptance was retained and the request was not resubmitted"})
 		} else {
 			receipt.Submission = agent.SubmissionUnknown
 			receipt.Execution = agent.ExecutionUnknown
 			receipt.Verification = agent.VerificationUnknown
-			receipt.Retry = agent.RetryReconcileFirst
 			receipt.ObservedAt = time.Now().UTC().Format(time.RFC3339Nano)
 			addAgentWarning(&receipt.Result, agent.Warning{Code: "RECONCILIATION_UNAVAILABLE", Message: "reconciliation performed no mutation; the original remote outcome remains unknown"})
+		}
+
+		// Recovery guidance must describe something that can actually be done.
+		// A receipt with no task ID can never be reconciled by task inspection,
+		// so re-recommending that step would send the caller in a circle.
+		receipt.NextActions = achievableReceiptActions(&receipt, !errors.Is(err, errTaskReconciliationUnavailable))
+		if receipt.Submission == agent.SubmissionAccepted {
+			// Do not resubmit: the request may still have taken effect, and a
+			// blind repeat could apply it twice.
+			receipt.Retry = agent.RetryDoNotAutomatic
+		} else {
+			receipt.Retry = agent.RetryReconcileFirst
 		}
 	}
 	receipt.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
