@@ -127,7 +127,8 @@ func achievableReceiptActions(receipt *agent.Receipt, reconciliationAvailable bo
 		return nil
 	}
 
-	actions := []agent.NextAction{{Operation: "agent receipt show", Arguments: showArgs}}
+	actions := make([]agent.NextAction, 1, 2)
+	actions[0] = agent.NextAction{Operation: "agent receipt show", Arguments: showArgs}
 	if !reconciliationAvailable || receipt.TaskID == "" {
 		return actions
 	}

@@ -105,7 +105,7 @@ type resourceProbe func(ctx context.Context) presenceState
 // config endpoint rather than the cluster-wide listing. A listing is not used
 // because inventory can lag the authoritative state and a stale entry would
 // wrongly suggest the container survived.
-func probeContainer(ctx context.Context, prov domain.Provider, node string, vmid int) resourceProbe {
+func probeContainer(prov domain.Provider, node string, vmid int) resourceProbe {
 	return func(ctx context.Context) presenceState {
 		insp, ok := prov.(domain.ContainerInspector)
 		if !ok {
@@ -125,7 +125,7 @@ func probeContainer(ctx context.Context, prov domain.Provider, node string, vmid
 // endpoint rather than the cluster-wide listing, for the same reason as
 // probeContainer: a lagging inventory entry would wrongly suggest the VM
 // survived its own deletion.
-func probeVM(ctx context.Context, prov domain.Provider, node string, vmid int) resourceProbe {
+func probeVM(prov domain.Provider, node string, vmid int) resourceProbe {
 	return func(ctx context.Context) presenceState {
 		insp, ok := prov.(domain.VMInspector)
 		if !ok {
@@ -143,7 +143,7 @@ func probeVM(ctx context.Context, prov domain.Provider, node string, vmid int) r
 
 // probeVMSnapshot reports whether a named snapshot of a still-existing VM
 // exists.
-func probeVMSnapshot(ctx context.Context, prov domain.Provider, node string, vmid int, name string) resourceProbe {
+func probeVMSnapshot(prov domain.Provider, node string, vmid int, name string) resourceProbe {
 	return func(ctx context.Context) presenceState {
 		insp, ok := prov.(domain.SnapshotInspector)
 		if !ok {
@@ -164,7 +164,7 @@ func probeVMSnapshot(ctx context.Context, prov domain.Provider, node string, vmi
 
 // probeContainerSnapshot reports whether a named snapshot of a still-existing
 // container exists.
-func probeContainerSnapshot(ctx context.Context, prov domain.Provider, node string, vmid int, name string) resourceProbe {
+func probeContainerSnapshot(prov domain.Provider, node string, vmid int, name string) resourceProbe {
 	return func(ctx context.Context) presenceState {
 		insp, ok := prov.(domain.SnapshotInspector)
 		if !ok {

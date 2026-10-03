@@ -389,7 +389,7 @@ func runVMSnapshotDelete(ctx context.Context, cmdCtx *Context, args []string) er
 
 	// Observe the snapshot beforehand so the postcondition check can report
 	// whether anything was actually removed.
-	prior, _ := observePresence(ctx, probeVMSnapshot(ctx, prov, node, vmid, name))
+	prior, _ := observePresence(ctx, probeVMSnapshot(prov, node, vmid, name))
 
 	upid, err := sp.VMSnapshotDelete(ctx, node, vmid, name)
 	if err != nil {
@@ -398,7 +398,7 @@ func runVMSnapshotDelete(ctx context.Context, cmdCtx *Context, args []string) er
 
 	target := fmt.Sprintf("snapshot %q of VM %s/%d", name, node, vmid)
 	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm snapshot delete", fmt.Sprintf("%s/%d", node, vmid), "destructive",
-		absenceVerifier(probeVMSnapshot(ctx, prov, node, vmid, name), target, prior))
+		absenceVerifier(probeVMSnapshot(prov, node, vmid, name), target, prior))
 }
 
 // --- VM Snapshot Rollback (Tier 2: disruptive) ---
@@ -525,7 +525,7 @@ func runCTSnapshotDelete(ctx context.Context, cmdCtx *Context, args []string) er
 
 	// Observe the snapshot beforehand so the postcondition check can report
 	// whether anything was actually removed.
-	prior, _ := observePresence(ctx, probeContainerSnapshot(ctx, prov, node, vmid, name))
+	prior, _ := observePresence(ctx, probeContainerSnapshot(prov, node, vmid, name))
 
 	upid, err := sp.CTSnapshotDelete(ctx, node, vmid, name)
 	if err != nil {
@@ -534,7 +534,7 @@ func runCTSnapshotDelete(ctx context.Context, cmdCtx *Context, args []string) er
 
 	target := fmt.Sprintf("snapshot %q of container %s/%d", name, node, vmid)
 	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container snapshot delete", fmt.Sprintf("%s/%d", node, vmid), "destructive",
-		absenceVerifier(probeContainerSnapshot(ctx, prov, node, vmid, name), target, prior))
+		absenceVerifier(probeContainerSnapshot(prov, node, vmid, name), target, prior))
 }
 
 // --- Container Snapshot Rollback (Tier 2: disruptive) ---
@@ -615,7 +615,7 @@ func runVMDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 
 	// Observe the guest beforehand so the postcondition check can say whether
 	// anything was actually removed.
-	prior, _ := observePresence(ctx, probeVM(ctx, prov, node, vmid))
+	prior, _ := observePresence(ctx, probeVM(prov, node, vmid))
 
 	upid, err := dp.VMDelete(ctx, node, vmid)
 	if err != nil {
@@ -623,7 +623,7 @@ func runVMDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm delete", fmt.Sprintf("%s/%d", node, vmid), "destructive",
-		absenceVerifier(probeVM(ctx, prov, node, vmid), fmt.Sprintf("VM %s/%d", node, vmid), prior))
+		absenceVerifier(probeVM(prov, node, vmid), fmt.Sprintf("VM %s/%d", node, vmid), prior))
 }
 
 func validateVMDeleteState(vms []domain.VM, target string) error {
@@ -671,7 +671,7 @@ func runCTDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 
 	// Observe the guest beforehand so the postcondition check can say whether
 	// anything was actually removed.
-	prior, _ := observePresence(ctx, probeContainer(ctx, prov, node, vmid))
+	prior, _ := observePresence(ctx, probeContainer(prov, node, vmid))
 
 	upid, err := dp.CTDelete(ctx, node, vmid)
 	if err != nil {
@@ -679,7 +679,7 @@ func runCTDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container delete", fmt.Sprintf("%s/%d", node, vmid), "destructive",
-		absenceVerifier(probeContainer(ctx, prov, node, vmid), fmt.Sprintf("container %s/%d", node, vmid), prior))
+		absenceVerifier(probeContainer(prov, node, vmid), fmt.Sprintf("container %s/%d", node, vmid), prior))
 }
 
 // --- VM Cloud-Init (Tier 1: reversible) ---

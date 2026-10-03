@@ -151,7 +151,7 @@ func resolveConfirmation(cmdCtx *Context, result safety.ConfirmationResult, targ
 		// does not (`printf '%s' proxmox/9610`). ReadString returns the data
 		// alongside io.EOF in that case, so accept it as a real answer rather
 		// than discarding a correct confirmation.
-		if err != nil && !(stderrors.Is(err, io.EOF) && typed != "") {
+		if err != nil && (!stderrors.Is(err, io.EOF) || typed == "") {
 			// Genuinely unreadable input, or EOF with nothing typed. This is a
 			// confirmation/input failure: wrap it so it classifies as usage.
 			// Returning it untyped lets the exit-code string heuristics match

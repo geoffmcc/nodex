@@ -52,10 +52,10 @@ func (p *scriptedCTProvider) ContainerConfig(_ context.Context, _ string, _ int)
 func TestProbeContainerReportsPresenceAndAbsence(t *testing.T) {
 	prov := &scriptedCTProvider{steps: []presenceState{presencePresent, presenceAbsent}}
 
-	if got := probeContainer(context.Background(), prov, "proxmox", 9611)(context.Background()); got != presencePresent {
+	if got := probeContainer(prov, "proxmox", 9611)(context.Background()); got != presencePresent {
 		t.Fatalf("expected present, got %v", got)
 	}
-	if got := probeContainer(context.Background(), prov, "proxmox", 9611)(context.Background()); got != presenceAbsent {
+	if got := probeContainer(prov, "proxmox", 9611)(context.Background()); got != presenceAbsent {
 		t.Fatalf("expected absent, got %v", got)
 	}
 }
@@ -72,7 +72,7 @@ func TestProbeContainerTreatsDeniedAndFailedReadsAsUnknown(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			prov := &readErrCTProvider{err: tc.err}
-			probe := probeContainer(context.Background(), prov, "proxmox", 9611)
+			probe := probeContainer(prov, "proxmox", 9611)
 			if got := probe(context.Background()); got != presenceUnknown {
 				t.Fatalf("expected unknown, got %v", got)
 			}
@@ -105,7 +105,7 @@ func (p *readErrCTProvider) ContainerConfig(_ context.Context, _ string, _ int) 
 func TestAbsenceVerifierConfirmsRemovalAndReportsChange(t *testing.T) {
 	// Prior read observes the container; the postcondition read sees it gone.
 	prov := &scriptedCTProvider{steps: []presenceState{presencePresent, presenceAbsent}}
-	probe := probeContainer(context.Background(), prov, "proxmox", 9611)
+	probe := probeContainer(prov, "proxmox", 9611)
 
 	prior, err := observePresence(context.Background(), probe)
 	if err != nil || prior != presencePresent {
@@ -124,7 +124,7 @@ func TestAbsenceVerifierConfirmsRemovalAndReportsChange(t *testing.T) {
 func TestAbsenceVerifierLeavesChangeUnknownWhenPriorReadFailed(t *testing.T) {
 	// The prior read proves nothing, so absence alone cannot establish change.
 	prov := &readErrCTProvider{err: errors.New("permission denied")}
-	probe := probeContainer(context.Background(), prov, "proxmox", 9611)
+	probe := probeContainer(prov, "proxmox", 9611)
 
 	prior, err := observePresence(context.Background(), probe)
 	if err == nil {
@@ -152,7 +152,7 @@ func TestAbsenceVerifierRejectsStalePresentReadsUntilSettled(t *testing.T) {
 		presencePresent, // second postcondition read, still stale
 		presenceAbsent,  // finally converged
 	}}
-	probe := probeContainer(context.Background(), prov, "proxmox", 9611)
+	probe := probeContainer(prov, "proxmox", 9611)
 
 	prior, err := observePresence(context.Background(), probe)
 	if err != nil || prior != presencePresent {
@@ -169,7 +169,7 @@ func TestAbsenceVerifierFailsWhenResourceStillPresent(t *testing.T) {
 	// The task succeeded but the resource is still there, so the postcondition
 	// is contradicted. The outcome is not verified and no change is claimed.
 	prov := &scriptedCTProvider{steps: []presenceState{presencePresent, presencePresent}}
-	probe := probeContainer(context.Background(), prov, "proxmox", 9611)
+	probe := probeContainer(prov, "proxmox", 9611)
 
 	prior, _ := observePresence(context.Background(), probe)
 	outcome := absenceVerifier(probe, "container proxmox/9611", prior)(context.Background())
@@ -218,7 +218,7 @@ func (p *scriptedSnapshotProvider) ContainerSnapshots(_ context.Context, _ strin
 
 func TestProbeContainerSnapshotDetectsNamedSnapshotRemoval(t *testing.T) {
 	prov := &scriptedSnapshotProvider{steps: []presenceState{presencePresent, presenceAbsent}}
-	probe := probeContainerSnapshot(context.Background(), prov, "proxmox", 9610, "nx4fu-snap1")
+	probe := probeContainerSnapshot(prov, "proxmox", 9610, "nx4fu-snap1")
 
 	if got := probe(context.Background()); got != presencePresent {
 		t.Fatalf("expected snapshot present, got %v", got)
@@ -230,7 +230,7 @@ func TestProbeContainerSnapshotDetectsNamedSnapshotRemoval(t *testing.T) {
 
 func TestProbeContainerSnapshotIgnoresOtherSnapshots(t *testing.T) {
 	prov := &otherSnapshotsProvider{}
-	probe := probeContainerSnapshot(context.Background(), prov, "proxmox", 9610, "nx4fu-snap1")
+	probe := probeContainerSnapshot(prov, "proxmox", 9610, "nx4fu-snap1")
 	if got := probe(context.Background()); got != presenceAbsent {
 		t.Fatalf("a different snapshot name must not count as the target, got %v", got)
 	}
