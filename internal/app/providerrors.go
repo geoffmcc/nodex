@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -17,21 +18,40 @@ import (
 type ProviderError struct {
 	StatusCode int
 	Detail     string
-	UPID       string // set when a task was submitted but the outcome is ambiguous
-	Err        error  // underlying error (transport, context, etc.)
+	// FieldErrors preserves structured validation diagnostics returned by the
+	// provider, keyed by the configuration/API field name.
+	FieldErrors map[string]string
+	UPID        string // set when a task was submitted but the outcome is ambiguous
+	Err         error  // underlying error (transport, context, etc.)
 }
 
 func (e *ProviderError) Error() string {
+	detail := e.Detail
+	if len(e.FieldErrors) > 0 {
+		keys := make([]string, 0, len(e.FieldErrors))
+		for key := range e.FieldErrors {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		fields := make([]string, 0, len(keys))
+		for _, key := range keys {
+			fields = append(fields, fmt.Sprintf("%s: %s", key, e.FieldErrors[key]))
+		}
+		if detail != "" {
+			detail += "; "
+		}
+		detail += "field errors: " + strings.Join(fields, "; ")
+	}
 	if e.UPID != "" && e.StatusCode == 0 {
-		return fmt.Sprintf("ambiguous task outcome %s: %s", e.UPID, e.Detail)
+		return fmt.Sprintf("ambiguous task outcome %s: %s", e.UPID, detail)
 	}
 	if e.UPID != "" {
-		return fmt.Sprintf("provider error %d (task %s): %s", e.StatusCode, e.UPID, e.Detail)
+		return fmt.Sprintf("provider error %d (task %s): %s", e.StatusCode, e.UPID, detail)
 	}
 	if e.StatusCode > 0 {
-		return fmt.Sprintf("provider error %d: %s", e.StatusCode, e.Detail)
+		return fmt.Sprintf("provider error %d: %s", e.StatusCode, detail)
 	}
-	return fmt.Sprintf("provider error: %s", e.Detail)
+	return fmt.Sprintf("provider error: %s", detail)
 }
 
 // Unwrap returns the underlying error for errors.Is/As chain traversal.

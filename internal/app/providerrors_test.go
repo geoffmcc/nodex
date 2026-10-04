@@ -35,6 +35,18 @@ func TestProviderError_Error(t *testing.T) {
 			&ProviderError{Detail: "network unreachable"},
 			"provider error: network unreachable",
 		},
+		{
+			"structured field errors are sorted and retained",
+			&ProviderError{
+				StatusCode: 400,
+				Detail:     "API error 400: Parameter verification failed.",
+				FieldErrors: map[string]string{
+					"memory": "must be at least 16",
+					"cores":  "value is invalid",
+				},
+			},
+			"provider error 400: API error 400: Parameter verification failed.; field errors: cores: value is invalid; memory: must be at least 16",
+		},
 	}
 
 	for _, tt := range tests {

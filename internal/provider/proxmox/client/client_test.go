@@ -1262,6 +1262,39 @@ func TestProviderError_MockHTTPServer_500(t *testing.T) {
 	}
 }
 
+func TestProviderError_MockHTTPServer_PreservesFieldErrors(t *testing.T) {
+	const secret = "PVEAPIToken=user@pam!tok=secret123"
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, `{"message":"Parameter verification failed.","errors":{"memory":"must be at least 16","cores":"invalid integer","bogus":"unknown parameter","token":"`+secret+`"}}`)
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	var out map[string]any
+	err := c.get(context.Background(), "/nodes/pve1/qemu", &out)
+	if err == nil {
+		t.Fatal("expected API validation error")
+	}
+	var providerErr *app.ProviderError
+	if !errors.As(err, &providerErr) {
+		t.Fatalf("error type = %T, want *app.ProviderError", err)
+	}
+	if providerErr.FieldErrors["cores"] != "invalid integer" || providerErr.FieldErrors["memory"] != "must be at least 16" || providerErr.FieldErrors["bogus"] != "unknown parameter" {
+		t.Fatalf("field errors = %#v, want cores and memory details", providerErr.FieldErrors)
+	}
+	if !strings.Contains(err.Error(), "bogus: unknown parameter") || !strings.Contains(err.Error(), "cores: invalid integer") {
+		t.Fatalf("human error does not contain field-specific diagnostics: %v", err)
+	}
+	if strings.Contains(err.Error(), secret) || strings.Contains(providerErr.FieldErrors["token"], secret) {
+		t.Fatalf("structured field error leaked a secret: %v", err)
+	}
+	if got := app.ExitCodeFromError(err); got != app.ExitValidationError {
+		t.Fatalf("exit code = %d, want %d", got, app.ExitValidationError)
+	}
+}
+
 func TestProviderError_MockHTTPServer_RedactsSecrets(t *testing.T) {
 	secret := "PVEAPIToken=user@pam!tok=secret123" // #nosec G101 -- test fixture
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

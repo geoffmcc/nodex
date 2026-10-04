@@ -2907,8 +2907,13 @@ func (c *Client) sendMutation(ctx context.Context, method, path string, body url
 func (c *Client) decodeResponse(resp *http.Response, result any) error {
 	if !successCodes[resp.StatusCode] {
 		body, truncated := readLimited(resp.Body, c.client.MaxErrorBodySize())
-		message := decodeAPIErrorMessage(body)
+		message, fieldErrors := decodeAPIError(body)
 		msg := redact.String(output.SanitizeTerminal(message))
+		safeFieldErrors := make(map[string]string, len(fieldErrors))
+		for key, value := range fieldErrors {
+			safeKey := redact.String(output.SanitizeTerminal(key))
+			safeFieldErrors[safeKey] = redact.String(output.SanitizeTerminal(value))
+		}
 		if truncated {
 			msg += "... [truncated]"
 		}
@@ -2920,7 +2925,7 @@ func (c *Client) decodeResponse(resp *http.Response, result any) error {
 				return app.NewExitError(fmt.Errorf("%s", msg), app.ExitConflict)
 			}
 		}
-		return newProviderError(resp.StatusCode, fmt.Sprintf("API error %d: %s", resp.StatusCode, msg))
+		return newProviderErrorWithFieldErrors(resp.StatusCode, fmt.Sprintf("API error %d: %s", resp.StatusCode, msg), safeFieldErrors)
 	}
 
 	body, truncated := readLimited(resp.Body, c.client.MaxBodySize())
@@ -2940,14 +2945,29 @@ func (c *Client) decodeResponse(resp *http.Response, result any) error {
 	return nil
 }
 
-func decodeAPIErrorMessage(body []byte) string {
+func decodeAPIError(body []byte) (string, map[string]string) {
 	var payload struct {
-		Message string `json:"message"`
+		Message string                     `json:"message"`
+		Errors  map[string]json.RawMessage `json:"errors"`
 	}
-	if json.Unmarshal(body, &payload) == nil && strings.TrimSpace(payload.Message) != "" {
-		return strings.TrimSpace(payload.Message)
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return string(body), nil
 	}
-	return string(body)
+	message := strings.TrimSpace(payload.Message)
+	fieldErrors := make(map[string]string, len(payload.Errors))
+	for key, raw := range payload.Errors {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			value = strings.TrimSpace(string(raw))
+		}
+		if value != "" {
+			fieldErrors[key] = value
+		}
+	}
+	if message == "" && len(fieldErrors) == 0 {
+		return string(body), nil
+	}
+	return message, fieldErrors
 }
 
 func isPVEAbsentResource(message string) bool {
@@ -2964,6 +2984,14 @@ func newProviderError(statusCode int, detail string) *app.ProviderError {
 	return &app.ProviderError{
 		StatusCode: statusCode,
 		Detail:     detail,
+	}
+}
+
+func newProviderErrorWithFieldErrors(statusCode int, detail string, fieldErrors map[string]string) *app.ProviderError {
+	return &app.ProviderError{
+		StatusCode:  statusCode,
+		Detail:      detail,
+		FieldErrors: fieldErrors,
 	}
 }
 
