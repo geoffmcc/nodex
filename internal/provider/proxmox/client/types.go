@@ -1291,10 +1291,15 @@ type CTCloneRequest struct {
 
 // CTCreateRequest is the body for POST /nodes/{node}/lxc.
 type CTCreateRequest struct {
-	VMID       int    `json:"vmid"`
-	OSTemplate string `json:"ostemplate"`
-	Hostname   string `json:"hostname,omitempty"`
-	Storage    string `json:"storage,omitempty"`
+	VMID         int    `json:"vmid"`
+	OSTemplate   string `json:"ostemplate"`
+	Hostname     string `json:"hostname,omitempty"`
+	Storage      string `json:"storage,omitempty"`
+	Cores        *int   `json:"cores,omitempty"`
+	Memory       int    `json:"memory,omitempty"`
+	Swap         int    `json:"swap,omitempty"`
+	RootFS       string `json:"rootfs,omitempty"`
+	Unprivileged int    `json:"unprivileged,omitempty"`
 }
 
 // VMCreateRequest is the minimal body for POST /nodes/{node}/qemu.

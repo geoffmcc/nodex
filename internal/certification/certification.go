@@ -334,7 +334,7 @@ func Run(ctx context.Context, p domain.Provider, req Request, ledgerPath string,
 	if err := verifyLease(ledgerPath, e.ID, e.LeaseID, e.Revision); err != nil {
 		return result, fmt.Errorf("certification creation lease is no longer current: %w", err)
 	}
-	upid, err := creator.VMCreate(ctx, req.Node, req.VMID, req.Name, "", req.Storage)
+	upid, err := creator.VMCreate(ctx, req.Node, req.VMID, domain.VMCreateOptions{Name: req.Name, DiskStorage: req.Storage})
 	if err != nil {
 		if saveErr := updateEntry(func(entry *Entry) {
 			entry.State, entry.Error, entry.UpdatedAt = "unknown", "creation request outcome unavailable", time.Now().Unix()

@@ -65,6 +65,8 @@ type e2eMockProvider struct {
 	// postcondition check would be recorded as a failure.
 	deletedGuests    map[string]bool
 	deletedSnapshots map[string]bool
+	createdVMConfigs map[int]map[string]interface{}
+	createdCTConfigs map[int]map[string]interface{}
 }
 
 // guestKey identifies one guest in the e2e mock's status map.
@@ -143,7 +145,7 @@ func (p *e2eMockProvider) Capabilities() []domain.Capability {
 		domain.CapabilityLifecycle,
 		domain.CapabilityConfig, domain.CapabilitySnapshotMutation,
 		domain.CapabilityDelete, domain.CapabilityTemplate,
-		domain.CapabilityCloudInit,
+		domain.CapabilityCloudInit, domain.CapabilityVMCreate, domain.CapabilityContainerCreate,
 	}
 }
 func (p *e2eMockProvider) Connect(_ context.Context, endpoint string, creds *domain.Credentials) error {
@@ -208,6 +210,9 @@ func (p *e2eMockProvider) VMConfig(_ context.Context, node string, vmid int) (ma
 	if p.guestGone("vm", vmid) {
 		return nil, notFound("VM %s/%d does not exist", node, vmid)
 	}
+	if config, ok := p.createdVMConfigs[vmid]; ok {
+		return config, nil
+	}
 	return map[string]interface{}{
 		"vmid":   vmid,
 		"name":   "e2e-vm",
@@ -218,6 +223,9 @@ func (p *e2eMockProvider) VMConfig(_ context.Context, node string, vmid int) (ma
 func (p *e2eMockProvider) ContainerConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
 	if p.guestGone("container", vmid) {
 		return nil, notFound("container %s/%d does not exist", node, vmid)
+	}
+	if config, ok := p.createdCTConfigs[vmid]; ok {
+		return config, nil
 	}
 	return map[string]interface{}{
 		"vmid":     vmid,
@@ -546,6 +554,69 @@ func (p *e2eMockProvider) VMCloudInit(_ context.Context, node string, vmid int) 
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12372, 1700000000), nil
 }
 
+func (p *e2eMockProvider) VMCreate(_ context.Context, node string, vmid int, options domain.VMCreateOptions) (string, error) {
+	cores, memory := domain.DefaultVMCreateCores, domain.DefaultVMCreateMemoryMiB
+	if options.Cores != nil {
+		cores = *options.Cores
+	}
+	if options.MemoryMiB != nil {
+		memory = *options.MemoryMiB
+	}
+	config := map[string]interface{}{
+		"vmid": vmid, "cores": cores, "memory": memory, "ostype": "l26",
+	}
+	if options.Name != "" {
+		config["name"] = options.Name
+	}
+	if options.ISO != "" {
+		config["ide2"] = options.ISO + ",media=cdrom"
+	}
+	if options.DiskStorage != "" {
+		diskSize := domain.DefaultVMCreateDiskSizeGiB
+		if options.DiskSizeGiB != nil {
+			diskSize = *options.DiskSizeGiB
+		}
+		config["scsi0"] = fmt.Sprintf("%s:vm-%d-disk-0,size=%dG", options.DiskStorage, vmid, diskSize)
+		config["scsihw"] = "virtio-scsi-single"
+	}
+	if p.createdVMConfigs == nil {
+		p.createdVMConfigs = make(map[int]map[string]interface{})
+	}
+	p.createdVMConfigs[vmid] = config
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12373, 1700000000), nil
+}
+
+func (p *e2eMockProvider) CTCreate(_ context.Context, node string, vmid int, options domain.ContainerCreateOptions) (string, error) {
+	memory, swap := domain.DefaultContainerCreateMemoryMiB, domain.DefaultContainerCreateSwapMiB
+	if options.MemoryMiB != nil {
+		memory = *options.MemoryMiB
+	}
+	if options.SwapMiB != nil {
+		swap = *options.SwapMiB
+	}
+	config := map[string]interface{}{
+		"vmid": vmid, "memory": memory, "swap": swap, "unprivileged": "1",
+	}
+	if options.Hostname != "" {
+		config["hostname"] = options.Hostname
+	}
+	if options.Cores != nil {
+		config["cores"] = *options.Cores
+	}
+	if options.Storage != "" {
+		rootfs := fmt.Sprintf("%s:vm-%d-disk-0,size=8G", options.Storage, vmid)
+		if options.RootFSSizeGiB != nil {
+			rootfs = fmt.Sprintf("%s:vm-%d-disk-0,size=%dG", options.Storage, vmid, *options.RootFSSizeGiB)
+		}
+		config["rootfs"] = rootfs
+	}
+	if p.createdCTConfigs == nil {
+		p.createdCTConfigs = make(map[int]map[string]interface{})
+	}
+	p.createdCTConfigs[vmid] = config
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12374, 1700000000), nil
+}
+
 func (p *e2eMockProvider) ClusterStatuses(_ context.Context) ([]domain.ClusterStatusDetail, error) {
 	return []domain.ClusterStatusDetail{
 		{Type: "cluster", ID: "cluster/e2e", Name: "e2e", Status: "online", Quorate: 3, Version: 1},
@@ -682,6 +753,79 @@ func TestVMFreezeCommandsReturnActionableUnsupportedErrors(t *testing.T) {
 			}
 			if stdout.Len() != 0 {
 				t.Fatalf("unsupported operation wrote result to stdout: %s", stdout.String())
+			}
+		})
+	}
+}
+
+func TestGuestCreationResourceOptionsAreVerified(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "vm resource settings",
+			args: []string{"--yes", "--force", "--wait", "--output", "json", "vm", "create", "e2e-node", "9501", "e2e-vm", "local:iso/debian.iso", "--disk-storage", "local-lvm", "--cores", "4", "--memory", "8192", "--disk-size", "64"},
+		},
+		{
+			name: "container resource settings",
+			args: []string{"--yes", "--force", "--wait", "--output", "json", "container", "create", "e2e-node", "9502", "local:vztmpl/debian.tar.zst", "e2e-ct", "--rootfs-storage", "local-lvm", "--cores", "2", "--memory", "2048", "--swap", "1024", "--rootfs-size", "20"},
+		},
+		{
+			name: "legacy positional disk storage",
+			args: []string{"--yes", "--force", "--wait", "--output", "json", "vm", "create", "e2e-node", "9503", "legacy-vm", "local:iso/debian.iso", "local-lvm", "--cores", "2"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if err := Run(context.Background(), tt.args, &stdout, &stderr); err != nil {
+				t.Fatalf("Run(%v): %v (stderr: %s)", tt.args, err, stderr.String())
+			}
+			out := stdout.String()
+			for _, want := range []string{`"success": true`, `"verification": "verified"`} {
+				if !strings.Contains(out, want) {
+					t.Errorf("expected %q in output: %s", want, out)
+				}
+			}
+		})
+	}
+}
+
+func TestGuestCreationRejectsOutOfRangeResources(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "VM cores must be positive",
+			args: []string{"vm", "create", "e2e-node", "9501", "--cores", "0"},
+		},
+		{
+			name: "container rootfs size requires storage",
+			args: []string{"container", "create", "e2e-node", "9502", "local:vztmpl/debian.tar.zst", "--rootfs-size", "20"},
+		},
+		{
+			name: "VM disk size requires storage",
+			args: []string{"vm", "create", "e2e-node", "9501", "--disk-size", "64"},
+		},
+		{
+			name: "VM storage cannot be supplied twice",
+			args: []string{"vm", "create", "e2e-node", "9501", "vm-name", "", "local-lvm", "--disk-storage", "local-lvm"},
+		},
+		{
+			name: "container rootfs storage cannot be supplied twice",
+			args: []string{"container", "create", "e2e-node", "9502", "local:vztmpl/debian.tar.zst", "ct-name", "local-lvm", "--rootfs-storage", "local-lvm"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if err := Run(context.Background(), tt.args, &stdout, &stderr); err == nil || app.ExitCodeFromError(err) != app.ExitUsage {
+				t.Fatalf("Run(%v) error = %v, want an invalid-input usage error", tt.args, err)
 			}
 		})
 	}

@@ -51,6 +51,8 @@ var handlerFlags = map[string]flagSet{
 	"certification report":  {exact: []string{"--ledger"}},
 	"monitor check":         {exact: []string{"--target", "--environment"}},
 	"container os-update":   {exact: []string{"--policy"}},
+	"vm create":             {exact: []string{"--cores", "--memory", "--disk-size", "--disk-storage"}},
+	"container create":      {exact: []string{"--cores", "--memory", "--swap", "--rootfs-size", "--rootfs-storage"}},
 	"profile add":           {exact: []string{"--provider"}},
 	"profile set-credentials": {
 		exact: []string{"--backend", "--credential-name"},

@@ -172,7 +172,7 @@ func init() {
 		&command{name: "snapshot", short: "Manage VM snapshots", run: runVMSnapshotDispatch},
 		&command{name: "migrate", short: "Migrate VM to another node", run: runVMMigrate},
 		&command{name: "clone", short: "Clone a VM", run: runVMClone},
-		&command{name: "create", short: "Create a VM", run: runVMCreate},
+		&command{name: "create", short: "Create a VM with optional resource controls", run: runVMCreate},
 		&command{name: "disk", short: "Manage VM disks", run: runVMDiskDispatch},
 		&command{name: "console", short: "Open VM serial console", run: runVMConsole},
 	)
@@ -200,7 +200,7 @@ func init() {
 		&command{name: "snapshot", short: "Manage container snapshots", run: runCTSnapshotDispatch},
 		&command{name: "migrate", short: "Migrate container to another node", run: runCTMigrate},
 		&command{name: "clone", short: "Clone a container", run: runCTClone},
-		&command{name: "create", short: "Create a container from a template", run: runCTCreate},
+		&command{name: "create", short: "Create an unprivileged container with optional resource controls", run: runCTCreate},
 		&command{name: "restore", short: "Restore a container from a backup archive", run: runCTRestore},
 		&command{name: "console", short: "Open container console", run: runContainerConsole},
 	)

@@ -102,6 +102,96 @@ func verifyConfigReadback(observed map[string]interface{}, requested map[string]
 	return len(mismatches) == 0, mismatches
 }
 
+type createdVolumeExpectation struct {
+	key     string
+	storage string
+	sizeGiB *int
+}
+
+// createdConfigVerifier confirms that requested resource settings survived
+// creation by reading the single-guest config endpoint after its task ends.
+// Unknown or unreadable config is unverifiable; observed mismatches are failed.
+func createdConfigVerifier(
+	prov domain.Provider,
+	resourceType, node string,
+	vmid int,
+	target string,
+	requested map[string]string,
+	volume *createdVolumeExpectation,
+) postconditionVerifier {
+	return func(ctx context.Context) postconditionOutcome {
+		var observed map[string]interface{}
+		switch resourceType {
+		case "vm":
+			inspector, ok := prov.(domain.VMInspector)
+			if !ok {
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s config readback is unsupported", target)}
+			}
+			var err error
+			observed, err = inspector.VMConfig(ctx, node, vmid)
+			if err != nil {
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s config could not be read after creation: %v", target, err)}
+			}
+		case "container":
+			inspector, ok := prov.(domain.ContainerInspector)
+			if !ok {
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s config readback is unsupported", target)}
+			}
+			var err error
+			observed, err = inspector.ContainerConfig(ctx, node, vmid)
+			if err != nil {
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s config could not be read after creation: %v", target, err)}
+			}
+		default:
+			return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("creation readback is unsupported for resource type %q", resourceType)}
+		}
+
+		_, mismatches := verifyConfigReadback(observed, requested)
+		if volume != nil {
+			actual, exists := observed[volume.key]
+			actualValue := ""
+			if exists {
+				actualValue = canonicalConfigValue(actual)
+			}
+			if !exists || !createdVolumeMatches(actualValue, *volume) {
+				wanted := "storage " + volume.storage
+				if volume.sizeGiB != nil {
+					wanted += fmt.Sprintf(" size %d GiB", *volume.sizeGiB)
+				}
+				mismatches = append(mismatches, configFieldMismatch{Key: volume.key, Request: wanted, Observed: actualValue})
+			}
+		}
+		if len(mismatches) > 0 {
+			return postconditionOutcome{Detail: fmt.Sprintf("%s config readback did not match: %s", target, joinMismatches(mismatches))}
+		}
+		return postconditionOutcome{Verified: true, Detail: fmt.Sprintf("%s requested creation settings matched provider readback", target)}
+	}
+}
+
+func createdVolumeMatches(actual string, expected createdVolumeExpectation) bool {
+	volumeID, parameters, hasParameters := strings.Cut(actual, ",")
+	storageID, _, hasStorage := strings.Cut(volumeID, ":")
+	if !hasStorage || storageID != expected.storage {
+		return false
+	}
+	if expected.sizeGiB == nil {
+		return true
+	}
+	if !hasParameters {
+		return false
+	}
+	for _, parameter := range strings.Split(parameters, ",") {
+		key, value, ok := strings.Cut(parameter, "=")
+		if !ok || key != "size" {
+			continue
+		}
+		value = strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(value, "GiB"), "GB"), "G"))
+		size, err := strconv.Atoi(value)
+		return err == nil && size == *expected.sizeGiB
+	}
+	return false
+}
+
 // readbackContainerConfig reads the current container config for comparison.
 func readbackContainerConfig(ctx context.Context, prov domain.Provider, node string, vmid int) (map[string]interface{}, error) {
 	ci, ok := prov.(domain.ContainerInspector)
