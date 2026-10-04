@@ -260,6 +260,7 @@ func runVMUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
 	if result.ConfirmationRequired {
+		result.Message = guestConfigUpdateConfirmationMessage(result.Message, params)
 		if cmdCtx.Opts.NonInteractive {
 			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 		}
@@ -316,6 +317,7 @@ func runCTUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	result := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
 	if result.ConfirmationRequired {
+		result.Message = guestConfigUpdateConfirmationMessage(result.Message, params)
 		if cmdCtx.Opts.NonInteractive {
 			return app.NewExitError(fmt.Errorf("confirmation required: %s", result.Message), app.ExitUsage)
 		}
