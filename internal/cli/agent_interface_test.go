@@ -419,9 +419,10 @@ func TestAgentMutationReceiptDeduplicatesAndBindsTarget(t *testing.T) {
 		t.Fatalf("duplicate agent request: %v", err)
 	}
 	duplicate := decodeAgentResult(t, stdout.Bytes())
-	if len(pbsE2ERunCalls) != 1 || len(duplicate.Warnings) == 0 || duplicate.Warnings[0].Code != "DUPLICATE_REQUEST_ID" {
+	if len(pbsE2ERunCalls) != 1 || !duplicate.Replayed || len(duplicate.Warnings) == 0 || duplicate.Warnings[0].Code != "DUPLICATE_REQUEST_ID" {
 		t.Fatalf("duplicate request was not safely deduplicated: calls=%v result=%+v", pbsE2ERunCalls, duplicate)
 	}
+	assertJSONSchemaRepresentative(t, filepath.Join("..", "..", "docs", "agent", "schemas", "agent-result-v1.schema.json"), stdout.Bytes())
 	stdout.Reset()
 	if err := Run(context.Background(), []string{"agent", "receipt", "list"}, &stdout, &stderr); err != nil {
 		t.Fatalf("receipt list: %v", err)

@@ -285,6 +285,7 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 			if existing.InputFingerprint != fingerprint {
 				return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitConflict, "REQUEST_ID_CONFLICT", errors.New("request ID already belongs to a different operation, input, or target"))
 			}
+			existing.Result.Replayed = true
 			addAgentWarning(&existing.Result, agent.Warning{Code: "DUPLICATE_REQUEST_ID", Message: "existing result returned; provider operation was not resubmitted"})
 			return writeAgentResult(stdout, existing.Result)
 		}
@@ -314,12 +315,35 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 		result.ObservedAt = observedAt
 		result.Observation = &agent.Observation{At: observedAt, Completeness: "unknown", Unsupported: []string{"the selected handler does not expose a separate completeness contract", "pagination metadata is unavailable"}}
 		result.Data, result.Observation.Truncated = capturedData(captured.Bytes(), captured.truncated)
+		// capturedData reports whether the payload itself was cut off. It cannot
+		// know that --limit deliberately withheld rows, so a limited read that
+		// returned exactly the requested number of rows would still report
+		// truncated:false — asserting completeness while the same block admits
+		// pagination metadata is unavailable. Derive the second reason here.
+		if limitMayHaveDroppedRows(opts.Limit, result.Data) {
+			result.Observation.Truncated = true
+		}
 		if runErr != nil {
 			result.Error = structuredError(runErr)
 			result.Execution = readExecutionState(runErr)
-			result.Retry = agent.RetrySafe
+			result.Retry = inspectionRetry()
+			if transientReadFailure(runErr) {
+				addAgentWarning(&result, agent.Warning{
+					Code:    "TRANSIENT_READ_FAILURE",
+					Message: "the read did not reach a definitive provider answer (timeout, transport, or server-side failure); it carries no side effects, so retrying the read is safe once the cause clears",
+				})
+			}
 			result.Observation.Partial = len(result.Data) > 0
-			return writeAgentResult(stdout, result)
+			if err := writeAgentResult(stdout, result); err != nil {
+				return err
+			}
+			// The envelope has been written, so the failure must not be
+			// re-rendered onto stderr, but the provider's own exit code still
+			// has to reach the process status. Returning the original error
+			// marked as emitted is what makes a failed inspection exit with
+			// the same code the same request would exit with outside agent
+			// mode.
+			return app.MarkEmitted(app.NewExitError(runErr, app.ExitCodeFromError(runErr)))
 		}
 		result.Execution = agent.ExecutionSucceeded
 		return writeAgentResult(stdout, result)
@@ -932,6 +956,33 @@ func containsSensitiveArgument(args []string) bool {
 	return false
 }
 
+// limitMayHaveDroppedRows reports whether an applied --limit withheld rows from
+// the returned data.
+//
+// The captured payload is a JSON array of rows for every listing command, so the
+// row count is directly comparable to the limit that was requested:
+//
+//   - no limit (0) means nothing was withheld, however many rows came back;
+//   - fewer rows than the limit means the limit was not reached, so it withheld
+//     nothing;
+//   - exactly as many rows as the limit means the limit may have withheld more,
+//     and the caller cannot tell from the output — so it must be reported.
+//
+// Any other shape (an object, a bare string, a capture that did not survive as
+// JSON) reports false: this cannot prove rows were withheld, and guessing would
+// claim a truncation that did not happen. Completeness stays "unknown" either
+// way, because no handler exposes a completeness contract.
+func limitMayHaveDroppedRows(limit int, data json.RawMessage) bool {
+	if limit <= 0 || len(data) == 0 {
+		return false
+	}
+	var rows []json.RawMessage
+	if err := json.Unmarshal(data, &rows); err != nil {
+		return false
+	}
+	return len(rows) >= limit
+}
+
 func capturedData(data []byte, sourceTruncated bool) (json.RawMessage, bool) {
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
@@ -1154,6 +1205,41 @@ func readExecutionState(err error) agent.Execution {
 		}
 	}
 	return agent.ExecutionFailed
+}
+
+// inspectionRetry classifies retry guidance for a failed read-only inspection.
+//
+// Result.Validate requires a failed execution to carry
+// RetryDoNotAutomatic, and that invariant is right for a mutation, where a
+// failed execution may have partially applied. A read has no side effects, so
+// the conservative answer is also the honest one: the read produced no
+// definitive provider answer, and a receipt should not authorise repeating it.
+//
+// What matters most is that retry and execution state are derived together.
+// Pairing a failed execution with a blanket RetrySafe produced an invalid
+// envelope, and writeAgentResult then rejected it - so the provider's real
+// error (a not_found, for example) was replaced by "invalid agent result:
+// failed execution must not be retried automatically", an internal complaint
+// that told the caller nothing about what actually happened. When the two
+// fields disagree, the envelope loses the error entirely, so they must never be
+// chosen independently.
+func inspectionRetry() agent.Retry {
+	return agent.RetryDoNotAutomatic
+}
+
+// transientReadFailure reports whether a read failed without reaching a
+// definitive provider answer.
+//
+// These are the cases where repeating the read is both safe and worthwhile.
+// Recording that as a warning keeps a timeout from being reported as though it
+// were a permanent answer, without weakening the retry contract itself.
+func transientReadFailure(err error) bool {
+	if definitiveProviderReject(err) || app.IsNotFoundError(err) {
+		return false
+	}
+	return app.IsTimeoutError(err) || app.IsNetworkError(err) ||
+		app.IsCancellationError(err) || app.IsAmbiguousOutcome(err) ||
+		app.HTTPStatusFromError(err) >= 500
 }
 
 func errorCode(err error) string {
