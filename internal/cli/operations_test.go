@@ -130,6 +130,46 @@ func TestOperations_LookupKnown(t *testing.T) {
 	}
 }
 
+func TestUnsupportedVMLifecycleDiscoveryIsExplicit(t *testing.T) {
+	for _, tc := range []struct {
+		path string
+		want string
+	}{
+		{"vm pause", "vm suspend"},
+		{"vm unpause", "vm resume"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			op := LookupOperation(tc.path)
+			if op == nil {
+				t.Fatalf("LookupOperation(%q) = nil", tc.path)
+			}
+			if !strings.HasPrefix(op.ProviderSupportNote, "Unsupported:") || !strings.Contains(op.ProviderSupportNote, tc.want) {
+				t.Fatalf("provider support note = %q, want unsupported guidance containing %q", op.ProviderSupportNote, tc.want)
+			}
+			contract := describeOperation(*op, true)
+			if contract.AgentSupported || contract.AgentUnsupportedWhy == "" {
+				t.Fatalf("unsupported VM operation was advertised for agent execution: %+v", contract)
+			}
+			if contract.SubmitsTask || contract.ProviderInterface != "" || op.UsesOperationResult {
+				t.Fatalf("unsupported VM operation claims provider execution: %+v", contract)
+			}
+			if len(contract.RemoteSideEffects) != 0 || !strings.Contains(contract.ProviderPermissionNote, "Not checked") {
+				t.Fatalf("unsupported VM operation claims a remote request or permission check: %+v", contract)
+			}
+			if op.Waitable || op.ProducesUPID {
+				t.Fatalf("unsupported VM operation claims task polling: %+v", op)
+			}
+			summary := summarizeOperation(*op)
+			if !strings.Contains(summary.ProviderSupport, tc.want) {
+				t.Fatalf("operation list provider support = %q, want guidance containing %q", summary.ProviderSupport, tc.want)
+			}
+			if !strings.Contains(summary.ProviderPermission, "not checked") {
+				t.Fatalf("operation list permission status = %q, want unsupported/no-request disclosure", summary.ProviderPermission)
+			}
+		})
+	}
+}
+
 func TestOperations_LookupUnknown(t *testing.T) {
 	op := LookupOperation("nonexistent command")
 	if op != nil {
@@ -331,7 +371,7 @@ func TestOperations_ReadOnlyOps(t *testing.T) {
 func TestOperations_WaitableOps(t *testing.T) {
 	waitable := []string{
 		"vm start", "vm stop", "vm shutdown", "vm reset", "vm reboot",
-		"vm suspend", "vm resume", "vm pause", "vm unpause",
+		"vm suspend", "vm resume",
 		"vm update", "vm cloud-init", "vm delete",
 		"vm migrate", "vm clone", "vm create", "vm disk resize", "vm disk move", "vm template",
 		"container start", "container stop", "container shutdown", "container reboot",

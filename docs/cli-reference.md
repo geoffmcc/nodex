@@ -229,10 +229,14 @@ Inspect and operate virtual machines.
 | `vm start <id>` | Start a VM |
 | `vm stop <id>` | Stop a VM (force) |
 | `vm shutdown <id>` | Graceful VM shutdown (60s timeout) |
-| `vm suspend <id>` | Suspend a VM to disk |
+| `vm suspend <id>` | Suspend a VM in memory |
 | `vm resume <id>` | Resume a suspended VM |
-| `vm pause <id>` | Pause (freeze) a VM |
-| `vm unpause <id>` | Unpause a frozen VM |
+
+The Proxmox QEMU API has no separate VM `pause` or `unpause` action. `vm pause`
+and `vm unpause` return an unsupported-capability error with guidance to use
+`vm suspend` and `vm resume`, respectively. Nodex's `vm suspend` leaves
+Proxmox's `todisk` option unset, so it suspends the running QEMU process in
+memory; it does not save the VM state to disk.
 
 **Disruptive commands** (Tier 2, requires `--yes --force`):
 
@@ -256,7 +260,9 @@ Inspect and operate virtual machines.
 | `vm update <id> <params...>` | Update VM configuration |
 | `vm cloud-init <id>` | Regenerate cloud-init config |
 | `vm template <id>` | Convert VM to template |
-| `vm snapshot <action> <id> [args]` | Create, delete, or rollback snapshots |
+| `vm snapshot create <id> <name> [description]` | Create a VM snapshot (`--yes`) |
+| `vm snapshot delete <id> <name>` | Delete a VM snapshot (destructive; `--yes --force --confirm-target <name>`) |
+| `vm snapshot rollback <id> <name>` | Roll back to a VM snapshot (`--yes --force`) |
 | `vm clone <id> --newid <id> --name <name>` | Clone a VM |
 | `vm disk <action> <id> <disk> [args]` | Resize or move VM disks |
 
@@ -306,7 +312,9 @@ Inspect and operate containers.
 | `container update <id> <params...>` | Update container config |
 | `container os-update <node>/<vmid> --policy approved-full-upgrade` | Update a running LXC guest OS through the enrolled PVE host |
 | `container template <id>` | Convert container to template |
-| `container snapshot <action> <id> [args]` | Create, delete, or rollback snapshots |
+| `container snapshot create <id> <name> [description]` | Create a container snapshot (`--yes`) |
+| `container snapshot delete <id> <name>` | Delete a container snapshot (destructive; `--yes --force --confirm-target <name>`) |
+| `container snapshot rollback <id> <name>` | Roll back to a container snapshot (`--yes --force`) |
 | `container clone <id> --newid <id>` | Clone a container |
 
 `container os-update` is a disruptive operation and requires `--yes --force`.
@@ -813,14 +821,35 @@ Mutation commands emit an `OperationResult` envelope:
 | `safety` | Safety tier label |
 | `upid` | Provider task ID |
 | `submitted` | Whether request was accepted |
-| `waited` | Whether `--wait` was used |
-| `success` | Overall success |
-| `changed` | Whether state changed (null = unknown) |
-| `status` | Provider status text |
+| `waited` | Whether Nodex waited for a provider task to finish |
+| `synchronous` | Whether the provider applied the request inline without returning a task ID |
+| `success` | Request acceptance when not waiting; provider task result when waiting. Independent of postcondition verification. |
+| `changed` | `true`/`false` only when evidence establishes the fact; omitted when unknown |
+| `status` | Provider status text; does not by itself verify the requested state |
+| `verification` | `verified`, `failed`, or `unsupported` when a postcondition was checked; omitted when no check was attempted |
 | `warnings` | Human-readable warnings |
 | `error.class` | Error classification |
 | `error.exit` | Recommended exit code |
 | `error.detail` | Error detail message |
+
+For an asynchronous mutation without `--wait`, exit code 0 means the provider
+accepted the request; it does not mean the task finished. Use `--wait` to observe
+the task result. Even then, task success and the requested end state are distinct:
+inspect `verification` when present. `verification: "failed"` or
+`verification: "unsupported"` does not rewrite a successful task result, so
+automation must evaluate `success` and `verification` separately. A missing
+`verification` field means no postcondition check was attempted. A successful
+task may carry warnings without becoming a task failure.
+
+Postconditions are emitted only when the provider exposes a distinct state to
+observe. For example, Proxmox's LXC `status/current` reports only `running` or
+`stopped`, so Nodex does not claim a separate postcondition for an LXC suspend.
+
+JSON and YAML mutation envelopes are written to stdout. Progress messages,
+prompts, and human-readable diagnostics are written to stderr; table output is
+for terminal use and is not a scripting contract. The `operation list` and
+`operation describe` commands report static implementation support separately
+from permissions and readiness, which are only determined during execution.
 
 ## Credential Resolution
 

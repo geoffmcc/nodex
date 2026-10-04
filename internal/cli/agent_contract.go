@@ -167,13 +167,21 @@ func runOperationList(_ context.Context, cmdCtx *Context, args []string) error {
 
 func summarizeOperation(op OperationMeta) OperationSummary {
 	contract := describeOperation(op, false)
+	providerSupport := op.ProviderSupportNote
+	if providerSupport == "" {
+		providerSupport = "static implementation metadata only"
+	}
+	providerPermission := "checked by the existing handler at execution time"
+	if strings.HasPrefix(op.ProviderSupportNote, "Unsupported:") {
+		providerPermission = "not checked; the unsupported operation makes no provider request"
+	}
 	return OperationSummary{
 		ID: contract.ID, Path: contract.Path, Aliases: contract.Aliases,
 		Description: contract.Description, ArgumentSyntax: contract.ArgumentSyntax,
 		TargetRequirement: contract.TargetRequirement, SafetyTier: contract.SafetyTier,
 		LocalSideEffects: contract.LocalSideEffects, RemoteSideEffects: contract.RemoteSideEffects,
-		Risks: contract.Risks, ProviderSupport: "static implementation metadata only",
-		ProviderPermission: "checked by the existing handler at execution time",
+		Risks: contract.Risks, ProviderSupport: providerSupport,
+		ProviderPermission: providerPermission,
 		Confirmation:       contract.Confirmation, ProviderInterface: contract.ProviderInterface,
 		Interactive: contract.Interactive, SubmitsTask: contract.SubmitsTask,
 		Verification: contract.Verification, Recovery: contract.Recovery,
@@ -235,10 +243,15 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 		confirmation = append(confirmation, "--expert")
 	}
 	verification := []string{"submission outcome only; operation-specific postcondition verification is not generally available"}
+	permissionNote := "Current provider permissions are determined only when the existing handler makes its request."
+	if strings.HasPrefix(op.ProviderSupportNote, "Unsupported:") {
+		verification = []string{"not applicable; operation is rejected as unsupported before submission"}
+		permissionNote = "Not checked; the unsupported operation makes no provider request."
+	}
 	if op.ProducesUPID {
 		verification = []string{"provider task status can be refreshed when the returned task identifier and task inspection capability are available", "task completion does not prove the target postcondition"}
 	}
-	if lifecyclePath(op.Path) {
+	if lifecyclePath(op.Path) && op.ProviderSupportNote == "" {
 		verification = []string{"after task success, current guest state is inspected on the receipt-bound node", "observed desired state proves current state only, not that this request caused the change; VMID reuse cannot be excluded by providers that expose no stable guest UUID"}
 	}
 	var recovery []string
@@ -267,6 +280,10 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 		flags = nil
 		inputSchema = nil
 	}
+	providerSupportNote := op.ProviderSupportNote
+	if providerSupportNote == "" {
+		providerSupportNote = "Provider implementation support is described by provider_interface/capabilities; this is not a live readiness or authorization check."
+	}
 	return OperationContract{
 		ID: strings.ReplaceAll(op.Path, " ", "."), Path: op.Path, Aliases: OperationAliases(op),
 		Description: op.Description, ArgumentSyntax: usage, Arguments: args, Flags: flags, InputSchema: inputSchema,
@@ -277,8 +294,8 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 		ProviderInterface:        op.CapabilityInterface, Interactive: interactive, SubmitsTask: op.ProducesUPID,
 		Verification: verification, Recovery: recovery, StructuredOutput: agentStructuredOutput(supported), LegacyOutputModes: append([]string(nil), op.OutputModes...),
 		AgentSupported: supported, AgentUnsupportedWhy: unsupportedWhy,
-		ProviderSupportNote:    "Provider implementation support is described by provider_interface/capabilities; this is not a live readiness or authorization check.",
-		ProviderPermissionNote: "Current provider permissions are determined only when the existing handler makes its request.",
+		ProviderSupportNote:    providerSupportNote,
+		ProviderPermissionNote: permissionNote,
 	}
 }
 
@@ -613,6 +630,9 @@ func sideEffects(op OperationMeta) ([]string, []string) {
 	if _, dispatch := knownDispatchCommands[op.Path]; dispatch {
 		return []string{}, []string{}
 	}
+	if strings.HasPrefix(op.ProviderSupportNote, "Unsupported:") {
+		return []string{}, []string{}
+	}
 	switch op.Path {
 	case "environment health", "environment backup-health", "monitor check", "profile test", "profile diagnose-permissions", "doctor":
 		return []string{}, []string{"remote_read"}
@@ -702,6 +722,9 @@ func lifecyclePath(path string) bool {
 func agentModeSupport(op OperationMeta) (bool, string, bool) {
 	if op.Path == "agent receipt refresh" || op.Path == "agent receipt reconcile" {
 		return true, "", false
+	}
+	if strings.HasPrefix(op.ProviderSupportNote, "Unsupported:") {
+		return false, strings.TrimSpace(strings.TrimPrefix(op.ProviderSupportNote, "Unsupported:")), false
 	}
 	interactive := op.Path == "vm console" || op.Path == "container console" || op.Path == "setup" || op.Path == "access user create" || op.SecuritySensitivity == SecCredentials
 	if interactive {

@@ -828,7 +828,9 @@ func (c *Client) VMReboot(ctx context.Context, node string, vmid int) (string, e
 	return c.vmMutation(ctx, node, vmid, "reboot", nil)
 }
 
-// VMSuspend suspends a VM to disk and returns the task UPID.
+// VMSuspend suspends a VM in memory by default and returns the task UPID.
+// Proxmox can instead suspend to disk with the `todisk` parameter, but this
+// client intentionally leaves that option unset.
 func (c *Client) VMSuspend(ctx context.Context, node string, vmid int) (string, error) {
 	return c.vmMutation(ctx, node, vmid, "suspend", nil)
 }
@@ -838,15 +840,23 @@ func (c *Client) VMResume(ctx context.Context, node string, vmid int) (string, e
 	return c.vmMutation(ctx, node, vmid, "resume", nil)
 }
 
-// VMPause freezes a running VM and returns the task UPID.
-// VMPause is not supported on QEMU VMs in Proxmox 9+; returns an error.
+// VMPause returns an unsupported-capability error. Proxmox's QEMU API exposes
+// suspend/resume, but no separate pause action; vm suspend is the in-memory
+// equivalent when that behavior is intended.
 func (c *Client) VMPause(ctx context.Context, node string, vmid int) (string, error) {
-	return "", fmt.Errorf("VM pause is not supported on QEMU virtual machines (use container pause instead)")
+	return "", app.NewExitError(
+		fmt.Errorf("%w: Proxmox QEMU has no separate VM pause action; use `vm suspend` to suspend the VM in memory", app.ErrUnsupportedCap),
+		app.ExitUnsupportedCap,
+	)
 }
 
-// VMUnpause is not supported on QEMU VMs in Proxmox 9+; returns an error.
+// VMUnpause returns an unsupported-capability error. Use vm resume for a VM
+// suspended in memory.
 func (c *Client) VMUnpause(ctx context.Context, node string, vmid int) (string, error) {
-	return "", fmt.Errorf("VM unpause is not supported on QEMU virtual machines (use container unpause instead)")
+	return "", app.NewExitError(
+		fmt.Errorf("%w: Proxmox QEMU has no separate VM unpause action; use `vm resume` to resume a VM suspended in memory", app.ErrUnsupportedCap),
+		app.ExitUnsupportedCap,
+	)
 }
 
 // CTStart starts a container and returns the task UPID.

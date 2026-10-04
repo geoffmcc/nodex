@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/transport/httpclient"
 )
 
@@ -519,10 +520,13 @@ func TestVMPauseNotSupported(t *testing.T) {
 	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
 	_, err := c.VMPause(context.Background(), "pve1", 100)
 	if err == nil {
-		t.Fatal("VMPause should return error in Proxmox 9+")
+		t.Fatal("VMPause should return an unsupported-capability error")
 	}
-	if !strings.Contains(err.Error(), "not supported") {
-		t.Fatalf("error = %v, want 'not supported'", err)
+	if !strings.Contains(err.Error(), "vm suspend") || strings.Contains(err.Error(), "container") {
+		t.Fatalf("error = %v, want VM-specific suspend guidance", err)
+	}
+	if got := app.ExitCodeFromError(err); got != app.ExitUnsupportedCap {
+		t.Fatalf("exit code = %d, want %d", got, app.ExitUnsupportedCap)
 	}
 }
 
@@ -582,6 +586,9 @@ func TestVMSuspendPath(t *testing.T) {
 		if r.URL.Path != "/nodes/pve1/qemu/100/status/suspend" {
 			t.Errorf("path = %s, want /nodes/pve1/qemu/100/status/suspend", r.URL.Path)
 		}
+		if got := r.FormValue("todisk"); got != "" {
+			t.Errorf("todisk = %q, want omitted so Proxmox uses its in-memory suspend default", got)
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"data":"UPID:pve1:0000303F:0023A45B:"}`))
 	}))
@@ -598,10 +605,13 @@ func TestVMUnpauseNotSupported(t *testing.T) {
 	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
 	_, err := c.VMUnpause(context.Background(), "pve1", 100)
 	if err == nil {
-		t.Fatal("VMUnpause should return error in Proxmox 9+")
+		t.Fatal("VMUnpause should return an unsupported-capability error")
 	}
-	if !strings.Contains(err.Error(), "not supported") {
-		t.Fatalf("error = %v, want 'not supported'", err)
+	if !strings.Contains(err.Error(), "vm resume") || strings.Contains(err.Error(), "container") {
+		t.Fatalf("error = %v, want VM-specific resume guidance", err)
+	}
+	if got := app.ExitCodeFromError(err); got != app.ExitUnsupportedCap {
+		t.Fatalf("exit code = %d, want %d", got, app.ExitUnsupportedCap)
 	}
 }
 

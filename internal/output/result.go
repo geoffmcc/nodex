@@ -55,12 +55,13 @@ type OperationResult struct {
 	// but never observed.
 	Synchronous bool `json:"synchronous,omitempty" yaml:"synchronous,omitempty"`
 
-	// Success is true when the overall operation was successful.
-	// For --wait operations this mirrors the provider task result.
-	// For non-wait operations this means the request was accepted.
+	// Success reports submission/task outcome, independently of Verification.
+	// For --wait operations this mirrors the provider task result. For non-wait
+	// operations this means the request was accepted, not that it completed.
 	Success bool `json:"success" yaml:"success"`
 
-	// Changed indicates whether state was modified. nil when unknowable.
+	// Changed indicates whether state was modified. Nil means unknown and is
+	// omitted from JSON/YAML because the field uses omitempty.
 	Changed *bool `json:"changed,omitempty" yaml:"changed,omitempty"`
 
 	// Status is a provider-defined status string (e.g., "OK" for Proxmox tasks).
@@ -70,7 +71,8 @@ type OperationResult struct {
 	// after the operation completed. It is deliberately separate from Status:
 	// a provider task reporting success is not evidence that the intended
 	// state was reached. Values are "verified", "failed", or "unsupported".
-	// Empty means no postcondition check was attempted.
+	// Empty means no postcondition check was attempted. Verification does not
+	// change Success; consumers must inspect both fields.
 	Verification string `json:"verification,omitempty" yaml:"verification,omitempty"`
 
 	// Warnings holds human-readable warnings for the operation.

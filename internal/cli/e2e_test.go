@@ -451,20 +451,18 @@ func (p *e2eMockProvider) VMReboot(_ context.Context, node string, vmid int) (st
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12349, 1700000000), nil
 }
 func (p *e2eMockProvider) VMSuspend(_ context.Context, node string, vmid int) (string, error) {
-	p.setGuestStatus("vm", vmid, "suspended")
+	p.setGuestStatus("vm", vmid, "paused")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12350, 1700000000), nil
 }
 func (p *e2eMockProvider) VMResume(_ context.Context, node string, vmid int) (string, error) {
 	p.setGuestStatus("vm", vmid, "running")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12351, 1700000000), nil
 }
-func (p *e2eMockProvider) VMPause(_ context.Context, node string, vmid int) (string, error) {
-	p.setGuestStatus("vm", vmid, "paused")
-	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12352, 1700000000), nil
+func (p *e2eMockProvider) VMPause(_ context.Context, _ string, _ int) (string, error) {
+	return "", app.NewExitError(fmt.Errorf("%w: Proxmox QEMU has no separate VM pause action; use `vm suspend` to suspend the VM in memory", app.ErrUnsupportedCap), app.ExitUnsupportedCap)
 }
-func (p *e2eMockProvider) VMUnpause(_ context.Context, node string, vmid int) (string, error) {
-	p.setGuestStatus("vm", vmid, "running")
-	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12353, 1700000000), nil
+func (p *e2eMockProvider) VMUnpause(_ context.Context, _ string, _ int) (string, error) {
+	return "", app.NewExitError(fmt.Errorf("%w: Proxmox QEMU has no separate VM unpause action; use `vm resume` to resume a VM suspended in memory", app.ErrUnsupportedCap), app.ExitUnsupportedCap)
 }
 func (p *e2eMockProvider) CTStart(_ context.Context, node string, vmid int) (string, error) {
 	p.setGuestStatus("container", vmid, "running")
@@ -610,9 +608,8 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 		{name: "vm start", args: []string{"--yes", "vm", "start", "e2e-node/101"}, want: []string{"UPID:e2e-node"}},
 		{name: "vm stop", args: []string{"--yes", "vm", "stop", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
 		{name: "vm shutdown", args: []string{"--yes", "vm", "shutdown", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
+		{name: "vm suspend", args: []string{"--yes", "vm", "suspend", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
 		{name: "vm resume", args: []string{"--yes", "vm", "resume", "e2e-node/101"}, want: []string{"UPID:e2e-node"}},
-		{name: "vm pause", args: []string{"--yes", "vm", "pause", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
-		{name: "vm unpause", args: []string{"--yes", "vm", "unpause", "e2e-node/101"}, want: []string{"UPID:e2e-node"}},
 		// Lifecycle commands (Tier 2, need --yes --force)
 		{name: "vm reset", args: []string{"--yes", "--force", "vm", "reset", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
 		{name: "vm reboot", args: []string{"--yes", "--force", "vm", "reboot", "e2e-node/100"}, want: []string{"UPID:e2e-node"}},
@@ -645,6 +642,46 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 				if !strings.Contains(out, want) {
 					t.Fatalf("Run(%v) output missing %q:\n%s", tt.args, want, out)
 				}
+			}
+		})
+	}
+}
+
+func TestVMFreezeCommandsReturnActionableUnsupportedErrors(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "pause",
+			args: []string{"--yes", "vm", "pause", "e2e-node/100"},
+			want: "vm suspend",
+		},
+		{
+			name: "unpause",
+			args: []string{"--yes", "vm", "unpause", "e2e-node/100"},
+			want: "vm resume",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err == nil {
+				t.Fatal("expected an unsupported-capability error")
+			}
+			if got := app.ExitCodeFromError(err); got != app.ExitUnsupportedCap {
+				t.Fatalf("exit code = %d, want %d: %v", got, app.ExitUnsupportedCap, err)
+			}
+			if !strings.Contains(err.Error(), tt.want) || strings.Contains(err.Error(), "container") {
+				t.Fatalf("error = %v, want VM-specific guidance mentioning %q", err, tt.want)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("unsupported operation wrote result to stdout: %s", stdout.String())
 			}
 		})
 	}
@@ -715,7 +752,6 @@ func TestLifecycleIdempotentNoop(t *testing.T) {
 		{name: "vm start on running vm", args: []string{"--yes", "vm", "start", "e2e-node/100"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
 		{name: "vm start --wait on running vm", args: []string{"--yes", "--wait", "vm", "start", "e2e-node/100"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
 		{name: "vm resume on running vm", args: []string{"--yes", "vm", "resume", "e2e-node/100"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
-		{name: "vm unpause on running vm", args: []string{"--yes", "vm", "unpause", "e2e-node/100"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
 		{name: "container start on running ct", args: []string{"--yes", "container", "start", "e2e-node/200"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
 		{name: "container resume on running ct", args: []string{"--yes", "container", "resume", "e2e-node/200"}, want: []string{`"success": true`, `"submitted": false`, `"status": "already running"`}},
 		// Destructive ops (reset/reboot) always submit regardless of current state.

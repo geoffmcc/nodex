@@ -2226,6 +2226,33 @@ func TestLifecyclePostconditionVerificationIsAuthoritative(t *testing.T) {
 		}
 	})
 
+	t.Run("vm-suspend-verifies-qmp-paused-state", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "suspend", "e2e-node/100"}, &stdout, &stderr); err != nil {
+			t.Fatalf("vm suspend --wait: %v", err)
+		}
+		out := stdout.String()
+		for _, want := range []string{`"status": "OK"`, `"verification": "verified"`, `"changed": true`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("expected %q in output: %s", want, out)
+			}
+		}
+	})
+
+	t.Run("lxc-suspend-does-not-claim-unobservable-state", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "container", "suspend", "e2e-node/200"}, &stdout, &stderr); err != nil {
+			t.Fatalf("container suspend --wait: %v", err)
+		}
+		out := stdout.String()
+		if !strings.Contains(out, `"status": "OK"`) {
+			t.Fatalf("expected successful task result: %s", out)
+		}
+		if strings.Contains(out, `"verification"`) {
+			t.Fatalf("LXC status/current cannot distinguish suspended from running; do not claim a postcondition: %s", out)
+		}
+	})
+
 	t.Run("unreadable-state-is-not-a-failure", func(t *testing.T) {
 		e2eGuestStatusError = http.StatusForbidden
 		defer func() { e2eGuestStatusError = 0 }()

@@ -66,8 +66,8 @@ Generated from `internal/cli/operations.go` — the canonical operation registry
 | `vm shutdown` | Reversible | yes | yes | no | n/a | yes |
 | `vm suspend` | Reversible | yes | no | no | n/a | yes |
 | `vm resume` | Reversible | yes | no | no | n/a | yes |
-| `vm pause` | Reversible | yes | no | no | n/a | yes |
-| `vm unpause` | Reversible | yes | no | no | n/a | yes |
+| `vm pause` | Reversible | yes | yes | no | n/a | yes |
+| `vm unpause` | Reversible | yes | yes | no | n/a | yes |
 | **VM — Lifecycle (Tier 2)** | | | | | | |
 | `vm reset` | Disruptive | yes | yes | no | n/a | yes |
 | `vm reboot` | Disruptive | yes | yes | no | n/a | yes |
@@ -236,6 +236,11 @@ Generated from `internal/cli/operations.go` — the canonical operation registry
 | `access tokens` (route) | Observation | yes | no | no | n/a | no |
 
 ---
+
+For Proxmox QEMU, `vm pause` and `vm unpause` are explicit unsupported
+operations; their negative tests verify the unsupported exit code and guidance
+to use `vm suspend` and `vm resume` respectively. The in-memory e2e provider
+models that provider behavior; it does not stand in for live Proxmox testing.
 
 ## Cross-Cutting Test Coverage
 
