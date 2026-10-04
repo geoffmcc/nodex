@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/geoffmcc/nodex/internal/app"
@@ -31,6 +32,42 @@ func parseKeyValueArgs(args []string) (map[string]string, error) {
 		params[key] = parts[1]
 	}
 	return params, nil
+}
+
+type guestConfigKind string
+
+const (
+	guestConfigVM guestConfigKind = "VM"
+	guestConfigCT guestConfigKind = "container"
+)
+
+// validateGuestConfigValueTypes catches malformed values for common numeric
+// config keys before connecting to a provider. Unknown keys remain provider-
+// validated so version-specific Proxmox options continue to work.
+func validateGuestConfigValueTypes(kind guestConfigKind, params map[string]string) error {
+	var integerFields map[string]struct{}
+	switch kind {
+	case guestConfigVM:
+		integerFields = map[string]struct{}{
+			"balloon": {}, "cores": {}, "cpuunits": {}, "memory": {}, "sockets": {},
+		}
+	case guestConfigCT:
+		integerFields = map[string]struct{}{
+			"cores": {}, "cpuunits": {}, "memory": {}, "swap": {},
+		}
+	default:
+		return fmt.Errorf("unsupported guest config kind %q", kind)
+	}
+
+	for key, value := range params {
+		if _, ok := integerFields[key]; !ok {
+			continue
+		}
+		if _, err := strconv.ParseInt(value, 10, 64); err != nil {
+			return fmt.Errorf("invalid %s configuration value for %q: expected an integer", kind, key)
+		}
+	}
+	return nil
 }
 
 // requireConfig checks if the provider supports ConfigProvider.
@@ -201,6 +238,9 @@ func runVMUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(params) == 0 {
 		return app.NewExitError(fmt.Errorf("at least one key=value parameter is required"), app.ExitUsage)
 	}
+	if err := validateGuestConfigValueTypes(guestConfigVM, params); err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
@@ -253,6 +293,9 @@ func runCTUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	if len(params) == 0 {
 		return app.NewExitError(fmt.Errorf("at least one key=value parameter is required"), app.ExitUsage)
+	}
+	if err := validateGuestConfigValueTypes(guestConfigCT, params); err != nil {
+		return app.NewExitError(err, app.ExitUsage)
 	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
