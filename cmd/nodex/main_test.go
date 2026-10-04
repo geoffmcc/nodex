@@ -51,8 +51,11 @@ func TestEmitError_JSON_ErrorKeyIsAlwaysAnObject(t *testing.T) {
 	if doc.Schema != output.SchemaVersionResult {
 		t.Errorf("schema = %d, want %d", doc.Schema, output.SchemaVersionResult)
 	}
-	if doc.Error.Class != "error" {
-		t.Errorf("error.class = %q, want %q", doc.Error.Class, "error")
+	// P2-B: ExitUsage reports the distinct "usage" class rather than falling
+	// through to the generic "error" class, so callers can tell bad input and
+	// refused confirmation apart from provider failures.
+	if doc.Error.Class != "usage" {
+		t.Errorf("error.class = %q, want %q", doc.Error.Class, "usage")
 	}
 	if doc.Error.Exit != app.ExitUsage {
 		t.Errorf("error.exit = %d, want %d", doc.Error.Exit, app.ExitUsage)

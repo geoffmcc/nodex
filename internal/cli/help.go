@@ -88,7 +88,7 @@ var leafHelp = map[string]helpEntry{
 	"container resume":             {usage: "<node>/<vmid>"},
 	"container update":             {usage: "<node>/<vmid> <key=value>"},
 	"container os-update":          {usage: "<node>/<vmid> --policy security-only|full-upgrade"},
-	"container delete":             {usage: "<node>/<vmid>"},
+	"container delete":             {desc: "Delete a container (destructive); confirm with the node/VMID target", usage: "<node>/<vmid> --yes --force --confirm-target <node>/<vmid>", examples: []string{"proxmox/9610 --yes --force --confirm-target proxmox/9610"}},
 	"container template":           {usage: "<node>/<vmid>"},
 	"container migrate":            {usage: "<node>/<vmid> <target>"},
 	"container clone":              {usage: "<node>/<vmid> <new-vmid> <name> [storage]"},
@@ -168,10 +168,10 @@ var leafHelp = map[string]helpEntry{
 
 	// Dispatch group leaves.
 	"vm snapshot create":          {desc: "Create a VM snapshot", usage: "<node>/<vmid> <name> [description]"},
-	"vm snapshot delete":          {desc: "Delete a VM snapshot", usage: "<node>/<vmid> <name>"},
+	"vm snapshot delete":          {desc: "Delete a VM snapshot (destructive); confirm with the snapshot name", usage: "<node>/<vmid> <name> --yes --force --confirm-target <name>", examples: []string{"proxmox/100 pre-upgrade --yes --force --confirm-target pre-upgrade"}},
 	"vm snapshot rollback":        {desc: "Roll back a VM to a snapshot", usage: "<node>/<vmid> <name>"},
 	"container snapshot create":   {desc: "Create a container snapshot", usage: "<node>/<vmid> <name> [description]"},
-	"container snapshot delete":   {desc: "Delete a container snapshot", usage: "<node>/<vmid> <name>"},
+	"container snapshot delete":   {desc: "Delete a container snapshot (destructive); confirm with the snapshot name", usage: "<node>/<vmid> <name> --yes --force --confirm-target <name>", examples: []string{"proxmox/9610 nx4fu-snap1 --yes --force --confirm-target nx4fu-snap1"}},
 	"container snapshot rollback": {desc: "Roll back a container to a snapshot", usage: "<node>/<vmid> <name>"},
 	"vm disk resize":              {desc: "Resize a VM disk", usage: "<node>/<vmid> <disk> <size>"},
 	"vm disk move":                {desc: "Move a VM disk to another storage", usage: "<node>/<vmid> <disk> <storage>"},

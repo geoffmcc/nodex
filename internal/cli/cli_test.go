@@ -5,6 +5,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -2195,4 +2196,80 @@ func TestRunInertConfirmFlagWarningSuppressedByQuiet(t *testing.T) {
 	if strings.Contains(errBuf.String(), "has no effect") {
 		t.Errorf("--quiet should suppress the warning, stderr: %q", errBuf.String())
 	}
+}
+
+// TestLifecyclePostconditionVerificationIsAuthoritative verifies that a
+// completed lifecycle task is separated from the observed end state.
+//
+// A finished task proves the work ran, not that the guest reached the requested
+// state, and an unreadable state read must never be reported as a failure.
+func TestLifecyclePostconditionVerificationIsAuthoritative(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	t.Run("start-verifies-observed-state", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/101"}, &stdout, &stderr); err != nil {
+			t.Fatalf("vm start --wait: %v", err)
+		}
+		out := stdout.String()
+		for _, want := range []string{
+			`"status": "OK"`, `"verification": "verified"`, `"changed": true`,
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("expected %q in output: %s", want, out)
+			}
+		}
+		// A confirmed postcondition is not a warning.
+		if strings.Contains(out, `"warnings"`) {
+			t.Errorf("a verified postcondition must not add warnings: %s", out)
+		}
+	})
+
+	t.Run("unreadable-state-is-not-a-failure", func(t *testing.T) {
+		e2eGuestStatusError = http.StatusForbidden
+		defer func() { e2eGuestStatusError = 0 }()
+
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/101"}, &stdout, &stderr); err != nil {
+			t.Fatalf("vm start --wait: %v", err)
+		}
+		out := stdout.String()
+		if strings.Contains(out, `"verification": "failed"`) {
+			t.Errorf("an unreadable state must not be reported as a failed postcondition: %s", out)
+		}
+		for _, want := range []string{`"verification": "unsupported"`, `"success": true`, `"status": "OK"`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("expected %q in output: %s", want, out)
+			}
+		}
+	})
+
+	t.Run("contradicted-state-is-reported", func(t *testing.T) {
+		// The task reports success but the guest never leaves "paused", so the
+		// postcondition must be reported as failed with the observation.
+		e2eGuestStatusOverride = "paused"
+		defer func() { e2eGuestStatusOverride = "" }()
+
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/101"}, &stdout, &stderr); err != nil {
+			t.Fatalf("vm start --wait: %v", err)
+		}
+		out := stdout.String()
+		for _, want := range []string{`"verification": "failed"`, `"status": "OK"`, `paused`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("expected %q in output: %s", want, out)
+			}
+		}
+	})
+
+	t.Run("no-wait-does-not-claim-a-verdict", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		if err := Run(context.Background(), []string{"--output", "json", "--yes", "vm", "start", "e2e-node/101"}, &stdout, &stderr); err != nil {
+			t.Fatalf("vm start: %v", err)
+		}
+		if out := stdout.String(); strings.Contains(out, `"verification"`) {
+			t.Errorf("an un-waited operation must not report a postcondition verdict: %s", out)
+		}
+	})
 }

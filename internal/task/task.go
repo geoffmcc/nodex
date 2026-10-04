@@ -129,6 +129,27 @@ type TaskStatus struct {
 	ExitCode string // error code on failure
 }
 
+// warningsPrefix is the exit-status prefix Proxmox VE reports for a task that
+// completed successfully but emitted one or more warnings, for example
+// "WARNINGS: 1". Such a task reached its intended end state, so it must not be
+// classified as a failure.
+const warningsPrefix = "WARNINGS:"
+
+// Success reports whether a terminal task exit status represents a successful
+// completion.
+//
+// It is the single canonical classification rule for task exit statuses.
+// Proxmox VE reports a completed task as "OK", or as "WARNINGS: <count>" when it
+// finished successfully with warnings. Both are successful completions and both
+// must be treated identically by every caller, otherwise the same task is
+// reported as successful by one interface and as failed by another.
+//
+// A running or empty status is never a success.
+func Success(status string) bool {
+	s := strings.TrimSpace(status)
+	return s == "OK" || strings.HasPrefix(s, warningsPrefix)
+}
+
 // TaskStatusClient is the interface for querying task status.
 type TaskStatusClient interface {
 	GetTask(ctx context.Context, node, upid string) (*TaskStatus, error)
@@ -250,7 +271,7 @@ func (p *Poller) Wait(ctx context.Context, node, upid string) *TaskResult {
 				UPID:   upid,
 				State:  StateStopped,
 				Status: status.Status,
-				OK:     status.Status == "OK" || strings.HasPrefix(status.Status, "WARNINGS:"),
+				OK:     Success(status.Status),
 			}
 			return result
 		}

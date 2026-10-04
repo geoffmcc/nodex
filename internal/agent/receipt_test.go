@@ -257,3 +257,64 @@ func TestStoreSerializesConcurrentRequestIDs(t *testing.T) {
 		t.Fatal("second lease did not proceed after release")
 	}
 }
+
+// P1-C: a receipt persisted before the relaxation must still validate and load.
+// The change permits do_not_retry_automatically for an accepted-but-unresolved
+// operation; it must not invalidate anything that was already legal.
+func TestPreviouslyPersistedReceiptsRemainReadable(t *testing.T) {
+	cases := []struct {
+		name         string
+		submission   Submission
+		execution    Execution
+		retry        Retry
+		verification Verification
+	}{
+		{"accepted-unresolved-reconcile-first", SubmissionAccepted, ExecutionUnknown, RetryReconcileFirst, VerificationUnknown},
+		{"accepted-running-reconcile-first", SubmissionAccepted, ExecutionRunning, RetryReconcileFirst, VerificationUnknown},
+		{"accepted-unresolved-not-automatic", SubmissionAccepted, ExecutionUnknown, RetryDoNotAutomatic, VerificationUnknown},
+		{"accepted-running-not-automatic", SubmissionAccepted, ExecutionRunning, RetryDoNotAutomatic, VerificationUnknown},
+		{"unknown-unresolved-reconcile-first", SubmissionUnknown, ExecutionUnknown, RetryReconcileFirst, VerificationUnsupported},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := validTestReceipt("req_" + tc.name)
+			r.Submission, r.Execution, r.Retry, r.Verification = tc.submission, tc.execution, tc.retry, tc.verification
+			if err := r.Validate(); err != nil {
+				t.Fatalf("previously valid combination rejected: %v", err)
+			}
+			b, err := json.Marshal(r)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var back Receipt
+			if err := json.Unmarshal(b, &back); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if err := back.Validate(); err != nil {
+				t.Fatalf("round-tripped receipt invalid: %v", err)
+			}
+			if back.Submission != tc.submission || back.Execution != tc.execution || back.Retry != tc.retry {
+				t.Fatalf("round-trip changed outcome: %+v", back.Result)
+			}
+		})
+	}
+}
+
+// An accepted-but-unresolved receipt may still not claim a safe automatic retry.
+func TestAcceptedUnresolvedStillRejectsUnsafeRetry(t *testing.T) {
+	r := validTestReceipt("req_unsafe_unresolved")
+	r.Submission, r.Execution, r.Verification, r.Retry = SubmissionAccepted, ExecutionUnknown, VerificationUnknown, RetrySafe
+	if err := r.Validate(); err == nil {
+		t.Fatal("an accepted request of unknown completion must not be marked safe to retry automatically")
+	}
+}
+
+// An unknown submission must still be reconciled first: whether the request
+// landed at all is genuinely open, so the relaxation must not reach it.
+func TestUnknownSubmissionStillRequiresReconcileFirst(t *testing.T) {
+	r := validTestReceipt("req_unknown_requires_reconcile")
+	r.Submission, r.Execution, r.Verification, r.Retry = SubmissionUnknown, ExecutionUnknown, VerificationUnknown, RetryDoNotAutomatic
+	if err := r.Validate(); err == nil {
+		t.Fatal("an unknown submission must not be marked as not automatically retryable")
+	}
+}

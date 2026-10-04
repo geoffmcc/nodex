@@ -48,6 +48,13 @@ type OperationResult struct {
 	// Waited is true when Nodex waited for the provider task to complete.
 	Waited bool `json:"waited" yaml:"waited"`
 
+	// Synchronous is true when the provider applied the change inline and
+	// returned no task identifier. Without it, Submitted=true with an empty
+	// UPID and Waited=false is ambiguous: it cannot distinguish a confirmed
+	// synchronous completion from an asynchronous change that was submitted
+	// but never observed.
+	Synchronous bool `json:"synchronous,omitempty" yaml:"synchronous,omitempty"`
+
 	// Success is true when the overall operation was successful.
 	// For --wait operations this mirrors the provider task result.
 	// For non-wait operations this means the request was accepted.
@@ -58,6 +65,13 @@ type OperationResult struct {
 
 	// Status is a provider-defined status string (e.g., "OK" for Proxmox tasks).
 	Status string `json:"status,omitempty" yaml:"status,omitempty"`
+
+	// Verification reports whether the requested postcondition was observed
+	// after the operation completed. It is deliberately separate from Status:
+	// a provider task reporting success is not evidence that the intended
+	// state was reached. Values are "verified", "failed", or "unsupported".
+	// Empty means no postcondition check was attempted.
+	Verification string `json:"verification,omitempty" yaml:"verification,omitempty"`
 
 	// Warnings holds human-readable warnings for the operation.
 	Warnings []string `json:"warnings,omitempty" yaml:"warnings,omitempty"`

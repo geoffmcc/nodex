@@ -9,5 +9,7 @@
   "submitted": true,
   "waited": true,
   "success": true,
-  "status": "OK"
+  "changed": true,
+  "status": "OK",
+  "verification": "verified"
 }

@@ -285,6 +285,38 @@ func (c *Client) GetVMConfig(ctx context.Context, node string, vmid int) (*VMCon
 	return &resp.Data, nil
 }
 
+// GetGuestStatus returns the current status of a single guest.
+//
+// It reads /nodes/<node>/{qemu,lxc}/<vmid>/status/current rather than
+// /cluster/resources. The aggregate listing is allowed to lag a completed
+// lifecycle task, so it cannot establish what state one specific guest is in.
+func (c *Client) GetGuestStatus(ctx context.Context, node, guestType string, vmid int) (*GuestStatusData, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return nil, fmt.Errorf("VMID is required")
+	}
+	segment := "lxc"
+	if guestType == "qemu" {
+		segment = "qemu"
+	} else if guestType != "lxc" {
+		return nil, fmt.Errorf("unsupported guest type %q", guestType)
+	}
+	var resp GuestStatusResponse
+	path := "/nodes/" + url.PathEscape(node) + "/" + segment + "/" + strconv.Itoa(vmid) + "/status/current"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Data.VMID == 0 {
+		resp.Data.VMID = vmid
+	}
+	if resp.Data.Status == "" {
+		return nil, fmt.Errorf("guest status response for %s/%d carried no status field", node, vmid)
+	}
+	return &resp.Data, nil
+}
+
 // GetContainerConfig returns configuration for a specific container.
 func (c *Client) GetContainerConfig(ctx context.Context, node string, vmid int) (*ContainerConfigData, error) {
 	if node == "" {

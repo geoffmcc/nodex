@@ -649,10 +649,24 @@ func TestAgentReceiptRefreshRejectsProviderTaskFromWrongNode(t *testing.T) {
 	}
 	var receipt agent.Receipt
 	if err := json.Unmarshal(stdout.Bytes(), &receipt); err != nil {
-		t.Fatalf("decode unknown receipt: %v\n%s", err, stdout.String())
+		t.Fatalf("decode receipt: %v\n%s", err, stdout.String())
 	}
-	if receipt.Submission != agent.SubmissionUnknown || receipt.Execution != agent.ExecutionUnknown || receipt.Error == nil || receipt.Error.Code != "RECONCILIATION_UNAVAILABLE" {
+	// The foreign task must not be used to settle the receipt, but the
+	// recorded acceptance survives: it was established at submission time and
+	// is not retracted by a later inability to observe completion.
+	if receipt.Error == nil || receipt.Error.Code != "RECONCILIATION_UNAVAILABLE" {
 		t.Fatalf("mismatched task identity was guessed: %+v", receipt.Result)
+	}
+	if receipt.Submission != agent.SubmissionAccepted {
+		t.Errorf("submission = %q, want accepted; a failed observation must not erase known acceptance", receipt.Submission)
+	}
+	if receipt.Execution == agent.ExecutionSucceeded || receipt.Execution == agent.ExecutionFailed {
+		t.Errorf("execution = %q; a task from another node is not evidence about this receipt", receipt.Execution)
+	}
+	for _, a := range receipt.NextActions {
+		if a.Operation == "agent receipt reconcile" {
+			t.Errorf("next action %q was already attempted and cannot succeed", a.Operation)
+		}
 	}
 }
 
@@ -746,6 +760,121 @@ func TestAgentReceiptRefreshReadsTaskButDoesNotClaimPostcondition(t *testing.T) 
 	}
 	if len(pbsE2ERunCalls) != 1 {
 		t.Fatalf("read-only reconciliation submitted another operation: %v", pbsE2ERunCalls)
+	}
+}
+
+// A Proxmox VE task that finishes with "WARNINGS: n" completed successfully.
+// Receipt refresh must classify it as succeeded, not failed: reporting it as
+// failed tells an automated caller the mutation did not take effect and must
+// not be retried, even though the resource was in fact created.
+func TestAgentReceiptRefreshTreatsWarningExitStatusAsSuccess(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		exitStatus string
+		wantExec   agent.Execution
+		wantErr    bool
+	}{
+		{"plain success", "OK", agent.ExecutionSucceeded, false},
+		{"single warning", "WARNINGS: 1", agent.ExecutionSucceeded, false},
+		{"multiple warnings", "WARNINGS: 3", agent.ExecutionSucceeded, false},
+		{"real failure", "error", agent.ExecutionFailed, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			seedPBSMutationTest(t)
+			pbsE2ETaskExitStatusOverride = tt.exitStatus
+			t.Cleanup(func() { pbsE2ETaskExitStatusOverride = "" })
+
+			var stdout, stderr bytes.Buffer
+			args := []string{"--agent", "--profile", "pbs-e2e", "--request-id", "req_warn_exit", "--yes", "pbs", "verify", "run", "v-daily"}
+			if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
+				t.Fatalf("submit: %v", err)
+			}
+			stdout.Reset()
+			refreshErr := Run(context.Background(), []string{"--profile", "pbs-e2e", "agent", "receipt", "refresh", "req_warn_exit"}, &stdout, &stderr)
+
+			var receipt agent.Receipt
+			if err := json.Unmarshal(stdout.Bytes(), &receipt); err != nil {
+				t.Fatalf("decode refreshed receipt: %v\n%s", err, stdout.String())
+			}
+			if receipt.Submission != agent.SubmissionAccepted {
+				t.Errorf("Submission = %q, want accepted for a completed task", receipt.Submission)
+			}
+			if receipt.Execution != tt.wantExec {
+				t.Errorf("Execution = %q for exit status %q, want %q", receipt.Execution, tt.exitStatus, tt.wantExec)
+			}
+			if tt.wantErr {
+				if receipt.Error == nil || receipt.Error.Code != "TASK_FAILED" {
+					t.Errorf("failed task did not report TASK_FAILED: %+v", receipt.Error)
+				}
+				if refreshErr == nil {
+					t.Error("failed task must surface a non-zero exit status")
+				}
+				return
+			}
+			if refreshErr != nil {
+				t.Fatalf("successful task reported an error: %v (%s)", refreshErr, stdout.String())
+			}
+			if receipt.Error != nil {
+				t.Errorf("successful task reported an error: %+v", receipt.Error)
+			}
+			if receipt.Retry != agent.RetryDoNotAutomatic {
+				t.Errorf("Retry = %q, want %q", receipt.Retry, agent.RetryDoNotAutomatic)
+			}
+			// Task completion is not proof of the resource postcondition.
+			if receipt.Changed != nil {
+				t.Errorf("task completion was treated as a verified resource change: %+v", receipt.Changed)
+			}
+		})
+	}
+}
+
+// The Proxmox TaskInspector path must classify "WARNINGS: n" as success too, so
+// that both provider task-inspection branches agree with the poller.
+func TestAgentReceiptRefreshTreatsWarningTaskStatusAsSuccess(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		status   string
+		wantExec agent.Execution
+	}{
+		{"plain success", "OK", agent.ExecutionSucceeded},
+		{"single warning", "WARNINGS: 1", agent.ExecutionSucceeded},
+		{"real failure", "ERROR", agent.ExecutionFailed},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			isolateConfigAndHome(t)
+			setupE2EConfig(t)
+			t.Setenv("NODEX_E2E_TOKEN", "e2e-token")
+			e2eTaskStatusOverride = tt.status
+			t.Cleanup(func() { e2eTaskStatusOverride = "" })
+
+			var stdout, stderr bytes.Buffer
+			args := []string{"--agent", "--profile", "e2e", "--request-id", "req_warn_status", "--yes", "vm", "stop", "e2e-node/100"}
+			if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
+				t.Fatalf("submit VM stop: %v", err)
+			}
+			stdout.Reset()
+			refreshErr := Run(context.Background(), []string{"--profile", "e2e", "agent", "receipt", "refresh", "req_warn_status"}, &stdout, &stderr)
+
+			var receipt agent.Receipt
+			if err := json.Unmarshal(stdout.Bytes(), &receipt); err != nil {
+				t.Fatalf("decode refreshed receipt: %v\n%s", err, stdout.String())
+			}
+			if receipt.Execution != tt.wantExec {
+				t.Errorf("Execution = %q for task status %q, want %q", receipt.Execution, tt.status, tt.wantExec)
+			}
+			if tt.wantExec == agent.ExecutionSucceeded {
+				if refreshErr != nil {
+					t.Fatalf("successful task reported an error: %v (%s)", refreshErr, stdout.String())
+				}
+				if receipt.Error != nil {
+					t.Errorf("successful task reported an error: %+v", receipt.Error)
+				}
+				return
+			}
+			if receipt.Error == nil || receipt.Error.Code != "TASK_FAILED" {
+				t.Errorf("failed task did not report TASK_FAILED: %+v", receipt.Error)
+			}
+		})
 	}
 }
 

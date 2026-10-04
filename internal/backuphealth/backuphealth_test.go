@@ -365,6 +365,23 @@ func TestFailedPVEVzdumpWarns(t *testing.T) {
 	}
 }
 
+// A vzdump that finished with "WARNINGS: n" succeeded. Reporting it as a failed
+// backup would contradict both the task poller and agent receipt refresh.
+func TestWarnedVzdumpIsNotReportedAsFailedBackup(t *testing.T) {
+	pve, pbs := healthyFakes()
+	pve.tasks = []domain.Task{
+		{UPID: "UPID:pve1:vzdump-warn", Type: "vzdump", Status: "WARNINGS: 1", EndTime: int(hoursAgo(1))},
+	}
+	res := run(t, pve, pbs, nil)
+	c := findCheck(t, res, "pve_failed_backup_tasks")
+	if c.Status == StatusBlocked || c.Status == StatusWarning {
+		t.Errorf("warning-bearing backup reported as failed: %s (%s)", c.Status, c.Detail)
+	}
+	if strings.Contains(c.Detail, "failed vzdump") {
+		t.Errorf("warning-bearing backup counted as a failure: %s", c.Detail)
+	}
+}
+
 func TestSnapshotListingFailureNeverHealthy(t *testing.T) {
 	pve, pbs := healthyFakes()
 	pbs.snapshotsErr = errors.New("permission denied")

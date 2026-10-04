@@ -208,9 +208,19 @@ func (r Result) Validate() error {
 	if r.Submission == SubmissionUnknown && r.Execution != ExecutionUnknown && r.Execution != ExecutionRunning {
 		return errors.New("unknown submission must retain an unknown or running execution state")
 	}
-	if r.Submission == SubmissionUnknown || r.Submission == SubmissionAccepted && (r.Execution == ExecutionRunning || r.Execution == ExecutionUnknown) {
-		if r.Retry != RetryReconcileFirst {
-			return errors.New("ambiguous or running operation must be reconciled before retry")
+	if r.Submission == SubmissionUnknown && r.Retry != RetryReconcileFirst {
+		return errors.New("unknown submission must be reconciled before retry")
+	}
+	if r.Submission == SubmissionAccepted && (r.Execution == ExecutionRunning || r.Execution == ExecutionUnknown) {
+		// An accepted request whose completion cannot be observed has two
+		// honest options. Reconcile first when provider evidence could settle
+		// it, or do not retry automatically when that evidence does not exist
+		// and reconciliation can never succeed for this receipt. The second is
+		// strictly more conservative, so allowing it cannot license an unsafe
+		// resubmission; it only stops the receipt from pointing a caller at a
+		// recovery step that is known to be unavailable.
+		if r.Retry != RetryReconcileFirst && r.Retry != RetryDoNotAutomatic {
+			return errors.New("accepted-but-unresolved operation must be reconciled before retry or marked as not automatically retryable")
 		}
 	}
 	if r.Verification == VerificationPassed && r.Execution != ExecutionSucceeded {
