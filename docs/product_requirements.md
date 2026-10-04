@@ -73,6 +73,7 @@ All mutations are gated by the five-tier safety model:
 - **Storage** upload, download, and delete
 - **Migration** for VMs and containers
 - **Clone** for VMs and containers
+- **Guest creation controls:** set VM cores, memory, and optional boot disk, or container cores, memory, swap, and rootfs size before first startup; new containers are unprivileged by default and waited creates verify requested settings by provider readback.
 - **Disk** resize and move for VMs
 - **Network** apply and revert
 - **Firewall** rule, alias, IP set, security group, and options mutations

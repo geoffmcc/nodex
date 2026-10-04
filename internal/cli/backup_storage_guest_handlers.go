@@ -816,29 +816,101 @@ func runVMClone(ctx context.Context, cmdCtx *Context, args []string) error {
 }
 
 // --- VM Create (Tier 2: disruptive) ---
-// nodex vm create <node> <vmid> [name] [iso] [disk-storage]
+// nodex vm create <node> <vmid> [name] [iso] [disk-storage] [resource flags]
+
+func parseCreateInvocation(args []string, supportedFlags ...string) ([]string, map[string]string, error) {
+	allowed := make(map[string]struct{}, len(supportedFlags))
+	for _, flag := range supportedFlags {
+		allowed[flag] = struct{}{}
+	}
+	positionals := make([]string, 0, len(args))
+	values := make(map[string]string, len(supportedFlags))
+	for i := 0; i < len(args); i++ {
+		token := args[i]
+		if !strings.HasPrefix(token, "--") {
+			positionals = append(positionals, token)
+			continue
+		}
+		name, value, inline := strings.Cut(token, "=")
+		if _, ok := allowed[name]; !ok {
+			return nil, nil, fmt.Errorf("unsupported creation option %q", name)
+		}
+		if _, exists := values[name]; exists {
+			return nil, nil, fmt.Errorf("creation option %s may be specified only once", name)
+		}
+		if !inline {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return nil, nil, fmt.Errorf("creation option %s requires a value", name)
+			}
+			i++
+			value = args[i]
+		}
+		if strings.TrimSpace(value) == "" {
+			return nil, nil, fmt.Errorf("creation option %s requires a non-empty value", name)
+		}
+		values[name] = value
+	}
+	return positionals, values, nil
+}
+
+func parseCreateInt(values map[string]string, name string, min, max int) (*int, error) {
+	value, exists := values[name]
+	if !exists {
+		return nil, nil
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n < min || n > max {
+		return nil, fmt.Errorf("%s must be an integer between %d and %d", name, min, max)
+	}
+	return &n, nil
+}
 
 func runVMCreate(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) < 2 || len(args) > 5 {
-		return app.NewExitError(fmt.Errorf("usage: nodex vm create <node> <vmid> [name] [iso] [disk-storage]"), app.ExitUsage)
+	positionals, flags, err := parseCreateInvocation(args, "--cores", "--memory", "--disk-size", "--disk-storage")
+	if err != nil {
+		return app.NewExitError(fmt.Errorf("invalid VM creation options: %w", err), app.ExitUsage)
 	}
-	node := args[0]
+	if len(positionals) < 2 || len(positionals) > 5 {
+		return app.NewExitError(fmt.Errorf("usage: nodex vm create <node> <vmid> [name] [iso] [disk-storage] [--disk-storage ID] [--cores N] [--memory MiB] [--disk-size GiB]"), app.ExitUsage)
+	}
+	node := positionals[0]
 	if node == "" {
 		return app.NewExitError(fmt.Errorf("node is required"), app.ExitUsage)
 	}
-	vmid, err := strconv.Atoi(args[1])
+	vmid, err := strconv.Atoi(positionals[1])
 	if err != nil || vmid <= 0 {
-		return app.NewExitError(fmt.Errorf("invalid VMID %q", args[1]), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("invalid VMID %q", positionals[1]), app.ExitUsage)
 	}
 	name, iso, diskStorage := "", "", ""
-	if len(args) >= 3 {
-		name = args[2]
+	if len(positionals) >= 3 {
+		name = positionals[2]
 	}
-	if len(args) >= 4 {
-		iso = args[3]
+	if len(positionals) >= 4 {
+		iso = positionals[3]
 	}
-	if len(args) == 5 {
-		diskStorage = args[4]
+	if len(positionals) == 5 {
+		diskStorage = positionals[4]
+	}
+	if namedStorage, exists := flags["--disk-storage"]; exists {
+		if diskStorage != "" {
+			return app.NewExitError(fmt.Errorf("use either positional disk-storage or --disk-storage, not both"), app.ExitUsage)
+		}
+		diskStorage = namedStorage
+	}
+	cores, err := parseCreateInt(flags, "--cores", 1, domain.MaxCreateCores)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
+	memory, err := parseCreateInt(flags, "--memory", 16, domain.MaxCreateMemoryMiB)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
+	diskSize, err := parseCreateInt(flags, "--disk-size", 1, domain.MaxCreateDiskSizeGiB)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
+	if diskSize != nil && diskStorage == "" {
+		return app.NewExitError(fmt.Errorf("disk storage must be supplied positionally or with --disk-storage when --disk-size is specified"), app.ExitUsage)
 	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
@@ -853,11 +925,44 @@ func runVMCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
 	}
-	upid, err := cp.VMCreate(ctx, node, vmid, name, iso, diskStorage)
+	createOptions := domain.VMCreateOptions{
+		Name: name, ISO: iso, DiskStorage: diskStorage,
+		Cores: cores, MemoryMiB: memory, DiskSizeGiB: diskSize,
+	}
+	upid, err := cp.VMCreate(ctx, node, vmid, createOptions)
 	if err != nil {
 		return fmt.Errorf("create VM %s/%d: %w", node, vmid, err)
 	}
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm create", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	requested := map[string]string{
+		"vmid":   strconv.Itoa(vmid),
+		"ostype": "l26",
+	}
+	requested["cores"] = strconv.Itoa(domain.DefaultVMCreateCores)
+	if cores != nil {
+		requested["cores"] = strconv.Itoa(*cores)
+	}
+	requested["memory"] = strconv.Itoa(domain.DefaultVMCreateMemoryMiB)
+	if memory != nil {
+		requested["memory"] = strconv.Itoa(*memory)
+	}
+	if name != "" {
+		requested["name"] = name
+	}
+	if iso != "" {
+		requested["ide2"] = iso + ",media=cdrom"
+	}
+	var volume *createdVolumeExpectation
+	if diskStorage != "" {
+		size := domain.DefaultVMCreateDiskSizeGiB
+		if diskSize != nil {
+			size = *diskSize
+		}
+		requested["scsihw"] = "virtio-scsi-single"
+		volume = &createdVolumeExpectation{key: "scsi0", storage: diskStorage, sizeGiB: &size}
+	}
+	target := fmt.Sprintf("VM %s/%d", node, vmid)
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm create", fmt.Sprintf("%s/%d", node, vmid), "disruptive",
+		createdConfigVerifier(prov, "vm", node, vmid, target, requested, volume))
 }
 
 // --- Container Clone (Tier 2: disruptive) ---
@@ -909,27 +1014,56 @@ func runCTClone(ctx context.Context, cmdCtx *Context, args []string) error {
 }
 
 // --- Container Create (Tier 2: disruptive) ---
-// nodex container create <node> <vmid> <ostemplate> [hostname] [storage]
+// nodex container create <node> <vmid> <ostemplate> [hostname] [storage] [resource flags]
 
 func runCTCreate(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) < 3 || len(args) > 5 {
-		return app.NewExitError(fmt.Errorf("usage: nodex container create <node> <vmid> <ostemplate> [hostname] [storage]"), app.ExitUsage)
+	positionals, flags, err := parseCreateInvocation(args, "--cores", "--memory", "--swap", "--rootfs-size", "--rootfs-storage")
+	if err != nil {
+		return app.NewExitError(fmt.Errorf("invalid container creation options: %w", err), app.ExitUsage)
 	}
-	node := args[0]
+	if len(positionals) < 3 || len(positionals) > 5 {
+		return app.NewExitError(fmt.Errorf("usage: nodex container create <node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB]"), app.ExitUsage)
+	}
+	node := positionals[0]
 	if node == "" {
 		return app.NewExitError(fmt.Errorf("node is required"), app.ExitUsage)
 	}
-	vmid, err := strconv.Atoi(args[1])
+	vmid, err := strconv.Atoi(positionals[1])
 	if err != nil || vmid <= 0 {
-		return app.NewExitError(fmt.Errorf("invalid VMID %q", args[1]), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("invalid VMID %q", positionals[1]), app.ExitUsage)
 	}
-	ostemplate := args[2]
+	ostemplate := positionals[2]
 	hostname, storage := "", ""
-	if len(args) >= 4 {
-		hostname = args[3]
+	if len(positionals) >= 4 {
+		hostname = positionals[3]
 	}
-	if len(args) == 5 {
-		storage = args[4]
+	if len(positionals) == 5 {
+		storage = positionals[4]
+	}
+	if namedStorage, exists := flags["--rootfs-storage"]; exists {
+		if storage != "" {
+			return app.NewExitError(fmt.Errorf("use either positional storage or --rootfs-storage, not both"), app.ExitUsage)
+		}
+		storage = namedStorage
+	}
+	cores, err := parseCreateInt(flags, "--cores", 1, domain.MaxCreateCores)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
+	memory, err := parseCreateInt(flags, "--memory", 16, domain.MaxCreateMemoryMiB)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
+	swap, err := parseCreateInt(flags, "--swap", 0, domain.MaxCreateMemoryMiB)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
+	rootfsSize, err := parseCreateInt(flags, "--rootfs-size", 1, domain.MaxCreateDiskSizeGiB)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
+	if rootfsSize != nil && storage == "" {
+		return app.NewExitError(fmt.Errorf("rootfs storage must be supplied positionally or with --rootfs-storage when --rootfs-size is specified"), app.ExitUsage)
 	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
@@ -945,11 +1079,39 @@ func runCTCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
 	}
-	upid, err := cp.CTCreate(ctx, node, vmid, ostemplate, hostname, storage)
+	createOptions := domain.ContainerCreateOptions{
+		OSTemplate: ostemplate, Hostname: hostname, Storage: storage,
+		Cores: cores, MemoryMiB: memory, SwapMiB: swap, RootFSSizeGiB: rootfsSize,
+	}
+	upid, err := cp.CTCreate(ctx, node, vmid, createOptions)
 	if err != nil {
 		return fmt.Errorf("create container %s/%d: %w", node, vmid, err)
 	}
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container create", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	requested := map[string]string{
+		"vmid":         strconv.Itoa(vmid),
+		"memory":       strconv.Itoa(domain.DefaultContainerCreateMemoryMiB),
+		"swap":         strconv.Itoa(domain.DefaultContainerCreateSwapMiB),
+		"unprivileged": "1",
+	}
+	if cores != nil {
+		requested["cores"] = strconv.Itoa(*cores)
+	}
+	if memory != nil {
+		requested["memory"] = strconv.Itoa(*memory)
+	}
+	if swap != nil {
+		requested["swap"] = strconv.Itoa(*swap)
+	}
+	if hostname != "" {
+		requested["hostname"] = hostname
+	}
+	var volume *createdVolumeExpectation
+	if storage != "" {
+		volume = &createdVolumeExpectation{key: "rootfs", storage: storage, sizeGiB: rootfsSize}
+	}
+	target := fmt.Sprintf("container %s/%d", node, vmid)
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container create", fmt.Sprintf("%s/%d", node, vmid), "disruptive",
+		createdConfigVerifier(prov, "container", node, vmid, target, requested, volume))
 }
 
 // --- Container Restore (Tier 2: disruptive) ---

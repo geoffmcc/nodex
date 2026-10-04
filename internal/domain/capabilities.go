@@ -238,14 +238,55 @@ type CloneProvider interface {
 	CTClone(ctx context.Context, node string, vmid, newVmid int, hostname, storage string) (string, error)
 }
 
+const (
+	// Defaults used when creating a VM. Disk size applies when disk storage is
+	// selected; without a storage no VM disk is added.
+	DefaultVMCreateCores       = 1
+	DefaultVMCreateMemoryMiB   = 512
+	DefaultVMCreateDiskSizeGiB = 4
+
+	// Proxmox's LXC creation defaults. Cores stays unset to retain the
+	// provider's allocation across available host CPUs.
+	DefaultContainerCreateMemoryMiB = 512
+	DefaultContainerCreateSwapMiB   = 512
+
+	MaxCreateCores       = 8192
+	MaxCreateMemoryMiB   = 1 << 20 // 1 TiB
+	MaxCreateDiskSizeGiB = 1 << 16 // 64 TiB
+)
+
+// VMCreateOptions contains bounded QEMU settings applied before first startup.
+// Nil resource pointers select the documented NodeX defaults.
+type VMCreateOptions struct {
+	Name        string
+	ISO         string
+	DiskStorage string
+	Cores       *int
+	MemoryMiB   *int
+	DiskSizeGiB *int
+}
+
+// ContainerCreateOptions contains bounded LXC settings applied before first
+// startup. Unprivileged creation is the secure default; NodeX does not expose a
+// privileged-container override in this creation path.
+type ContainerCreateOptions struct {
+	OSTemplate    string
+	Hostname      string
+	Storage       string
+	Cores         *int
+	MemoryMiB     *int
+	SwapMiB       *int
+	RootFSSizeGiB *int
+}
+
 // ContainerCreateProvider exposes native LXC creation from a template.
 type ContainerCreateProvider interface {
-	CTCreate(ctx context.Context, node string, vmid int, ostemplate, hostname, storage string) (string, error)
+	CTCreate(ctx context.Context, node string, vmid int, options ContainerCreateOptions) (string, error)
 }
 
 // VMCreateProvider exposes native QEMU VM creation.
 type VMCreateProvider interface {
-	VMCreate(ctx context.Context, node string, vmid int, name, iso, diskStorage string) (string, error)
+	VMCreate(ctx context.Context, node string, vmid int, options VMCreateOptions) (string, error)
 }
 
 // ContainerRestoreProvider exposes LXC restore from a backup archive.

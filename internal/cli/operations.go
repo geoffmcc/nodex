@@ -400,7 +400,7 @@ func buildRegistry() []OperationMeta {
 		{"vm template", "Convert VM to template", "TemplateProvider", "runVMTemplate", []RiskDimension{RiskDataLoss}},
 		{"vm migrate", "Migrate VM to another node", "MigrationProvider", "runVMMigrate", []RiskDimension{RiskServiceDown}},
 		{"vm clone", "Clone a VM", "CloneProvider", "runVMClone", nil},
-		{"vm create", "Create a VM", "VMCreateProvider", "runVMCreate", nil},
+		{"vm create", "Create a VM (defaults: 1 core, 512 MiB RAM, 4 GiB disk when storage is set)", "VMCreateProvider", "runVMCreate", nil},
 		{"vm disk resize", "Resize VM disk", "DiskProvider", "runVMDiskResize", []RiskDimension{RiskDataLoss}},
 		{"vm disk move", "Move VM disk to another storage", "DiskProvider", "runVMDiskMove", []RiskDimension{RiskServiceDown}},
 	}
@@ -528,7 +528,7 @@ func buildRegistry() []OperationMeta {
 		{"container template", "Convert container to template", "TemplateProvider", "runCTTemplate", []RiskDimension{RiskDataLoss}},
 		{"container migrate", "Migrate container to another node", "MigrationProvider", "runCTMigrate", []RiskDimension{RiskServiceDown}},
 		{"container clone", "Clone a container", "CloneProvider", "runCTClone", nil},
-		{"container create", "Create a container from a template", "ContainerCreateProvider", "runCTCreate", nil},
+		{"container create", "Create an unprivileged container (defaults: 512 MiB RAM and swap, Proxmox CPU allocation)", "ContainerCreateProvider", "runCTCreate", nil},
 		{"container restore", "Restore a container from a backup archive", "ContainerRestoreProvider", "runCTRestore", nil},
 	}
 	for _, v := range ctDisruptive {

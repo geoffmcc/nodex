@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/safety"
 )
 
@@ -165,6 +166,73 @@ func TestUnsupportedVMLifecycleDiscoveryIsExplicit(t *testing.T) {
 			}
 			if !strings.Contains(summary.ProviderPermission, "not checked") {
 				t.Fatalf("operation list permission status = %q, want unsupported/no-request disclosure", summary.ProviderPermission)
+			}
+		})
+	}
+}
+
+func TestGuestCreateResourceFlagsAreAdvertised(t *testing.T) {
+	tests := []struct {
+		path        string
+		flags       []string
+		defaults    map[string]any
+		constraints map[string][2]any
+	}{
+		{
+			path:  "vm create",
+			flags: []string{"--cores", "--memory", "--disk-size", "--disk-storage"},
+			defaults: map[string]any{
+				"--cores":     domain.DefaultVMCreateCores,
+				"--memory":    domain.DefaultVMCreateMemoryMiB,
+				"--disk-size": domain.DefaultVMCreateDiskSizeGiB,
+			},
+			constraints: map[string][2]any{
+				"--cores":     {1, domain.MaxCreateCores},
+				"--memory":    {16, domain.MaxCreateMemoryMiB},
+				"--disk-size": {1, domain.MaxCreateDiskSizeGiB},
+			},
+		},
+		{
+			path:  "container create",
+			flags: []string{"--cores", "--memory", "--swap", "--rootfs-size", "--rootfs-storage"},
+			defaults: map[string]any{
+				"--memory": domain.DefaultContainerCreateMemoryMiB,
+				"--swap":   domain.DefaultContainerCreateSwapMiB,
+			},
+			constraints: map[string][2]any{
+				"--cores":       {1, domain.MaxCreateCores},
+				"--memory":      {16, domain.MaxCreateMemoryMiB},
+				"--swap":        {0, domain.MaxCreateMemoryMiB},
+				"--rootfs-size": {1, domain.MaxCreateDiskSizeGiB},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			op := LookupOperation(tt.path)
+			if op == nil {
+				t.Fatalf("LookupOperation(%q) = nil", tt.path)
+			}
+			contract := describeOperation(*op, true)
+			got := make(map[string]AgentFlag, len(contract.Flags))
+			for _, flag := range contract.Flags {
+				got[flag.Name] = flag
+			}
+			for _, flag := range tt.flags {
+				meta, ok := got[flag]
+				if !ok {
+					t.Errorf("%q missing from described flags: %+v", flag, contract.Flags)
+					continue
+				}
+				if want, exists := tt.defaults[flag]; exists && meta.Default != want {
+					t.Errorf("%s default = %#v, want %#v", flag, meta.Default, want)
+				}
+				if want, exists := tt.constraints[flag]; exists && (meta.Minimum != want[0] || meta.Maximum != want[1]) {
+					t.Errorf("%s bounds = %v..%v, want %v..%v", flag, meta.Minimum, meta.Maximum, want[0], want[1])
+				}
+			}
+			if len(contract.Verification) == 0 || !strings.Contains(strings.Join(contract.Verification, " "), "read back") {
+				t.Errorf("%s verification discovery does not describe provider readback: %v", tt.path, contract.Verification)
 			}
 		})
 	}

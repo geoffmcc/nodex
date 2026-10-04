@@ -2254,19 +2254,19 @@ func (p *Provider) CTClone(ctx context.Context, node string, vmid, newVmid int, 
 }
 
 // CTCreate creates an LXC container from an ostemplate.
-func (p *Provider) CTCreate(ctx context.Context, node string, vmid int, ostemplate, hostname, storage string) (string, error) {
+func (p *Provider) CTCreate(ctx context.Context, node string, vmid int, options domain.ContainerCreateOptions) (string, error) {
 	if p.client == nil {
 		return "", errors.New(errNotConnected)
 	}
-	return p.client.CTCreate(ctx, node, vmid, ostemplate, hostname, storage)
+	return p.client.CTCreate(ctx, node, vmid, options)
 }
 
 // VMCreate creates a minimal QEMU VM, optionally attaching an ISO and disk storage.
-func (p *Provider) VMCreate(ctx context.Context, node string, vmid int, name, iso, diskStorage string) (string, error) {
+func (p *Provider) VMCreate(ctx context.Context, node string, vmid int, options domain.VMCreateOptions) (string, error) {
 	if p.client == nil {
 		return "", errors.New(errNotConnected)
 	}
-	return p.client.VMCreate(ctx, node, vmid, name, iso, diskStorage)
+	return p.client.VMCreate(ctx, node, vmid, options)
 }
 
 // CTRestore restores an LXC container from a backup archive.

@@ -245,7 +245,22 @@ memory; it does not save the VM state to disk.
 | `vm reset <id>` | Hard reset a VM |
 | `vm reboot <id>` | Reboot a VM |
 | `vm migrate <id> --target <node>` | Migrate VM to another node |
-| `vm create <node> <vmid> [name] [iso] [disk-storage]` | Create a minimal VM |
+| `vm create <node> <vmid> [name] [iso] [disk-storage] [--disk-storage ID] [--cores N] [--memory MiB] [--disk-size GiB]` | Create a VM with bounded CPU, RAM, and optional boot-disk size |
+
+VM creation defaults to 1 core and 512 MiB of RAM. Supplying `disk-storage`
+creates a 4 GiB boot disk unless `--disk-size` is specified; without disk
+storage, no boot disk is created. Storage may be supplied in the legacy
+positional slot or with `--disk-storage`, but not both. `--cores` accepts
+1–8192, `--memory` accepts 16–1048576 MiB, and `--disk-size` accepts 1–65536
+GiB. Disk size requires an explicit disk storage.
+With `--wait`, Nodex reads the created VM configuration back and verifies the
+requested CPU, memory, name/ISO, and boot-disk settings. Without `--wait`, the
+result reports provider acceptance only.
+
+```bash
+nodex vm create pve-a 100 web local:iso/debian.iso --disk-storage local-lvm \
+  --cores 4 --memory 8192 --disk-size 64 --yes --force
+```
 
 **Destructive commands** (Tier 3, requires type-in confirmation):
 
@@ -296,8 +311,27 @@ Inspect and operate containers.
 |---------|-------------|
 | `container reboot <id>` | Reboot a container |
 | `container migrate <id> --target <node>` | Migrate container |
-| `container create <node> <vmid> <ostemplate> [hostname] [storage]` | Create a container from an OS template |
+| `container create <node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB]` | Create an unprivileged container with bounded resources |
 | `container restore <node> <vmid> <archive> [storage]` | Restore a container from a backup archive |
+
+Container creation always requests an unprivileged container. Memory and swap
+default to 512 MiB each; when `--cores` is omitted, Proxmox's default CPU
+allocation is retained. `--cores` accepts 1–8192, `--memory` accepts 16–1048576
+MiB, `--swap` accepts 0–1048576 MiB, and `--rootfs-size` accepts 1–65536 GiB.
+Rootfs storage may be supplied in the legacy positional slot or with
+`--rootfs-storage`, but not both. A rootfs size requires explicit storage;
+without `--rootfs-size`, Proxmox applies its create-time rootfs sizing. If no
+storage is supplied, Nodex leaves storage resolution to Proxmox rather than
+choosing a storage from the inventory.
+With `--wait`, Nodex reads the created container configuration back and verifies
+the requested CPU, memory, swap, unprivileged setting, hostname, and rootfs
+storage/size. Without `--wait`, the result reports provider acceptance only.
+
+```bash
+nodex container create pve-a 200 local:vztmpl/debian-12.tar.zst app-200 \
+  --rootfs-storage local-lvm --cores 2 --memory 2048 --swap 512 \
+  --rootfs-size 20 --yes --force
+```
 
 **Destructive commands** (Tier 3, requires type-in confirmation):
 

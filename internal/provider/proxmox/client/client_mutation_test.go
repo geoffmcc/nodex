@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/transport/httpclient"
 )
 
@@ -94,27 +95,72 @@ func TestCTCreate(t *testing.T) {
 			t.Fatalf("parse form: %v", err)
 		}
 		want := map[string]string{
-			"vmid":       "9402",
-			"ostemplate": "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
-			"hostname":   "nodex-test-ct",
-			"storage":    "local-lvm",
+			"vmid":         "9402",
+			"ostemplate":   "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+			"hostname":     "nodex-test-ct",
+			"cores":        "2",
+			"memory":       "2048",
+			"swap":         "1024",
+			"unprivileged": "1",
+			"rootfs":       "local-lvm:20",
 		}
 		for key, value := range want {
 			if got := r.FormValue(key); got != value {
 				t.Errorf("%s = %q, want %q", key, got, value)
 			}
 		}
+		if got := r.FormValue("storage"); got != "" {
+			t.Errorf("storage = %q, want omitted when rootfs contains its storage and size", got)
+		}
 		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00000A1B:0023A45B:root@pam:"}`))
 	}))
 	defer s.Close()
 
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
-	upid, err := c.CTCreate(context.Background(), "pve1", 9402, "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst", "nodex-test-ct", "local-lvm")
+	cores, memory, swap, rootfsSize := 2, 2048, 1024, 20
+	upid, err := c.CTCreate(context.Background(), "pve1", 9402, domain.ContainerCreateOptions{
+		OSTemplate:    "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+		Hostname:      "nodex-test-ct",
+		Storage:       "local-lvm",
+		Cores:         &cores,
+		MemoryMiB:     &memory,
+		SwapMiB:       &swap,
+		RootFSSizeGiB: &rootfsSize,
+	})
 	if err != nil {
 		t.Fatalf("CTCreate: %v", err)
 	}
 	if !strings.HasPrefix(upid, "UPID:pve1:") {
 		t.Errorf("UPID = %q, want Proxmox UPID", upid)
+	}
+}
+
+func TestCTCreateDefaultsAreExplicitAndUnprivileged(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		for key, want := range map[string]string{
+			"memory": "512", "swap": "512", "unprivileged": "1", "storage": "local-lvm",
+		} {
+			if got := r.FormValue(key); got != want {
+				t.Errorf("%s = %q, want %q", key, got, want)
+			}
+		}
+		if got := r.FormValue("cores"); got != "" {
+			t.Errorf("cores = %q, want omitted to retain Proxmox's all-available-core default", got)
+		}
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00000A1B:0023A45B:root@pam:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	_, err := c.CTCreate(context.Background(), "pve1", 9402, domain.ContainerCreateOptions{
+		OSTemplate: "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
+		Storage:    "local-lvm",
+	})
+	if err != nil {
+		t.Fatalf("CTCreate: %v", err)
 	}
 }
 
@@ -148,12 +194,95 @@ func TestVMCreate(t *testing.T) {
 	defer s.Close()
 
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
-	upid, err := c.VMCreate(context.Background(), "pve1", 9403, "nodex-test-vm", "local:iso/debian.iso", "local-lvm")
+	upid, err := c.VMCreate(context.Background(), "pve1", 9403, domain.VMCreateOptions{
+		Name: "nodex-test-vm", ISO: "local:iso/debian.iso", DiskStorage: "local-lvm",
+	})
 	if err != nil {
 		t.Fatalf("VMCreate: %v", err)
 	}
 	if !strings.HasPrefix(upid, "UPID:pve1:") {
 		t.Errorf("UPID = %q, want Proxmox UPID", upid)
+	}
+}
+
+func TestVMCreateCustomResourceLimits(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		for key, want := range map[string]string{
+			"cores": "4", "memory": "8192", "scsi0": "local-lvm:64",
+		} {
+			if got := r.FormValue(key); got != want {
+				t.Errorf("%s = %q, want %q", key, got, want)
+			}
+		}
+		_, _ = w.Write([]byte(`{"data":"UPID:pve1:00000A1B:0023A45B:qmcreate:9403:root@pam:"}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	cores, memory, diskSize := 4, 8192, 64
+	_, err := c.VMCreate(context.Background(), "pve1", 9403, domain.VMCreateOptions{
+		DiskStorage: "local-lvm", Cores: &cores, MemoryMiB: &memory, DiskSizeGiB: &diskSize,
+	})
+	if err != nil {
+		t.Fatalf("VMCreate: %v", err)
+	}
+}
+
+func TestCreateResourceOptionsValidateBeforeRequest(t *testing.T) {
+	c := &Client{}
+	zero := 0
+	tooLarge := domain.MaxCreateMemoryMiB + 1
+	diskSize := 10
+	rootfsSize := 10
+	tests := []struct {
+		name string
+		run  func() error
+		want string
+	}{
+		{
+			name: "non-positive VM cores",
+			run: func() error {
+				_, err := c.VMCreate(context.Background(), "pve1", 9501, domain.VMCreateOptions{Cores: &zero})
+				return err
+			},
+			want: "cores",
+		},
+		{
+			name: "memory exceeds NodeX bound",
+			run: func() error {
+				_, err := c.VMCreate(context.Background(), "pve1", 9501, domain.VMCreateOptions{MemoryMiB: &tooLarge})
+				return err
+			},
+			want: "memory",
+		},
+		{
+			name: "VM disk size requires storage",
+			run: func() error {
+				_, err := c.VMCreate(context.Background(), "pve1", 9501, domain.VMCreateOptions{DiskSizeGiB: &diskSize})
+				return err
+			},
+			want: "disk storage is required",
+		},
+		{
+			name: "container rootfs size requires storage",
+			run: func() error {
+				_, err := c.CTCreate(context.Background(), "pve1", 9502, domain.ContainerCreateOptions{
+					OSTemplate: "local:vztmpl/template.tar.zst", RootFSSizeGiB: &rootfsSize,
+				})
+				return err
+			},
+			want: "rootfs storage is required",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.run(); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want message containing %q", err, tt.want)
+			}
+		})
 	}
 }
 

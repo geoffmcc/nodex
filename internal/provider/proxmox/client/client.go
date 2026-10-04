@@ -1634,26 +1634,62 @@ func (c *Client) CTClone(ctx context.Context, node string, vmid, newVmid int, ho
 }
 
 // CTCreate creates an LXC container via POST /nodes/{node}/lxc.
-func (c *Client) CTCreate(ctx context.Context, node string, vmid int, ostemplate, hostname, storage string) (string, error) {
+func (c *Client) CTCreate(ctx context.Context, node string, vmid int, options domain.ContainerCreateOptions) (string, error) {
 	if node == "" {
 		return "", fmt.Errorf("node name is required")
 	}
 	if vmid <= 0 {
 		return "", fmt.Errorf("VMID is required")
 	}
-	if ostemplate == "" {
+	if options.OSTemplate == "" {
 		return "", fmt.Errorf("OS template is required")
+	}
+	if err := validateCreateResource("cores", options.Cores, 1, domain.MaxCreateCores); err != nil {
+		return "", err
+	}
+	if err := validateCreateResource("memory", options.MemoryMiB, 16, domain.MaxCreateMemoryMiB); err != nil {
+		return "", err
+	}
+	if err := validateCreateResource("swap", options.SwapMiB, 0, domain.MaxCreateMemoryMiB); err != nil {
+		return "", err
+	}
+	if err := validateCreateResource("rootfs size", options.RootFSSizeGiB, 1, domain.MaxCreateDiskSizeGiB); err != nil {
+		return "", err
+	}
+	if options.RootFSSizeGiB != nil && options.Storage == "" {
+		return "", fmt.Errorf("rootfs storage is required when rootfs size is specified")
 	}
 	var resp TaskResponse
 	path := "/nodes/" + url.PathEscape(node) + "/lxc"
 	body := url.Values{}
 	body.Set("vmid", strconv.Itoa(vmid))
-	body.Set("ostemplate", ostemplate)
-	if hostname != "" {
-		body.Set("hostname", hostname)
+	body.Set("ostemplate", options.OSTemplate)
+	if options.Hostname != "" {
+		body.Set("hostname", options.Hostname)
 	}
-	if storage != "" {
-		body.Set("storage", storage)
+	if options.Cores != nil {
+		body.Set("cores", strconv.Itoa(*options.Cores))
+	}
+	memory := domain.DefaultContainerCreateMemoryMiB
+	if options.MemoryMiB != nil {
+		memory = *options.MemoryMiB
+	}
+	body.Set("memory", strconv.Itoa(memory))
+	swap := domain.DefaultContainerCreateSwapMiB
+	if options.SwapMiB != nil {
+		swap = *options.SwapMiB
+	}
+	body.Set("swap", strconv.Itoa(swap))
+	// Proxmox creates new LXC containers unprivileged by default. Send the
+	// secure default explicitly; this CLI path intentionally has no privileged
+	// override.
+	body.Set("unprivileged", "1")
+	if options.Storage != "" {
+		if options.RootFSSizeGiB != nil {
+			body.Set("rootfs", fmt.Sprintf("%s:%d", options.Storage, *options.RootFSSizeGiB))
+		} else {
+			body.Set("storage", options.Storage)
+		}
 	}
 	if err := c.post(ctx, path, body, &resp); err != nil {
 		return "", err
@@ -1786,39 +1822,73 @@ func tlsConfig(rt http.RoundTripper) *tls.Config {
 	return &tls.Config{MinVersion: tls.VersionTLS12}
 }
 
-// VMCreate creates a minimal QEMU VM via POST /nodes/{node}/qemu.
-func (c *Client) VMCreate(ctx context.Context, node string, vmid int, name, iso, diskStorage string) (string, error) {
+// VMCreate creates a QEMU VM via POST /nodes/{node}/qemu.
+func (c *Client) VMCreate(ctx context.Context, node string, vmid int, options domain.VMCreateOptions) (string, error) {
 	if node == "" {
 		return "", fmt.Errorf("node name is required")
 	}
 	if vmid <= 0 {
 		return "", fmt.Errorf("VMID is required")
 	}
+	if err := validateCreateResource("cores", options.Cores, 1, domain.MaxCreateCores); err != nil {
+		return "", err
+	}
+	if err := validateCreateResource("memory", options.MemoryMiB, 16, domain.MaxCreateMemoryMiB); err != nil {
+		return "", err
+	}
+	if err := validateCreateResource("disk size", options.DiskSizeGiB, 1, domain.MaxCreateDiskSizeGiB); err != nil {
+		return "", err
+	}
+	if options.DiskSizeGiB != nil && options.DiskStorage == "" {
+		return "", fmt.Errorf("disk storage is required when disk size is specified")
+	}
 	var resp TaskResponse
 	path := "/nodes/" + url.PathEscape(node) + "/qemu"
 	body := url.Values{}
 	body.Set("vmid", strconv.Itoa(vmid))
 	body.Set("ostype", "l26")
-	body.Set("cores", "1")
-	body.Set("memory", "512")
+	cores := domain.DefaultVMCreateCores
+	if options.Cores != nil {
+		cores = *options.Cores
+	}
+	body.Set("cores", strconv.Itoa(cores))
+	memory := domain.DefaultVMCreateMemoryMiB
+	if options.MemoryMiB != nil {
+		memory = *options.MemoryMiB
+	}
+	body.Set("memory", strconv.Itoa(memory))
 	// Keep newly created guests accessible through the authenticated serial
 	// console, including before an operating system has been installed.
 	body.Set("serial0", "socket")
 	body.Set("vga", "serial0")
-	if name != "" {
-		body.Set("name", name)
+	if options.Name != "" {
+		body.Set("name", options.Name)
 	}
-	if iso != "" {
-		body.Set("ide2", iso+",media=cdrom")
+	if options.ISO != "" {
+		body.Set("ide2", options.ISO+",media=cdrom")
 	}
-	if diskStorage != "" {
-		body.Set("scsi0", diskStorage+":4")
+	if options.DiskStorage != "" {
+		diskSize := domain.DefaultVMCreateDiskSizeGiB
+		if options.DiskSizeGiB != nil {
+			diskSize = *options.DiskSizeGiB
+		}
+		body.Set("scsi0", fmt.Sprintf("%s:%d", options.DiskStorage, diskSize))
 		body.Set("scsihw", "virtio-scsi-single")
 	}
 	if err := c.post(ctx, path, body, &resp); err != nil {
 		return "", err
 	}
 	return resp.Data, nil
+}
+
+func validateCreateResource(name string, value *int, min, max int) error {
+	if value == nil {
+		return nil
+	}
+	if *value < min || *value > max {
+		return fmt.Errorf("%s must be between %d and %d", name, min, max)
+	}
+	return nil
 }
 
 // CTRestore restores an LXC container via POST /nodes/{node}/lxc.

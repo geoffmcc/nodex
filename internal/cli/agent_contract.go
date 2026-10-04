@@ -8,6 +8,7 @@ import (
 
 	"github.com/geoffmcc/nodex/internal/agent"
 	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/safety"
 	"github.com/geoffmcc/nodex/internal/version"
@@ -254,6 +255,12 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 	if lifecyclePath(op.Path) && op.ProviderSupportNote == "" {
 		verification = []string{"after task success, current guest state is inspected on the receipt-bound node", "observed desired state proves current state only, not that this request caused the change; VMID reuse cannot be excluded by providers that expose no stable guest UUID"}
 	}
+	switch op.Path {
+	case "vm create":
+		verification = []string{"after task success, VM config is read back and CPU, memory, and any requested disk storage/size are compared with the request"}
+	case "container create":
+		verification = []string{"after task success, container config is read back and requested CPU, memory, swap, unprivileged status, and any requested rootfs storage/size are compared with the request"}
+	}
 	var recovery []string
 	switch {
 	case strings.HasPrefix(op.Path, "maintenance "):
@@ -406,6 +413,37 @@ func handlerFlagDefinition(path, name string) AgentFlag {
 		spec.Type, spec.Minimum, spec.ValueSyntax = "integer", 0, "minimum 0; 0 uses the handler's maximum"
 	case "--pos":
 		spec.Type, spec.Minimum = "integer", 0
+	case "--cores":
+		spec.Type, spec.Minimum, spec.Maximum = "integer", 1, domain.MaxCreateCores
+		spec.ValueSyntax = "integer number of virtual cores"
+		if path == "vm create" {
+			spec.Default = domain.DefaultVMCreateCores
+		} else {
+			spec.Description = "Optional; when omitted Proxmox's allocation across available host CPUs is retained."
+		}
+	case "--memory":
+		spec.Type, spec.Minimum, spec.Maximum = "integer", 16, domain.MaxCreateMemoryMiB
+		spec.ValueSyntax = "memory in MiB"
+		spec.Default = domain.DefaultVMCreateMemoryMiB
+	case "--swap":
+		spec.Type, spec.Minimum, spec.Maximum = "integer", 0, domain.MaxCreateMemoryMiB
+		spec.ValueSyntax = "swap in MiB"
+		spec.Default = domain.DefaultContainerCreateSwapMiB
+	case "--disk-size", "--rootfs-size":
+		spec.Type, spec.Minimum, spec.Maximum = "integer", 1, domain.MaxCreateDiskSizeGiB
+		spec.ValueSyntax = "size in GiB"
+		if name == "--disk-size" {
+			spec.Default = domain.DefaultVMCreateDiskSizeGiB
+			spec.Description = "Default applies only when disk storage is supplied; otherwise no boot disk is created."
+		} else {
+			spec.Description = "Requires positional storage or --rootfs-storage; when omitted Proxmox's rootfs-size default applies."
+		}
+	case "--disk-storage":
+		spec.ValueSyntax = "Proxmox storage ID"
+		spec.Description = "VM boot-disk storage; cannot be combined with the positional disk-storage argument."
+	case "--rootfs-storage":
+		spec.ValueSyntax = "Proxmox storage ID"
+		spec.Description = "Container rootfs storage; cannot be combined with the positional storage argument."
 	case "--enable":
 		spec.Type, spec.Choices = "integer", []string{"0", "1"}
 	}

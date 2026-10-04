@@ -111,6 +111,80 @@ func TestVerifyConfigReadback(t *testing.T) {
 	}
 }
 
+type createdConfigReadbackProvider struct {
+	bareProvider
+	vmConfig map[string]interface{}
+	ctConfig map[string]interface{}
+	err      error
+}
+
+func (p *createdConfigReadbackProvider) VMs(context.Context) ([]domain.VM, error) {
+	return nil, nil
+}
+
+func (p *createdConfigReadbackProvider) VMConfig(context.Context, string, int) (map[string]interface{}, error) {
+	return p.vmConfig, p.err
+}
+
+func (p *createdConfigReadbackProvider) Containers(context.Context) ([]domain.Container, error) {
+	return nil, nil
+}
+
+func (p *createdConfigReadbackProvider) ContainerConfig(context.Context, string, int) (map[string]interface{}, error) {
+	return p.ctConfig, p.err
+}
+
+func TestCreatedConfigVerifierConfirmsVMResourceReadback(t *testing.T) {
+	diskSize := 64
+	prov := &createdConfigReadbackProvider{vmConfig: map[string]interface{}{
+		"vmid": 9501, "name": "resource-vm", "ostype": "l26", "cores": 4, "memory": 8192,
+		"scsi0": "local-lvm:vm-9501-disk-0,size=64G", "scsihw": "virtio-scsi-single",
+	}}
+	out := createdConfigVerifier(prov, "vm", "pve1", 9501, "VM pve1/9501", map[string]string{
+		"vmid": "9501", "name": "resource-vm", "ostype": "l26", "cores": "4", "memory": "8192", "scsihw": "virtio-scsi-single",
+	}, &createdVolumeExpectation{key: "scsi0", storage: "local-lvm", sizeGiB: &diskSize})(context.Background())
+	if !out.Verified || out.Unverifiable {
+		t.Fatalf("creation readback = %+v, want verified", out)
+	}
+}
+
+func TestCreatedConfigVerifierConfirmsContainerResourceReadback(t *testing.T) {
+	rootfsSize := 20
+	prov := &createdConfigReadbackProvider{ctConfig: map[string]interface{}{
+		"vmid": 9502, "hostname": "resource-ct", "cores": 2, "memory": 2048,
+		"swap": 1024, "unprivileged": "1", "rootfs": "local-lvm:vm-9502-disk-0,size=20G",
+	}}
+	out := createdConfigVerifier(prov, "container", "pve1", 9502, "container pve1/9502", map[string]string{
+		"vmid": "9502", "hostname": "resource-ct", "cores": "2", "memory": "2048", "swap": "1024", "unprivileged": "1",
+	}, &createdVolumeExpectation{key: "rootfs", storage: "local-lvm", sizeGiB: &rootfsSize})(context.Background())
+	if !out.Verified || out.Unverifiable {
+		t.Fatalf("creation readback = %+v, want verified", out)
+	}
+}
+
+func TestCreatedConfigVerifierDistinguishesMismatchAndUnreadable(t *testing.T) {
+	requested := map[string]string{"cores": "4"}
+	volume := &createdVolumeExpectation{key: "scsi0", storage: "local-lvm"}
+
+	t.Run("mismatch", func(t *testing.T) {
+		prov := &createdConfigReadbackProvider{vmConfig: map[string]interface{}{
+			"cores": 2, "scsi0": "local-lvm:vm-9503-disk-0",
+		}}
+		out := createdConfigVerifier(prov, "vm", "pve1", 9503, "VM pve1/9503", requested, volume)(context.Background())
+		if out.Verified || out.Unverifiable || !strings.Contains(out.Detail, "cores") {
+			t.Fatalf("creation mismatch = %+v, want failed verification with field detail", out)
+		}
+	})
+
+	t.Run("read error", func(t *testing.T) {
+		prov := &createdConfigReadbackProvider{err: errors.New("permission denied")}
+		out := createdConfigVerifier(prov, "vm", "pve1", 9503, "VM pve1/9503", requested, volume)(context.Background())
+		if out.Verified || !out.Unverifiable || !strings.Contains(out.Detail, "permission denied") {
+			t.Fatalf("unreadable creation config = %+v, want unverifiable", out)
+		}
+	})
+}
+
 func TestCanonicalConfigValue(t *testing.T) {
 	cases := map[interface{}]string{
 		nil:            "",
