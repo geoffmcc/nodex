@@ -10,10 +10,10 @@ import (
 func TestGuestConfigUpdateConfirmationMessageRedactsAndSorts(t *testing.T) {
 	message := guestConfigUpdateConfirmationMessage("Operation on VM pve1/100.", map[string]string{
 		"memory":        "4096",
-		"cipassword":    "plainSecret123",
-		"future-option": "unknownSecret456",
+		"cipassword":    "fixture",
+		"future-option": "unrecognized-fixture",
 		"name":          "web",
-		"sshkeys":       "ssh-rsa privateSecret789",
+		"sshkeys":       "ssh-public-key-fixture",
 	})
 
 	for _, want := range []string{
@@ -28,9 +28,9 @@ func TestGuestConfigUpdateConfirmationMessageRedactsAndSorts(t *testing.T) {
 			t.Errorf("confirmation message missing %q:\n%s", want, message)
 		}
 	}
-	for _, secret := range []string{"plainSecret123", "unknownSecret456", "privateSecret789"} {
-		if strings.Contains(message, secret) {
-			t.Errorf("confirmation message exposed a sensitive value %q:\n%s", secret, message)
+	for _, value := range []string{"fixture", "unrecognized-fixture", "ssh-public-key-fixture"} {
+		if strings.Contains(message, value) {
+			t.Errorf("confirmation message exposed a redacted value %q:\n%s", value, message)
 		}
 	}
 	if strings.Index(message, "cipassword=") > strings.Index(message, "future-option=") || strings.Index(message, "future-option=") > strings.Index(message, "memory=") {
@@ -59,9 +59,9 @@ func TestGuestConfigPreviewEscapesControlsAndTruncatesValues(t *testing.T) {
 
 func TestGuestConfigPreviewRedactsSecretAssignmentsInsideAllowedValue(t *testing.T) {
 	message := guestConfigUpdateConfirmationMessage("confirm", map[string]string{
-		"name": "node password=embeddedSecret123",
+		"name": "node password=fixture",
 	})
-	if strings.Contains(message, "embeddedSecret123") {
+	if strings.Contains(message, "fixture") {
 		t.Fatalf("free-text secret in an allowlisted value was exposed:\n%s", message)
 	}
 	if !strings.Contains(message, "name=node password=[REDACTED]") {
@@ -78,15 +78,15 @@ func TestVMAndContainerUpdatePromptsIncludeRedactedPreviews(t *testing.T) {
 	}{
 		{
 			name:   "VM",
-			args:   []string{"vm", "update", "e2e-node/100", "memory=4096", "cipassword=plainSecret123", "future-option=unknownSecret456"},
+			args:   []string{"vm", "update", "e2e-node/100", "memory=4096", "cipassword=fixture", "future-option=unrecognized-fixture"},
 			shown:  []string{"memory=4096", "cipassword=[REDACTED]", "future-option=[REDACTED]"},
-			hidden: []string{"plainSecret123", "unknownSecret456"},
+			hidden: []string{"fixture", "unrecognized-fixture"},
 		},
 		{
 			name:   "container",
-			args:   []string{"container", "update", "e2e-node/200", "swap=0", "sshkeys=ssh-rsa privateSecret789"},
+			args:   []string{"container", "update", "e2e-node/200", "swap=0", "sshkeys=ssh-public-key-fixture"},
 			shown:  []string{"swap=0", "sshkeys=[REDACTED]"},
-			hidden: []string{"privateSecret789"},
+			hidden: []string{"ssh-public-key-fixture"},
 		},
 	}
 
