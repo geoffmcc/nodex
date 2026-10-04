@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -99,25 +98,49 @@ const (
 )
 
 // resourceProbe reads one resource and reports whether it exists.
-type resourceProbe func(ctx context.Context) presenceState
+//
+// A probe that could not complete returns presenceUnknown together with the
+// error that prevented the read. Carrying the cause matters because the
+// postcondition report is the only place the operator learns why absence is
+// unproven, and "absence is unproven" on its own is not actionable.
+type resourceProbe func(ctx context.Context) (presenceState, error)
+
+// errProbeUnsupported explains a probe that never reached the provider because
+// the provider does not implement the authoritative single-resource read.
+var errProbeUnsupported = errors.New("provider exposes no single-resource read for this resource type")
+
+// classifyProbeRead turns one authoritative read into a presence state.
+//
+// Absence is recognised through app.IsNotFoundError rather than a bare 404
+// status check because the two ways a provider can report "gone" look
+// different on the wire. A real Proxmox cluster answers the config endpoint of
+// a removed guest with HTTP 500 and a "does not exist" message, which the
+// client normalises into app.ErrNotFound; a plain 404 would only ever come
+// from a lenient mock. Requiring the 404 status meant a genuinely deleted
+// guest was classified as unreadable, so deletion reported "absence is
+// unproven" precisely when absence was proven.
+func classifyProbeRead(configErr error) (presenceState, error) {
+	if configErr == nil {
+		return presencePresent, nil
+	}
+	if app.IsNotFoundError(configErr) {
+		return presenceAbsent, nil
+	}
+	return presenceUnknown, configErr
+}
 
 // probeContainer reports whether a container exists, using the single-resource
 // config endpoint rather than the cluster-wide listing. A listing is not used
 // because inventory can lag the authoritative state and a stale entry would
 // wrongly suggest the container survived.
 func probeContainer(prov domain.Provider, node string, vmid int) resourceProbe {
-	return func(ctx context.Context) presenceState {
+	return func(ctx context.Context) (presenceState, error) {
 		insp, ok := prov.(domain.ContainerInspector)
 		if !ok {
-			return presenceUnknown
+			return presenceUnknown, errProbeUnsupported
 		}
-		if _, err := insp.ContainerConfig(ctx, node, vmid); err != nil {
-			if app.HTTPStatusFromError(err) == http.StatusNotFound {
-				return presenceAbsent
-			}
-			return presenceUnknown
-		}
-		return presencePresent
+		_, err := insp.ContainerConfig(ctx, node, vmid)
+		return classifyProbeRead(err)
 	}
 }
 
@@ -126,72 +149,69 @@ func probeContainer(prov domain.Provider, node string, vmid int) resourceProbe {
 // probeContainer: a lagging inventory entry would wrongly suggest the VM
 // survived its own deletion.
 func probeVM(prov domain.Provider, node string, vmid int) resourceProbe {
-	return func(ctx context.Context) presenceState {
+	return func(ctx context.Context) (presenceState, error) {
 		insp, ok := prov.(domain.VMInspector)
 		if !ok {
-			return presenceUnknown
+			return presenceUnknown, errProbeUnsupported
 		}
-		if _, err := insp.VMConfig(ctx, node, vmid); err != nil {
-			if app.HTTPStatusFromError(err) == http.StatusNotFound {
-				return presenceAbsent
-			}
-			return presenceUnknown
-		}
-		return presencePresent
+		_, err := insp.VMConfig(ctx, node, vmid)
+		return classifyProbeRead(err)
 	}
 }
 
 // probeVMSnapshot reports whether a named snapshot of a still-existing VM
 // exists.
 func probeVMSnapshot(prov domain.Provider, node string, vmid int, name string) resourceProbe {
-	return func(ctx context.Context) presenceState {
+	return func(ctx context.Context) (presenceState, error) {
 		insp, ok := prov.(domain.SnapshotInspector)
 		if !ok {
-			return presenceUnknown
+			return presenceUnknown, errProbeUnsupported
 		}
 		snaps, err := insp.VMSnapshots(ctx, node, vmid)
 		if err != nil {
-			return presenceUnknown
+			return presenceUnknown, err
 		}
 		for _, s := range snaps {
 			if s.Name == name {
-				return presencePresent
+				return presencePresent, nil
 			}
 		}
-		return presenceAbsent
+		return presenceAbsent, nil
 	}
 }
 
 // probeContainerSnapshot reports whether a named snapshot of a still-existing
 // container exists.
 func probeContainerSnapshot(prov domain.Provider, node string, vmid int, name string) resourceProbe {
-	return func(ctx context.Context) presenceState {
+	return func(ctx context.Context) (presenceState, error) {
 		insp, ok := prov.(domain.SnapshotInspector)
 		if !ok {
-			return presenceUnknown
+			return presenceUnknown, errProbeUnsupported
 		}
 		snaps, err := insp.ContainerSnapshots(ctx, node, vmid)
 		if err != nil {
-			return presenceUnknown
+			return presenceUnknown, err
 		}
 		for _, s := range snaps {
 			if s.Name == name {
-				return presencePresent
+				return presencePresent, nil
 			}
 		}
-		return presenceAbsent
+		return presenceAbsent, nil
 	}
 }
 
 // observePresence performs a single read. A read that proves nothing is
 // surfaced as an error so the caller can report the postcondition as
-// unverifiable instead of silently treating it as absence.
+// unverifiable instead of silently treating it as absence. The underlying
+// cause is preserved so the report can name it.
 func observePresence(ctx context.Context, probe resourceProbe) (presenceState, error) {
-	switch state := probe(ctx); state {
-	case presencePresent:
-		return presencePresent, nil
-	case presenceAbsent:
-		return presenceAbsent, nil
+	state, err := probe(ctx)
+	switch {
+	case err != nil:
+		return presenceUnknown, err
+	case state == presencePresent, state == presenceAbsent:
+		return state, nil
 	default:
 		return presenceUnknown, errors.New("resource state could not be read; absence is unproven")
 	}

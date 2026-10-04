@@ -52,11 +52,59 @@ func (p *scriptedCTProvider) ContainerConfig(_ context.Context, _ string, _ int)
 func TestProbeContainerReportsPresenceAndAbsence(t *testing.T) {
 	prov := &scriptedCTProvider{steps: []presenceState{presencePresent, presenceAbsent}}
 
-	if got := probeContainer(prov, "proxmox", 9611)(context.Background()); got != presencePresent {
-		t.Fatalf("expected present, got %v", got)
+	if got, err := probeContainer(prov, "proxmox", 9611)(context.Background()); err != nil || got != presencePresent {
+		t.Fatalf("expected present, got %v err=%v", got, err)
 	}
-	if got := probeContainer(prov, "proxmox", 9611)(context.Background()); got != presenceAbsent {
+	if got, err := probeContainer(prov, "proxmox", 9611)(context.Background()); err != nil || got != presenceAbsent {
+		t.Fatalf("expected absent, got %v err=%v", got, err)
+	}
+}
+
+// TestProbeVMRecognisesRealProxmoxAbsenceShape pins the error shape the live
+// provider actually returns for a removed guest. Proxmox answers the config
+// endpoint of a deleted VM with HTTP 500 plus a "does not exist" message, which
+// the client normalises into app.ErrNotFound rather than into a 404 status.
+// Matching only a 404 status made genuine deletion look like an unreadable
+// resource, so the verifier reported absence as unproven.
+func TestProbeVMRecognisesRealProxmoxAbsenceShape(t *testing.T) {
+	absent := app.NewExitError(
+		fmt.Errorf("get vm config: API error 500: Configuration file 'nodes/proxmox/qemu-server/90101.conf' does not exist: %w", app.ErrNotFound),
+		app.ExitNotFound,
+	)
+	prov := &readErrVMProvider{err: absent}
+
+	got, err := probeVM(prov, "proxmox", 90101)(context.Background())
+	if err != nil {
+		t.Fatalf("a not-found answer must not be reported as an unreadable resource, got %v", err)
+	}
+	if got != presenceAbsent {
 		t.Fatalf("expected absent, got %v", got)
+	}
+}
+
+type readErrVMProvider struct {
+	bareProvider
+	err error
+}
+
+func (p *readErrVMProvider) VMs(_ context.Context) ([]domain.VM, error) { return nil, nil }
+
+func (p *readErrVMProvider) VMConfig(_ context.Context, _ string, _ int) (map[string]interface{}, error) {
+	return nil, p.err
+}
+
+// TestObservePresenceReportsTheCauseOfAnUnprovenRead ensures an unverifiable
+// postcondition names the underlying failure instead of only stating that
+// absence is unproven.
+func TestObservePresenceReportsTheCauseOfAnUnprovenRead(t *testing.T) {
+	prov := &readErrCTProvider{err: &app.ProviderError{StatusCode: http.StatusForbidden, Detail: "permission denied"}}
+
+	_, err := observePresence(context.Background(), probeContainer(prov, "proxmox", 9611))
+	if err == nil {
+		t.Fatal("expected the denied read to be unproven")
+	}
+	if !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected the cause to be preserved, got %v", err)
 	}
 }
 
@@ -73,7 +121,7 @@ func TestProbeContainerTreatsDeniedAndFailedReadsAsUnknown(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			prov := &readErrCTProvider{err: tc.err}
 			probe := probeContainer(prov, "proxmox", 9611)
-			if got := probe(context.Background()); got != presenceUnknown {
+			if got, _ := probe(context.Background()); got != presenceUnknown {
 				t.Fatalf("expected unknown, got %v", got)
 			}
 			// The critical guarantee: a failed read must never be usable as
@@ -185,7 +233,7 @@ func TestAbsenceVerifierStopsAtDeadlineWithoutClaimingAbsence(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	alwaysPresent := func(context.Context) presenceState { return presencePresent }
+	alwaysPresent := func(context.Context) (presenceState, error) { return presencePresent, nil }
 	outcome := absenceVerifier(alwaysPresent, "container proxmox/9611", presencePresent)(ctx)
 	if outcome.Verified {
 		t.Fatalf("a cancelled context must not verify absence, got %+v", outcome)
@@ -220,19 +268,19 @@ func TestProbeContainerSnapshotDetectsNamedSnapshotRemoval(t *testing.T) {
 	prov := &scriptedSnapshotProvider{steps: []presenceState{presencePresent, presenceAbsent}}
 	probe := probeContainerSnapshot(prov, "proxmox", 9610, "nx4fu-snap1")
 
-	if got := probe(context.Background()); got != presencePresent {
-		t.Fatalf("expected snapshot present, got %v", got)
+	if got, err := probe(context.Background()); err != nil || got != presencePresent {
+		t.Fatalf("expected snapshot present, got %v err=%v", got, err)
 	}
-	if got := probe(context.Background()); got != presenceAbsent {
-		t.Fatalf("expected snapshot absent, got %v", got)
+	if got, err := probe(context.Background()); err != nil || got != presenceAbsent {
+		t.Fatalf("expected snapshot absent, got %v err=%v", got, err)
 	}
 }
 
 func TestProbeContainerSnapshotIgnoresOtherSnapshots(t *testing.T) {
 	prov := &otherSnapshotsProvider{}
 	probe := probeContainerSnapshot(prov, "proxmox", 9610, "nx4fu-snap1")
-	if got := probe(context.Background()); got != presenceAbsent {
-		t.Fatalf("a different snapshot name must not count as the target, got %v", got)
+	if got, err := probe(context.Background()); err != nil || got != presenceAbsent {
+		t.Fatalf("a different snapshot name must not count as the target, got %v err=%v", got, err)
 	}
 }
 
