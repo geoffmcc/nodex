@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -27,6 +28,7 @@ func TestVerifyConfigReadback(t *testing.T) {
 		requested map[string]string
 		wantOK    bool
 		wantKeys  []string
+		wantText  string
 	}{
 		{
 			name:      "applied values match",
@@ -85,6 +87,91 @@ func TestVerifyConfigReadback(t *testing.T) {
 			wantOK:    false,
 			wantKeys:  []string{"name"},
 		},
+		{
+			// The evaluation's recorded case: Proxmox returns the requested
+			// ISO volume plus the byte size it normalised in, and the create
+			// was reported as a verification failure.
+			name:      "provider normalised volume descriptor matches requested properties",
+			observed:  map[string]interface{}{"ide2": "local:iso/proxmox-ve_9.2-1.iso,media=cdrom,size=1666190K"},
+			requested: map[string]string{"ide2": "local:iso/proxmox-ve_9.2-1.iso,media=cdrom"},
+			wantOK:    true,
+		},
+		{
+			name:      "provider normalised disk descriptor matches requested properties",
+			observed:  map[string]interface{}{"scsi0": "local-lvm:vm-100-disk-0,size=32G,iothread=1"},
+			requested: map[string]string{"scsi0": "local-lvm:vm-100-disk-0"},
+			wantOK:    true,
+		},
+		{
+			name:      "requested property absent from readback stays a mismatch",
+			observed:  map[string]interface{}{"ide2": "local:iso/proxmox-ve_9.2-1.iso,size=1666190K"},
+			requested: map[string]string{"ide2": "local:iso/proxmox-ve_9.2-1.iso,media=cdrom"},
+			wantOK:    false,
+			wantKeys:  []string{"ide2"},
+		},
+		{
+			name:      "requested property present with a different value stays a mismatch",
+			observed:  map[string]interface{}{"ide2": "local:iso/proxmox-ve_9.2-1.iso,media=dvd,size=1666190K"},
+			requested: map[string]string{"ide2": "local:iso/proxmox-ve_9.2-1.iso,media=cdrom"},
+			wantOK:    false,
+			wantKeys:  []string{"ide2"},
+		},
+		{
+			name:      "volume identity differing is still a mismatch",
+			observed:  map[string]interface{}{"ide2": "local:iso/other.iso,media=cdrom"},
+			requested: map[string]string{"ide2": "local:iso/proxmox-ve_9.2-1.iso,media=cdrom"},
+			wantOK:    false,
+			wantKeys:  []string{"ide2"},
+		},
+		{
+			name:      "property list mismatch names the unsatisfied property",
+			observed:  map[string]interface{}{"net0": "virtio,bridge=vmbr1"},
+			requested: map[string]string{"net0": "virtio,bridge=vmbr0"},
+			wantOK:    false,
+			wantKeys:  []string{"net0"},
+			wantText:  "bridge=vmbr0",
+		},
+		{
+			name:      "plain comma value without properties still compares literally",
+			observed:  map[string]interface{}{"description": "web,frontend"},
+			requested: map[string]string{"description": "web,backend"},
+			wantOK:    false,
+			wantKeys:  []string{"description"},
+		},
+		{
+			name:      "comma-less value without volume shape compares literally",
+			observed:  map[string]interface{}{"bootdisk": "scsi1"},
+			requested: map[string]string{"bootdisk": "scsi0"},
+			wantOK:    false,
+			wantKeys:  []string{"bootdisk"},
+		},
+		{
+			name:      "requested volume differing from observed stays a mismatch",
+			observed:  map[string]interface{}{"scsi0": "local-lvm:vm-101-disk-0,size=32G"},
+			requested: map[string]string{"scsi0": "local-lvm:vm-100-disk-0"},
+			wantOK:    false,
+			wantKeys:  []string{"scsi0"},
+		},
+		{
+			name:      "requested volume on a different storage stays a mismatch",
+			observed:  map[string]interface{}{"scsi0": "local:100/vm-100-disk-0.raw,size=32G"},
+			requested: map[string]string{"scsi0": "local-lvm:vm-100-disk-0"},
+			wantOK:    false,
+			wantKeys:  []string{"scsi0"},
+		},
+		{
+			name:      "property value differing only in a normalised extra is still a match",
+			observed:  map[string]interface{}{"net0": "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,tag=12"},
+			requested: map[string]string{"net0": "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0"},
+			wantOK:    true,
+		},
+		{
+			name:      "requested tag with a different observed tag stays a mismatch",
+			observed:  map[string]interface{}{"net0": "virtio,bridge=vmbr0,tag=12"},
+			requested: map[string]string{"net0": "virtio,bridge=vmbr0,tag=99"},
+			wantOK:    false,
+			wantKeys:  []string{"net0"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -107,7 +194,43 @@ func TestVerifyConfigReadback(t *testing.T) {
 					t.Errorf("expected mismatch for key %q, got %v", want, mismatches)
 				}
 			}
+			if tt.wantText != "" {
+				all := fmt.Sprint(mismatches)
+				if !strings.Contains(all, tt.wantText) {
+					t.Errorf("mismatch does not name %q: %v", tt.wantText, mismatches)
+				}
+			}
 		})
+	}
+}
+
+// TestCreatedConfigVerifierConfirmsNormalisedVolumeDescriptor pins the recorded
+// create outcome end to end: a guest whose config came back with a
+// provider-normalised volume descriptor was reported as verification: "failed"
+// even though the task succeeded and every requested setting was applied.
+func TestCreatedConfigVerifierConfirmsNormalisedVolumeDescriptor(t *testing.T) {
+	prov := &createdConfigReadbackProvider{vmConfig: map[string]interface{}{
+		"name":  "nxeval",
+		"cores": 2,
+		"ide2":  "local:iso/proxmox-ve_9.2-1.iso,media=cdrom,size=1666190K",
+		"scsi0": "local-lvm:vm-90101-disk-0,size=32G",
+	}}
+
+	out := createdConfigVerifier(
+		prov, "vm", "proxmox", 90101, "vm proxmox/90101",
+		map[string]string{
+			"name":  "nxeval",
+			"cores": "2",
+			"ide2":  "local:iso/proxmox-ve_9.2-1.iso,media=cdrom",
+		},
+		nil,
+	)(context.Background())
+
+	if !out.Verified {
+		t.Fatalf("a create whose requested settings all read back must verify: %+v", out)
+	}
+	if out.Unverifiable {
+		t.Fatalf("a readable config must not be reported unverifiable: %+v", out)
 	}
 }
 

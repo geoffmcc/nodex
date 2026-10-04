@@ -28,9 +28,16 @@ type configFieldMismatch struct {
 	Key      string
 	Request  string
 	Observed string
+	// Missing names the requested properties the readback did not satisfy. It is
+	// set only for a property list, where the whole-value strings are otherwise
+	// left to the reader to diff.
+	Missing string
 }
 
 func (m configFieldMismatch) String() string {
+	if m.Missing != "" {
+		return fmt.Sprintf("%s: requested %q, observed %q (unsatisfied: %s)", m.Key, m.Request, m.Observed, m.Missing)
+	}
 	return fmt.Sprintf("%s: requested %q, observed %q", m.Key, m.Request, m.Observed)
 }
 
@@ -71,6 +78,101 @@ func trimFloat(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
+// configProperty is one element of a comma-separated provider value, such as a
+// volume descriptor ("local:iso/x.iso,media=cdrom,size=1666190K").
+//
+// key is empty for the bare leading element that names the volume.
+type configProperty struct {
+	key   string
+	value string
+}
+
+// parseConfigProperties splits a comma-separated provider value into its
+// elements.
+//
+// A comma-less value that names a volume ("local:iso/x.iso",
+// "local-lvm:vm-100-disk-0") counts as a single-element list, because that is
+// what it is: the same descriptor before the provider appends properties to it.
+// Any other comma-less value reports ok=false and compares as a plain string,
+// which keeps ordinary settings such as a name or a core count out of this path
+// even when they happen to contain punctuation.
+func parseConfigProperties(value string) ([]configProperty, bool) {
+	if !strings.Contains(value, ",") {
+		if !strings.Contains(value, ":") || strings.Contains(value, "=") {
+			return nil, false
+		}
+		return []configProperty{{value: value}}, true
+	}
+	parts := strings.Split(value, ",")
+	properties := make([]configProperty, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, false
+		}
+		key, propertyValue, hasKey := strings.Cut(part, "=")
+		if !hasKey {
+			properties = append(properties, configProperty{value: part})
+			continue
+		}
+		properties = append(properties, configProperty{key: strings.TrimSpace(key), value: strings.TrimSpace(propertyValue)})
+	}
+	return properties, true
+}
+
+// propertiesSatisfied reports whether every requested element appears in the
+// observed list with the same key and value.
+//
+// Elements observed but not requested are ignored deliberately. A provider
+// normalises what it stores — an ISO volume comes back carrying its byte size,
+// a NIC comes back carrying a bridge tag — and that normalisation is not a
+// change the caller made. Comparing the whole string literally instead reported
+// a successful create as a verification failure, which invites a caller to retry
+// a create that already succeeded and collide on the VMID.
+//
+// The guarantee that a partial application is reported as a failure is kept: every
+// requested element must still be present with the value that was asked for.
+func propertiesSatisfied(observed, requested []configProperty) bool {
+	for _, want := range requested {
+		found := false
+		for _, got := range observed {
+			if got.key == want.key && got.value == want.value {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// missingProperties lists the requested elements the readback does not satisfy,
+// so the mismatch names the property that is actually wrong instead of printing
+// two whole descriptor strings and leaving the reader to diff them.
+func missingProperties(observed, requested []configProperty) string {
+	missing := make([]string, 0, len(requested))
+	for _, want := range requested {
+		found := false
+		for _, got := range observed {
+			if got.key == want.key && got.value == want.value {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		if want.key == "" {
+			missing = append(missing, want.value)
+			continue
+		}
+		missing = append(missing, want.key+"="+want.value)
+	}
+	return strings.Join(missing, ", ")
+}
+
 // verifyConfigReadback compares each requested key against the provider's
 // current config. It returns whether every requested field matched.
 //
@@ -89,6 +191,22 @@ func verifyConfigReadback(observed map[string]interface{}, requested map[string]
 		// of "2" matches a provider value of 2, and "08" matches 8.
 		if n1, err1 := strconv.ParseFloat(wantCanonical, 64); err1 == nil {
 			if n2, err2 := strconv.ParseFloat(got, 64); err2 == nil && n1 == n2 {
+				continue
+			}
+		}
+		// Compare a property list by the properties asked for, so a
+		// provider-normalised element does not read as a change.
+		if requestedProperties, isList := parseConfigProperties(wantCanonical); isList && present {
+			if observedProperties, observedIsList := parseConfigProperties(got); observedIsList {
+				if propertiesSatisfied(observedProperties, requestedProperties) {
+					continue
+				}
+				mismatches = append(mismatches, configFieldMismatch{
+					Key:      key,
+					Request:  wantCanonical,
+					Observed: got,
+					Missing:  missingProperties(observedProperties, requestedProperties),
+				})
 				continue
 			}
 		}
