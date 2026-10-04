@@ -69,16 +69,17 @@ func parseNodeVMID(arg string) (node string, vmid int, err error) {
 
 // lifecycleDesiredState returns the guest status that indicates a lifecycle
 // operation is already satisfied (a no-op). It returns "" when the operation
-// has no meaningful desired state (e.g. reset/reboot always take effect).
+// has no provider-observable desired state (e.g. reset/reboot always take
+// effect, or LXC suspend has no distinct state in status/current).
 func lifecycleDesiredState(resourceType, operation string) string {
 	switch resourceType {
 	case "vm":
 		switch operation {
-		case "start", "resume", "unpause":
+		case "start", "resume":
 			return "running"
 		case "stop", "shutdown":
 			return "stopped"
-		case "suspend", "pause":
+		case "suspend":
 			return "paused"
 		}
 	case "container":
@@ -87,8 +88,6 @@ func lifecycleDesiredState(resourceType, operation string) string {
 			return "running"
 		case "stop", "shutdown":
 			return "stopped"
-		case "suspend":
-			return "paused"
 		}
 	}
 	return ""
@@ -213,6 +212,10 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "%s\n", result.Message)
 		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
+	}
+	if operationMeta := LookupOperation(resourceType + " " + operation); operationMeta != nil && strings.HasPrefix(operationMeta.ProviderSupportNote, "Unsupported:") {
+		detail := strings.TrimSpace(strings.TrimPrefix(operationMeta.ProviderSupportNote, "Unsupported:"))
+		return app.NewExitError(fmt.Errorf("%w: %s", app.ErrUnsupportedCap, detail), app.ExitUnsupportedCap)
 	}
 
 	// Idempotent pre-check: if the guest is already in the desired state,

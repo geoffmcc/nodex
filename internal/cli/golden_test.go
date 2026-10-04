@@ -105,7 +105,6 @@ func TestGoldenJSON(t *testing.T) {
 		{name: "mutation_vm_start_submit", args: []string{"--output", "json", "--yes", "vm", "start", "e2e-node/101"}},
 		{name: "mutation_vm_start_wait_submit", args: []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/101"}},
 		{name: "mutation_vm_resume_submit", args: []string{"--output", "json", "--yes", "vm", "resume", "e2e-node/101"}},
-		{name: "mutation_vm_unpause_submit", args: []string{"--output", "json", "--yes", "vm", "unpause", "e2e-node/101"}},
 		{name: "mutation_ct_start_submit", args: []string{"--output", "json", "--yes", "container", "start", "e2e-node/201"}},
 		{name: "mutation_ct_resume_submit", args: []string{"--output", "json", "--yes", "container", "resume", "e2e-node/201"}},
 	}

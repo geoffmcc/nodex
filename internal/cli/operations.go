@@ -70,6 +70,10 @@ type OperationMeta struct {
 	// Description is a short human-readable summary.
 	Description string
 
+	// ProviderSupportNote overrides generic static-interface support text when
+	// an operation has a provider-specific implementation limitation.
+	ProviderSupportNote string
+
 	// Inspection is true when the command is read-only (no state change).
 	Inspection bool
 
@@ -306,10 +310,8 @@ func buildRegistry() []OperationMeta {
 		{"vm start", "Start a VM"},
 		{"vm stop", "Stop a VM (force)"},
 		{"vm shutdown", "Graceful VM shutdown"},
-		{"vm suspend", "Suspend a VM to disk"},
+		{"vm suspend", "Suspend a VM in memory"},
 		{"vm resume", "Resume a suspended VM"},
-		{"vm pause", "Pause (freeze) a VM"},
-		{"vm unpause", "Unpause a frozen VM"},
 	}
 	for _, v := range vmLifecycleReversible {
 		ops = append(ops, OperationMeta{
@@ -319,6 +321,29 @@ func buildRegistry() []OperationMeta {
 			Waitable:       true, ProducesUPID: true, UsesOperationResult: true,
 			OutputModes:         []string{"table", "json", "yaml"},
 			CapabilityInterface: "LifecycleProvider", HandlerFunc: "run" + toHandler(v.op),
+		})
+	}
+	for _, unsupported := range []struct {
+		path, description, note, handler string
+	}{
+		{
+			path:        "vm pause",
+			description: "Unsupported by Proxmox QEMU; use vm suspend for an in-memory suspension",
+			note:        "Unsupported: Proxmox QEMU has no separate pause action; use `vm suspend` to suspend the VM in memory.",
+			handler:     "runVMPause",
+		},
+		{
+			path:        "vm unpause",
+			description: "Unsupported by Proxmox QEMU; use vm resume for an in-memory suspension",
+			note:        "Unsupported: Proxmox QEMU has no separate unpause action; use `vm resume` to resume a VM suspended in memory.",
+			handler:     "runVMUnpause",
+		},
+	} {
+		ops = append(ops, OperationMeta{
+			Path: unsupported.path, Description: unsupported.description,
+			ProviderSupportNote: unsupported.note,
+			Inspection:          false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: unsupported.handler,
 		})
 	}
 

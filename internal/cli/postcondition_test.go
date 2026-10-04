@@ -297,6 +297,26 @@ func (p *otherSnapshotsProvider) ContainerSnapshots(_ context.Context, _ string,
 // authoritative per-guest read, and that an inability to read it is reported as
 // unverifiable rather than as failure.
 
+func TestLifecycleDesiredStateReflectsObservableProviderState(t *testing.T) {
+	tests := []struct {
+		resource, operation, want string
+	}{
+		{"vm", "suspend", "paused"},
+		{"vm", "resume", "running"},
+		{"vm", "pause", ""},
+		{"vm", "unpause", ""},
+		{"container", "suspend", ""},
+		{"container", "resume", "running"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.resource+"-"+tt.operation, func(t *testing.T) {
+			if got := lifecycleDesiredState(tt.resource, tt.operation); got != tt.want {
+				t.Fatalf("lifecycleDesiredState(%q, %q) = %q, want %q", tt.resource, tt.operation, got, tt.want)
+			}
+		})
+	}
+}
+
 // scriptedGuestProvider replays a fixed sequence of per-guest statuses.
 type scriptedGuestProvider struct {
 	bareProvider

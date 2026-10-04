@@ -325,7 +325,17 @@ func (p *Provider) GuestStatus(ctx context.Context, node, guestType string, vmid
 	if err != nil {
 		return "", fmt.Errorf("get guest status: %w", err)
 	}
-	return status.Status, nil
+	return reportedGuestStatus(segment, *status), nil
+}
+
+// reportedGuestStatus returns the state relevant to lifecycle decisions.
+// Proxmox's QEMU `status` only says whether the QEMU process is running; the
+// QMP state distinguishes a running guest from one suspended in memory.
+func reportedGuestStatus(guestType string, status client.GuestStatusData) string {
+	if guestType == "qemu" && strings.EqualFold(status.Status, "running") && status.QMPStatus != "" {
+		return status.QMPStatus
+	}
+	return status.Status
 }
 
 // guestStatusSegment maps the domain-facing guest names onto the transport path

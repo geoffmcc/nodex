@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/provider/proxmox/client"
 )
 
 // GuestStatus bridges the domain-facing guest names to the transport path
@@ -47,6 +48,47 @@ func TestGuestStatusSegmentMapsDomainNames(t *testing.T) {
 	}
 	if _, err := guestStatusSegment("node"); err == nil {
 		t.Fatal("expected an error for a non-guest type")
+	}
+}
+
+func TestReportedGuestStatusUsesQMPStateForRunningVMs(t *testing.T) {
+	tests := []struct {
+		name      string
+		guestType string
+		status    client.GuestStatusData
+		want      string
+	}{
+		{
+			name:      "paused QEMU process",
+			guestType: "qemu",
+			status:    client.GuestStatusData{Status: "running", QMPStatus: "paused"},
+			want:      "paused",
+		},
+		{
+			name:      "running QEMU process",
+			guestType: "qemu",
+			status:    client.GuestStatusData{Status: "running", QMPStatus: "running"},
+			want:      "running",
+		},
+		{
+			name:      "stopped QEMU process",
+			guestType: "qemu",
+			status:    client.GuestStatusData{Status: "stopped", QMPStatus: "paused"},
+			want:      "stopped",
+		},
+		{
+			name:      "container ignores QMP state",
+			guestType: "lxc",
+			status:    client.GuestStatusData{Status: "running", QMPStatus: "paused"},
+			want:      "running",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := reportedGuestStatus(tt.guestType, tt.status); got != tt.want {
+				t.Fatalf("reportedGuestStatus(%q, %+v) = %q, want %q", tt.guestType, tt.status, got, tt.want)
+			}
+		})
 	}
 }
 

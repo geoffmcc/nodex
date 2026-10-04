@@ -61,7 +61,7 @@ Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infras
 
 All mutations are gated by the five-tier safety model:
 
-- **VM lifecycle:** start, stop, shutdown, reset, reboot, suspend, resume, pause, unpause
+- **VM lifecycle:** start, stop, shutdown, reset, reboot, suspend, resume
 - **Container lifecycle:** start, stop, shutdown, reboot, suspend, resume
 - **Configuration updates** for VMs and containers
 - **Snapshot management:** create, delete, rollback for VMs and containers

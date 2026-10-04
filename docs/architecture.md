@@ -149,7 +149,7 @@ Beyond the base interface, providers can implement optional interfaces for addit
 - **ClusterLogProvider** — cluster-wide log entries
 - **ClusterStatusProvider** — cluster quorum and node health
 - **SnapshotDetailProvider** — VM/CT snapshot configuration
-- **LifecycleProvider** — VM and container start, stop, shutdown, reset, reboot, suspend, resume, pause, unpause
+- **LifecycleProvider** — VM and container start, stop, shutdown, reset, reboot, suspend, and resume. Proxmox QEMU has no separate pause/unpause API action; those CLI paths report unsupported and direct users to suspend/resume.
 - **ConfigProvider** — VM and container configuration updates
 - **SnapshotMutationProvider** — snapshot create, delete, rollback
 - **DeleteProvider** — VM and container deletion
@@ -318,7 +318,7 @@ The client provides two request methods:
 - **Task states.** Running and Stopped. Stopped tasks report OK or failure status.
 - **Cancellation.** Context cancellation stops polling and returns the UPID for manual follow-up.
 
-CLI commands that create provider tasks return an `OperationResult` with the UPID. When `--wait` is used, the command polls the task and reports the final outcome.
+CLI commands that create provider tasks return an `OperationResult` with the UPID. Without `--wait`, success means the provider accepted the request. With `--wait`, Nodex polls and reports the task result. Where a postcondition check is implemented, verification is reported separately; task completion alone is not evidence that the requested state was reached.
 
 ## Output model
 
@@ -327,7 +327,7 @@ CLI commands that create provider tasks return an `OperationResult` with the UPI
 - **Table output.** Human-readable terminal tables. Byte values in IEC units. Not stable for scripting.
 - **JSON output.** Indented with two spaces. Empty lists are `[]`. Structured and parseable.
 - **YAML output.** Native YAML serialization mirroring the JSON shape.
-- **OperationResult.** Standard envelope for state-changing commands with schema version, operation name, profile, provider, target, safety tier, UPID, submission status, wait status, success, changed flag, status text, warnings, and classified error details.
+- **OperationResult.** Standard envelope for state-changing commands with schema version, operation name, profile, provider, target, safety tier, UPID, submission and wait status, synchronous-completion indicator, task/submission success, evidence-based changed flag, independent postcondition verification, status text, warnings, and classified error details.
 - **Redaction.** All output passes through `internal/redact` before writing. Terminal output is sanitized for escape sequences.
 
 ## Credential flow
