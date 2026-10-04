@@ -353,6 +353,22 @@ func (c *Client) GetStorageContent(ctx context.Context, node, storage string) ([
 	return resp.Data, nil
 }
 
+// GetStorageConfig returns the configuration of a storage, including the backup
+// destination fields that /cluster/resources does not carry.
+//
+// This is a cluster-scoped endpoint: it takes no node.
+func (c *Client) GetStorageConfig(ctx context.Context, storage string) (*StorageConfig, error) {
+	if storage == "" {
+		return nil, fmt.Errorf("storage name is required")
+	}
+	var resp StorageConfigResponse
+	path := "/storage/" + url.PathEscape(storage) + "/config"
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
 // GetTasks returns all tasks for a specific node.
 func (c *Client) GetTasks(ctx context.Context, node string) ([]TaskListItem, error) {
 	if node == "" {
@@ -2904,7 +2920,50 @@ func (c *Client) sendMutation(ctx context.Context, method, path string, body url
 }
 
 // decodeResponse reads, validates, and decodes a Proxmox API response.
+// debugBodyPreviewLimit bounds how much of a response body is echoed under
+// --debug. A decode failure can only be diagnosed from the payload that
+// produced it, but the payload may hold configuration data, so the preview is
+// capped and is only ever written to the redacting diagnostics stream.
+const debugBodyPreviewLimit = 256
+
+// debugf emits a diagnostics line when a logger is attached at debug level.
+func (c *Client) debugf(msg string, args ...any) {
+	if c == nil || c.client == nil || !c.client.DebugEnabled() {
+		return
+	}
+	c.client.DebugLogger().Debug(msg, args...)
+}
+
+// debugRequestLine describes the response in terms an operator can act on: the
+// method, the path, and the status. The query string and all headers are
+// omitted because they can carry filter values and the authentication token.
+func debugRequestLine(resp *http.Response) string {
+	if resp == nil {
+		return "<nil response>"
+	}
+	method, path := "<unknown>", "<unknown>"
+	if resp.Request != nil && resp.Request.URL != nil {
+		if resp.Request.Method != "" {
+			method = resp.Request.Method
+		}
+		if resp.Request.URL.Path != "" {
+			path = resp.Request.URL.Path
+		}
+	}
+	return fmt.Sprintf("%s %s -> %d", method, path, resp.StatusCode)
+}
+
+// debugBodyPreview returns a bounded, single-line rendering of body for use in a
+// decode failure message.
+func debugBodyPreview(body []byte) string {
+	if len(body) > debugBodyPreviewLimit {
+		return fmt.Sprintf("%q... [%d bytes total]", string(body[:debugBodyPreviewLimit]), len(body))
+	}
+	return fmt.Sprintf("%q", string(body))
+}
+
 func (c *Client) decodeResponse(resp *http.Response, result any) error {
+	c.debugf("response %s", debugRequestLine(resp))
 	if !successCodes[resp.StatusCode] {
 		body, truncated := readLimited(resp.Body, c.client.MaxErrorBodySize())
 		message, fieldErrors := decodeAPIError(body)
@@ -2930,6 +2989,7 @@ func (c *Client) decodeResponse(resp *http.Response, result any) error {
 
 	body, truncated := readLimited(resp.Body, c.client.MaxBodySize())
 	if truncated {
+		c.debugf("oversize body for %s: limit %d bytes", debugRequestLine(resp), c.client.MaxBodySize())
 		return fmt.Errorf("response body exceeds %d bytes", c.client.MaxBodySize())
 	}
 	if result == nil {
@@ -2937,6 +2997,7 @@ func (c *Client) decodeResponse(resp *http.Response, result any) error {
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))
 	if err := dec.Decode(result); err != nil {
+		c.debugf("decode failed for %s; body=%s", debugRequestLine(resp), debugBodyPreview(body))
 		return fmt.Errorf("decode response: %w", err)
 	}
 	if tok, err := dec.Token(); err != io.EOF || tok != nil {

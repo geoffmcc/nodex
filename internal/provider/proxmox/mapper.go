@@ -98,15 +98,27 @@ func MapContainer(res client.ClusterResource) domain.Container {
 }
 
 // MapStorage converts a client.ClusterResource to a domain.Storage.
+//
+// Type comes from plugintype, not from the row's own `type` field. In
+// /cluster/resources every storage row carries the literal string "storage" as
+// its type, so mapping that field reported the same value for a PBS store, a
+// directory, and an NFS export and told an agent nothing about where data would
+// go. plugintype holds the real backend ("pbs", "dir", "nfs", "zfspool"), so it
+// is preferred and the row type remains only as a fallback for sources that do
+// not send it.
 func MapStorage(res client.ClusterResource) domain.Storage {
 	name := res.Name
 	if name == "" {
 		name = res.Storage
 	}
+	storageType := res.Plugintype
+	if storageType == "" {
+		storageType = res.Type
+	}
 	return domain.Storage{
 		ID:      res.ID,
 		Name:    name,
-		Type:    res.Type,
+		Type:    storageType,
 		Status:  res.Status,
 		Node:    res.Node,
 		Total:   res.MaxDisk,
@@ -129,18 +141,48 @@ func MapCluster(version *client.VersionData, nodeCount int, name string) *domain
 func MapClusterStatus(items []client.ClusterStatusItem) *domain.Cluster {
 	cluster := &domain.Cluster{}
 	nodeCount := 0
+	soleNode := ""
 	for _, item := range items {
 		if item.Type == "cluster" {
 			cluster.Name = item.Name
 			if item.Version > 0 {
 				cluster.Version = strconv.Itoa(item.Version)
 			}
+			if item.Quorate != nil {
+				quorate := *item.Quorate == 1
+				cluster.Quorate = &quorate
+			}
 		}
 		if item.Type == "node" {
 			nodeCount++
+			soleNode = item.Name
+			cluster.NodeDetail = append(cluster.NodeDetail, domain.ClusterStatusDetail{
+				Type:    item.Type,
+				ID:      item.ID,
+				Name:    item.Name,
+				Status:  item.Status,
+				Level:   item.Level,
+				IP:      item.IP,
+				Version: item.Version,
+			})
+			// On a clustered node the cluster entry carries the authoritative
+			// version; on a standalone node the only version available is the
+			// node's own.
+			if cluster.Version == "" && item.Version > 0 {
+				cluster.Version = strconv.Itoa(item.Version)
+			}
 		}
 	}
 	cluster.Nodes = nodeCount
+
+	// /cluster/status returns a single node entry and no cluster entry when the
+	// host is not clustered. Reporting an empty name there is what made
+	// `cluster status` unusable for identifying a standalone host, so the node
+	// name stands in and Standalone records that the substitution happened.
+	if cluster.Name == "" && nodeCount == 1 && soleNode != "" {
+		cluster.Name = soleNode
+		cluster.Standalone = true
+	}
 	return cluster
 }
 

@@ -212,8 +212,8 @@ func TestClusterStatusItemContract(t *testing.T) {
 	if item.Name != "mycluster" {
 		t.Errorf("Name = %q, want mycluster", item.Name)
 	}
-	if item.Quorate != 1 {
-		t.Errorf("Quorate = %d, want 1", item.Quorate)
+	if item.Quorate == nil || *item.Quorate != 1 {
+		t.Errorf("Quorate = %v, want 1", item.Quorate)
 	}
 	if item.Version != 3 {
 		t.Errorf("Version = %d, want 3", item.Version)

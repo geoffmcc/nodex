@@ -89,27 +89,28 @@ type GuestStatusData struct {
 
 // ClusterResource represents a single resource from the cluster.
 type ClusterResource struct {
-	ID        string  `json:"id"`
-	Type      string  `json:"type"`
-	Status    string  `json:"status"`
-	Name      string  `json:"name"`
-	Node      string  `json:"node"`
-	CPU       float64 `json:"cpu,omitempty"`
-	MaxCPU    int     `json:"maxcpu,omitempty"`
-	Mem       int64   `json:"mem,omitempty"`
-	MaxMem    int64   `json:"maxmem,omitempty"`
-	Disk      int64   `json:"disk,omitempty"`
-	MaxDisk   int64   `json:"maxdisk,omitempty"`
-	IP        string  `json:"ip,omitempty"`
-	Template  int     `json:"template,omitempty"`
-	VMID      int     `json:"vmid,omitempty"`
-	Storage   string  `json:"storage,omitempty"`
-	Content   string  `json:"content,omitempty"`
-	MaxAge    int     `json:"maxage,omitempty"`
-	Shared    int     `json:"shared,omitempty"`
-	Heartbeat int     `json:"heartbeat,omitempty"`
-	Tags      string  `json:"tags,omitempty"`
-	StartTime int     `json:"uptime,omitempty"`
+	ID         string  `json:"id"`
+	Type       string  `json:"type"`
+	Status     string  `json:"status"`
+	Name       string  `json:"name"`
+	Node       string  `json:"node"`
+	CPU        float64 `json:"cpu,omitempty"`
+	MaxCPU     int     `json:"maxcpu,omitempty"`
+	Mem        int64   `json:"mem,omitempty"`
+	MaxMem     int64   `json:"maxmem,omitempty"`
+	Disk       int64   `json:"disk,omitempty"`
+	MaxDisk    int64   `json:"maxdisk,omitempty"`
+	IP         string  `json:"ip,omitempty"`
+	Template   int     `json:"template,omitempty"`
+	VMID       int     `json:"vmid,omitempty"`
+	Storage    string  `json:"storage,omitempty"`
+	Content    string  `json:"content,omitempty"`
+	MaxAge     int     `json:"maxage,omitempty"`
+	Shared     int     `json:"shared,omitempty"`
+	Heartbeat  int     `json:"heartbeat,omitempty"`
+	Tags       string  `json:"tags,omitempty"`
+	StartTime  int     `json:"uptime,omitempty"`
+	Plugintype string  `json:"plugintype,omitempty"`
 }
 
 // VersionResponse is the response from /version.
@@ -278,9 +279,12 @@ type ClusterStatusItem struct {
 	Maxmem    int64  `json:"maxmem,omitempty"`
 	Localdisk int64  `json:"localdisk,omitempty"`
 	Maxdisk   int64  `json:"maxdisk,omitempty"`
-	Quorate   int    `json:"quorate,omitempty"`
-	Version   int    `json:"version,omitempty"`
-	Commit    string `json:"commit,omitempty"`
+	// Quorate is a pointer because Proxmox omits the field on hosts that have
+	// no cluster entry. A plain int cannot tell "not quorate" from "no such
+	// concept", and the difference decides whether absence should be reported.
+	Quorate *int   `json:"quorate,omitempty"`
+	Version int    `json:"version,omitempty"`
+	Commit  string `json:"commit,omitempty"`
 }
 
 func (i *ClusterStatusItem) UnmarshalJSON(data []byte) error {
@@ -314,7 +318,7 @@ func (i *ClusterStatusItem) UnmarshalJSON(data []byte) error {
 		Maxmem:    raw.Maxmem,
 		Localdisk: raw.Localdisk,
 		Maxdisk:   raw.Maxdisk,
-		Quorate:   decodeInt(raw.Quorate),
+		Quorate:   decodeIntPtr(raw.Quorate),
 		Version:   decodeInt(raw.Version),
 		Commit:    raw.Commit,
 	}
@@ -543,6 +547,33 @@ type StorageContentResponse struct {
 	Data []StorageContentItem `json:"data"`
 }
 
+// StorageConfigResponse is the response from /storage/{storage}/config.
+//
+// This is the only endpoint that carries a storage's backup destination.
+// /cluster/resources reports a storage row's plugintype and capacity but never
+// server, datastore, or path, so two PBS entries that share a server and
+// datastore are indistinguishable from two that do not.
+type StorageConfigResponse struct {
+	Data StorageConfig `json:"data"`
+}
+
+// StorageConfig describes where a storage actually stores data.
+//
+// Only the fields relevant to locating a backup are modelled. Proxmox returns
+// different subsets per storage type: a PBS entry carries server and datastore,
+// a directory storage carries path, and an NFS entry carries both server and
+// path. Shared is a pointer because Proxmox omits it rather than sending false,
+// and "not stated" must not be read as "not shared".
+type StorageConfig struct {
+	Storage   string `json:"storage,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Server    string `json:"server,omitempty"`
+	Datastore string `json:"datastore,omitempty"`
+	Path      string `json:"path,omitempty"`
+	Shared    *int   `json:"shared,omitempty"`
+	Content   string `json:"content,omitempty"`
+}
+
 // StorageContentItem represents a single content item in storage.
 type StorageContentItem struct {
 	Content string `json:"content"`
@@ -556,6 +587,59 @@ type StorageContentItem struct {
 	Checked int    `json:"checked,omitempty"`
 	Encrypt string `json:"encrypt,omitempty"`
 	Source  string `json:"source,omitempty"`
+}
+
+// UnmarshalJSON decodes one storage content item.
+//
+// Proxmox does not hold to a single numeric spelling per field across storage
+// backends. "ctime" arrives as a JSON string for some storage - local-lvm was
+// observed doing so - and as a number for others, so a plain int field rejected
+// the whole response:
+//
+//	json: cannot unmarshal string into Go struct field
+//	StorageContentResponse.data.0.ctime of type int
+//
+// That failed "storage content" outright on local-lvm, the one backend where
+// volume-level enumeration actually matters, and an error this early also hides
+// whatever the listing did contain.
+//
+// Every numeric field is read through decodeInt/decodeInt64, which accept both
+// spellings, not just the one that was observed to vary. A response is decoded
+// as a unit, so a single string-spelled field anywhere fails the entire listing
+// the same way; handling only the proven case would leave the command just as
+// broken on whichever backend happens to spell a different field as a string.
+func (i *StorageContentItem) UnmarshalJSON(data []byte) error {
+	type rawStorageContentItem struct {
+		Content string          `json:"content"`
+		Ctime   json.RawMessage `json:"ctime,omitempty"`
+		Format  string          `json:"format,omitempty"`
+		Volid   string          `json:"volid,omitempty"`
+		Size    json.RawMessage `json:"size,omitempty"`
+		Subtype string          `json:"subtype,omitempty"`
+		VMID    json.RawMessage `json:"vmid,omitempty"`
+		Store   string          `json:"store,omitempty"`
+		Checked json.RawMessage `json:"checked,omitempty"`
+		Encrypt string          `json:"encrypt,omitempty"`
+		Source  string          `json:"source,omitempty"`
+	}
+	var raw rawStorageContentItem
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*i = StorageContentItem{
+		Content: raw.Content,
+		Ctime:   decodeInt(raw.Ctime),
+		Format:  raw.Format,
+		Volid:   raw.Volid,
+		Size:    decodeInt64(raw.Size),
+		Subtype: raw.Subtype,
+		VMID:    decodeInt(raw.VMID),
+		Store:   raw.Store,
+		Checked: decodeInt(raw.Checked),
+		Encrypt: raw.Encrypt,
+		Source:  raw.Source,
+	}
+	return nil
 }
 
 // StorageContent is a convenience alias.
@@ -996,6 +1080,16 @@ func decodeInt(raw json.RawMessage) int {
 		}
 	}
 	return 0
+}
+
+// decodeIntPtr returns nil when the field was absent or null, so callers can
+// distinguish an explicit zero from an unreported value.
+func decodeIntPtr(raw json.RawMessage) *int {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	n := decodeInt(raw)
+	return &n
 }
 
 func decodeInt64(raw json.RawMessage) int64 {

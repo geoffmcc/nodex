@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/geoffmcc/nodex/internal/logging"
 	"github.com/geoffmcc/nodex/internal/redact"
 )
 
@@ -100,6 +101,32 @@ type Client struct {
 	baseDelay        time.Duration
 	maxDelay         time.Duration
 	retryPolicy      RetryPolicy
+	debugLogger      *logging.Logger
+}
+
+// WithDebugLogger attaches a logger used to emit opt-in request diagnostics.
+// A nil logger leaves diagnostics disabled, which is the default.
+func WithDebugLogger(l *logging.Logger) Option {
+	return func(c *Client) {
+		c.debugLogger = l
+	}
+}
+
+// DebugLogger returns the attached diagnostics logger, or nil when
+// diagnostics are disabled.
+func (c *Client) DebugLogger() *logging.Logger {
+	if c == nil {
+		return nil
+	}
+	return c.debugLogger
+}
+
+// DebugEnabled reports whether debug diagnostics are active.
+func (c *Client) DebugEnabled() bool {
+	if c == nil || c.debugLogger == nil {
+		return false
+	}
+	return c.debugLogger.Level() == logging.LevelDebug
 }
 
 // Transport returns a clone of the configured HTTP transport for protocols

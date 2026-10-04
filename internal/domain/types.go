@@ -53,19 +53,46 @@ type Container struct {
 
 // Storage represents a storage pool or device.
 type Storage struct {
-	ID         string            `json:"id" yaml:"id"`
-	Name       string            `json:"name" yaml:"name"`
-	Type       string            `json:"type" yaml:"type"`     // local, nfs, zfs, etc.
-	Status     string            `json:"status" yaml:"status"` // active, inactive
-	Node       string            `json:"node,omitempty" yaml:"node,omitempty"`
-	Total      int64             `json:"total" yaml:"total"` // bytes
-	Used       int64             `json:"used" yaml:"used"`   // bytes
-	Avail      int64             `json:"avail" yaml:"avail"` // bytes
-	TotalHuman string            `json:"total_human,omitempty" yaml:"total_human,omitempty"`
-	UsedHuman  string            `json:"used_human,omitempty" yaml:"used_human,omitempty"`
-	AvailHuman string            `json:"avail_human,omitempty" yaml:"avail_human,omitempty"`
-	Content    []string          `json:"content,omitempty" yaml:"content,omitempty"` // images, iso, backup, etc.
-	Labels     map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	ID          string              `json:"id" yaml:"id"`
+	Name        string              `json:"name" yaml:"name"`
+	Type        string              `json:"type" yaml:"type"`     // pbs, dir, nfs, zfspool, etc.
+	Status      string              `json:"status" yaml:"status"` // active, inactive
+	Node        string              `json:"node,omitempty" yaml:"node,omitempty"`
+	Total       int64               `json:"total" yaml:"total"` // bytes
+	Used        int64               `json:"used" yaml:"used"`   // bytes
+	Avail       int64               `json:"avail" yaml:"avail"` // bytes
+	TotalHuman  string              `json:"total_human,omitempty" yaml:"total_human,omitempty"`
+	UsedHuman   string              `json:"used_human,omitempty" yaml:"used_human,omitempty"`
+	AvailHuman  string              `json:"avail_human,omitempty" yaml:"avail_human,omitempty"`
+	Content     []string            `json:"content,omitempty" yaml:"content,omitempty"` // images, iso, backup, etc.
+	Labels      map[string]string   `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Destination *StorageDestination `json:"destination,omitempty" yaml:"destination,omitempty"`
+}
+
+// StorageDestination identifies where a backup written to a storage actually
+// lands.
+//
+// It exists because capacity alone cannot answer that question. Two PBS storages
+// reporting the same total, used, and available figures may be two datastores on
+// two servers or two names for one datastore; an agent cannot tell, and therefore
+// cannot confirm where a backup will go before sending one.
+//
+// Resolved is reported separately from the fields on purpose. When the
+// destination could not be determined, the struct is still present with
+// Resolved false and a Reason, so absence means "attempted and failed" rather
+// than "not applicable" — the same distinction F-12 turned on. Reason is a closed
+// vocabulary and never carries provider text, because provider-controlled strings
+// reaching an agent are untrusted input.
+type StorageDestination struct {
+	Resolved  bool   `json:"resolved"`
+	Reason    string `json:"reason,omitempty"` // forbidden, not_found, unavailable, unsupported, no_destination_fields
+	Type      string `json:"type,omitempty"`   // pbs, dir, nfs, ...
+	Server    string `json:"server,omitempty"`
+	Datastore string `json:"datastore,omitempty"`
+	Path      string `json:"path,omitempty"`
+	// Shared is a pointer: Proxmox omits the field rather than sending false,
+	// and "not stated" must not be read as "not shared".
+	Shared *bool `json:"shared,omitempty"`
 }
 
 // Cluster represents a cluster of nodes.
@@ -73,6 +100,24 @@ type Cluster struct {
 	Name    string `json:"name" yaml:"name"`
 	Version string `json:"version" yaml:"version"`
 	Nodes   int    `json:"nodes" yaml:"nodes"`
+
+	// Standalone reports that the endpoint returned no cluster entry, which is
+	// what a single unclustered node looks like. It is set rather than inferred
+	// by the reader so the name substitution below is never mistaken for a real
+	// cluster name.
+	// A clustered host omits it, and absence means the same thing as false:
+	// there is a real cluster name above.
+	Standalone bool `json:"standalone,omitempty" yaml:"standalone,omitempty"`
+
+	// Quorate is nil when the endpoint reported no quorum state, which is the
+	// case for a standalone node. A pointer is required: reporting false for a
+	// node that has no quorum concept would be a fabrication.
+	Quorate *bool `json:"quorate,omitempty" yaml:"quorate,omitempty"`
+
+	// NodeDetail carries the per-node entries the endpoint already returned,
+	// so a caller can see node name, address, and online status without a
+	// second command.
+	NodeDetail []ClusterStatusDetail `json:"node_detail,omitempty" yaml:"node_detail,omitempty"`
 }
 
 // ClusterInitParams contains the safe, non-secret inputs for cluster creation.

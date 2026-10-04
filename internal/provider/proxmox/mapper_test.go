@@ -207,9 +207,15 @@ func TestMapNodeStatusFallsBackToIDForName(t *testing.T) {
 	}
 }
 
+// ptrInt returns a pointer to n for quorum fixtures, which must distinguish an
+// explicit value from an absent field.
+func ptrInt(n int) *int {
+	return &n
+}
+
 func TestMapClusterStatusExtractsNameVersionAndNodeCount(t *testing.T) {
 	items := []client.ClusterStatusItem{
-		{Type: "cluster", ID: "cluster/0", Name: "mycluster", Status: "online", Quorate: 1, Version: 3},
+		{Type: "cluster", ID: "cluster/0", Name: "mycluster", Status: "online", Quorate: ptrInt(1), Version: 3},
 		{Type: "node", ID: "node/proxmox", Name: "proxmox", Status: "online"},
 		{Type: "node", ID: "node/backup", Name: "backup", Status: "online"},
 	}
@@ -225,16 +231,85 @@ func TestMapClusterStatusExtractsNameVersionAndNodeCount(t *testing.T) {
 	}
 }
 
-func TestMapClusterStatusHandlesNoClusterItem(t *testing.T) {
+// A standalone node returns only a node entry, which previously produced an
+// empty cluster name and made `cluster status` useless for identifying the host.
+func TestMapClusterStatusUsesSoleNodeNameWhenUnclustered(t *testing.T) {
 	items := []client.ClusterStatusItem{
-		{Type: "node", ID: "node/a", Name: "a", Status: "online"},
+		{Type: "node", ID: "node/proxmox", Name: "proxmox", Status: "online", Version: 4},
 	}
 	cluster := MapClusterStatus(items)
-	if cluster.Name != "" {
-		t.Fatalf("Name = %q, want empty", cluster.Name)
+	if cluster.Name != "proxmox" {
+		t.Fatalf("Name = %q, want the sole node name", cluster.Name)
+	}
+	if !cluster.Standalone {
+		t.Error("Standalone = false, want true when there is no cluster entry")
 	}
 	if cluster.Nodes != 1 {
 		t.Fatalf("Nodes = %d, want 1", cluster.Nodes)
+	}
+	// The node's own version is the only version a standalone host has.
+	if cluster.Version != "4" {
+		t.Errorf("Version = %q, want 4", cluster.Version)
+	}
+	// A node with no cluster entry has no quorum concept, and reporting false
+	// would be a fabrication.
+	if cluster.Quorate != nil {
+		t.Errorf("Quorate = %v, want nil when the endpoint reports no quorum", *cluster.Quorate)
+	}
+}
+
+func TestMapClusterStatusReportsQuorumAndNodeDetail(t *testing.T) {
+	items := []client.ClusterStatusItem{
+		{Type: "cluster", ID: "cluster/0", Name: "mycluster", Status: "online", Quorate: ptrInt(1), Version: 3},
+		{Type: "node", ID: "node/a", Name: "a", Status: "online", IP: "10.0.0.1", Version: 3},
+		{Type: "node", ID: "node/b", Name: "b", Status: "online", IP: "10.0.0.2", Version: 3},
+	}
+	cluster := MapClusterStatus(items)
+	if cluster.Standalone {
+		t.Error("Standalone = true, want false when a cluster entry exists")
+	}
+	if cluster.Quorate == nil || !*cluster.Quorate {
+		t.Errorf("Quorate = %v, want true", cluster.Quorate)
+	}
+	if len(cluster.NodeDetail) != 2 {
+		t.Fatalf("NodeDetail has %d entries, want 2", len(cluster.NodeDetail))
+	}
+	first := cluster.NodeDetail[0]
+	if first.Name != "a" || first.IP != "10.0.0.1" || first.Status != "online" {
+		t.Errorf("NodeDetail[0] = %+v, want node a with address and status", first)
+	}
+}
+
+func TestMapClusterStatusDoesNotInventQuorum(t *testing.T) {
+	items := []client.ClusterStatusItem{
+		{Type: "cluster", ID: "cluster/0", Name: "mycluster", Status: "online", Quorate: ptrInt(0), Version: 3},
+		{Type: "node", ID: "node/a", Name: "a", Status: "online"},
+	}
+	cluster := MapClusterStatus(items)
+	if cluster.Quorate == nil {
+		t.Fatal("Quorate = nil, want an explicit not-quorate verdict")
+	}
+	if *cluster.Quorate {
+		t.Error("Quorate = true, want false")
+	}
+}
+
+// Several nodes with no cluster entry is an inconsistent response, not a
+// standalone host, so no single name may be substituted for the missing one.
+func TestMapClusterStatusLeavesNameEmptyWhenAmbiguous(t *testing.T) {
+	items := []client.ClusterStatusItem{
+		{Type: "node", ID: "node/a", Name: "a", Status: "online"},
+		{Type: "node", ID: "node/b", Name: "b", Status: "online"},
+	}
+	cluster := MapClusterStatus(items)
+	if cluster.Name != "" {
+		t.Errorf("Name = %q, want empty when several nodes have no cluster entry", cluster.Name)
+	}
+	if cluster.Standalone {
+		t.Error("Standalone = true, want false for a multi-node response with no cluster entry")
+	}
+	if cluster.Nodes != 2 {
+		t.Errorf("Nodes = %d, want 2", cluster.Nodes)
 	}
 }
 

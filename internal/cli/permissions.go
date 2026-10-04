@@ -106,6 +106,9 @@ func diagnoseProfile(ctx context.Context, cmdCtx *Context, name string, p config
 	add("credential", permissionConfirmed, "credential reference resolves")
 
 	opts := []httpclient.Option{httpclient.WithTimeout(cmdCtx.Opts.Timeout)}
+	if debugOpt := debugLoggerOption(cmdCtx); debugOpt != nil {
+		opts = append(opts, debugOpt)
+	}
 	if p.CAFile != "" {
 		caOpt, caErr := httpclient.WithCACert(p.CAFile)
 		if caErr != nil {
