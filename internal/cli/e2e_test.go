@@ -27,6 +27,14 @@ var e2eTaskFailure = false
 var e2eVMStatusOverride string
 var e2eTaskNodeOverride string
 
+// Template overrides let lifecycle tests model config-backed and inventory
+// fallback preflight paths. Tests must reset these values and run serially.
+var e2eVMTemplateConfigOverride bool
+var e2eContainerTemplateConfigOverride bool
+var e2eVMInventoryTemplateOverride bool
+var e2eVMStartCalls int
+var e2eContainerStartCalls int
+
 // pbsE2ETaskExitStatusOverride replaces the exit status the PBS mock reports for
 // a completed task, so task-status classification can be exercised against
 // values other than "OK". Tests must reset it and run serially.
@@ -165,7 +173,7 @@ func (p *e2eMockProvider) VMs(_ context.Context) ([]domain.VM, error) {
 	if status == "" {
 		status = "running"
 	}
-	return []domain.VM{{ID: "e2e-node/100", Name: "e2e-vm", Status: status, Node: "e2e-node", CPU: 2, Memory: 1024, Disk: 2048}}, nil
+	return []domain.VM{{ID: "e2e-node/100", Name: "e2e-vm", Status: status, Node: "e2e-node", CPU: 2, Memory: 1024, Disk: 2048, Template: e2eVMInventoryTemplateOverride}}, nil
 }
 func (p *e2eMockProvider) Containers(_ context.Context) ([]domain.Container, error) {
 	return []domain.Container{{ID: "e2e-node/200", Name: "e2e-ct", Status: "running", Node: "e2e-node", CPU: 1, OS: "debian", Memory: 512, Disk: 1024}}, nil
@@ -213,12 +221,16 @@ func (p *e2eMockProvider) VMConfig(_ context.Context, node string, vmid int) (ma
 	if config, ok := p.createdVMConfigs[vmid]; ok {
 		return config, nil
 	}
-	return map[string]interface{}{
+	config := map[string]interface{}{
 		"vmid":   vmid,
 		"name":   "e2e-vm",
 		"cores":  2,
 		"memory": 1024,
-	}, nil
+	}
+	if e2eVMTemplateConfigOverride {
+		config["template"] = 1
+	}
+	return config, nil
 }
 func (p *e2eMockProvider) ContainerConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
 	if p.guestGone("container", vmid) {
@@ -227,13 +239,17 @@ func (p *e2eMockProvider) ContainerConfig(_ context.Context, node string, vmid i
 	if config, ok := p.createdCTConfigs[vmid]; ok {
 		return config, nil
 	}
-	return map[string]interface{}{
+	config := map[string]interface{}{
 		"vmid":     vmid,
 		"hostname": "e2e-ct",
 		"cores":    1,
 		"memory":   512,
 		"swap":     256,
-	}, nil
+	}
+	if e2eContainerTemplateConfigOverride {
+		config["template"] = 1
+	}
+	return config, nil
 }
 func (p *e2eMockProvider) StorageContent(_ context.Context, node, storage string) ([]domain.StorageContentItem, error) {
 	return []domain.StorageContentItem{
@@ -441,6 +457,7 @@ func (p *e2eMockProvider) ClusterLog(_ context.Context) ([]domain.ClusterLogEntr
 
 // LifecycleProvider methods
 func (p *e2eMockProvider) VMStart(_ context.Context, node string, vmid int) (string, error) {
+	e2eVMStartCalls++
 	p.setGuestStatus("vm", vmid, "running")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12345, 1700000000), nil
 }
@@ -473,6 +490,7 @@ func (p *e2eMockProvider) VMUnpause(_ context.Context, _ string, _ int) (string,
 	return "", app.NewExitError(fmt.Errorf("%w: Proxmox QEMU has no separate VM unpause action; use `vm resume` to resume a VM suspended in memory", app.ErrUnsupportedCap), app.ExitUnsupportedCap)
 }
 func (p *e2eMockProvider) CTStart(_ context.Context, node string, vmid int) (string, error) {
+	e2eContainerStartCalls++
 	p.setGuestStatus("container", vmid, "running")
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12354, 1700000000), nil
 }
@@ -755,6 +773,79 @@ func TestVMFreezeCommandsReturnActionableUnsupportedErrors(t *testing.T) {
 				t.Fatalf("unsupported operation wrote result to stdout: %s", stdout.String())
 			}
 		})
+	}
+}
+
+func TestTemplateStartPreflightBlocksVMAndContainerTemplates(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	e2eVMTemplateConfigOverride = true
+	e2eContainerTemplateConfigOverride = true
+	e2eVMInventoryTemplateOverride = false
+	e2eVMStartCalls, e2eContainerStartCalls = 0, 0
+	defer func() {
+		e2eVMTemplateConfigOverride = false
+		e2eContainerTemplateConfigOverride = false
+		e2eVMInventoryTemplateOverride = false
+		e2eVMStartCalls, e2eContainerStartCalls = 0, 0
+	}()
+
+	tests := []struct {
+		name       string
+		args       []string
+		wantTarget string
+	}{
+		{
+			name:       "VM template",
+			args:       []string{"--yes", "vm", "start", "e2e-node/100"},
+			wantTarget: "VM e2e-node/100",
+		},
+		{
+			name:       "container template",
+			args:       []string{"--yes", "container", "start", "e2e-node/200"},
+			wantTarget: "container e2e-node/200",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tt.args, &stdout, &stderr)
+			if err == nil || app.ExitCodeFromError(err) != app.ExitValidationError {
+				t.Fatalf("Run(%v) error = %v, want template validation error", tt.args, err)
+			}
+			if !strings.Contains(err.Error(), "cannot start "+tt.wantTarget) || !strings.Contains(err.Error(), "template") {
+				t.Fatalf("error = %v, want target-specific template guidance", err)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("template preflight wrote output: %s", stdout.String())
+			}
+		})
+	}
+	if e2eVMStartCalls != 0 || e2eContainerStartCalls != 0 {
+		t.Fatalf("template preflight submitted lifecycle calls: VM=%d container=%d", e2eVMStartCalls, e2eContainerStartCalls)
+	}
+}
+
+func TestVMTemplateStartPreflightFallsBackToInventoryWhenConfigIsSilent(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	e2eVMTemplateConfigOverride = false
+	e2eVMInventoryTemplateOverride = true
+	e2eVMStartCalls = 0
+	defer func() {
+		e2eVMInventoryTemplateOverride = false
+		e2eVMStartCalls = 0
+	}()
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--yes", "vm", "start", "e2e-node/100"}, &stdout, &stderr)
+	if err == nil || app.ExitCodeFromError(err) != app.ExitValidationError || !strings.Contains(err.Error(), "template") {
+		t.Fatalf("VM start error = %v, want inventory fallback template refusal", err)
+	}
+	if e2eVMStartCalls != 0 {
+		t.Fatalf("template inventory fallback submitted VM start %d times", e2eVMStartCalls)
 	}
 }
 
