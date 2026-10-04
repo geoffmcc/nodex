@@ -161,6 +161,43 @@ func isBenignLifecycleStatus(resourceType, operation, status string) bool {
 	return false
 }
 
+// guestTemplateState is a best-effort config preflight. known=false means the
+// provider could not report template identity; provider validation remains
+// authoritative at mutation time.
+func guestTemplateState(ctx context.Context, prov domain.Provider, resourceType, node string, vmid int) (isTemplate, known bool) {
+	var config map[string]interface{}
+	switch resourceType {
+	case "vm":
+		inspector, ok := prov.(domain.VMInspector)
+		if !ok {
+			return false, false
+		}
+		var err error
+		config, err = inspector.VMConfig(ctx, node, vmid)
+		if err != nil {
+			return false, false
+		}
+	case "container":
+		inspector, ok := prov.(domain.ContainerInspector)
+		if !ok {
+			return false, false
+		}
+		var err error
+		config, err = inspector.ContainerConfig(ctx, node, vmid)
+		if err != nil {
+			return false, false
+		}
+	default:
+		return false, false
+	}
+	template, exists := config["template"]
+	if !exists {
+		return false, false
+	}
+	value := canonicalConfigValue(template)
+	return value == "1" || strings.EqualFold(value, "true"), true
+}
+
 // runLifecycle executes a VM lifecycle operation with safety checks and optional task polling.
 func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation, resourceType string, tier safety.Tier) error {
 	if len(args) != 1 {
@@ -182,11 +219,26 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 	if err != nil {
 		return err
 	}
-	if resourceType == "vm" && operation == "start" {
-		if vi, ok := prov.(domain.VMInspector); ok {
-			if vms, listErr := vi.VMs(ctx); listErr == nil {
-				if vm, found := findVM(vms, fmt.Sprintf("%s/%d", node, vmid)); found && vm.Template {
-					return app.NewExitError(fmt.Errorf("cannot start VM %s/%d: it is a template", node, vmid), app.ExitValidationError)
+	if operation == "start" {
+		isTemplate, known := guestTemplateState(ctx, prov, resourceType, node, vmid)
+		if isTemplate {
+			resourceLabel := resourceType
+			if resourceType == "vm" {
+				resourceLabel = "VM"
+			}
+			return app.NewExitError(
+				fmt.Errorf("cannot start %s %s/%d: it is a template", resourceLabel, node, vmid),
+				app.ExitValidationError,
+			)
+		}
+		if resourceType == "vm" && !known {
+			// Preserve the existing VM inventory fallback if config readback
+			// cannot establish whether the target is a template.
+			if vi, ok := prov.(domain.VMInspector); ok {
+				if vms, listErr := vi.VMs(ctx); listErr == nil {
+					if vm, found := findVM(vms, fmt.Sprintf("%s/%d", node, vmid)); found && vm.Template {
+						return app.NewExitError(fmt.Errorf("cannot start VM %s/%d: it is a template", node, vmid), app.ExitValidationError)
+					}
 				}
 			}
 		}
