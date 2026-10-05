@@ -13,23 +13,48 @@ import (
 	"github.com/geoffmcc/nodex/internal/output"
 )
 
+// receiptListEntry is the summary row emitted by `agent receipt list`.
+//
+// It must carry the complete outcome determination that `receipt show` reports.
+// A list view that silently omits a determination is worse than no list view: an
+// agent auditing itself through the list would read `changed: null` on every
+// receipt and conclude that no operation it performed ever confirmed a change,
+// while the same receipt read individually says otherwise. Omitting a stored
+// value is not the same as the value being absent, and only `changed` carries the
+// three-way true/false/unknown distinction that makes that ambiguity visible.
+//
+// It deliberately excludes `data`, `observation`, and `next_actions`: those are
+// provider-payload-sized or per-receipt action plans, and the list is capped at
+// 100 rows, so including them would let one verbose receipt dominate the response.
+// `input_fingerprint` is excluded as a dedup token rather than an outcome — it
+// answers "is this the same request", not "what happened to it".
 type receiptListEntry struct {
-	RequestID    string                 `json:"request_id"`
-	ReceiptID    string                 `json:"receipt_id"`
-	Operation    string                 `json:"operation"`
-	Context      agent.ExecutionContext `json:"context"`
-	Submission   agent.Submission       `json:"submission"`
-	Execution    agent.Execution        `json:"execution"`
-	Verification agent.Verification     `json:"verification"`
-	Retry        agent.Retry            `json:"retry"`
-	TaskID       string                 `json:"task_id,omitempty"`
-	UpdatedAt    string                 `json:"updated_at"`
+	SchemaVersion int                    `json:"schema_version"`
+	RequestID     string                 `json:"request_id"`
+	ReceiptID     string                 `json:"receipt_id"`
+	Operation     string                 `json:"operation"`
+	Context       agent.ExecutionContext `json:"context"`
+	Submission    agent.Submission       `json:"submission"`
+	Execution     agent.Execution        `json:"execution"`
+	Verification  agent.Verification     `json:"verification"`
+	// Changed must keep its pointer type and must not gain `omitempty`:
+	// `false` and `null` are different determinations, and collapsing them
+	// reintroduces exactly the ambiguity this field exists to avoid.
+	Changed    *bool             `json:"changed"`
+	Retry      agent.Retry       `json:"retry"`
+	TaskID     string            `json:"task_id,omitempty"`
+	Error      *agent.AgentError `json:"error,omitempty"`
+	Warnings   []agent.Warning   `json:"warnings,omitempty"`
+	StartedAt  string            `json:"started_at"`
+	ObservedAt string            `json:"observed_at"`
+	UpdatedAt  string            `json:"updated_at"`
 }
 
 type receiptListResult struct {
-	Items     []receiptListEntry `json:"items"`
-	Limit     int                `json:"limit"`
-	Truncated bool               `json:"truncated"`
+	RequestPrefix string             `json:"request_prefix,omitempty"`
+	Items         []receiptListEntry `json:"items"`
+	Limit         int                `json:"limit"`
+	Truncated     bool               `json:"truncated"`
 }
 
 func runAgentReceiptDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -55,8 +80,29 @@ func runAgentReceiptDispatch(ctx context.Context, cmdCtx *Context, args []string
 }
 
 func runAgentReceiptList(_ context.Context, cmdCtx *Context, args []string) error {
-	if len(args) != 0 {
-		return app.NewExitError(errors.New("usage: nodex agent receipt list"), app.ExitUsage)
+	var prefix string
+	prefixSet := false
+	for i := 0; i < len(args); i++ {
+		name, value, hasValue := strings.Cut(args[i], "=")
+		if name != "--request-prefix" {
+			return app.NewExitError(errors.New("usage: nodex agent receipt list [--request-prefix <prefix>]"), app.ExitUsage)
+		}
+		if prefixSet {
+			return app.NewExitError(errors.New("--request-prefix may be specified only once"), app.ExitUsage)
+		}
+		prefixSet = true
+		if hasValue {
+			prefix = value
+		} else {
+			i++
+			if i >= len(args) {
+				return app.NewExitError(errors.New("--request-prefix requires a value"), app.ExitUsage)
+			}
+			prefix = args[i]
+		}
+		if !agent.ValidRequestID(prefix) {
+			return app.NewExitError(errors.New("request ID prefix must begin with a letter or digit and contain only letters, digits, hyphens, or underscores (maximum 64 characters)"), app.ExitUsage)
+		}
 	}
 	store, err := agent.DefaultStore()
 	if err != nil {
@@ -69,19 +115,32 @@ func runAgentReceiptList(_ context.Context, cmdCtx *Context, args []string) erro
 	if limit > 100 {
 		limit = 100
 	}
-	receipts, total, err := store.ListRecent(limit)
+	receipts, total, err := store.ListRecentPrefix(prefix, limit)
 	if err != nil {
 		return app.NewExitError(err, app.ExitConfig)
 	}
 	items := make([]receiptListEntry, 0, len(receipts))
 	for _, r := range receipts {
 		items = append(items, receiptListEntry{
-			RequestID: r.RequestID, ReceiptID: r.ReceiptID, Operation: r.Operation, Context: r.Context,
-			Submission: r.Submission, Execution: r.Execution, Verification: r.Verification,
-			Retry: r.Retry, TaskID: r.TaskID, UpdatedAt: r.UpdatedAt,
+			SchemaVersion: r.SchemaVersion,
+			RequestID:     r.RequestID,
+			ReceiptID:     r.ReceiptID,
+			Operation:     r.Operation,
+			Context:       r.Context,
+			Submission:    r.Submission,
+			Execution:     r.Execution,
+			Verification:  r.Verification,
+			Changed:       r.Changed,
+			Retry:         r.Retry,
+			TaskID:        r.TaskID,
+			Error:         r.Error,
+			Warnings:      r.Warnings,
+			StartedAt:     r.StartedAt,
+			ObservedAt:    r.ObservedAt,
+			UpdatedAt:     r.UpdatedAt,
 		})
 	}
-	return output.WriteJSON(cmdCtx.Writer, receiptListResult{Items: items, Limit: limit, Truncated: total > len(items)})
+	return output.WriteJSON(cmdCtx.Writer, receiptListResult{RequestPrefix: prefix, Items: items, Limit: limit, Truncated: total > len(items)})
 }
 
 func runAgentReceiptShow(_ context.Context, cmdCtx *Context, args []string) error {

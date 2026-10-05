@@ -209,6 +209,9 @@ func connectProfileWithOptions(ctx context.Context, cmdCtx *Context, profileName
 
 	opts := append([]httpclient.Option(nil), extra...)
 	opts = append(opts, httpclient.WithTimeout(cmdCtx.Opts.Timeout))
+	if debugOpt := debugLoggerOption(cmdCtx); debugOpt != nil {
+		opts = append(opts, debugOpt)
+	}
 	if p.CAFile != "" {
 		caOpt, err := httpclient.WithCACert(p.CAFile)
 		if err != nil {
@@ -287,4 +290,14 @@ func formatBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// debugLoggerOption returns a transport option attaching the command's
+// diagnostics logger, or nil when --debug was not requested. Attaching nothing
+// by default keeps diagnostics opt-in and leaves the request path unchanged.
+func debugLoggerOption(cmdCtx *Context) httpclient.Option {
+	if cmdCtx == nil || cmdCtx.Logger == nil || !cmdCtx.Opts.Debug {
+		return nil
+	}
+	return httpclient.WithDebugLogger(cmdCtx.Logger)
 }

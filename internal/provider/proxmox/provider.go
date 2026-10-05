@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/provider"
@@ -257,10 +258,84 @@ func (p *Provider) Storage(ctx context.Context) ([]domain.Storage, error) {
 	storages := make([]domain.Storage, 0)
 	for _, r := range resources {
 		if r.Type == "storage" {
-			storages = append(storages, MapStorage(r))
+			s := MapStorage(r)
+			// Resolve the backup destination for stores that can hold backups.
+			// A read-only audit token may be permitted on /cluster/resources but
+			// not on /storage/{id}/config, so a failure here must not fail the
+			// listing. It is reported as an unresolved destination instead.
+			if backupCapable(s.Content) {
+				s.Destination = p.storageDestination(ctx, s)
+			}
+			storages = append(storages, s)
 		}
 	}
 	return storages, nil
+}
+
+// backupCapable reports whether a storage can hold backup content.
+func backupCapable(content []string) bool {
+	for _, c := range content {
+		if c == "backup" {
+			return true
+		}
+	}
+	return false
+}
+
+// storageDestination resolves where a backup written to this storage lands.
+//
+// It always returns a value. When the lookup cannot be completed it returns
+// Resolved false with a closed-vocabulary reason, never provider-supplied text,
+// so the caller learns that the destination is undetermined rather than assuming
+// the absence of fields means the storage is not a backup target.
+func (p *Provider) storageDestination(ctx context.Context, s domain.Storage) *domain.StorageDestination {
+	cfg, err := p.client.GetStorageConfig(ctx, s.Name)
+	if err != nil {
+		return &domain.StorageDestination{Resolved: false, Reason: destinationFailureReason(err)}
+	}
+	dest := &domain.StorageDestination{Resolved: true}
+	dest.Type = firstNonEmpty(cfg.Type, s.Type)
+	dest.Server = cfg.Server
+	dest.Datastore = cfg.Datastore
+	dest.Path = cfg.Path
+	if cfg.Shared != nil {
+		shared := *cfg.Shared != 0
+		dest.Shared = &shared
+	}
+	// A resolved destination that identifies nothing is not a resolution. A
+	// backend with no server, datastore, or path would otherwise report
+	// "resolved" and tell an agent nothing, which is the defect being fixed.
+	if dest.Server == "" && dest.Datastore == "" && dest.Path == "" {
+		dest.Resolved = false
+		dest.Reason = "no_destination_fields"
+	}
+	return dest
+}
+
+// destinationFailureReason maps a provider failure onto a closed vocabulary.
+func destinationFailureReason(err error) string {
+	var perr *app.ProviderError
+	if errors.As(err, &perr) {
+		switch perr.StatusCode {
+		case 401, 403:
+			return "forbidden"
+		case 404:
+			return "not_found"
+		}
+	}
+	if errors.Is(err, app.ErrUnsupportedCap) {
+		return "unsupported"
+	}
+	return "unavailable"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // Cluster returns cluster information.
@@ -276,14 +351,20 @@ func (p *Provider) Cluster(ctx context.Context) (*domain.Cluster, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
-	name := ""
+	cluster := MapCluster(version, len(nodes), "")
 	// /version does not include the cluster name. Keep the primary cluster
 	// query useful when /cluster/status is unavailable by retaining the
-	// version and node data already collected above.
+	// version and node count already collected above. When it is available,
+	// retain its per-node detail and quorum state instead of projecting only
+	// the cluster name.
 	if items, statusErr := p.client.GetClusterStatus(ctx); statusErr == nil {
-		name = MapClusterStatus(items).Name
+		status := MapClusterStatus(items)
+		cluster.Name = status.Name
+		cluster.Standalone = status.Standalone
+		cluster.Quorate = status.Quorate
+		cluster.NodeDetail = status.NodeDetail
 	}
-	return MapCluster(version, len(nodes), name), nil
+	return cluster, nil
 }
 
 // TestConnectivity checks if the provider can connect to the endpoint.
@@ -1814,6 +1895,10 @@ func (p *Provider) ClusterStatuses(ctx context.Context) ([]domain.ClusterStatusD
 	}
 	result := make([]domain.ClusterStatusDetail, 0, len(items))
 	for _, item := range items {
+		quorate := 0
+		if item.Quorate != nil {
+			quorate = *item.Quorate
+		}
 		result = append(result, domain.ClusterStatusDetail{
 			Type:    item.Type,
 			ID:      item.ID,
@@ -1821,7 +1906,7 @@ func (p *Provider) ClusterStatuses(ctx context.Context) ([]domain.ClusterStatusD
 			Status:  item.Status,
 			Level:   item.Level,
 			IP:      item.IP,
-			Quorate: item.Quorate,
+			Quorate: quorate,
 			Version: item.Version,
 		})
 	}

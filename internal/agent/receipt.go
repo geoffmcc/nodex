@@ -136,9 +136,13 @@ type Result struct {
 	ObservedAt    string           `json:"observed_at"`
 	Error         *AgentError      `json:"error,omitempty"`
 	Warnings      []Warning        `json:"warnings,omitempty"`
-	NextActions   []NextAction     `json:"next_actions,omitempty"`
-	Observation   *Observation     `json:"observation,omitempty"`
-	Data          json.RawMessage  `json:"data,omitempty"`
+	// Replayed marks a response loaded from an existing receipt rather than a
+	// fresh handler execution. It is first-class because warnings may otherwise
+	// be overlooked by clients deciding whether a mutation was resubmitted.
+	Replayed    bool            `json:"replayed,omitempty"`
+	NextActions []NextAction    `json:"next_actions,omitempty"`
+	Observation *Observation    `json:"observation,omitempty"`
+	Data        json.RawMessage `json:"data,omitempty"`
 }
 
 // Receipt adds only the normalized-input fingerprint and durable ledger
@@ -512,6 +516,17 @@ func (s *Store) List(limit int) ([]Receipt, error) {
 // receipt files in the directory. It examines directory metadata first, so a
 // short recent list does not read every historical receipt body.
 func (s *Store) ListRecent(limit int) ([]Receipt, int, error) {
+	return s.ListRecentPrefix("", limit)
+}
+
+// ListRecentPrefix returns at most limit receipts whose request IDs start with
+// prefix, sorted newest first. It filters the complete bounded receipt
+// directory before applying the result limit so unrelated receipts cannot
+// crowd matching receipts out of a scoped audit.
+func (s *Store) ListRecentPrefix(prefix string, limit int) ([]Receipt, int, error) {
+	if prefix != "" && !ValidRequestID(prefix) {
+		return nil, 0, errors.New("invalid receipt request ID prefix")
+	}
 	if err := s.ensureDir(); err != nil {
 		return nil, 0, err
 	}
@@ -534,6 +549,9 @@ func (s *Store) ListRecent(limit int) ([]Receipt, int, error) {
 		}
 		id := strings.TrimSuffix(name, ".json")
 		if !ValidRequestID(id) {
+			continue
+		}
+		if prefix != "" && !strings.HasPrefix(id, prefix) {
 			continue
 		}
 		info, err := os.Lstat(filepath.Join(s.dir, name))

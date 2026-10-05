@@ -328,7 +328,7 @@ func TestGetClusterStatusDecodesQuorumAndNodes(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("len(items) = %d, want 2", len(items))
 	}
-	if items[0].Type != "cluster" || items[0].Name != "mycluster" || items[0].Quorate != 1 || items[0].Version != 3 {
+	if items[0].Type != "cluster" || items[0].Name != "mycluster" || items[0].Quorate == nil || *items[0].Quorate != 1 || items[0].Version != 3 {
 		t.Fatalf("cluster item = %+v", items[0])
 	}
 	if items[1].Type != "node" || items[1].Name != "proxmox" || items[1].IP != "10.0.0.1" {
@@ -355,8 +355,32 @@ func TestGetClusterStatusDecodesStringNumericFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetClusterStatus: %v", err)
 	}
-	if len(items) != 1 || items[0].Quorate != 1 || items[0].Version != 3 {
+	if len(items) != 1 || items[0].Quorate == nil || *items[0].Quorate != 1 || items[0].Version != 3 {
 		t.Fatalf("cluster items = %+v", items)
+	}
+}
+
+func TestGetClusterStatusDistinguishesUnreportedAndFalseQuorum(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/cluster/status" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"cluster","id":"cluster/0","name":"mycluster","status":"online","quorate":0},{"type":"node","id":"node/proxmox","name":"proxmox","status":"online"}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	items, err := c.GetClusterStatus(context.Background())
+	if err != nil {
+		t.Fatalf("GetClusterStatus: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items) = %d, want 2", len(items))
+	}
+	if items[0].Quorate == nil || *items[0].Quorate != 0 {
+		t.Errorf("explicit quorate=0 decoded as %v, want pointer to zero", items[0].Quorate)
+	}
+	if items[1].Quorate != nil {
+		t.Errorf("omitted node quorate decoded as %v, want nil", *items[1].Quorate)
 	}
 }
 
@@ -714,6 +738,67 @@ func TestGetStorageContentDecodesContentItems(t *testing.T) {
 	}
 	if items[1].Content != "images" || items[1].VMID != 100 || items[1].Size != 34359738368 {
 		t.Fatalf("second item = %+v", items[1])
+	}
+}
+
+func TestGetStorageContentAcceptsStringSpelledTimestamps(t *testing.T) {
+	// Proxmox spells ctime as a JSON string on some storage backends. The
+	// evaluation hit exactly this on local-lvm, and because a response is
+	// decoded as a unit the one string field rejected every item in it, so
+	// "storage content" could not enumerate the one backend where volume-level
+	// enumeration matters.
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/storage/local-lvm/content" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[`+
+			`{"content":"images","volid":"local-lvm:vm-100-disk-0","size":34359738368,"format":"raw","vmid":100,"ctime":"1700000000"},`+
+			`{"content":"images","volid":"local-lvm:vm-90101-disk-0","size":8589934592,"format":"raw","vmid":"90101","ctime":1700000123,"checked":"1"},`+
+			`{"content":"iso","volid":"local-lvm:backup/vzdump-qemu-100.vma.zst","size":1073741824,"format":"vma.zst","ctime":"1700000456"}`+
+			`]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+
+	items, err := c.GetStorageContent(context.Background(), "proxmox", "local-lvm")
+	if err != nil {
+		t.Fatalf("GetStorageContent must decode string-spelled numerics: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("len(items) = %d, want 3", len(items))
+	}
+	if items[0].Ctime != 1700000000 || items[0].VMID != 100 || items[0].Size != 34359738368 {
+		t.Fatalf("string-spelled item decoded wrong: %+v", items[0])
+	}
+	if items[1].Ctime != 1700000123 || items[1].VMID != 90101 || items[1].Checked != 1 {
+		t.Fatalf("mixed-spelling item decoded wrong: %+v", items[1])
+	}
+	if items[2].Ctime != 1700000456 || items[2].Content != "iso" {
+		t.Fatalf("backup item decoded wrong: %+v", items[2])
+	}
+}
+
+func TestGetStorageContentLeavesUnusableTimestampsAtZeroRatherThanFailing(t *testing.T) {
+	// A timestamp that is neither a number nor a numeric string has no
+	// meaningful value. Reporting it as absent is honest and keeps the rest of
+	// the listing readable; refusing to decode would hide every other volume.
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"data":[{"content":"images","volid":"local-lvm:vm-100-disk-0","ctime":"unknown"},{"content":"images","volid":"local-lvm:vm-101-disk-0","ctime":null}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+
+	items, err := c.GetStorageContent(context.Background(), "proxmox", "local-lvm")
+	if err != nil {
+		t.Fatalf("GetStorageContent: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items) = %d, want 2", len(items))
+	}
+	for i, item := range items {
+		if item.Ctime != 0 {
+			t.Fatalf("item %d reported a fabricated timestamp: %+v", i, item)
+		}
 	}
 }
 

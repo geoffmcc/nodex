@@ -58,6 +58,7 @@ var handlerFlags = map[string]flagSet{
 		exact: []string{"--backend", "--credential-name"},
 	},
 	"profile remove":                {exact: []string{"--remove-credential"}},
+	"agent receipt list":            {exact: []string{"--request-prefix"}},
 	"maintenance inventory":         {exact: maintenanceFilterFlags()},
 	"maintenance status":            {exact: maintenanceFilterFlags()},
 	"maintenance plan":              {exact: []string{"--environment", "--group", "--role", "--host", "--policy", "--expires-in", "--batch-size"}},

@@ -25,7 +25,7 @@ type helpEntry struct {
 // this map fall back to a generic "nodex <path> [arguments]" line.
 var leafHelp = map[string]helpEntry{
 	"agent contract":          {usage: ""},
-	"agent receipt list":      {usage: ""},
+	"agent receipt list":      {usage: "[--request-prefix <prefix>]"},
 	"agent receipt show":      {usage: "<request-id>"},
 	"agent receipt refresh":   {usage: "<request-id>"},
 	"agent receipt reconcile": {usage: "<request-id>"},

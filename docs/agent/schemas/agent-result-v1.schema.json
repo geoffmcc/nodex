@@ -24,6 +24,7 @@
     "observed_at": { "type": "string", "format": "date-time" },
     "error": { "$ref": "#/$defs/error" },
     "warnings": { "type": "array", "items": { "$ref": "#/$defs/warning" }, "maxItems": 64 },
+    "replayed": { "type": "boolean", "description": "True when this response was loaded from an existing receipt and the provider operation was not resubmitted." },
     "next_actions": { "type": "array", "items": { "$ref": "#/$defs/nextAction" }, "maxItems": 32 },
     "observation": { "$ref": "#/$defs/observation" },
     "data": {}

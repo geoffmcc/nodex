@@ -152,6 +152,42 @@ func TestListRecentIsBoundedAndReportsTotal(t *testing.T) {
 	}
 }
 
+func TestListRecentPrefixFiltersBeforeApplyingLimit(t *testing.T) {
+	store := NewStore(filepath.Join(canonicalTestDir(t), "ledger"))
+	for _, id := range []string{"eval_run_a", "eval_run_b", "other_recent"} {
+		lease, err := store.Lock(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := lease.Save(validTestReceipt(id)); err != nil {
+			t.Fatal(err)
+		}
+		_ = lease.Close()
+	}
+
+	// Make the unrelated receipt newer than both matching receipts. A prefix
+	// filter must select from the full store before applying the one-row limit.
+	unrelatedPath := filepath.Join(store.dir, "other_recent.json")
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(unrelatedPath, future, future); err != nil {
+		t.Fatal(err)
+	}
+	items, total, err := store.ListRecentPrefix("eval_run_", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || total != 2 || !strings.HasPrefix(items[0].RequestID, "eval_run_") {
+		t.Fatalf("ListRecentPrefix = %v, total %d; want one matching row and total 2", items, total)
+	}
+}
+
+func TestListRecentPrefixRejectsInvalidPrefix(t *testing.T) {
+	store := NewStore(filepath.Join(canonicalTestDir(t), "ledger"))
+	if _, _, err := store.ListRecentPrefix("../unsafe", 10); err == nil {
+		t.Fatal("invalid request ID prefix was accepted")
+	}
+}
+
 func TestStoreRejectsSymlinkPathsAndOversizedRecords(t *testing.T) {
 	base := canonicalTestDir(t)
 	actual := filepath.Join(base, "real")

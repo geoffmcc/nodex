@@ -36,6 +36,7 @@ func runNodeList(ctx context.Context, cmdCtx *Context, args []string) error {
 		return err
 	}
 
+	sortByField(nodes, func(n domain.Node) string { return n.Name + "\x00" + n.ID })
 	return writeNodes(cmdCtx, applyLimit(nodes, cmdCtx.Opts.Limit))
 }
 
@@ -225,6 +226,7 @@ func runVMList(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list VMs: %w", err)
 	}
+	sortGuestsByID(vms, func(v domain.VM) string { return v.ID })
 	return writeVMs(cmdCtx, applyLimit(vms, cmdCtx.Opts.Limit))
 }
 
@@ -339,6 +341,7 @@ func runContainerList(ctx context.Context, cmdCtx *Context, args []string) error
 	if err != nil {
 		return fmt.Errorf("list containers: %w", err)
 	}
+	sortGuestsByID(containers, func(c domain.Container) string { return c.ID })
 	return writeContainers(cmdCtx, applyLimit(containers, cmdCtx.Opts.Limit))
 }
 
@@ -461,6 +464,7 @@ func runStorageList(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("list storage: %w", err)
 	}
+	sortByField(storages, func(s domain.Storage) string { return s.Name + "\x00" + s.ID + "\x00" + s.Node })
 	return writeStorages(cmdCtx, applyLimit(storages, cmdCtx.Opts.Limit))
 }
 
@@ -603,6 +607,25 @@ func writeClusterStatus(cmdCtx *Context, cluster *domain.Cluster) error {
 			{"NAME", cluster.Name},
 			{"VERSION", cluster.Version},
 			{"NODES", fmt.Sprintf("%d", cluster.Nodes)},
+		}
+		if cluster.Standalone {
+			rows = append(rows, []string{"STANDALONE", "true"})
+		}
+		if cluster.Quorate != nil {
+			rows = append(rows, []string{"QUORATE", fmt.Sprintf("%t", *cluster.Quorate)})
+		} else if cluster.Standalone {
+			rows = append(rows, []string{"QUORATE", "unknown (standalone node)"})
+		}
+		for _, node := range cluster.NodeDetail {
+			name := node.Name
+			if name == "" {
+				name = node.ID
+			}
+			value := node.Status
+			if node.IP != "" {
+				value += " (" + node.IP + ")"
+			}
+			rows = append(rows, []string{"NODE " + name, value})
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
