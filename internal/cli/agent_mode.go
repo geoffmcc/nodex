@@ -285,7 +285,7 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 			if existing.InputFingerprint != fingerprint {
 				return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitConflict, "REQUEST_ID_CONFLICT", errors.New("request ID already belongs to a different operation, input, or target"))
 			}
-			existing.Result.Replayed = true
+			existing.Replayed = true
 			addAgentWarning(&existing.Result, agent.Warning{Code: "DUPLICATE_REQUEST_ID", Message: "existing result returned; provider operation was not resubmitted"})
 			return writeAgentResult(stdout, existing.Result)
 		}

@@ -316,10 +316,10 @@ func (p *Provider) storageDestination(ctx context.Context, s domain.Storage) *do
 func destinationFailureReason(err error) string {
 	var perr *app.ProviderError
 	if errors.As(err, &perr) {
-		switch {
-		case perr.StatusCode == 401 || perr.StatusCode == 403:
+		switch perr.StatusCode {
+		case 401, 403:
 			return "forbidden"
-		case perr.StatusCode == 404:
+		case 404:
 			return "not_found"
 		}
 	}

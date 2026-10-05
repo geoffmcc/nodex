@@ -59,7 +59,7 @@ func testReceipt(id string, changed *bool) agent.Receipt {
 // auditing itself through `receipt list` has to reach the same determination
 // `receipt show` reports, or it concludes no operation ever confirmed a change.
 func TestAgentReceiptListPreservesChangedDetermination(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateConfigAndHome(t)
 
 	ids := []string{
 		"req_list_changed_true",
@@ -162,7 +162,7 @@ func TestAgentReceiptListPreservesChangedDetermination(t *testing.T) {
 // list view has to see why an operation failed, not only that it did not report a
 // change.
 func TestAgentReceiptListPreservesErrorAndWarnings(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateConfigAndHome(t)
 
 	id := "req_list_error"
 	r := testReceipt(id, nil)
@@ -209,7 +209,7 @@ func TestAgentReceiptListPreservesErrorAndWarnings(t *testing.T) {
 }
 
 func TestAgentReceiptListFiltersByRequestIDPrefix(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateConfigAndHome(t)
 	writeReceipt(t, "eval_run_a", testReceipt("eval_run_a", nil))
 	writeReceipt(t, "eval_run_b", testReceipt("eval_run_b", nil))
 	writeReceipt(t, "other_run_a", testReceipt("other_run_a", nil))
