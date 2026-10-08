@@ -154,6 +154,12 @@ func TestOperationDescribeExposesInputAndSafetySchema(t *testing.T) {
 	if described.InputSchema == nil || described.ArgumentSyntax == "" || len(described.Flags) == 0 {
 		t.Fatalf("detailed operation schema is incomplete: %+v", described)
 	}
+	containerUpdate := describeOperation(*LookupOperation("container os-update"), true)
+	for _, flag := range containerUpdate.Flags {
+		if flag.Name == "--policy" && strings.Join(flag.Choices, ",") != "approved-full-upgrade" {
+			t.Errorf("container OS update contract advertises unsupported policies: %v", flag.Choices)
+		}
+	}
 	assertJSONSchemaRepresentative(t, filepath.Join("..", "..", "docs", "agent", "schemas", "operation-contract-v1.schema.json"), stdout.Bytes())
 	for _, path := range []string{"vm console", "profile set-credentials", "access user create", "cluster join", "environment health", "maintenance inventory", "maintenance apply", "certification run"} {
 		meta := LookupOperation(path)

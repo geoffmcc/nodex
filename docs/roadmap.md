@@ -99,9 +99,9 @@ plans. Plan application and enforcement are implemented in Phase 6.
   `--environment/--group/--host/--role` filters.
 - Preflight checks: reachability, SSH auth/host-key, OS, package manager,
   APT locks, repository health, available/security updates, held packages,
-  broken dependencies, disk space, reboot-required, failed units, PVE/PBS
-  health and active tasks, backup coverage and verification recency,
-  configured app checks, block state.
+  broken dependencies, root filesystem usage, reboot-required state, failed
+  units, PVE/PBS environment health, active tasks, backup coverage and
+  verification recency, and preflight blockers.
 - Serializable plans: ID, timestamps, expiry, targets, operation, package
   intent, required backup state, preflight results, ordering, batch size,
   reboot policy, safety classification, warnings, blockers, cryptographic
@@ -109,21 +109,21 @@ plans. Plan application and enforcement are implemented in Phase 6.
 
 ## Phase 6 — Maintenance apply, verification, reporting
 
-Status: implemented in this branch — `maintenance apply|verify|report` uses
-digest-verified plans, allowlisted Ansible operations, atomic receipts, and
-honest unknown outcomes.
+Status: implemented — `maintenance apply|verify|report|resume|reconcile|abandon`
+uses digest-verified plans, allowlisted Ansible operations, atomic receipts,
+and honest unknown outcomes.
 
-- `nodex maintenance apply|verify|report`.
+- `nodex maintenance apply|verify|report|resume|reconcile|abandon`.
 - Apply rejects stale/modified/expired plans, materially changed
   infrastructure, unmet backup requirements, conflicting PVE/PBS tasks,
   unreachable critical dependencies. Never regenerates a plan silently.
 - Policies: `security-only`, `approved-full-upgrade` (current release and
   repositories only). No automated distribution/release/major upgrades.
-- Reboots: off by default everywhere; explicit plan content + confirmation +
-  disruptive gate + verified reboot-required + sequencing + post-reboot
-  verification. PVE/PBS/primary DNS never auto-reboot.
-- Ordering: serial for critical hosts, bounded concurrency for guests, never
-  PVE and PBS together, never the only DNS server with other critical infra.
+- Reboots: plans currently set `reboot_policy: never`; no maintenance plan
+  automatically reboots a host. A reported reboot requirement remains visible
+  for operator follow-up.
+- Ordering: standard hosts first, critical hosts serially, and PVE/PBS/DNS
+  infrastructure roles last; apply uses bounded concurrency for standard hosts.
 - Secret-free reports with per-host detail and honest partial-failure
   disposition.
 
@@ -140,17 +140,17 @@ Status: planned
 
 ## Phase 8 — One-shot monitoring and external integration
 
-Status: partially implemented in this branch: configured one-shot HTTP,
-HTTPS, TCP, TLS, and DNS checks are available. PVE/PBS-specific checks and
-service checks remain planned until their explicit configuration contracts are
-added.
+Status: partially implemented. Generic one-shot HTTP/HTTPS, TCP, TLS and DNS
+checks and provider-backed PVE/PBS API, task, datastore and backup checks are
+available. The `service` configuration type is accepted but returns
+`unsupported`; systemd service checks through Ansible are not implemented.
 
 - Version-2-only `monitoring` config section; `nodex monitor targets|check`
   with `--environment/--target` filters.
 - Checks: HTTP(S) status, TCP, TLS validity/expiry, DNS (with specified
-  resolver), PVE/PBS API health, task failures, datastore capacity, backup
-  age, systemd service status via the read-only Ansible path. No ICMP
-  initially.
+  resolver), PVE/PBS API health, task/backup-chain health, datastore capacity,
+  and backup coverage/age/verification. Systemd service checks and ICMP are
+  not implemented.
 - Bounded concurrency, per-check timeouts, table/JSON/YAML, healthy /
   degraded / failed / unknown / unsupported, partial-failure exit codes.
 - Documentation for external integration: cron/systemd timer invocation, exit

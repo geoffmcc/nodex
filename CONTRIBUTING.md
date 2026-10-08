@@ -8,7 +8,7 @@ Thank you for improving Nodex. This project is a Go CLI for inspecting and opera
 - `make` (optional; Go commands work directly)
 - Git
 
-CI builds and tests on Ubuntu, macOS (Apple Silicon and Intel), and Windows. The CI workflow runs `go build`, `go vet`, `go test`, and a `gofmt -s` check.
+CI builds and tests on Ubuntu, macOS (Apple Silicon and Intel), and Windows. See `.github/workflows/ci.yml` for the authoritative matrix and current gates, including module verification, build, vet, Staticcheck, tests, race tests, formatting, govulncheck, release-config validation, and workflow linting.
 
 ## Development Setup
 

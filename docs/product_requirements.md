@@ -13,7 +13,7 @@ Nodex is a secure, predictable, all-in-one CLI for understanding and operating s
 
 ## Implemented Scope
 
-Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infrastructure. The built-in Proxmox provider supports both read-only inspection commands and mutation commands across 31 capabilities with a five-tier safety model. A separate Proxmox Backup Server provider (`pbs`) supports read-only inspection across 6 capabilities. Nodex has no daemon, no background agent, no telemetry, and no mandatory server component.
+Nodex is a local CLI for inspecting and operating Proxmox VE and Proxmox Backup Server infrastructure, with optional explicitly enrolled Linux-host maintenance and one-shot monitoring. The built-in Proxmox VE provider advertises 37 capabilities; the separate PBS provider advertises six inspection and four guarded maintenance capabilities. Nodex has no daemon, no agent installed on managed nodes, no telemetry, and no mandatory server component. Its opt-in `--agent` flag is a structured local CLI interface, not a resident agent or isolation boundary.
 
 ### Read-only inspection commands
 
@@ -41,7 +41,7 @@ Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infras
   remove-vanished), prune run (destructive, typed confirmation),
   garbage-collection run (disruptive) — all with conflicting-task preflight
   and `--wait` task polling
-- Fleet maintenance: `maintenance inventory|status|plan|apply|verify|report` over
+- Fleet maintenance: `maintenance inventory|status|plan|apply|verify|report|resume|reconcile|abandon` over
   explicitly enrolled hosts, with `--environment/--group/--role/--host`
   filters. Status runs the allowlisted read-only `check-updates` preflight
   (Ansible required, otherwise clearly reported); plan emits an immutable,
@@ -56,6 +56,15 @@ Nodex is a local, single-user CLI for inspecting and operating Proxmox VE infras
   recently failed backup-chain tasks, per-guest backup coverage/age/
   verification with configurable thresholds, maintenance-safety blockers,
   and honest partial-failure reporting (missing data is never "healthy")
+- One-shot monitoring (`monitor targets|check`): explicitly configured generic
+  HTTP(S), TCP, TLS and DNS targets, plus provider-backed PVE/PBS API, task,
+  datastore, and backup coverage/age/verification checks. No target discovery,
+  persistent history, scheduling service, or alert delivery.
+- Versioned operation and agent discovery: `operation list|describe`,
+  `agent contract`, opt-in `--agent` JSON execution and durable local mutation
+  receipts with request-ID deduplication and read-only refresh/reconciliation.
+  Each operation's agent support and exclusions are available from the live
+  operation contract.
 
 ### Mutation commands
 
@@ -81,6 +90,12 @@ All mutations are gated by the five-tier safety model:
 - **Ceph** OSD create/destroy/in/out and pool create/destroy
 - **Replication** job create, update, delete, schedule
 - **Access** user create and delete, ACL add (expert mode)
+- **Cluster administration:** guarded cluster initialization. Cluster join is
+  preflight-only and refuses execution because the required peer credential is
+  not safely available to Nodex.
+- **Linux guest OS updates:** `container os-update` supports only the fixed
+  `approved-full-upgrade` procedure on a running, explicitly identified,
+  enrolled LXC; it does not reboot the guest.
 
 ## Safety Contracts
 
@@ -90,15 +105,16 @@ All mutations are gated by the five-tier safety model:
 |------|------|-------------|
 | 0 | Observation | None |
 | 1 | Reversible | `--yes` or interactive prompt |
-| 2 | Disruptive | `--yes --force` or double confirmation |
-| 3 | Destructive | Type-in target verification |
-| 4 | Security Admin | `--expert` flag |
+| 2 | Disruptive | `--yes --force` or the operation's interactive equivalent |
+| 3 | Destructive | `--yes --force` plus exact target confirmation (or interactive equivalent), unless a documented specialized workflow defines its own gate |
+| 4 | Security Admin | `--expert` plus any operation-specific requirements |
 
 Non-interactive sessions fail closed when confirmation is required and flags are not provided.
 
 ### Mutation result envelope
 
-All mutation commands emit an `OperationResult` (schema version 1) with:
+Provider-backed mutations that use the standard result contract emit an
+`OperationResult` (schema version 1) with:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -111,15 +127,18 @@ All mutation commands emit an `OperationResult` (schema version 1) with:
 | `upid` | string | Provider task ID (omitted when empty) |
 | `submitted` | bool | Whether the request was accepted |
 | `waited` | bool | Whether Nodex waited for task completion |
-| `success` | bool | Overall success |
+| `synchronous` | bool | Whether the provider applied the request inline without a task ID |
+| `success` | bool | Request acceptance when not waiting; provider task result when waiting. Independent of postcondition verification. |
 | `changed` | bool|null | Whether state was modified |
 | `status` | string | Provider status text |
+| `verification` | string | Postcondition result when checked (`verified`, `failed`, or `unsupported`) |
 | `warnings` | [string] | Human-readable warnings |
 | `error` | object | Error details (omitted on success) |
 
 ### Task polling
 
-When `--wait` is used, Nodex polls the provider task with:
+Without `--wait`, an asynchronous mutation's success means provider acceptance,
+not task completion. When `--wait` is used, Nodex polls the provider task with:
 - Initial interval: 500ms
 - Max interval: 5s (exponential backoff, 2.0x)
 - Max wait: 30 minutes
@@ -162,8 +181,8 @@ When `--wait` is used, Nodex polls the provider task with:
 
 Versions 1 and 2 are read; new configurations are written as version 2. A
 file's declared version is preserved by config-modifying commands (no silent
-migration). Known providers are `proxmox` (Proxmox VE) and `pbs` (reserved
-for Proxmox Backup Server; see `docs/roadmap.md`).
+migration). The implemented providers are `proxmox` (Proxmox VE) and `pbs`
+(Proxmox Backup Server).
 
 ```yaml
 version: 2
@@ -211,7 +230,7 @@ For profile `lab`: `NODEX_LAB_TOKEN_ID`, `NODEX_LAB_TOKEN_SECRET`, `NODEX_LAB_TO
 
 | Code | Name | Meaning |
 |------|------|---------|
-| 0 | Success | Operation completed successfully |
+| 0 | Success | Command's documented success condition; asynchronous mutation without `--wait` means provider acceptance, not task completion |
 | 1 | General | Unspecified error |
 | 2 | Usage | Invalid command arguments |
 | 3 | Config | Configuration problem |
@@ -222,7 +241,7 @@ For profile `lab`: `NODEX_LAB_TOKEN_ID`, `NODEX_LAB_TOKEN_SECRET`, `NODEX_LAB_TO
 | 8 | TLS | TLS/certificate error |
 | 9 | Incompatibility | Provider/API version incompatibility |
 | 10 | UnsupportedCap | Capability not supported by provider |
-| 11 | PartialFailure | Partial failure in multi-profile `--all` |
+| 11 | PartialFailure | Partial retrieval or operation failure; used by supported `--all`, environment, maintenance and monitor workflows |
 | 12 | Provider | Provider-specific error |
 | 13 | NotFound | Resource not found |
 | 14 | Timeout | Request or task timed out |
@@ -247,12 +266,19 @@ For profile `lab`: `NODEX_LAB_TOKEN_ID`, `NODEX_LAB_TOKEN_SECRET`, `NODEX_LAB_TO
 
 ## Current Limitations
 
-- No release artifact matrix is defined
-- No backward-compatibility policy for structured output fields beyond what the compatibility document defines
-- Some exit codes are reserved but not emitted by every provider path
-- Golden test files are test artifacts and may change
-- Internal Go package APIs (everything under `internal/`) may change before 1.0
-- Provider interface signatures may change before 1.0
+- Only the PVE and PBS providers are implemented; other registered-provider
+  concepts do not imply additional live backends.
+- Some operation postconditions cannot be verified from provider evidence; the
+  command/agent contract reports verification as unavailable or unsupported.
+- `--all` is restricted to `status`, `node list`, `vm list`, and
+  `container list`.
+- Fleet maintenance and enrolled-host service checks require Ansible;
+  maintenance plans currently never reboot hosts.
+- The `service` monitoring type is accepted in configuration but currently
+  reports unsupported.
+- Nodex is pre-1.0. Internal Go package APIs and provider interface signatures
+  may change; public CLI/config/output compatibility is defined in
+  `compatibility.md`.
 
 ## Non-Goals
 
@@ -265,17 +291,8 @@ Nodex is explicitly NOT:
 - A GitOps reconciler
 - A raw API executor
 
-## Roadmap
+## Roadmap and compatibility
 
-### Completed — Phases 1-3
-- Safety and execution integrity (safety tiers, confirmation gates)
-- Output and automation contracts (OperationResult envelope, structured JSON/YAML, exit codes)
-- Secret and transfer hardening (password-stdin, redaction, streaming uploads, temp-file downloads)
-
-### Phase 4 (current)
-- Documentation and command truth — reconciling all docs against implemented code
-
-### Phase 5 (future)
-- Provider boundary refinement — interface cleanup, capability contracts
-
-Refer to the [compatibility policy](compatibility.md) for stability commitments.
+The delivered fleet-operations phases and remaining work are tracked in the
+[roadmap](roadmap.md). For supported interfaces and pre-1.0 stability
+commitments, see the [compatibility policy](compatibility.md).

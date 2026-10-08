@@ -44,6 +44,8 @@ nodex <command> <subcommand> --help
 | `--quiet` | bool | false | Suppress non-essential output |
 | `--verbose` | bool | false | Info-level stderr output |
 | `--debug` | bool | false | Debug-level stderr output (redacted) |
+| `--agent` | bool | false | Opt in to the versioned structured agent interface; use with a supported operation |
+| `--request-id <id>` | string | generated in agent mode | Stable agent request ID for mutation deduplication |
 
 ## Mutation Flags
 
@@ -56,7 +58,9 @@ nodex <command> <subcommand> --help
 | `--password-stdin` | Read password from stdin instead of interactive prompt |
 | `--confirm-target <text>` | Exact target text for non-interactive destructive confirmation |
 
-`--debug` takes precedence over `--verbose`. `--quiet` suppresses logger output unless a more verbose level is selected.
+`--debug` takes precedence over `--verbose`. `--quiet` suppresses logger output unless a more verbose level is selected. Agent-mode constraints and support are described in the [`nodex agent` section](#nodex-agent) and operation discovery contract.
+
+`--all` is supported only for the read-only `status`, `node list`, `vm list`, and `container list` commands. It is not a general fan-out switch and is unavailable for mutations.
 
 ## Safety Tiers
 
@@ -67,7 +71,7 @@ Every mutation command is classified into one of these tiers:
 | 0 | Observation | None | `node list`, `vm show` |
 | 1 | Reversible | `--yes` or interactive prompt | `vm start`, `vm shutdown` |
 | 2 | Disruptive | `--yes --force` or double confirmation | `vm reset`, `vm migrate` |
-| 3 | Destructive | Type-in target verification | `vm delete`, `storage delete` |
+| 3 | Destructive | `--yes --force` plus exact target confirmation (or equivalent interactive confirmation) | `vm delete`, `storage delete` |
 | 4 | Security Admin | `--expert` flag | `access user create` |
 
 Non-interactive sessions fail closed when confirmation is required and flags are not provided.
@@ -151,6 +155,64 @@ nodex completion fish
 ```
 
 Writes the completion script to stdout.
+
+Supported shells: `bash`, `zsh`, `fish`, and `powershell`.
+
+### `nodex operation`
+
+Discover registered operations without connecting to a provider. Static
+capability metadata does not check live permissions or readiness.
+
+```bash
+nodex operation list --output json
+nodex operation describe "vm migrate" --output json
+```
+
+`list` returns the canonical operation paths and concise metadata. `describe`
+returns one operation's arguments, flags, constraints, safety tier, target
+requirements, provider interface, verification and recovery notes, and
+agent-mode support. The runtime registry is the most current command catalog.
+
+### `nodex agent`
+
+Opt in to the versioned JSON agent interface by passing `--agent` before an
+operation. It wraps existing handlers and does not bypass safety checks.
+
+```bash
+nodex agent contract --output json
+nodex agent receipt list --output json
+nodex agent receipt show <request-id> --output json
+nodex --profile lab agent receipt refresh <request-id> --output json
+nodex --profile lab agent receipt reconcile <request-id> --output json
+```
+
+For executing an operation, use `nodex --agent --profile <name>
+--request-id <id> ... <existing-operation-and-arguments>`. Remote operations
+require an explicit profile. Agent mode uses JSON, is non-interactive, and
+never inserts confirmation flags. A repeated request ID with identical input
+returns the existing receipt; a conflicting request fails. Refresh/reconcile
+are read-only with respect to the provider and never resubmit. See the full
+[agent-interface contract](agent-interface.md) for result semantics, supported
+operations, exclusions, schemas, retention, and recovery rules.
+
+### `nodex monitor`
+
+Run checks against explicitly configured targets once. Nodex does not discover
+targets, schedule checks, retain history, or send alerts.
+
+```bash
+nodex monitor targets
+nodex monitor check
+nodex monitor check --target pve-api
+nodex monitor check --environment homelab
+```
+
+Configured checks include HTTP, HTTPS, TCP, TLS and DNS; PVE/PBS API and task
+checks; datastore capacity; and backup age, verification and coverage. Checks
+that require an integration not currently implemented (for example systemd
+`service` targets) return `unsupported`, not healthy. Reports include per-target
+state, latency and detail. Overall non-healthy results return exit code 11.
+See [Configuration](configuration.md#monitoring-target-types) for target types and fields.
 
 ### `nodex provider list`
 
@@ -352,11 +414,12 @@ nodex container create pve-a 200 local:vztmpl/debian-12.tar.zst app-200 \
 | `container clone <id> --newid <id>` | Clone a container |
 
 `container os-update` is a disruptive operation and requires `--yes --force`.
-It only targets an explicitly identified running LXC, executes the fixed APT
-full-upgrade procedure through the enrolled PVE host's Ansible connection, and
-never reboots the guest. Nodex verifies that the guest remains running and has
-no remaining APT or package-database issues after the update. VM operating
-system updates are not provided by this command.
+It accepts only `--policy approved-full-upgrade`, targets an explicitly
+identified running LXC, and executes the fixed APT full-upgrade procedure
+through its uniquely enrolled PVE host's Ansible connection. It never reboots
+the guest. Nodex verifies that the guest remains running and has no remaining
+APT or package-database issues after the update. VM operating system updates
+are not provided by this command.
 
 ### `nodex storage`
 

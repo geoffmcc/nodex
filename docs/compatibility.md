@@ -93,9 +93,11 @@ stable fields:
 | `upid`        | `string`    | Provider task ID (omitted when empty)        |
 | `submitted`   | `bool`      | Whether the request was accepted             |
 | `waited`      | `bool`      | Whether Nodex waited for task completion     |
-| `success`     | `bool`      | Overall success                              |
+| `synchronous` | `bool`      | Whether the provider applied the request inline without returning a task ID |
+| `success`     | `bool`      | Request acceptance when not waiting; provider task outcome when waiting. Independent of postcondition verification. |
 | `changed`     | `bool|null` | Whether state was modified (null=unknown)    |
 | `status`      | `string`    | Provider status text (omitted when empty)    |
+| `verification`| `string`    | `verified`, `failed`, or `unsupported` when a postcondition was checked |
 | `warnings`    | `[string]`  | Human-readable warnings (omitted when empty) |
 | `error`       | `object`    | Error details (omitted on success)           |
 | `error.class` | `string`    | Error classification                         |
@@ -148,7 +150,7 @@ stable.
 
 | Code | Name               | Meaning                                  |
 |------|--------------------|------------------------------------------|
-| 0    | Success            | Operation completed successfully.        |
+| 0    | Success            | Command's documented success condition; asynchronous request acceptance is not task completion. |
 | 1    | General            | Unspecified error.                       |
 | 2    | Usage              | Invalid command arguments.               |
 | 3    | Config             | Configuration problem.                   |
@@ -159,7 +161,7 @@ stable.
 | 8    | TLS                | TLS/certificate error.                   |
 | 9    | Incompatibility    | Provider/API version incompatibility.    |
 | 10   | UnsupportedCap     | Capability not supported by provider.    |
-| 11   | PartialFailure     | Partial failure in multi-profile --all.  |
+| 11   | PartialFailure     | Partial retrieval or operation failure (including supported multi-profile `--all`). |
 | 12   | Provider           | Provider-specific error.                 |
 | 13   | NotFound           | Resource not found.                      |
 | 14   | Timeout            | Request or task timed out.               |
@@ -178,11 +180,15 @@ codes will not be reassigned.
 
 ### Tier 2 — Exit code semantics
 
-- `0` indicates the complete operation succeeded. A mutation request that
-  was accepted but whose provider task later failed (when `--wait` is used)
-  returns a non-zero exit code.
-- `11` (PartialFailure) is returned when `--all` is used and some but not all
-  profiles failed.
+- For synchronous operations and reads, `0` indicates the command completed
+  successfully. For asynchronous mutations without `--wait`, `0` means the
+  provider accepted the request, not that its task or desired postcondition
+  succeeded. With `--wait`, a provider task failure returns nonzero. Evaluate
+  `success` and `verification` separately in the result envelope.
+- `11` (PartialFailure) is used by multi-profile `--all` and other bounded
+  workflows when one or more required checks/targets cannot complete. In
+  particular, environment and monitor checks do not treat unavailable evidence
+  as healthy.
 - When every profile fails under `--all`, exit code `11` is returned (not `0`).
 
 ## What Is NOT Covered

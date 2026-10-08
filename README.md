@@ -2,24 +2,26 @@
 
 Nodex is a secure, predictable, all-in-one CLI for understanding and operating self-hosted infrastructure—Proxmox-first, inspection-led, management-capable, and automation-friendly.
 
-Nodex runs on Linux, macOS, and Windows as a single local binary. It connects directly to your Proxmox VE endpoints over HTTPS. There is no daemon, no agent, no telemetry, and no hidden network connections.
+Nodex runs on Linux, macOS, and Windows as a single local binary. Its built-in providers connect directly over HTTPS to Proxmox VE and Proxmox Backup Server. Optional fleet maintenance connects to explicitly enrolled Linux hosts through a restricted Ansible adapter. Nodex has no daemon, managed-node agent, telemetry, or continuous monitoring service.
 
 ## What Nodex does
 
-- **Inspect.** List and show nodes, VMs, containers, storage, tasks, events, snapshots, firewall rules, HA resources, backup content, SDN zones, Ceph state, pools, cluster logs, and more. Inspect Proxmox Backup Server datastores, backup snapshots, verify/prune/sync jobs, garbage collection, and tasks through the separate `pbs` provider.
-- **Diagnose.** Run `nodex doctor` to check configuration and connectivity across all your profiles. Run `nodex environment backup-health` to evaluate a paired PVE + PBS environment: reachability, datastore capacity, task failures, and every protected guest's backup age and verification state.
+- **Inspect.** Inspect PVE nodes, VMs, containers, storage, tasks, events, logs, backups, snapshots, firewalls, HA, SDN, Ceph, access, pools and replication. The separate `pbs` provider inspects PBS status, datastores, snapshots, jobs, garbage collection and tasks.
+- **Diagnose.** Run `nodex doctor` for local configuration and profile connectivity checks. `nodex environment health` and `backup-health` combine configured PVE/PBS state, datastore capacity, tasks and guest backup coverage. `nodex monitor check` runs explicitly configured one-shot checks.
 - **Operate.** Start, stop, shutdown, reboot, suspend, and resume VMs and containers. Create and manage snapshots. Update VM and container configurations. Create backups. Upload and download storage content. Migrate and clone guests. Run PBS verification, sync, prune, and garbage-collection jobs behind the same safety gates.
-- **Administer** (expert mode). Manage users, ACL entries, firewall rules, SDN topology, Ceph OSDs and pools, backup schedules, and replication jobs.
+- **Maintain fleets.** Enroll Linux hosts explicitly, inspect updates and health, produce immutable maintenance plans, apply approved updates through allowlisted Ansible operations, and verify/report from durable receipts. This optional workflow requires Ansible.
+- **Automate.** Use structured JSON/YAML, discover operations and their safety requirements, or opt into the versioned agent contract and mutation receipts.
+- **Administer** (expert mode where required). Manage access/ACLs, firewall rules, SDN topology, Ceph OSDs and pools, backup schedules, and replication jobs.
 
 Every management command is protected by a five-tier safety model. Read-only commands need no confirmation. Reversible operations need `--yes`. Disruptive operations need `--yes --force`. Destructive operations require typing the target identifier. Security administration requires `--expert`.
 
-For machine-readable discovery, structured execution, and mutation receipts, see the [NodeX agent interface](docs/agent-interface.md) and the portable [NODEX_AGENT.md](NODEX_AGENT.md) instructions. Agent mode is opt-in and continues to use these existing confirmations and provider trust settings.
+For a conceptual walkthrough, read the [Operator Guide](docs/operator-guide.md). For machine-readable discovery, structured execution, and mutation receipts, see the [Nodex agent interface](docs/agent-interface.md) and the portable [NODEX_AGENT.md](NODEX_AGENT.md) instructions. Agent mode is opt-in and continues to use existing confirmations and provider trust settings.
 
 ## Quick start
 
 ### Prebuilt binaries
 
-Signed binaries for Linux, macOS, and Windows on both amd64 and arm64 are attached to every [release](https://github.com/geoffmcc/nodex/releases/latest). No Go toolchain required.
+When a release is published, platform archives for Linux, macOS, and Windows on amd64 and arm64 are available from [GitHub Releases](https://github.com/geoffmcc/nodex/releases). No Go toolchain is needed to use a release binary. The release workflow signs the SHA-256 checksum manifest with Sigstore and publishes an SPDX SBOM and build provenance.
 
 Download the archive for your platform, along with `checksums.txt` and `checksums.txt.sigstore.json`. Verify the archive you actually downloaded:
 
@@ -43,17 +45,17 @@ cosign verify-blob \
   checksums.txt
 ```
 
-The identity is pinned to this repository, this workflow file, and a release tag. You can tighten it further by replacing the version pattern with your exact tag, for example `v0\.1\.2`. If you have the GitHub CLI, `gh attestation verify checksums.txt --repo geoffmcc/nodex` checks the build provenance instead.
+The identity is pinned to this repository, this workflow file, and a release tag. You can tighten it further by replacing the version pattern with your exact tag. The release workflow also publishes build provenance for the checksum manifest; verify it using GitHub's attestation verification interface when provenance evidence is required.
 
 Every archive also ships a matching SPDX SBOM.
 
-### Install from source
+### Install a pinned source version
 
 ```bash
-go install github.com/geoffmcc/nodex/cmd/nodex@latest
+go install github.com/geoffmcc/nodex/cmd/nodex@v0.3.1
 ```
 
-This is a pre-1.0 project and the command surface may change, so pin an exact version if you depend on it: `go install github.com/geoffmcc/nodex/cmd/nodex@v0.1.2`.
+This is a pre-1.0 project and the command surface may change, so pin an exact version if you depend on it. Replace `v0.3.1` with the version you have reviewed.
 
 ### Connect to Proxmox
 
@@ -61,6 +63,7 @@ Create a minimal configuration:
 
 ```bash
 nodex init --non-interactive
+nodex setup
 nodex provider list
 nodex --output json provider capabilities proxmox
 ```
@@ -95,8 +98,8 @@ Use fictional or test credentials in examples. Do not paste real tokens into she
 | Read-only | `node list`, `vm show` | None |
 | Reversible | `vm start`, `vm shutdown` | `--yes` |
 | Disruptive | `vm reset`, `vm migrate` | `--yes --force` |
-| Destructive | `vm delete`, `storage delete` | Type target ID |
-| Security admin | `access user create` | `--expert` |
+| Destructive | `vm delete`, `storage delete` | `--yes --force` and exact target confirmation |
+| Security administration | `access user create`, ACL changes | `--expert` plus any operation-specific confirmation |
 
 Non-interactive sessions fail closed when confirmation is required.
 
@@ -109,7 +112,7 @@ Nodex supports four credential backends:
 - **OS keyring** (`keyring:name`) — macOS Keychain, Linux Secret Service, Windows Credential Manager
 - **Stdin** — read at prompt time, not stored
 
-Proxmox API tokens are the recommended and supported credential type. Passwords may be used through `--password-stdin` for commands like `access user create` but are not supported for Proxmox provider authentication.
+PVE and PBS API tokens are the supported provider-authentication method. Passwords may be supplied with `--password-stdin` for individual commands that request a password, such as access-user creation; passwords are not used to authenticate to PVE or PBS providers. Store PVE and PBS tokens separately.
 
 ## Output modes
 
@@ -124,6 +127,7 @@ Structured output never contains human-readable text mixed in. Empty lists are `
 ```text
 nodex version            Show version information
 nodex init               Initialize configuration
+nodex setup              Guided secure provider setup
 nodex profile            Manage connection profiles
 nodex provider           List providers and capabilities
 nodex node               Inspect nodes
@@ -151,6 +155,8 @@ nodex access             Inspect and manage identity (expert)
 nodex ceph               Inspect and manage Ceph
 nodex replication        Manage replication jobs
 nodex completion         Generate shell completions
+nodex operation          Discover operations and their contracts
+nodex agent              Opt-in structured agent interface and receipts
 ```
 
 Global flags may appear at any position in the command line: `nodex --output json node list` and `nodex node list --output json` are equivalent. Use `nodex help <command>` or `<command> --help` for per-command help.
@@ -158,12 +164,14 @@ Global flags may appear at any position in the command line: `nodex --output jso
 ## Documentation
 
 - [Product principles](docs/product-principles.md) — what Nodex is and how capability decisions are made
+- [Operator guide](docs/operator-guide.md) — setup, operational concepts, and major workflows
+- [Agent instructions](NODEX_AGENT.md) — portable operating rules for AI/automation callers
 - [CLI reference](docs/cli-reference.md) — every command, flag, exit code, and safety classification
 - [Configuration reference](docs/configuration.md) — profiles, credentials, TLS, paths
 - [Architecture](docs/architecture.md) — package layout, provider model, transport, task lifecycle
 - [Product requirements](docs/product_requirements.md) — implemented scope, contracts, limitations
 - [Compatibility policy](docs/compatibility.md) — what is stable and what may change
-- [Fleet-operations roadmap](docs/roadmap.md) and [ADR 0001](docs/adr/0001-fleet-operations-architecture.md) — the phased PBS, inventory, maintenance, and monitoring expansion
+- [Fleet-operations roadmap](docs/roadmap.md) and [ADR 0001](docs/adr/0001-fleet-operations-architecture.md) — delivered scope and remaining work
 - [Security policy](SECURITY.md) — threat model, reporting, protections
 - [Release procedure](docs/releasing.md) — reproducible artifact validation
 - [Maintenance operations](docs/maintenance.md) — plans, guarded apply, and receipts
@@ -175,6 +183,11 @@ Global flags may appear at any position in the command line: `nodex --output jso
 
 - A Proxmox VE endpoint reachable over HTTPS
 - A Proxmox API token with appropriate permissions
+
+PBS commands require a separate Proxmox Backup Server endpoint and profile.
+Fleet-maintenance commands additionally require Ansible and explicitly enrolled
+Linux hosts; neither is needed for normal PVE/PBS CLI usage. Monitoring checks
+require explicit target configuration and are run on demand.
 
 Go 1.27.1 is needed only to build from source. The prebuilt binaries need no toolchain.
 

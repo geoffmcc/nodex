@@ -457,7 +457,7 @@ func handlerFlagDefinition(path, name string) AgentFlag {
 		spec.Choices = []string{"vm", "ct", "host"}
 	}
 	if path == "container os-update" && name == "--policy" {
-		spec.Choices = []string{"security-only", "full-upgrade"}
+		spec.Choices = []string{"approved-full-upgrade"}
 	}
 	return spec
 }
