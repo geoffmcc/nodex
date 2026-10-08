@@ -14,7 +14,12 @@ flowchart TD
     cli --> logging[internal/logging]
     cli --> task[internal/task]
     cli --> safety[internal/safety]
+    cli --> agent[internal/agent]
+    cli --> monitor[internal/monitor]
+    cli --> maintenance[internal/maintenance]
+    cli --> backuphealth[internal/backuphealth]
     provider --> proxmox[internal/provider/proxmox]
+    provider --> pbs[internal/provider/pbs]
     proxmox --> proxclient[internal/provider/proxmox/client]
     proxclient --> httpclient[internal/transport/httpclient]
     config --> app[internal/app]
@@ -29,6 +34,7 @@ flowchart TD
 ```text
 cmd/nodex/                         Process entry point and signal handling
 internal/ansible/                  Allowlisted Ansible execution boundary (embedded playbooks, shell-free adapter)
+internal/agent/                    Versioned agent results, local receipts and request deduplication
 internal/app/                      Shared application errors and exit codes
 internal/backuphealth/             Unified PVE/PBS environment health evaluation service
 internal/cli/                      Command registration, global flags, handlers, shell completion
@@ -37,6 +43,7 @@ internal/credentials/              Credential backends (file, keyring, env, stdi
 internal/domain/                   Provider interface, capability interfaces, shared resource types
 internal/logging/                  Stderr logger and log levels
 internal/maintenance/              Preflight interpretation and immutable maintenance plans
+internal/monitor/                  Bounded, one-shot checks for configured targets
 internal/output/                   Table, JSON, YAML, OperationResult envelope, redaction-aware formatting
 internal/provider/                 Provider registry and capability helpers
 internal/provider/pbs/             Proxmox Backup Server provider and resource mapping
@@ -177,7 +184,28 @@ The Proxmox provider (`internal/provider/proxmox/`) is the built-in provider. It
 - Uses the typed Proxmox client (`internal/provider/proxmox/client/`) for all API calls
 - Maps Proxmox API response fields into `internal/domain` resource types through mapper functions
 
-The provider advertises 31 capabilities covering read-only inspection, node details, firewall, HA, backups, SDN, snapshots, pools, cluster logs, lifecycle, config, snapshot mutation, delete, template, cloud-init, backup mutation, storage mutation, migration, clone, disk, network mutation, firewall mutation, access, Ceph, Ceph mutation, SDN mutation, and replication.
+The Proxmox provider advertises 37 capabilities, spanning node/guest/storage/cluster inspection; node detail; firewall and HA; backups; SDN; snapshots; pools and cluster logs; VM/LXC lifecycle, creation, restoration, cloning, migration, disks and configuration; storage/network/firewall mutation; access; Ceph; replication; consoles; and guarded cluster administration. The PBS provider advertises 10 capabilities: six inspection capabilities (system, datastores, snapshots, tasks, jobs and garbage collection) plus four guarded task runners (verify, sync, prune and garbage collection). The provider's `Capabilities()` implementation and `nodex provider capabilities <name>` are authoritative; a listed capability is static implementation support, not live authorization or readiness.
+
+## Agent execution and operation discovery
+
+The operation registry in `internal/cli/operations.go` records canonical CLI
+operations, safety tiers, scopes, provider interfaces, task behavior, output
+modes and aliases. `nodex operation list` and `operation describe` expose that
+registry without contacting providers. Agent mode (`--agent`) is an opt-in
+wrapper around the same command handlers. The `internal/agent` package stores
+versioned local mutation receipts, deduplicates request IDs and supports
+read-only task refresh/reconciliation; it is not an isolation boundary or
+authorization system. `docs/agent-interface.md` documents the trust and
+recovery contract.
+
+## One-shot monitoring
+
+`internal/monitor` evaluates an explicitly configured set of targets with
+bounded concurrency and per-target/global timeouts. It supports generic HTTP,
+HTTPS, TCP, TLS and DNS checks and composes provider-backed checks through the
+existing environment/backup-health services. It has no discovery, daemon,
+history store or alerting path. `service` is accepted by configuration
+validation but is currently reported unsupported by the monitor command.
 
 ## PBS provider
 

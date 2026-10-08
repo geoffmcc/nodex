@@ -2,7 +2,7 @@
 
 ## Threat Model
 
-Nodex is a local CLI tool that connects directly to Proxmox VE endpoints over HTTPS. It stores credentials locally on the operator's machine and transmits them only to the configured endpoint. The primary threats are:
+Nodex is a local CLI that connects directly over HTTPS to configured Proxmox VE or Proxmox Backup Server endpoints. Optional fleet maintenance connects by SSH to explicitly enrolled Linux hosts through its allowlisted Ansible boundary. Credentials are resolved on the operator's machine and sent only to their configured provider; there is no background service or telemetry. The primary threats are:
 
 1. **Credential exposure.** API tokens, passwords, and authorization headers leaking through logs, errors, debug output, or documentation.
 2. **Man-in-the-middle.** Interception or modification of HTTPS traffic to Proxmox endpoints.
@@ -101,6 +101,12 @@ Additional protections:
 
 - **Non-interactive fail-closed.** When `--non-interactive` is set and confirmation is required, the command fails instead of proceeding silently.
 - **No generic bypass.** There is no `--skip-safety` or equivalent flag. Each tier requires its specific gate.
+
+Agent mode (`--agent`) does not weaken these controls. Request identifiers,
+local receipts and confirmation flags are not proof of human approval or an
+isolation boundary against a local caller that can run arbitrary commands or
+modify Nodex files. See the [agent-interface contract](docs/agent-interface.md)
+for explicit support limits and ambiguity/retry rules.
 
 ## Read-Only Token Support
 

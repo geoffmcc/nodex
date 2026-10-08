@@ -78,12 +78,13 @@ containing an unknown but well-formed provider name still loads — so a file
 written by a newer Nodex does not invalidate your other profiles — but any
 command that uses such a profile fails with an unknown-provider error. The
 `pbs` provider is Proxmox Backup Server. The schema-version-2
-`monitoring.targets` map contains explicit one-shot checks. Supported target
-types are `http`, `https`, `tcp`, `tls`, and `dns`; DNS targets require an
-explicit resolver. Nodex never discovers monitoring targets. Endpoint, TLS, and
-credential rules below apply identically to every provider: PVE and PBS
-credentials are always separate credential-store entries, and there is no
-insecure TLS option for any provider.
+`monitoring.targets` map contains explicit one-shot checks. Nodex never
+discovers monitoring targets. Generic HTTP(S), TCP, TLS and DNS checks need no
+provider environment; DNS targets require an explicit resolver. Provider-backed
+types use a named environment that links the relevant PVE and/or PBS profile.
+Endpoint, TLS, and credential rules below apply identically to every provider:
+PVE and PBS credentials are always separate credential-store entries, and there
+is no insecure TLS option for any provider.
 
 Example monitoring configuration:
 
@@ -100,6 +101,29 @@ monitoring:
       address: pve.example.com
       resolver: 192.0.2.53:53
 ```
+
+### Monitoring target types
+
+`nodex monitor check` supports these configured target types:
+
+| Type | Evidence and requirements |
+|---|---|
+| `http`, `https`, `application` | One bounded HTTP GET; an optional `expected_status` overrides the default 2xx/3xx success range. `application` is an HTTP check, not a product-specific integration. |
+| `tcp` | TCP connection to `address` (`host:port`). |
+| `tls` | TLS 1.2+ handshake and certificate expiry check; optional `ca_file` and `expiry_warning_days`. |
+| `dns` | Host lookup through the explicitly configured `resolver` (`host:port`). |
+| `pve-api`, `pbs-api` | Authenticated provider/environment reachability check; specify `environment`. |
+| `pve-tasks`, `pbs-tasks` | Provider-backed task/backup-chain health check; specify the matching `environment` profile. |
+| `datastore` | PBS datastore/capacity health from the environment's PBS profile. |
+| `backup-age`, `backup-verification`, `backup-coverage` | Guest backup coverage/age/verification from the configured PVE/PBS environment. |
+| `service` | Accepted by the configuration schema but no service-check integration is currently wired into `monitor check`; the result is `unsupported`. |
+
+Targets can specify `environment`, `timeout_seconds`, optional TLS/HTTP
+settings, and a name in the `targets` map. Global `monitoring.concurrency` is
+bounded (default 8, maximum 32); `monitoring.timeout_seconds` can cap the
+overall check run. Per-target timeout defaults to 10 seconds. Monitoring is
+one-shot: use an external scheduler for repeated checks and handle exit code 11
+for any non-healthy overall result.
 
 ## Endpoint Rules
 

@@ -87,7 +87,7 @@ var leafHelp = map[string]helpEntry{
 	"container suspend":            {usage: "<node>/<vmid>"},
 	"container resume":             {usage: "<node>/<vmid>"},
 	"container update":             {usage: "<node>/<vmid> <key=value>"},
-	"container os-update":          {usage: "<node>/<vmid> --policy security-only|full-upgrade"},
+	"container os-update":          {usage: "<node>/<vmid> --policy approved-full-upgrade"},
 	"container delete":             {desc: "Delete a container (destructive); confirm with the node/VMID target", usage: "<node>/<vmid> --yes --force --confirm-target <node>/<vmid>", examples: []string{"proxmox/9610 --yes --force --confirm-target proxmox/9610"}},
 	"container template":           {usage: "<node>/<vmid>"},
 	"container migrate":            {usage: "<node>/<vmid> <target>"},

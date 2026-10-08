@@ -1,353 +1,152 @@
 # Nodex Threat Model
 
-This document describes the security threats facing Nodex, the mitigations in
-place, and the gaps that remain. It supplements the security policy in
-[SECURITY.md](../SECURITY.md) and the architecture documentation in
-[docs/architecture.md](architecture.md).
+This document describes Nodex's security boundaries and material risks. It
+complements the operator-facing [Security Policy](../SECURITY.md) and the
+implementation overview in [Architecture](architecture.md). It describes
+repository behavior, not a guarantee about a particular deployment or provider.
 
-## Scope
+## System and trust boundaries
 
-Nodex is a single-process local CLI that connects directly to Proxmox VE
-endpoints over HTTPS. The threat model covers:
-
-- The Nodex binary, source code, configuration, and local credential storage.
-- Communication between Nodex and Proxmox endpoints.
-- The CI/CD pipeline that builds and tests Nodex.
-- The dependency supply chain.
-- The local operator workstation.
-
-**Out of scope:** The Proxmox VE server itself (Nodex cannot protect a
-compromised server), physical security of the operator's machine, social
-engineering, and network attacks below the TLS layer.
-
----
-
-## Assets
-
-| Asset | Location | Sensitivity |
-|-------|----------|-------------|
-| Source code | GitHub repository | Public |
-| Configuration files | `~/.config/nodex/config.yaml` (Linux), `~/Library/Application Support/Nodex/config.yaml` (macOS), `%AppData%\Nodex\config.yaml` (Windows) | Low (no credentials stored here) |
-| Credential files | `~/.nodex/credentials/` | **High** — contains API tokens/passwords |
-| OS keyring entries | System credential store | **High** — contains API tokens/passwords |
-| Environment variables | Process memory | **High** — may contain tokens |
-| Release binaries | GitHub Releases, `go install` | **Medium** — integrity matters |
-| CI/CD secrets | GitHub Actions secrets | **Critical** — controls publishing |
-| go.sum | Repository | **Medium** — dependency integrity anchor |
-
----
-
-## Attacker Profiles
-
-### 1. Compromised Proxmox Endpoint
-The Proxmox server is under attacker control or serving malicious responses.
-
-**Impact:** Attacker can return falsified inspection data, reject legitimate
-operations, or respond to read requests with crafted payloads.
-
-**Existing mitigations:**
-- TLS certificate verification ensures endpoint identity (no `--insecure` flag).
-- Body size limits (50 MiB success, 256 KiB error) prevent memory exhaustion.
-- Responses are decoded into typed Go structs, limiting attack surface.
-
-**Gaps:**
-- No response content-type validation beyond what the Go HTTP client provides.
-- JSON responses are accepted without schema validation.
-
-### 2. Network Man-in-the-Middle
-An attacker intercepts HTTPS traffic between Nodex and the Proxmox endpoint.
-
-**Impact:** Credential theft, traffic inspection, request/response modification.
-
-**Existing mitigations:**
-- HTTPS required; HTTP endpoints are rejected at the URL validation layer.
-- TLS 1.2 minimum; certificate and hostname verification always enabled.
-- No `--insecure` flag, no hidden TLS bypass, no `InsecureSkipVerify`.
-- Custom CA support is explicit per profile via `ca_file`.
-- Explicit certification environments bind the expected leaf certificate and
-  trusted CA identity; mutation requests use the same leaf pin on the provider
-  transport.
-
-**Gaps:**
-- General provider profiles do not pin a specific certificate or public key and
-  continue to rely on their configured trust store.
-- No mutual TLS support.
-
-### 3. Malicious Certificate Authority
-A compromised or untrustworthy CA in the system trust store issues a valid
-certificate for the Proxmox endpoint's hostname.
-
-**Impact:** Attacker can impersonate the Proxmox endpoint with a valid
-certificate.
-
-**Existing mitigations:**
-- TLS certificate verification uses the system trust pool.
-- Custom CA support allows operators to narrow trust to a private CA.
-- Certification environments require both a trusted-CA identity and an
-  authorized leaf fingerprint, enforced on subsequent provider requests.
-
-**Gaps:**
-- General profiles have no certificate pinning or known-hosts mechanism.
-- General profiles have no warning when the CA changes between connections.
-
-### 4. Stolen Credentials
-API tokens, passwords, or authorization headers are exposed through logs,
-errors, shell history, process listings, or backup files.
-
-**Impact:** Attacker gains access to the Proxmox endpoint with the stolen
-credential's privileges.
-
-**Existing mitigations:**
-- Redaction pipeline strips `Authorization`, `Cookie`, `CSRFPreventionToken`,
-  `PVEAPIToken`, and password fields from all output (debug, verbose, error,
-  table, JSON, YAML).
-- Credentials are never accepted as command-line arguments (no shell history
-  exposure).
-- Interactive password prompts do not echo.
-- `--password-stdin` for scripted authentication.
-- Atomic file writes with mode `0600` for credential files.
-- Config directory created with mode `0700`.
-- `.gitignore` blocks `.env`, `*.pem`, `*.key`, `*.p12`, `*.pfx`.
-
-**Gaps:**
-- Environment variables may be visible in process listings (`/proc` on Linux,
-  `ps` on macOS).
-- Keyring backends depend on OS-specific security; Windows Credential Manager
-  and Linux Secret Service have their own threat models.
-- No automatic credential rotation or expiry.
-
-### 5. Local Untrusted User
-Another user on the same machine attempts to read Nodex credential files or
-intercept keyring access.
-
-**Impact:** Credential theft from file or keyring backends.
-
-**Existing mitigations:**
-- Credential files written with mode `0600` (owner read/write only).
-- Config directory created with mode `0700`.
-- Keyring backends delegate to OS-level access controls.
-
-**Gaps:**
-- No encryption-at-rest for file credentials (plain JSON on disk).
-- File permissions rely on OS enforcement; no application-layer encryption.
-
-### 6. Malicious Pull Request
-An external contributor submits a PR containing malicious code, credential
-extraction, or CI/CD compromise.
-
-**Impact:** Backdoor in source code, credential exfiltration in CI, or test
-tampering.
-
-**Existing mitigations:**
-- CI runs on every PR with `gofmt`, `go vet`, `staticcheck`, and full test suite.
-- `govulncheck` runs in CI.
-- CI has `permissions: contents: read` — no write access to repository or
-  releases.
-- GitGuardian scans for secrets in commits.
-- PR review required before merge (process, not enforced by tooling).
-
-**Gaps:**
-- No required reviewer enforcement in branch protection (repository setting,
-  not code).
-- Release signing and SBOM generation are configured for draft releases, with
-  checksum-bundle verification in the release workflow. Build provenance still
-  requires verification of the configured attestation path before publication.
-- No workflow approval requirement for first-time contributors.
-
-### 7. Dependency Compromise
-A direct or transitive dependency is compromised (typosquatting, account
-takeover, malicious update).
-
-**Impact:** Malicious code executed at build time, test time, or runtime.
-
-**Existing mitigations:**
-- `go.sum` locks dependency checksums; verified by `go mod verify`.
-- `govulncheck` scans for known vulnerabilities in CI (currently clean).
-- Only 6 dependencies (all transitive through `go-keyring`), minimizing attack
-  surface.
-- No `replace` directives in `go.mod`.
-- All dependencies are from well-known sources (`golang.org/x`, `github.com`).
-
-**Gaps:**
-- Dependabot is configured for scheduled dependency update pull requests.
-- SBOM (Software Bill of Materials) and provenance remain release-stage
-  evidence; normal CI is source verification only.
-
-### 8. CI/CD Compromise
-The GitHub Actions workflow or runner is compromised, allowing tampering with
-build artifacts or exfiltration of secrets.
-
-**Impact:** Malicious release binaries, credential theft, repository tampering.
-
-**Existing mitigations:**
-- Actions pinned to commit SHAs (`actions/checkout@93cb6ef...`,
-  `actions/setup-go@924ae3a...`), preventing tag mutation attacks.
-- CI permissions restricted to `contents: read`.
-- No secrets used in the primary build/test workflow.
-- GitHub-hosted runners are ephemeral.
-
-**Gaps:**
-- Release builds use Sigstore keyless signing and a signed checksum bundle.
-- Release builds use `-trimpath`, fixed archive settings, and
-  `SOURCE_DATE_EPOCH` for reproducibility controls.
-- The release workflow has `id-token` and attestation permissions; published
-  provenance still depends on successful workflow execution.
-- No Step Security Harden Runner step.
-
-### 9. Release Tampering
-An attacker modifies a release binary after build but before distribution.
-
-**Impact:** Users download and run a compromised binary.
-
-**Existing mitigations:**
-- Users can build from source with `go install`.
-- Source is in a public Git repository with signed commits.
-
-**Gaps:**
-- Draft releases include Cosign/Sigstore signature bundles and SHA-256
-  checksums.
-- Draft releases include SPDX SBOM artifacts.
-- Independent rebuild comparison is not yet automated for every release.
-
----
-
-## Trust Boundaries
+Nodex is a local single-process CLI. Normal provider operations connect directly
+from the operator's machine to an explicitly configured PVE or PBS HTTPS
+endpoint. Optional maintenance connects to explicitly enrolled Linux hosts
+through a local allowlisted Ansible adapter. No Nodex daemon or managed-host
+agent is installed. `monitor check` runs only explicitly configured checks and
+does not create a background service or history store.
 
 ```text
-┌─────────────────────┐       HTTPS (TLS 1.2+)       ┌──────────────────────┐
-│   User Workstation  │ ──────────────────────────────│  Proxmox VE Server  │
-│                     │                                │                      │
-│  ┌───────────────┐  │                                └──────────────────────┘
-│  │ Nodex binary  │  │
-│  │               │  │
-│  │  ┌─────────┐  │  │
-│  │  │ Config  │  │  │
-│  │  └─────────┘  │  │
-│  │  ┌─────────┐  │  │
-│  │  │Creds    │  │  │
-│  │  └─────────┘  │  │
-│  └───────────────┘  │
-│         │           │
-│    ┌────┴────┐      │
-│    │ OS      │      │
-│    │ Keyring │      │
-│    └─────────┘      │
-└─────────────────────┘
-
-┌──────────────────────┐      go modules       ┌──────────────────────┐
-│   GitHub Actions CI  │ ──────────────────────│  Module Proxies      │
-│                      │                        │  (proxy.golang.org)  │
-│  ┌────────────────┐  │                        └──────────────────────┘
-│  │ CI Secrets     │  │
-│  └────────────────┘  │
-│  ┌────────────────┐  │
-│  │ Build Artifacts│  │
-│  └────────────────┘  │
-└──────────────────────┘
+Operator / automation caller
+        |
+        | local CLI arguments, config, receipts, credentials
+        v
+Nodex process  ---- HTTPS / API token ----> PVE or PBS API
+        |
+        +-------- allowlisted Ansible / SSH -> enrolled Linux host
+        |
+        +-------- explicitly configured one-shot monitoring targets
 ```
 
-### Boundary Security Controls
+The operator workstation, local configuration and credential stores, remote
+provider, enrolled hosts, DNS/network path, Go dependency supply chain, and
+release workflow are separate trust domains. Provider responses, task logs,
+monitor results and host names are data from outside the Nodex process; they
+must not be interpreted as trusted instructions.
 
-| Boundary | Control |
-|----------|---------|
-| Nodex → Proxmox | TLS 1.2+, HTTPS required, cert verification, no insecure mode, body size limits, DoMutation no-retry |
-| Nodex → Credential files | Mode `0600` files, mode `0700` directory, atomic writes, name validation |
-| Nodex → OS Keyring | Delegated to OS access controls |
-| Nodex → Environment | Read-only; env vars may be visible in process listings |
-| CI → Dependencies | `go.sum` checksums, `govulncheck` scanning, `go mod verify` |
-| CI → Repository | `contents: read` permission, action SHA pinning, ephemeral runners |
-| Developer → CI | PR-based workflow, GitGuardian secret scanning |
+## Protected assets
 
----
+- PVE and PBS API tokens and any password supplied to an individual command.
+- SSH key material held by the OS agent or a referenced local key file.
+- Local configuration, including endpoints, CA/SSH paths, inventory, and
+  disposable certification policy.
+- Infrastructure state, especially guest data, backup snapshots, identity,
+  firewall/network policy, storage and cluster membership.
+- Local agent and maintenance receipts, plans, and certification ledger state.
+- Release binaries, checksums, signatures, SBOMs and build provenance.
 
-## Mitigation Inventory
+## Principal threats and controls
 
-### Implemented
+### Credential exposure
 
-| # | Mitigation | Covers |
-|---|-----------|--------|
-| M1 | HTTPS-only with TLS 1.2+ | Network MITM, credential theft in transit |
-| M2 | Certificate verification (no `--insecure`) | Malicious endpoint, MITM |
-| M3 | Custom CA support per profile | Private CA environments |
-| M4 | No URL userinfo in endpoints | Credential leakage in URLs |
-| M5 | Secret redaction pipeline | Credential exposure in output |
-| M6 | No CLI-argument passwords | Shell history exposure |
-| M7 | Hidden password prompts | Shoulder surfing |
-| M8 | Atomic credential writes (mode `0600`) | Local file access |
-| M9 | Config directory (mode `0700`) | Local file access |
-| M10 | Five-tier safety model | Unintended mutations |
-| M11 | Non-interactive fail-closed | Scripted bypass prevention |
-| M12 | `DoMutation()` never retries | Duplicate mutations |
-| M13 | `Do()` bounded retry (2 attempts, jitter) | Transient network errors |
-| M14 | Body size limits (50 MiB / 256 KiB) | Memory exhaustion |
-| M15 | Terminal escape sanitization | Terminal injection |
-| M16 | Signal handling with distinct exit codes | Clean cancellation |
-| M17 | Path validation for file transfers | Path traversal |
-| M18 | Streaming uploads via `io.Pipe` | Memory exhaustion on upload |
-| M19 | Atomic downloads via temp file + rename | Partial file corruption |
-| M20 | `go.sum` integrity | Dependency tampering |
-| M21 | `govulncheck` in CI | Known vulnerability detection |
-| M22 | CI actions pinned to SHAs | Action tag mutation |
-| M23 | CI `contents: read` permission | CI token scope |
-| M24 | GitGuardian secret scanning | Credential leaks in commits |
-| M25 | `.gitignore` for secrets (`.env`, `*.pem`, `*.key`) | Accidental credential commit |
+Nodex resolves credentials from file, OS keyring, environment or stdin
+references. Credential values are not accepted as ordinary provider CLI
+arguments. File credentials are written atomically with restrictive permissions
+on supported Unix systems; they are not application-encrypted. Environment
+variables can be visible to sufficiently privileged local processes. Secrets
+are redacted from diagnostic output, and terminal escape sequences are
+sanitized. PVE and PBS have separate token schemes and should use separate
+credentials.
 
-### Not Yet Implemented
+### Network interception or endpoint impersonation
 
-| # | Gap | Priority | Notes |
-|---|-----|----------|-------|
-| G1 | SBOM generation | Medium | Release workflow generates SPDX SBOM artifacts |
-| G2 | Release artifact signing | Medium | Tagged release workflow signs the checksum manifest with Cosign/Sigstore |
-| G3 | Reproducible builds | Low | Release build uses `-trimpath`, `CGO_ENABLED=0`, and fixed source date |
-| G4 | CI tool version pinning | High | CI pins `staticcheck`, `govulncheck`, and GoReleaser versions |
-| G5 | SLSA provenance | Medium | Release workflow requests and verifies build provenance attestation |
-| G6 | Certificate pinning | Low | Adds operational complexity; custom CA covers most cases |
-| G7 | Encryption-at-rest for file credentials | Low | OS-level permissions are primary control |
-| G8 | Dependency update automation | Medium | Dependabot is configured for Go modules and GitHub Actions |
-| G9 | Fuzzing in CI | Low | Go native fuzzing for parsing/input handlers |
-| G10 | `go.sum` verification in CI | Medium | CI runs `go mod verify` before build and tests |
+PVE/PBS provider endpoints must use HTTPS. TLS 1.2 or newer is required, normal
+certificate and hostname validation stay enabled, and an optional custom CA is
+additive to system trust. There is no general insecure-TLS switch. General
+profiles do not pin a leaf certificate; disposable certification has an
+explicit endpoint/certificate binding. Generic configured monitoring can
+intentionally use HTTP; operators should use HTTPS where the target supports
+it and avoid credentials in monitoring URLs.
 
----
+### Accidental, duplicated or ambiguous mutations
 
-## Test Coverage Mapping to Threats
+The command metadata assigns each operation one of five safety tiers. Required
+confirmation fails closed in non-interactive mode. Provider mutations use a
+no-automatic-retry transport path; a timeout or lost response can still leave
+the remote outcome unknown. `--wait` observes a provider task but does not by
+itself establish the resource postcondition. Operators and automation must
+distinguish submission, execution and verification, and must reconcile an
+unknown outcome before considering a new attempt.
 
-| Threat | Relevant Tests |
-|--------|---------------|
-| Credential exposure | `internal/redact/redact_test.go` — redaction pattern tests |
-| Credential exposure | `internal/cli/` — auth header tests, credential resolution tests |
-| Network MITM | `internal/transport/httpclient/` — TLS config, HTTPS enforcement, cert verification |
-| Network MITM | `internal/config/` — endpoint validation, HTTP rejection |
-| Malicious endpoint | `internal/transport/httpclient/` — body size limits, typed decoding |
-| Malicious endpoint | `internal/provider/proxmox/client/` — response contract tests |
-| Unintended mutations | `internal/safety/safety_test.go` — tier classification, confirmation policy |
-| Unintended mutations | `internal/cli/` — command safety classification tests |
-| Path traversal | `internal/pathvalidate/` — path validation tests |
-| File transfer | `internal/atomicwrite/` — atomic write tests |
-| Task polling safety | `internal/task/` — exponential backoff, timeout, cancellation tests |
-| Terminal injection | `internal/output/` — sanitization tests |
-| Exit code behavior | `internal/app/` — exit code tests |
-| Configuration integrity | `internal/config/` — schema validation, atomic write, lock tests |
-| Credential integrity | `internal/credentials/` — backend resolution, validation tests |
+Agent mode adds request-ID deduplication and local receipts for supported
+operations. Receipts are local recovery/deduplication state, not proof of
+authorization or tamper-proof audit evidence. Identical request IDs do not
+resubmit; changed input conflicts. Refresh/reconcile never resubmits. Agent
+mode is not a sandbox against a caller that can run arbitrary local commands or
+modify Nodex files.
 
----
+Maintenance plans are expiring and digest-checked; receipts are written
+atomically and avoid persisting raw Ansible output or credentials. Certification
+uses an explicit disposable-environment allowlist and ledger. These controls
+reduce accidental scope and replay, but do not replace backup verification,
+operator review or provider-side least privilege.
 
-## Residual Risks
+### Excessive local process execution
 
-See [docs/residual-risks.md](residual-risks.md) for the structured residual risk
-register with accepted risks, deferred fixes, assumptions, and manual
-verification needs.
+The Ansible adapter accepts allowlisted operation IDs backed by playbooks
+embedded in the binary. It does not accept arbitrary shell commands, modules,
+playbook paths, inventory scripts or extra arguments. It validates the local
+executable, uses a minimal child environment and private temporary files, pins
+host-key checking, and bounds output. Ansible is only needed for its optional
+maintenance workflows. These controls constrain Nodex's own invocation; they
+do not make a compromised local machine or remote host trustworthy.
 
----
+### Malicious or misleading provider/host data
 
-## Review Cycle
+Remote text can be stale, incomplete or hostile. Nodex applies size limits,
+typed decoding where implemented, redaction and terminal sanitization. It does
+not treat a provider message as authorization, a successful task as proof of
+desired end state, or unavailable evidence as healthy. The agent interface
+marks its data as untrusted and constrains next actions to operation IDs and
+typed arguments rather than shell strings.
 
-This threat model should be reviewed:
+### Supply-chain and release compromise
 
-- When a new capability is added (especially mutation operations).
-- When a new dependency is introduced.
-- When the CI/CD pipeline changes.
-- When a security incident occurs.
-- At least once per major development cycle.
+Go dependency checksums are recorded in `go.sum`; CI runs module verification,
+static analysis, tests and vulnerability scanning. The tag-driven release
+workflow builds platform archives and publishes checksums, SPDX SBOMs, a
+Sigstore bundle for the checksum file, and build provenance. Users should
+verify downloaded checksums and the signature identity against the release
+workflow. A compromised source repository, build runner, dependency, signing
+identity or release account can still undermine artifact trust.
 
-The [residual risk register](residual-risks.md) should be updated whenever a gap
-is closed or a new gap is identified.
+## Residual trust and limitations
+
+- The local machine and its OS account are trusted. A local administrator or
+  process able to read Nodex memory/files may access credentials and receipts.
+- The remote provider is authoritative for its API responses and authorization;
+  Nodex cannot prove that a compromised provider reports truthful state.
+- Normal provider profiles rely on configured system/custom CA trust and do not
+  provide general certificate pinning or mutual TLS.
+- File-backed credentials are permission-protected, not encrypted at rest.
+- Confirmation flags express the caller's intent; they do not authenticate a
+  human approver or prove change authorization.
+- Provider task records can expire and provider resource identifiers can be
+  reused. Some outcomes therefore remain unknown or cannot be attributed
+  uniquely to one request.
+- Not every provider/operation exposes postcondition verification. The live
+  operation contract states known task, verification and recovery behavior.
+- Nodex is pre-1.0; command/config/output compatibility commitments are defined
+  in [compatibility.md](compatibility.md), and internal Go APIs may change.
+
+## Verification map
+
+Security-relevant behavior has unit, fuzz, mock-provider and local HTTP contract
+tests. The main implementation boundaries are `internal/credentials`,
+`internal/redact`, `internal/safety`, `internal/transport/httpclient`,
+`internal/agent`, `internal/ansible`, `internal/maintenance`, and both provider
+client packages. See [test-coverage.md](test-coverage.md) for a repository map
+and verification commands. Automated tests do not require live PVE, PBS or SSH
+infrastructure; disposable-environment certification is an explicit opt-in.
+
+Review this threat model when a new provider, mutation surface, credential
+source, external process, or release workflow is introduced, and whenever a
+security incident changes the assumptions above.

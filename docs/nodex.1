@@ -1,637 +1,215 @@
-.TH NODEX 1 "2026-07-13" "nodex 0.1.0" "User Commands"
+.TH NODEX 1 "2026-10-08" "nodex 0.3.1" "User Commands"
 .SH NAME
-nodex \- secure CLI for inspecting and operating self\-hosted infrastructure
+nodex \- local CLI for inspecting and operating self-hosted infrastructure
 .SH SYNOPSIS
 .B nodex
-[\fIGLOBAL\-FLAGS\fR]
-\fICOMMAND\fR
-[\fICOMMAND\-ARGS\fR]
+[GLOBAL-FLAGS]
+COMMAND
+[COMMAND-ARGS]
 .SH DESCRIPTION
-.B nodex
-is a local command\-line interface for inspecting and operating self\-hosted infrastructure.
-It is Proxmox\-first, supporting both read\-only inspection and safe mutation operations across 31 provider capabilities with a five\-tier safety model.
-Nodex is a single binary with no daemon, agent, or telemetry.
+.B Nodex
+is a local, single-process command-line program for Proxmox VE and Proxmox
+Backup Server. Optional workflows provide explicitly enrolled Linux fleet
+maintenance through an allowlisted Ansible adapter and one-shot checks against
+configured targets.
+.PP
+Nodex has no daemon or agent installed on managed hosts, no telemetry, and no
+continuous monitoring service. The opt-in --agent flag selects a structured
+local CLI interface; it is not a sandbox or proof of human authorization.
+.PP
+Use nodex help COMMAND, nodex COMMAND --help, and docs/cli-reference.md for
+complete command syntax. Use nodex operation list --output json and nodex
+operation describe PATH --output json for machine-readable operation and safety
+discovery.
 .SH GLOBAL FLAGS
 .TP
-.BI \-\-profile " " \fINAME\fR
-Override the current profile.
+.B --profile NAME
+Select a configured provider profile. Agent-mode remote operations require an
+explicit profile.
 .TP
-.BI \-\-output " " \fIFORMAT\fR
-Output format: \fBtable\fR, \fBjson\fR, or \fByaml\fR.
-Default: table (TTY), json (non\-TTY).
+.B --output FORMAT
+Output format: table, json, or yaml. Defaults to table on a terminal and JSON
+when redirected.
 .TP
-.BI \-\-timeout " " \fIDURATION\fR
-Request timeout (default: 30s).
+.B --timeout DURATION
+Provider request timeout (default: 30s).
 .TP
-.BI \-\-limit " " \fIN\fR
-Limit output items (0 = no limit).
+.B --limit N
+Limit output items (0 means no limit).
 .TP
-.B \-\-all
-Aggregate across all configured profiles.
+.B --all
+Aggregate the supported read-only commands status, node list, vm list and
+container list across configured profiles.
 .TP
-.B \-\-no\-color
+.B --non-interactive
+Disable prompts. Operations fail closed when required confirmations are
+missing.
+.TP
+.B --quiet
+Suppress non-essential logger output.
+.TP
+.B --verbose
+Enable informational diagnostics on stderr.
+.TP
+.B --debug
+Enable debug diagnostics on stderr; sensitive values are redacted.
+.TP
+.B --no-color
 Disable color output.
 .TP
-.B \-\-non\-interactive
-Disable interactive prompts.
+.B --agent
+Use opt-in structured JSON agent execution for operations whose contracts
+declare support.
 .TP
-.B \-\-quiet
-Suppress non\-essential output.
-.TP
-.B \-\-verbose
-Info\-level stderr output.
-.TP
-.B \-\-debug
-Debug\-level stderr output (redacted).
+.B --request-id ID
+Agent request identifier. Mutations use it for local deduplication; IDs are not
+credentials.
 .SH MUTATION FLAGS
 .TP
-.B \-\-yes
-Confirm reversible operations (Tier 1).
+.B --yes
+Confirm operations in the reversible tier.
 .TP
-.B \-\-force
-Confirm disruptive operations (Tier 2, requires \-\-yes).
+.B --force
+Additional acknowledgement for disruptive operations; requires --yes.
 .TP
-.B \-\-wait
-Wait for the provider task to complete before exiting.
+.B --confirm-target TEXT
+Supply the exact operation-specific target confirmation for destructive
+operations in non-interactive use.
 .TP
-.B \-\-expert
-Enable expert\-mode operations (Tier 4: identity, ACL changes).
+.B --expert
+Enable security-administration commands. It does not replace any other
+operation-specific confirmation.
 .TP
-.B \-\-password\-stdin
-Read password from stdin instead of interactive prompt.
+.B --wait
+Wait for a provider task where supported. Task completion does not necessarily
+prove the requested resource state.
+.TP
+.B --password-stdin
+Read a password from stdin for commands that request one. Passwords are not
+provider authentication for PVE or PBS.
 .SH SAFETY TIERS
 .TP
 .B Tier 0 (Observation)
-Read\-only. No confirmation required.
+Read-only operation; no mutation confirmation.
 .TP
 .B Tier 1 (Reversible)
-Requires \-\-yes or interactive prompt.
+Requires --yes or interactive confirmation.
 .TP
 .B Tier 2 (Disruptive)
-Requires \-\-yes \-\-force or double confirmation.
+Requires --yes --force or the operation's interactive confirmation.
 .TP
 .B Tier 3 (Destructive)
-Requires typing the target identifier.
+Requires the operation's target confirmation, plus any other listed flags.
 .TP
-.B Tier 4 (Security Admin)
-Requires \-\-expert flag.
-.SH COMMANDS
-.SS nodex init
-Initialize nodex configuration interactively.
-Non\-interactive with \-\-non\-interactive.
-.SS nodex setup
-Run guided secure setup for a provider profile. Requires an explicit provider,
-profile, and HTTPS endpoint in non\-interactive mode. Use \-\-check for
-read\-only preflight diagnostics; use \-\-force to replace an existing profile.
-.SS nodex completion \fISHELL\fR
-Generate shell completion (bash|zsh|fish|powershell). Writes to stdout.
-.SS nodex version
-Print version information.
-.SS nodex provider list
-List available providers.
-.SS nodex provider capabilities \fINAME\fR
-Show capabilities for a provider.
-.SS nodex profile add \fINAME\fR [\-\-provider proxmox|pbs]
-Add a new connection profile. The provider defaults to proxmox.
-.SS nodex profile list
-List all configured profiles.
-.SS nodex profile show \fINAME\fR
-Show details for a specific profile.
-.SS nodex profile set\-credentials \fINAME\fR [\-\-backend file|keyring] [\-\-credential\-name \fINAME\fR]
-Prompt for Proxmox API token credentials, store them, and update the profile credential reference.
-.SS nodex profile use \fINAME\fR
-Set the current active profile.
-.SS nodex profile current
-Show the current active profile.
-.SS nodex profile test [\fINAME\fR]
-Test connectivity for a profile.
-.SS nodex profile remove \fINAME\fR [\-\-remove\-credential]
-Remove a profile, optionally deleting its referenced credential.
-.SS nodex profile export \fINAME\fR
-Export a sanitized profile (no credentials). Writes JSON to stdout.
-.SS nodex profile import
-Import a profile from stdin.
-.SS nodex profile diagnose\-permissions \fINAME\fR
-Run provider\-supported permission diagnostics without exposing credentials.
-.SS nodex certification run
-Run an explicitly selected disposable\-environment certification suite. Requires
-the nodex\-test\-admin profile, an environment, suite, node, VMID, storage, and
-the mutation confirmation flags for the disposable\-mutations suite.
-.SS nodex certification cleanup
-Clean up a ledger\-recorded certification resource after exact identity checks.
-.SS nodex certification report
-Render certification ledger entries as table, JSON, or YAML.
-.SS nodex node list
-List all nodes.
-.SS nodex node show \fINAME\fR
-Show details for a specific node.
-.SS nodex node status \fINAME\fR
-Show detailed node status including CPU, memory, disk, and uptime.
-.SS nodex node services \fINAME\fR
-List services running on a node.
-.SS nodex node network \fINAME\fR
-Show network interface configuration for a node.
-.SS nodex node dns \fINAME\fR
-Show DNS configuration for a node.
-.SS nodex node time \fINAME\fR
-Show time configuration for a node.
-.SS nodex node disks \fINAME\fR
-List physical disks on a node.
-.SS nodex node certificates \fINAME\fR
-List TLS certificates on a node.
-.SS nodex node subscription \fINAME\fR
-Show subscription status for a node.
-.SS nodex node updates \fINAME\fR
-List available package updates for a node.
-.SS nodex vm list
-List all virtual machines.
-.SS nodex vm show \fIID\fR
-Show details for a virtual machine (e.g., pve\-a/100).
-.SS nodex vm config \fIID\fR
-Show VM configuration.
-.SS nodex vm snapshots \fIID\fR
-List snapshots for a VM.
-.SS nodex vm snapshot\-config \fIID\fR \fINAME\fR
-Show snapshot configuration for a VM.
-.SS nodex vm start \fIID\fR [\-\-yes]
-Start a VM. Safety: Tier 1 (Reversible).
-.SS nodex vm stop \fIID\fR [\-\-yes]
-Stop a VM (force). Safety: Tier 1 (Reversible).
-.SS nodex vm shutdown \fIID\fR [\-\-yes]
-Graceful VM shutdown. Safety: Tier 1.
-.SS nodex vm reset \fIID\fR [\-\-yes \-\-force]
-Hard reset a VM. Safety: Tier 2 (Disruptive).
-.SS nodex vm reboot \fIID\fR [\-\-yes \-\-force]
-Reboot a VM. Safety: Tier 2 (Disruptive).
-.SS nodex vm suspend \fIID\fR [\-\-yes]
-Suspend a VM to disk. Safety: Tier 1.
-.SS nodex vm resume \fIID\fR [\-\-yes]
-Resume a suspended VM. Safety: Tier 1.
-.SS nodex vm pause \fIID\fR [\-\-yes]
-Pause (freeze) a VM. Safety: Tier 1.
-.SS nodex vm unpause \fIID\fR [\-\-yes]
-Unpause a frozen VM. Safety: Tier 1.
-.SS nodex vm update \fIID\fR \fIPARAMS...\fR
-Update VM configuration. Safety: varies.
-.SS nodex vm delete \fIID\fR [\-\-yes \-\-force]
-Delete a VM (destructive, requires type\-in confirmation). Safety: Tier 3.
-.SS nodex vm cloud\-init \fIID\fR
-Regenerate cloud\-init configuration for a VM.
-.SS nodex vm template \fIID\fR
-Convert VM to template.
-.SS nodex vm snapshot create \fIID\fR \fINAME\fR [\-\-description \fITEXT\fR]
-Create a VM snapshot.
-.SS nodex vm snapshot delete \fIID\fR \fINAME\fR
-Delete a VM snapshot (destructive).
-.SS nodex vm snapshot rollback \fIID\fR \fINAME\fR
-Roll back to a VM snapshot.
-.SS nodex vm migrate \fIID\fR \-\-target \fINODE\fR [\-\-yes \-\-force]
-Migrate a VM to another node. Safety: Tier 2.
-.SS nodex vm clone \fIID\fR \-\-newid \fIID\fR \-\-name \fINAME\fR
-Clone a VM.
-.SS nodex vm disk resize \fIID\fR \fIDISK\fR \-\-size \fISIZE\fR
-Resize a VM disk.
-.SS nodex vm disk move \fIID\fR \fIDISK\fR \-\-storage \fISTORAGE\fR
-Move a VM disk to another storage.
-.SS nodex container list
-List all containers.
-.SS nodex container show \fIID\fR
-Show details for a container.
-.SS nodex container config \fIID\fR
-Show container configuration.
-.SS nodex container snapshots \fIID\fR
-List container snapshots.
-.SS nodex container snapshot\-config \fIID\fR \fINAME\fR
-Show snapshot configuration for a container.
-.SS nodex container start \fIID\fR [\-\-yes]
-Start a container. Safety: Tier 1.
-.SS nodex container stop \fIID\fR [\-\-yes]
-Stop a container (force). Safety: Tier 1 (Reversible).
-.SS nodex container shutdown \fIID\fR [\-\-yes]
-Graceful container shutdown. Safety: Tier 1.
-.SS nodex container reboot \fIID\fR [\-\-yes \-\-force]
-Reboot a container. Safety: Tier 2 (Disruptive).
-.SS nodex container suspend \fIID\fR [\-\-yes]
-Suspend a container. Safety: Tier 1.
-.SS nodex container resume \fIID\fR [\-\-yes]
-Resume a suspended container. Safety: Tier 1.
-.SS nodex container update \fIID\fR \fIPARAMS...\fR
-Update container configuration. Safety: varies.
-.SS nodex container delete \fIID\fR [\-\-yes \-\-force]
-Delete a container (destructive, requires type\-in confirmation). Safety: Tier 3.
-.SS nodex container template \fIID\fR
-Convert container to template.
-.SS nodex container snapshot create \fIID\fR \fINAME\fR
-Create a container snapshot.
-.SS nodex container snapshot delete \fIID\fR \fINAME\fR
-Delete a container snapshot (destructive).
-.SS nodex container snapshot rollback \fIID\fR \fINAME\fR
-Roll back to a container snapshot.
-.SS nodex container migrate \fIID\fR \-\-target \fINODE\fR [\-\-yes \-\-force]
-Migrate a container. Safety: Tier 2.
-.SS nodex container clone \fIID\fR \-\-newid \fIID\fR
-Clone a container.
-.SS nodex storage list
-List all storage pools.
-.SS nodex storage show \fINAME\fR
-Show storage details.
-.SS nodex storage content \fINAME\fR \-\-node \fINODE\fR
-List storage content.
-.SS nodex storage upload \fINAME\fR \-\-node \fINODE\fR \fIPATH\fR
-Upload a file to storage.
-.SS nodex storage download \fINAME\fR \-\-node \fINODE\fR \fIVOLUME\fR
-Download a volume from storage.
-.SS nodex storage delete \fINAME\fR \-\-node \fINODE\fR \fIVOLUME\fR
-Delete a storage volume (destructive). Safety: Tier 3.
-.SS nodex task list \-\-node \fINODE\fR
-List all tasks for a node.
-.SS nodex task show \-\-node \fINODE\fR \fIUPID\fR
-Show task details.
-.SS nodex status
-Show cluster status overview. A host confirmed not to be a cluster member is
-reported as \fIstandalone\fR, and quorum is shown as \fBn/a \- standalone host\fR
-rather than as a zero\-value fault. A cluster state that cannot be read is
-reported as \fIunavailable\fR and never as \fIstandalone\fR.
-.SS nodex cluster status
-Show cluster quorum and node health. Reports the same \fIstandalone\fR versus
-\fIunavailable\fR distinction as \fBnodex status\fR.
-.SS nodex cluster log
-Show cluster log entries.
-.SS nodex event list
-List cluster events.
-.SS nodex log \fINODE\fR [\-\-last \fIN\fR] [\-\-grep \fIREGEXP\fR] [\-\-follow]
-Show the most recent node syslog entries (default: last 50). \fB\-\-grep\fR takes a
-Go regular expression and is case-sensitive. \fB\-\-follow\fR streams matching
-entries until interrupted. Proxmox returns no timestamps, so time-window filters
-are unavailable; use \fB\-\-last\fR and \fB\-\-grep\fR instead.
-.SS nodex doctor
-Check system health and connectivity.
-.SS nodex backup list \-\-node \fINODE\fR
-List backup tasks for a node.
-.SS nodex backup content \-\-node \fINODE\fR \-\-storage \fISTORAGE\fR
-List backup content on a storage.
-.SS nodex backup create \fIVMID\fR \-\-node \fINODE\fR \-\-storage \fISTORAGE\fR
-Create a manual backup.
-.SS nodex backup restore \fIVMID\fR \-\-archive \fIARCHIVE\fR \-\-storage \fISTORAGE\fR
-Restore a VM from backup.
-.SS nodex backup job list
-List backup job schedules.
-.SS nodex backup job show \fIID\fR
-Show backup job details.
-.SS nodex backup job create \fIPARAMS...\fR
-Create a backup job schedule.
-.SS nodex backup job update \fIID\fR \fIPARAMS...\fR
-Update a backup job schedule.
-.SS nodex backup job delete \fIID\fR
-Delete a backup job schedule.
-.SS nodex firewall cluster\-rules
-List cluster\-wide firewall rules (\fI/cluster/firewall/rules\fR). \fBfirewall list\fR and \fBfirewall rules\fR are documented aliases.
-.SS nodex firewall aliases
-List firewall aliases.
-.SS nodex firewall ipsets
-List firewall IP sets.
-.SS nodex firewall security\-groups
-List firewall security groups.
-.SS nodex firewall options
-Show firewall options.
-.SS nodex firewall node\-rules \fINODE\fR
-List node\-level firewall rules.
-.SS nodex firewall vm\-rules \fINODE\fR \fIVMID\fR
-List VM\-level firewall rules.
-.SS nodex firewall rule create \fIPARAMS...\fR
-Create a firewall rule.
-.SS nodex firewall rule update \fIPOS\fR \fIPARAMS...\fR
-Update a firewall rule.
-.SS nodex firewall rule delete \fIPOS\fR
-Delete a firewall rule.
-.SS nodex firewall security\-group
-Manage firewall security groups. \fBfirewall group\fR is a legacy alias.
-.SS nodex ha listList HA resources.
-.SS nodex ha groups
-List HA groups.
-.SS nodex ha status
-Show HA status. Reports \fIstandalone\fR, \fIcluster\fR, and \fIquorum_known\fR so a standalone host is distinguishable from an unreadable quorum.
-.SS nodex ha current
-Show current HA resource state.
-.SS nodex sdn zones
-List SDN zones.
-.SS nodex sdn vnets
-List SDN VNets.
-.SS nodex sdn subnets
-List SDN subnets.
-.SS nodex sdn controllers
-List SDN controllers.
-.SS nodex sdn zone create \fITYPE\fR \fIZONE\fR
-Create an SDN zone.
-.SS nodex sdn zone delete \fIZONE\fR
-Delete an SDN zone.
-.SS nodex sdn vnet create \fIVNET\fR \-\-zone \fIZONE\fR
-Create an SDN VNet.
-.SS nodex sdn vnet delete \fIVNET\fR
-Delete an SDN VNet.
-.SS nodex pools list
-List resource pools.
-.SS nodex maintenance inventory [\-\-environment \fIENV\fR] [\-\-group \fIGROUP\fR] [\-\-role \fIROLE\fR] [\-\-host \fINAME\fR]
-List enrolled maintenance hosts.
-.SS nodex maintenance status [\-\-environment \fIENV\fR] [\-\-group \fIGROUP\fR] [\-\-role \fIROLE\fR] [\-\-host \fINAME\fR]
-Read\-only maintenance preflight via the allowlisted Ansible boundary. Exits 11 on partial failure.
-.SS nodex maintenance plan \-\-policy security\-only|approved\-full\-upgrade [\-\-expires\-in \fIDUR\fR] [\-\-batch\-size \fIN\fR]
-Create an immutable, expiring, tamper\-evident maintenance plan. Makes no changes. Exits 11 when the plan has blockers.
-.SS nodex maintenance apply \-\-plan \fIFILE\fR
-Apply a digest\-verified plan with explicit mutation confirmation.
-.SS nodex maintenance resume \-\-plan \fIFILE\fR \-\-receipt \fIFILE\fR
-Revalidate an interrupted receipt and continue only hosts not yet started.
-.SS nodex maintenance reconcile \-\-plan \fIFILE\fR \-\-receipt \fIFILE\fR
-Perform read\-only postcondition verification for a receipt.
-.SS nodex maintenance abandon \-\-receipt \fIFILE\fR \-\-reason \fITEXT\fR
-Record that an interrupted receipt will not be resumed.
-.SS nodex maintenance verify \-\-plan \fIFILE\fR
-Verify planned hosts through the embedded read\-only Ansible operation.
-.SS nodex maintenance report \-\-receipt \fIFILE\fR
-Render a verified maintenance receipt as table, JSON, or YAML.
-.SS nodex environment list
-List configured PVE/PBS environments.
-.SS nodex environment health \fINAME\fR
-Check environment infrastructure health (reachability, datastores, tasks). Exits 11 when blocked, unknown, or partially retrieved.
-.SS nodex environment backup\-health \fINAME\fR
-Check environment backup health including per\-guest backup coverage, age, and verification. Exits 11 when blocked, unknown, or partially retrieved.
-.SS nodex pbs
-Inspect Proxmox Backup Server (read\-only). Requires a profile whose provider supports
-PBS. The whole \fBpbs\fR group is gated before any connection attempt: on a PVE\-only
-profile every subcommand exits 10 with one actionable message naming
-\fBnodex profile add <name> \-\-provider pbs\fR, instead of a bare unsupported\-capability
-error. \fBnodex pbs help\fR still lists every subcommand regardless of profile.
-.SS nodex pbs status
-Show Proxmox Backup Server host status (requires a profile with provider pbs).
-.SS nodex pbs version
-Show PBS server version.
-.SS nodex pbs subscription
-Show PBS subscription status.
-.SS nodex pbs certificates
-List PBS certificates.
-.SS nodex pbs datastore list
-List PBS datastore configurations.
-.SS nodex pbs datastore show \fIDATASTORE\fR
-Show one PBS datastore's configuration and usage.
-.SS nodex pbs snapshot list \-\-datastore \fISTORE\fR [\-\-namespace \fINS\fR] [\-\-backup\-type vm|ct|host] [\-\-backup\-id \fIID\fR]
-List backup snapshots in a PBS datastore.
-.SS nodex pbs task list [\-\-running] [\-\-errors]
-List PBS tasks.
-.SS nodex pbs task show \fIUPID\fR
-Show PBS task status.
-.SS nodex pbs task log \fIUPID\fR
-Show PBS task log.
-.SS nodex pbs verify list
-List PBS verification jobs.
-.SS nodex pbs prune list
-List PBS prune jobs.
-.SS nodex pbs sync list
-List PBS sync jobs.
-.SS nodex pbs garbage\-collection status [\-\-datastore \fISTORE\fR]
-Show PBS garbage-collection status.
-.SS nodex pbs verify run \fIJOB\fR | \-\-datastore \fISTORE\fR
-Run a PBS verification job or verify a datastore (requires \-\-yes).
-.SS nodex pbs sync run \fIJOB\fR
-Run a PBS sync job (requires \-\-yes \-\-force; jobs with remove\-vanished additionally require typing the job ID).
-.SS nodex pbs prune run \fIJOB\fR
-Run a PBS prune job; removes snapshots (requires \-\-yes \-\-force and typing the job ID).
-.SS nodex pbs garbage\-collection run \fIDATASTORE\fR
-Run PBS garbage collection on a datastore (requires \-\-yes \-\-force).
-.SS nodex network show \fINODE\fR
-Show node network interfaces.
-.SS nodex network apply \fINODE\fR
-Apply (reload) the node's pending network configuration (requires \-\-yes \-\-force). Interface changes are staged out of band.
-.SS nodex network revert \fINODE\fR
-Discard the node's pending network changes (requires \-\-yes \-\-force).
-.SS nodex access users
-List users. The table includes \fBGROUPS\fR and \fBTOKENS\fR discovery columns; a
-value the server did not report is shown as \fB\-\fR rather than 0. JSON/YAML omit
-the \fBtokens\fR and \fBgroups\fR fields entirely when unreported, so an absent field
-means "unknown", not zero. Requires read access to \fB/access/users\fR.
-.SS nodex access groups
-List groups.
-.SS nodex access roles
-List roles.
-.SS nodex access acl
-List ACL entries.
-.SS nodex access domains
-List authentication domains.
-.SS nodex access tokens \fIUSER\fR
-List API tokens for a user.
-.SS nodex access user create \fIUSERID\fR [\-\-password\-stdin]
-Create a user (Tier 4: requires \-\-expert).
-.SS nodex access user delete \fIUSERID\fR
-Delete a user (Tier 4: requires \-\-expert).
-.SS nodex ceph status \-\-node \fINODE\fR
-Show Ceph cluster status.
-.SS nodex ceph osd list \-\-node \fINODE\fR
-List Ceph OSDs.
-.SS nodex ceph mon list \-\-node \fINODE\fR
-List Ceph monitors.
-.SS nodex ceph pool list \-\-node \fINODE\fR
-List Ceph pools.
-.SS nodex ceph osd create \-\-node \fINODE\fR \fIDEV\fR
-Create a new Ceph OSD.
-.SS nodex ceph osd out \-\-node \fINODE\fR \fIOSDID\fR
-Mark OSD as out.
-.SS nodex ceph osd in \-\-node \fINODE\fR \fIOSDID\fR
-Mark OSD as in.
-.SS nodex ceph osd destroy \-\-node \fINODE\fR \fIOSDID\fR
-Destroy an OSD (destructive).
-.SS nodex ceph pool create \-\-node \fINODE\fR \fINAME\fR \fIPARAMS...\fR
-Create a Ceph pool.
-.SS nodex ceph pool destroy \-\-node \fINODE\fR \fINAME\fR
-Destroy a Ceph pool (destructive).
-.SS nodex replication list
-List replication jobs.
-.SS nodex replication show \fIID\fR
-Show replication job details.
-.SS nodex replication create \fIPARAMS...\fR
-Create a replication job.
-.SS nodex replication update \fIID\fR \fIPARAMS...\fR
-Update a replication job.
-.SS nodex replication delete \fIID\fR
-Delete a replication job.
-.SS nodex replication schedule \fIID\fR \-\-node \fINODE\fR
-Schedule replication now.
-.SH CREDENTIALS
-Credentials are resolved in the following order:
-.TP 1.
-\fBcredential_ref\fR in profile (e.g., \fBkeyring:myprofile\fR, \fBfile:default\fR)
-.TP 2.
-Environment variables (e.g., \fBNODEX_PROFILE_TOKEN\fR)
-.TP 3.
-Credential files in \fI~/.nodex/credentials/\fR
+.B Tier 4 (Security administration)
+Requires --expert, plus any other listed flags.
 .PP
-Supported credential backends:
+The live operation registry provides the exact confirmation target and safety
+requirements for each operation. In non-interactive mode, missing requirements
+are rejected. Confirmation flags acknowledge intent but do not prove that a
+human approved the action.
+.SH COMMAND GROUPS
 .TP
-.B keyring
-OS keyring (macOS Keychain, Linux Secret Service, Windows Credential Manager).
+.B profile, provider, setup, init
+Configure and diagnose local provider profiles and credentials. See
+docs/configuration.md.
 .TP
-.B file
-JSON files in \fI~/.nodex/credentials/\fR.
+.B node, vm, container, storage, task, status, cluster, event, log
+Inspect and operate Proxmox VE resources, tasks and host/cluster state.
 .TP
-.B env
-Environment variables.
+.B backup, pbs, environment
+Manage PVE backups, inspect/run guarded PBS maintenance, and evaluate paired
+PVE/PBS environments and guest backup coverage.
 .TP
-.B stdin
-Interactive prompt (read\-only, does not store).
-.SH PROFILES
-Profiles are stored in \fI~/.config/nodex/config.yaml\fR.
-Each profile specifies a provider, endpoint, and optional credential reference.
-On Linux, \fIXDG_CONFIG_HOME\fR overrides \fI~/.config\fR. On macOS the configuration file is under \fI~/Library/Application Support/Nodex/\fR. On Windows it is under \fI%AppData%\\Nodex\\\fR.
-.SH EXIT CODES
+.B firewall, ha, sdn, pools, network, access, ceph, replication
+Inspect and, where implemented, manage Proxmox policy, topology, identity and
+storage-related resources. Some operations require --expert or stronger
+confirmation.
 .TP
-.B 0
-Success
+.B maintenance
+Inspect enrolled Linux hosts, create and apply immutable update plans, and
+verify or reconcile durable receipts. Requires Ansible. Maintenance plans
+currently use a never reboot policy.
 .TP
-.B 1
-General error
+.B monitor
+Run explicitly configured checks once. Nodex does not schedule checks, retain
+history or send alerts.
 .TP
-.B 2
-Usage error
+.B operation, agent
+Discover command contracts and opt in to structured agent execution with local
+mutation receipts. See docs/agent-interface.md and NODEX_AGENT.md.
 .TP
-.B 3
-Configuration error
+.B certification
+Run or recover opt-in disposable-environment certification. Never point
+disposable mutation certification at production infrastructure.
 .TP
-.B 4
-Credential unavailable
-.TP
-.B 5
-Authentication failed
-.TP
-.B 6
-Authorization denied
-.TP
-.B 7
-Network error
-.TP
-.B 8
-TLS error
-.TP
-.B 9
-Incompatibility
-.TP
-.B 10
-Unsupported capability
-.TP
-.B 11
-Partial failure (\-\-all)
-.TP
-.B 12
-Provider error
-.TP
-.B 13
-Not found
-.TP
-.B 14
-Timeout
-.TP
-.B 15
-Cancellation
-.TP
-.B 16
-Task failure
-.TP
-.B 17
-Validation error
-.TP
-.B 18
-Ambiguous outcome
-.TP
-.B 19
-Rate limit
-.TP
-.B 20
-Output error
-.TP
-.B 21
-Conflict
-.TP
-.B 130
-Interrupted (SIGINT)
-.TP
-.B 143
-Terminated (SIGTERM)
+.B completion, version, help
+Generate shell completion, inspect version information and display command
+help.
+.SH OUTPUT
+.PP
+Use JSON or YAML for scripts; table output is intended for people and its
+layout may change. Structured output contains no human-readable status text.
+Mutation commands report submission, task outcome and postcondition
+verification as separate facts. An accepted asynchronous request is not
+completed work. See docs/cli-reference.md for result envelopes and exit codes.
+.SH CONFIGURATION AND CREDENTIALS
+.PP
+Configuration is a YAML file under the platform's standard Nodex configuration
+directory. Profiles name the provider, HTTPS endpoint, optional CA/SSH trust
+settings and a credential reference. Credentials can come from a file, OS
+keyring, environment variables or stdin. PVE and PBS tokens are separate.
+Never place live secrets in command arguments, configuration examples or
+shell history. See docs/configuration.md and SECURITY.md.
+.SH SECURITY
+.PP
+Provider endpoints require HTTPS with certificate and hostname verification;
+there is no insecure TLS option. API mutations are protected by operation
+metadata and confirmation gates. Ansible is constrained to allowlisted
+operations with SSH host-key checking enabled. Agent receipts are local
+recovery/deduplication data, not authorization evidence. See
+docs/threat-model.md.
 .SH FILES
 .TP
-.I ~/.config/nodex/config.yaml
-Main configuration file.
+.B ~/.config/nodex/config.yaml
+Linux default configuration path; XDG_CONFIG_HOME may override it.
 .TP
-.I ~/.nodex/credentials/
-Credential files directory.
+.B ~/.nodex/credentials/
+Default file credential directory.
+.PP
+On macOS configuration is under ~/Library/Application Support/Nodex/. On
+Windows it is under AppData/Nodex/. Exact platform paths and state directories
+are documented in docs/configuration.md.
 .SH ENVIRONMENT
 .TP
-.BI NODEX_ " " \fIPROFILE\fR "_TOKEN"
-API token for the given profile.
+.B NODEX_PROFILE_TOKEN_ID
+API token ID for a profile (profile name uppercased; hyphens become
+underscores).
 .TP
-.BI NODEX_ " " \fIPROFILE\fR "_TOKEN_ID"
-Token ID for the given profile.
+.B NODEX_PROFILE_TOKEN_SECRET
+API token secret for a profile.
 .TP
-.BI NODEX_ " " \fIPROFILE\fR "_TOKEN_SECRET"
-Token secret for the given profile.
+.B NODEX_PROFILE_TOKEN
+Combined token value when supported by the credential resolver.
 .TP
-.BI NODEX_ " " \fIPROFILE\fR "_USERNAME"
-Username for the given profile.
+.B NODEX_PROFILE_USERNAME
+Username credential field.
 .TP
-.BI NODEX_ " " \fIPROFILE\fR "_PASSWORD"
-Password for the given profile.
-.SH EXAMPLES
+.B NODEX_PROFILE_PASSWORD
+Password credential field for commands that request one; not PVE/PBS API
+authentication.
+.SH EXIT STATUS
 .PP
-Initialize configuration:
+Exit status 0 indicates success. Nonzero codes classify usage/configuration,
+credential, authentication/authorization, network/TLS, provider, task,
+validation, timeout, cancellation, ambiguous outcome, rate limit, conflict and
+output failures. SIGINT exits 130 and SIGTERM exits 143. See the complete
+stable code table in docs/cli-reference.md.
+.SH DOCUMENTATION
 .PP
-.RS
-nodex init \-\-non\-interactive
-.RE
-.PP
-Add a Proxmox profile:
-.PP
-.RS
-nodex profile add lab
-.RE
-.PP
-Set credentials:
-.PP
-.RS
-nodex profile set\-credentials lab
-.RE
-.PP
-Test connectivity:
-.PP
-.RS
-nodex profile test lab
-.RE
-.PP
-List nodes:
-.PP
-.RS
-nodex node list
-.RE
-.PP
-Start a VM:
-.PP
-.RS
-nodex \-\-yes vm start pve\-a/100
-.RE
-.PP
-Wait for a VM shutdown:
-.PP
-.RS
-nodex \-\-yes \-\-wait vm shutdown pve\-a/100
-.RE
-.PP
-Output as JSON:
-.PP
-.RS
-nodex \-\-output json node list
-.RE
-.PP
-Run across all profiles:
-.PP
-.RS
-nodex \-\-all \-\-output json vm list
-.RE
-.SH AUTHOR
-Geoffrey McClinsey.
+README.md is the project overview. Further docs live under docs/: operator-guide.md,
+cli-reference.md, configuration.md, architecture.md, agent-interface.md,
+maintenance.md, compatibility.md, threat-model.md, roadmap.md, and releasing.md.
 .SH LICENSE
-GPL v3. See \fI/usr/share/doc/nodex/LICENSE\fR.
+.PP
+GNU General Public License version 3. See the repository LICENSE file.
