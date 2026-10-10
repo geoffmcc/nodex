@@ -932,6 +932,7 @@ func buildRegistry() []OperationMeta {
 	// but delegate to sub-operations. Their safety tier is Observation because
 	// the dispatch itself does not mutate state; the sub-commands handle safety.
 	dispatchOps := []OperationMeta{
+		{Path: "maintenance policy", Description: "Manage unattended security-update policy (routing)", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runMaintenancePolicyDispatch"},
 		{Path: "vm snapshot", Description: "Manage VM snapshots (routing)", Inspection: true, Scope: ScopeGuest, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runVMSnapshotDispatch"},
 		{Path: "vm disk", Description: "Manage VM disks (routing)", Inspection: true, Scope: ScopeGuest, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runVMDiskDispatch"},
 		{Path: "container snapshot", Description: "Manage container snapshots (routing)", Inspection: true, Scope: ScopeGuest, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runCTSnapshotDispatch"},
@@ -989,6 +990,17 @@ func buildRegistry() []OperationMeta {
 		{Path: "maintenance report", Description: "Show a durable maintenance receipt",
 			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
 			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenanceReport"},
+		{Path: "maintenance policy plan", Description: "Preview an immutable unattended security-update policy plan",
+			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
+			OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenancePolicyPlan"},
+		{Path: "maintenance policy apply", Description: "Apply a reviewed unattended security-update policy plan",
+			Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierDisruptive,
+			RiskDimensions: []RiskDimension{RiskServiceDown},
+			OutputModes:    []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenancePolicyApply"},
+		{Path: "maintenance policy restore", Description: "Restore the prior unattended security-update policy",
+			Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierDisruptive,
+			RiskDimensions: []RiskDimension{RiskServiceDown},
+			OutputModes:    []string{"table", "json", "yaml"}, HandlerFunc: "runMaintenancePolicyRestore"},
 	}
 	ops = append(ops, maintOps...)
 
@@ -1349,6 +1361,7 @@ func collectCommandPaths(cmds map[string]*command, prefix string) []string {
 // These are commands that have a handler (run) but internally route to sub-ops.
 // The registry includes entries for both the dispatch and its sub-ops.
 var knownDispatchCommands = map[string][]string{
+	"maintenance policy": {"maintenance policy plan", "maintenance policy apply", "maintenance policy restore"},
 	"agent receipt":      {"agent receipt list", "agent receipt show", "agent receipt refresh", "agent receipt reconcile"},
 	"vm snapshot":        {"vm snapshot create", "vm snapshot delete", "vm snapshot rollback"},
 	"container snapshot": {"container snapshot create", "container snapshot delete", "container snapshot rollback"},

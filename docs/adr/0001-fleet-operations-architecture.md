@@ -10,8 +10,8 @@
 > phase scope as recorded when accepted. It is not a live feature-status list.
 > Compare the [current roadmap](../roadmap.md), [CLI reference](../cli-reference.md),
 > and implementation before treating any capability in a future-tense decision
-> as delivered. For example, systemd service monitoring described below remains
-> unsupported by the current `monitor check` implementation.
+> as delivered. The roadmap is the source of truth for phase delivery status;
+> the configuration reference describes currently accepted monitor targets.
 
 ## Context
 

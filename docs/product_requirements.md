@@ -57,9 +57,14 @@ Nodex is a local CLI for inspecting and operating Proxmox VE and Proxmox Backup 
   verification with configurable thresholds, maintenance-safety blockers,
   and honest partial-failure reporting (missing data is never "healthy")
 - One-shot monitoring (`monitor targets|check`): explicitly configured generic
-  HTTP(S), TCP, TLS and DNS targets, plus provider-backed PVE/PBS API, task,
-  datastore, and backup coverage/age/verification checks. No target discovery,
-  persistent history, scheduling service, or alert delivery.
+  HTTP(S), TCP, TLS, DNS and ICMP targets; systemd service checks on explicitly
+  enrolled hosts; and provider-backed PVE/PBS API, task, datastore, and backup
+  coverage/age/verification checks. No target discovery, persistent history,
+  scheduling service, or alert delivery.
+- Opt-in unattended security-update policy for enrolled Debian/Ubuntu guests:
+  security origins only, exact digest-bound APT drop-in diff, root-owned backup,
+  automatic reboot disabled, post-apply timer/config verification, and explicit
+  restore from the reviewed plan. PVE/PBS/DNS hosts are excluded.
 - Versioned operation and agent discovery: `operation list|describe`,
   `agent contract`, opt-in `--agent` JSON execution and durable local mutation
   receipts with request-ID deduplication and read-only refresh/reconciliation.
@@ -274,8 +279,9 @@ For profile `lab`: `NODEX_LAB_TOKEN_ID`, `NODEX_LAB_TOKEN_SECRET`, `NODEX_LAB_TO
   `container list`.
 - Fleet maintenance and enrolled-host service checks require Ansible;
   maintenance plans currently never reboot hosts.
-- The `service` monitoring type is accepted in configuration but currently
-  reports unsupported.
+- Unattended security policy management requires Ansible and a saved policy
+  plan for apply/restore. The `unattended-upgrades` package is retained on
+  restore.
 - Nodex is pre-1.0. Internal Go package APIs and provider interface signatures
   may change; public CLI/config/output compatibility is defined in
   `compatibility.md`.

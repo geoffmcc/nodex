@@ -1,0 +1,89 @@
+---
+- name: Restore prior unattended security-update policy
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Inspect managed file immediately before restore
+      ansible.builtin.stat:
+        path: "{{ nodex_policy_config_path }}"
+        checksum_algorithm: sha256
+      register: nodex_policy_current
+
+    - name: Refuse a symlink at the managed policy path
+      ansible.builtin.assert:
+        that:
+          - not nodex_policy_current.stat.islnk
+        fail_msg: "reserved Nodex policy path is a symlink; policy restore refused"
+
+    - name: Refuse an unexpected managed-file change
+      ansible.builtin.assert:
+        that:
+          - nodex_policy_current.stat.exists == nodex_policy_current_exists
+          - not nodex_policy_current_exists or nodex_policy_current.stat.checksum == nodex_policy_current_checksum
+        fail_msg: "Nodex policy file changed after apply; refusing to overwrite administrator changes"
+
+    - name: Determine whether the policy file is already restored
+      ansible.builtin.set_fact:
+        nodex_policy_already_restored: >-
+          {{ (nodex_policy_before_exists and nodex_policy_current.stat.exists and
+              nodex_policy_current.stat.checksum == nodex_policy_before_checksum) or
+             (not nodex_policy_before_exists and not nodex_policy_current.stat.exists) }}
+
+    - name: Inspect Nodex backup parent and root
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /var/lib/nodex
+        - "{{ nodex_security_policy_backup_root }}"
+        - "{{ nodex_security_policy_backup_root }}/{{ nodex_policy_plan_id }}"
+      register: nodex_backup_directories
+
+    - name: Refuse symlink backup directories
+      ansible.builtin.assert:
+        that:
+          - not item.stat.islnk
+        fail_msg: "Nodex policy backup path contains a symlink; policy restore refused"
+      loop: "{{ nodex_backup_directories.results }}"
+
+    - name: Inspect retained pre-change backup
+      ansible.builtin.stat:
+        path: "{{ nodex_security_policy_backup_root }}/{{ nodex_policy_plan_id }}/99nodex-unattended-security"
+        checksum_algorithm: sha256
+      register: nodex_policy_backup
+
+    - name: Verify retained pre-change backup
+      ansible.builtin.assert:
+        that:
+          - not nodex_policy_backup.stat.islnk
+          - nodex_policy_already_restored or not nodex_policy_before_exists or nodex_policy_backup.stat.exists
+          - nodex_policy_already_restored or not nodex_policy_before_exists or nodex_policy_backup.stat.checksum == nodex_policy_before_checksum
+        fail_msg: "the retained policy backup is missing or has changed"
+
+    - name: Restore prior Nodex policy file
+      ansible.builtin.copy:
+        src: "{{ nodex_security_policy_backup_root }}/{{ nodex_policy_plan_id }}/99nodex-unattended-security"
+        dest: "{{ nodex_policy_config_path }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+      when: nodex_policy_before_exists and not nodex_policy_already_restored
+
+    - name: Remove Nodex policy file created by the reviewed plan
+      ansible.builtin.file:
+        path: "{{ nodex_policy_config_path }}"
+        state: absent
+      when: not nodex_policy_before_exists and nodex_policy_current.stat.exists
+
+    - name: Restore previous unattended-upgrade timer state
+      ansible.builtin.systemd:
+        name: apt-daily-upgrade.timer
+        enabled: "{{ nodex_policy_before_timer_enabled in ['enabled', 'enabled-runtime'] }}"
+        state: "{{ 'started' if nodex_policy_before_timer_active == 'active' else 'stopped' }}"
+
+    - name: Confirm prior policy configuration restored
+      vars:
+        nodex_evidence_id: policy.restore
+      ansible.builtin.debug:
+        msg: "prior Nodex unattended security policy configuration restored; package retained"

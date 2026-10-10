@@ -57,6 +57,34 @@ func TestCheckWithProviderUsesInjectedResult(t *testing.T) {
 	}
 }
 
+func TestCheckICMPUsesExplicitTargetAndReportsHealthy(t *testing.T) {
+	previous := icmpProbe
+	defer func() { icmpProbe = previous }()
+	called := false
+	icmpProbe = func(_ context.Context, address string) error {
+		called = address == "node.example.test"
+		return nil
+	}
+	report := Check(context.Background(), map[string]config.MonitorTarget{
+		"node": {Type: "icmp", Address: "node.example.test"},
+	})
+	if !called || report.Overall != Healthy || len(report.Results) != 1 || report.Results[0].State != Healthy {
+		t.Fatalf("ICMP report = %#v; probe called=%t", report, called)
+	}
+}
+
+func TestCheckICMPPermissionFailureIsUnsupported(t *testing.T) {
+	previous := icmpProbe
+	defer func() { icmpProbe = previous }()
+	icmpProbe = func(context.Context, string) error { return errICMPUnavailable }
+	report := Check(context.Background(), map[string]config.MonitorTarget{
+		"node": {Type: "icmp", Address: "192.0.2.10"},
+	})
+	if report.Overall != Unsupported || report.Results[0].State != Unsupported {
+		t.Fatalf("ICMP report = %#v, want unsupported", report)
+	}
+}
+
 func TestSafeAddressDoesNotExposeURLQuery(t *testing.T) {
 	if got := SafeAddress("https://example.test/check?token=secret#fragment"); got != "https://example.test/check?<redacted>#%3Credacted%3E" {
 		t.Fatalf("safe address = %q", got)
