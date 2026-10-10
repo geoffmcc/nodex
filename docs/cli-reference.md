@@ -254,7 +254,7 @@ Subcommands:
 
 ### `nodex node`
 
-Inspect nodes. Safety: Tier 0 (Observation).
+Inspect nodes. Safety: Tier 0 (Observation), except `node updates` (Tier 1; requires `--yes`).
 
 | Command | Description |
 |---------|-------------|
@@ -268,7 +268,19 @@ Inspect nodes. Safety: Tier 0 (Observation).
 | `node disks <name>` | List node disks |
 | `node certificates <name>` | List node TLS certificates |
 | `node subscription <name>` | Show node subscription status |
-| `node updates <name>` | List available updates |
+| `node updates <name>` | List available updates; refreshes Proxmox's package-status cache |
+
+`node updates` calls Proxmox's `GET /nodes/<name>/apt/update` endpoint. Proxmox
+requires `Sys.Modify` on `/nodes/<name>` for this endpoint, even though Nodex
+does not install packages. Because Proxmox may refresh its package-status cache,
+Nodex treats the command as Tier 1 and requires confirmation:
+
+```bash
+nodex --yes node updates <name>
+```
+
+An audit-only API token cannot run this command; grant `Sys.Modify` only if that
+additional node-level privilege is acceptable for the token.
 
 ### `nodex vm`
 

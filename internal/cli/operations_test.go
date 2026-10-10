@@ -131,6 +131,19 @@ func TestOperations_LookupKnown(t *testing.T) {
 	}
 }
 
+func TestNodeUpdatesIsConfirmedBecauseProxmoxRefreshesPackageStatusCache(t *testing.T) {
+	op := LookupOperation("node updates")
+	if op == nil {
+		t.Fatal("LookupOperation(\"node updates\") = nil")
+	}
+	if op.Inspection {
+		t.Fatal("node updates must not be classified as read-only")
+	}
+	if op.SafetyTier != safety.TierReversible {
+		t.Fatalf("node updates tier = %s, want reversible", op.SafetyTier)
+	}
+}
+
 func TestUnsupportedVMLifecycleDiscoveryIsExplicit(t *testing.T) {
 	for _, tc := range []struct {
 		path string

@@ -189,7 +189,7 @@ Fleet-maintenance commands additionally require Ansible and explicitly enrolled
 Linux hosts; neither is needed for normal PVE/PBS CLI usage. Monitoring checks
 require explicit target configuration and are run on demand.
 
-Go 1.27.1 is needed only to build from source. The prebuilt binaries need no toolchain.
+Go 1.27.2 is needed only to build from source. The prebuilt binaries need no toolchain.
 
 CI builds and tests on Ubuntu, macOS (Apple Silicon and Intel), and Windows.
 
