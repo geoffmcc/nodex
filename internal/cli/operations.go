@@ -274,7 +274,7 @@ func buildRegistry() []OperationMeta {
 		{Path: "node disks", Description: "List node disks", Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeDisks"},
 		{Path: "node certificates", Description: "List node certificates", Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeCertificates"},
 		{Path: "node subscription", Description: "Show node subscription", Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeSubscription"},
-		{Path: "node updates", Description: "List available updates", Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeUpdates"},
+		{Path: "node updates", Description: "List available updates (refreshes Proxmox package status cache)", Inspection: false, Scope: ScopeNode, SafetyTier: safety.TierReversible, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeUpdates"},
 	}
 	ops = append(ops, nodeOps...)
 
