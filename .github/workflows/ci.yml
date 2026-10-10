@@ -123,3 +123,6 @@ jobs:
         with:
           version: v2.13.2
           args: --new-from-rev=${{ github.event.pull_request.base.sha || github.event.before }}
+        # golangci-lint v2.13.2 cannot read Go 1.27.2 export data yet.
+        env:
+          GOTOOLCHAIN: go1.27.1
