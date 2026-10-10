@@ -138,11 +138,17 @@ func validateReceipt(r *Receipt) error {
 
 // VerifyForPlan binds a receipt to the exact plan identity and digest.
 func (r Receipt) VerifyForPlan(p Plan) error {
+	return r.VerifyForIdentity(p.PlanID, p.Digest)
+}
+
+// VerifyForIdentity binds a receipt to any digest-bound maintenance plan
+// family, including the separate unattended security-policy plan schema.
+func (r Receipt) VerifyForIdentity(planID, planDigest string) error {
 	if err := r.Verify(); err != nil {
 		return err
 	}
-	if r.PlanID != p.PlanID || r.PlanDigest != p.Digest {
-		return fmt.Errorf("receipt does not belong to plan %s", p.PlanID)
+	if r.PlanID != planID || r.PlanDigest != planDigest {
+		return fmt.Errorf("receipt does not belong to plan %s", planID)
 	}
 	return nil
 }
@@ -199,8 +205,12 @@ func LoadReceipt(path string) (Receipt, error) {
 }
 
 func NewReceipt(plan Plan, now time.Time) Receipt {
+	return NewReceiptForIdentity(plan.PlanID, plan.Digest, now)
+}
+
+func NewReceiptForIdentity(planID, planDigest string, now time.Time) Receipt {
 	id, _ := NewPlanID()
-	return Receipt{Schema: ReceiptSchemaVersion, ReceiptID: "mr-" + id[3:], PlanID: plan.PlanID, PlanDigest: plan.Digest, State: "running", StartedAt: now.Unix(), UpdatedAt: now.Unix(), Hosts: []HostReceipt{}}
+	return Receipt{Schema: ReceiptSchemaVersion, ReceiptID: "mr-" + id[3:], PlanID: planID, PlanDigest: planDigest, State: "running", StartedAt: now.Unix(), UpdatedAt: now.Unix(), Hosts: []HostReceipt{}}
 }
 
 func rejectReceiptSymlink(path string) error {

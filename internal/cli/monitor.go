@@ -2,17 +2,32 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/geoffmcc/nodex/internal/ansible"
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/backuphealth"
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/monitor"
 	"github.com/geoffmcc/nodex/internal/output"
 )
+
+var runMonitorServiceCheck = func(ctx context.Context, host ansible.HostSpec, service string) (*ansible.RunResult, error) {
+	detection, err := ansible.Detect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return (&ansible.Runner{Exe: detection.Path}).Run(ctx, ansible.RunRequest{
+		Operation: "check-service",
+		Hosts:     []ansible.HostSpec{host},
+		Service:   service,
+	})
+}
 
 func runMonitorTargets(_ context.Context, cmdCtx *Context, args []string) error {
 	if len(args) != 0 {
@@ -148,6 +163,10 @@ func providerMonitorResults(ctx context.Context, cmdCtx *Context, cfg *config.Co
 	results := make(map[string]monitor.Result)
 	environmentResults := make(map[string]*backuphealth.Result)
 	for name, target := range targets {
+		if target.Type == "service" {
+			results[name] = checkMonitorService(ctx, cfg, name, target)
+			continue
+		}
 		if !providerMonitorType(target.Type) {
 			continue
 		}
@@ -196,6 +215,82 @@ func providerMonitorResults(ctx context.Context, cmdCtx *Context, cfg *config.Co
 		results[name] = monitor.Result{Name: name, Type: target.Type, State: status, Detail: detail}
 	}
 	return results
+}
+
+func checkMonitorService(ctx context.Context, cfg *config.Config, name string, target config.MonitorTarget) monitor.Result {
+	result := monitor.Result{Name: name, Type: target.Type, Address: monitor.SafeAddress(target.Address), State: monitor.Unknown}
+	if cfg.Inventory == nil {
+		result.State, result.Detail = monitor.Blocked, "service checks require an explicitly enrolled inventory host"
+		return result
+	}
+	host, ok := cfg.Inventory.Hosts[target.Address]
+	if !ok {
+		result.State, result.Detail = monitor.Blocked, "service target does not name an enrolled inventory host"
+		return result
+	}
+	if target.Environment != "" && target.Environment != host.Environment {
+		result.State, result.Detail = monitor.Blocked, "service target environment does not match its inventory host"
+		return result
+	}
+	timeout := monitor.DefaultTimeout
+	if target.Timeout > 0 {
+		timeout = time.Duration(target.Timeout) * time.Second
+	}
+	serviceCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	run, err := runMonitorServiceCheck(serviceCtx, hostSpecs(map[string]config.InventoryHost{target.Address: host})[0], target.Service)
+	if err != nil {
+		if errors.Is(err, ansible.ErrNotInstalled) {
+			result.State, result.Detail = monitor.Unsupported, "service checks require the optional Ansible dependency"
+		} else if ctx.Err() != nil {
+			result.State, result.Detail = monitor.Unknown, "service check timed out or was cancelled"
+		} else {
+			result.State, result.Detail = monitor.Unknown, "service check could not be completed"
+		}
+		return result
+	}
+	if run == nil || !run.Success || !run.EvidenceComplete {
+		result.State, result.Detail = monitor.Unknown, "service check returned incomplete Ansible evidence"
+		return result
+	}
+	var evidence *ansible.TaskOutcome
+	for _, outcome := range run.TaskOutcomes[target.Address] {
+		if outcome.EvidenceID == ansible.MonitorServiceEvidence {
+			if evidence != nil {
+				result.State, result.Detail = monitor.Unknown, "service check returned duplicate evidence"
+				return result
+			}
+			copy := outcome
+			evidence = &copy
+		}
+	}
+	if evidence == nil || evidence.Failed || evidence.Unreachable || evidence.Message == "" {
+		result.State, result.Detail = monitor.Unknown, "service check evidence is unavailable"
+		return result
+	}
+	var state struct {
+		Service string `json:"service"`
+		Found   bool   `json:"found"`
+		State   string `json:"state"`
+		Status  string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(evidence.Message), &state); err != nil || state.Service != target.Service {
+		result.State, result.Detail = monitor.Unknown, "service check evidence could not be validated"
+		return result
+	}
+	if !state.Found {
+		result.State, result.Detail = monitor.Failed, "configured systemd service was not found"
+		return result
+	}
+	switch state.State {
+	case "running":
+		result.State, result.Detail = monitor.Healthy, "systemd service is running"
+	case "stopped", "failed":
+		result.State, result.Detail = monitor.Failed, "systemd service is not running"
+	default:
+		result.State, result.Detail = monitor.Unknown, "systemd service state is unknown"
+	}
+	return result
 }
 
 func providerMonitorType(kind string) bool {

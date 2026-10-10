@@ -401,7 +401,7 @@ func validateMonitoring(cfg *Config) error {
 			return app.NewExitError(fmt.Errorf("%w: monitoring target %q has invalid name", app.ErrConfigInvalid, name), app.ExitConfig)
 		}
 		switch target.Type {
-		case "http", "https", "tcp", "tls", "dns", "pve-api", "pbs-api", "pve-tasks", "pbs-tasks", "datastore", "backup-age", "backup-verification", "backup-coverage", "service", "application":
+		case "http", "https", "tcp", "tls", "dns", "icmp", "pve-api", "pbs-api", "pve-tasks", "pbs-tasks", "datastore", "backup-age", "backup-verification", "backup-coverage", "service", "application":
 		default:
 			return app.NewExitError(fmt.Errorf("%w: monitoring target %q has unsupported type %q", app.ErrConfigInvalid, name, target.Type), app.ExitConfig)
 		}
@@ -420,6 +420,24 @@ func validateMonitoring(cfg *Config) error {
 		if target.Type == "tls" {
 			if _, _, err := net.SplitHostPort(target.Address); err != nil {
 				return app.NewExitError(fmt.Errorf("%w: monitoring target %q must be host:port", app.ErrConfigInvalid, name), app.ExitConfig)
+			}
+		}
+		if target.Type == "icmp" && !validMonitorHost(target.Address) {
+			return app.NewExitError(fmt.Errorf("%w: monitoring target %q must be a hostname or IP address for ICMP", app.ErrConfigInvalid, name), app.ExitConfig)
+		}
+		if target.Type == "service" {
+			if !systemdServiceUnitRegex.MatchString(target.Service) {
+				return app.NewExitError(fmt.Errorf("%w: service monitoring target %q requires a systemd unit ending in .service", app.ErrConfigInvalid, name), app.ExitConfig)
+			}
+			if cfg.Inventory == nil {
+				return app.NewExitError(fmt.Errorf("%w: service monitoring target %q requires an inventory section", app.ErrConfigInvalid, name), app.ExitConfig)
+			}
+			host, ok := cfg.Inventory.Hosts[target.Address]
+			if !ok {
+				return app.NewExitError(fmt.Errorf("%w: service monitoring target %q address must name an enrolled inventory host", app.ErrConfigInvalid, name), app.ExitConfig)
+			}
+			if target.Environment != "" && target.Environment != host.Environment {
+				return app.NewExitError(fmt.Errorf("%w: service monitoring target %q environment does not match inventory host %q", app.ErrConfigInvalid, name, target.Address), app.ExitConfig)
 			}
 		}
 		if target.Type == "dns" && target.Resolver == "" {
@@ -446,9 +464,31 @@ func validateMonitoring(cfg *Config) error {
 	return nil
 }
 
+func validMonitorHost(value string) bool {
+	if net.ParseIP(value) != nil {
+		return true
+	}
+	if strings.HasPrefix(value, "[") && strings.HasSuffix(value, "]") && net.ParseIP(value[1:len(value)-1]) != nil {
+		return true
+	}
+	if value == "" || len(value) > 253 || strings.HasSuffix(value, ".") {
+		return false
+	}
+	for _, label := range strings.Split(value, ".") {
+		if !monitorHostnameLabelRegex.MatchString(label) {
+			return false
+		}
+	}
+	return true
+}
+
 // hostAddressRegex matches hostnames and IP literals (no scheme, no port,
 // no userinfo).
 var hostAddressRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9.:-]{0,252}[a-zA-Z0-9])?$`)
+
+var systemdServiceUnitRegex = regexp.MustCompile(`^[A-Za-z0-9_@.:-]{1,240}\.service$`)
+
+var monitorHostnameLabelRegex = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
 
 // validateInventory checks the schema-version-2-only inventory section.
 func validateInventory(cfg *Config) error {

@@ -215,6 +215,35 @@ The separate `container os-update` operation only supports
 PVE execution host in inventory, performs before/apply/after evidence checks,
 and does not reboot the guest.
 
+### Configure unattended security updates
+
+This is distinct from a one-shot `maintenance plan --policy security-only` run.
+To opt an eligible Debian/Ubuntu guest into unattended security updates, set
+`unattended_security_updates: true` on its inventory entry, then create and
+review a policy plan:
+
+```sh
+nodex --output json maintenance policy plan --host web-guest > policy.json
+plan_id=$(jq -r '.plan_id' policy.json)
+nodex --yes --force --confirm-target "$plan_id" maintenance policy apply --plan policy.json
+```
+
+Plans show the exact Nodex-owned APT drop-in, current security origins, and
+timer state. PVE, PBS, and DNS hosts remain excluded. Apply preserves other
+administrator-owned APT files, enables only security origins, leaves automatic
+reboot disabled, and verifies the timer and effective configuration. Applying
+the policy installs/configures the unattended-upgrade mechanism; it does not
+run an OS upgrade in the same transaction. Keep `policy.json` so the prior
+Nodex-managed file and timer state can be restored later:
+
+```sh
+nodex --yes --force --confirm-target "$plan_id" maintenance policy restore --plan policy.json
+```
+
+Restoration refuses if the managed file or its retained host-side backup has
+changed. It leaves the `unattended-upgrades` package installed and retains the
+mode-restricted backup for operator review.
+
 ## Run one-shot checks
 
 Monitoring targets are explicit entries in schema-v2 configuration; Nodex
@@ -227,13 +256,71 @@ nodex --output json monitor check --target pbs-backups
 ```
 
 Targets can be filtered by name or environment. General checks include HTTP,
-HTTPS, TCP, TLS and DNS. Provider-backed check types cover PVE/PBS APIs and
-tasks, datastore state, backup age, verification and coverage. They require a
-matching configured environment and profile. `service` checks require an
-integration that is not currently implemented and therefore report
-unsupported; do not interpret that as healthy. Checks are bounded and run
-once. Use an external scheduler/monitor to schedule them and interpret the
-result and exit status.
+HTTPS, TCP, TLS, DNS, ICMP and enrolled-host systemd service state. Service
+targets name an inventory host and `.service` unit and require Ansible.
+Provider-backed check types cover PVE/PBS APIs and tasks, datastore state,
+backup age, verification and coverage. They require a matching configured
+environment and profile. Checks are bounded and run once. Healthy overall
+results exit 0; any non-healthy state, including unknown or unsupported, exits
+11. Configuration and usage errors use their own exit codes.
+
+Nodex does not schedule checks, retain history, serve a metrics endpoint, or
+send alerts. Invoke it from cron/systemd or an external monitoring system:
+
+```cron
+*/5 * * * * /usr/local/bin/nodex --output json monitor check --environment homelab >> /var/log/nodex-monitor.jsonl 2>&1
+```
+
+Alternatively, a systemd timer can invoke the same one-shot command. The
+service runs as an unprivileged account whose Nodex config contains the
+explicit monitoring targets:
+
+```ini
+# /etc/systemd/system/nodex-monitor.service
+[Unit]
+Description=Run Nodex one-shot monitoring checks
+
+[Service]
+Type=oneshot
+User=nodex-monitor
+ExecStart=/usr/local/bin/nodex --output json monitor check --environment homelab
+```
+
+```ini
+# /etc/systemd/system/nodex-monitor.timer
+[Unit]
+Description=Run Nodex monitoring checks every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Pulse and Uptime Kuma can consume a wrapper's exit status or parsed JSON; the
+wrapper should report exit 11 as degraded/unhealthy, not success. Prometheus
+can scrape a textfile-exporter metric written by an external wrapper, while the
+JSON report remains available for per-target detail:
+
+```sh
+set +e
+nodex --output json monitor check --environment homelab > /tmp/nodex-monitor.json
+status=$?
+if [ "$status" -eq 0 ]; then healthy=1; else healthy=0; fi
+printf 'nodex_monitor_healthy{environment="homelab"} %s\n' "$healthy" \
+  > /var/lib/node_exporter/textfile_collector/nodex.prom.tmp
+mv /var/lib/node_exporter/textfile_collector/nodex.prom.tmp \
+  /var/lib/node_exporter/textfile_collector/nodex.prom
+exit "$status"
+```
+
+For example, explicitly configured targets can cover PVE/PBS APIs and tasks,
+DNS resolution, ICMP reachability, Samba's `smbd.service` on an enrolled host,
+Jellyfin's HTTPS health endpoint, and a generic HTTP service. Use fictional
+addresses in copied examples and do not put credentials in monitoring URLs.
 
 ## Automate with JSON or the agent contract
 

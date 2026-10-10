@@ -207,11 +207,14 @@ nodex monitor check --target pve-api
 nodex monitor check --environment homelab
 ```
 
-Configured checks include HTTP, HTTPS, TCP, TLS and DNS; PVE/PBS API and task
-checks; datastore capacity; and backup age, verification and coverage. Checks
-that require an integration not currently implemented (for example systemd
-`service` targets) return `unsupported`, not healthy. Reports include per-target
-state, latency and detail. Overall non-healthy results return exit code 11.
+Configured checks include HTTP, HTTPS, TCP, TLS, DNS and ICMP; PVE/PBS API and
+task checks; datastore capacity; backup age, verification and coverage; and
+systemd service state through enrolled-host Ansible facts. ICMP is `unsupported`
+when the local OS or permissions do not provide ping sockets. Reports include
+per-target state, latency and detail. Overall non-healthy results return exit
+code 11.
+Service targets use the inventory host name as `address`, a `.service` unit
+name, and require Ansible.
 See [Configuration](configuration.md#monitoring-target-types) for target types and fields.
 
 ### `nodex provider list`
@@ -684,11 +687,15 @@ nodex maintenance reconcile --plan <file> --receipt <file>
 nodex maintenance abandon --receipt <file> --reason <reason>
 nodex maintenance verify --plan <file>
 nodex maintenance report --receipt <file>
+
+nodex maintenance policy plan [filters...] [--expires-in <duration>]
+nodex maintenance policy apply --plan <file> --yes --force --confirm-target <plan-id>
+nodex maintenance policy restore --plan <file> --yes --force --confirm-target <plan-id>
 ```
 
 | Command | Description |
 |---------|-------------|
-| `maintenance inventory` | List enrolled hosts with role, environment, group, criticality, backup requirement, and reboot policy |
+| `maintenance inventory` | List enrolled hosts with role, environment, group, criticality, backup requirement, reboot policy, and unattended-security opt-in |
 | `maintenance status` | Run the read-only `check-updates` preflight through the allowlisted Ansible boundary: pending updates, security updates, reboot-required state, failed units, root filesystem usage per host. With `--environment`, adds the environment's backup health. Exits 11 on partial failure. |
 | `maintenance plan` | Run the same preflight and emit an immutable plan: plan ID, creation/expiry timestamps (default TTL 4h), update policy, per-host package intent, execution order (standard hosts first, critical hosts serial, PVE/PBS/DNS roles last), batch size, reboot policy (always `never` in this phase), backup requirements and their observed state, infrastructure snapshot, warnings, blockers, and a SHA-256 digest over the whole plan. Save it with `--output json > plan.json`. |
 | `maintenance apply` | Apply an existing digest-verified plan with `--yes --force --confirm-target <plan-id>`. Writes atomic receipts and refuses blocked, stale, tampered, or ambiguous reruns. |
@@ -697,8 +704,23 @@ nodex maintenance report --receipt <file>
 | `maintenance abandon` | Record an explicit operator decision that an interrupted receipt will not be resumed. |
 | `maintenance verify` | Verify planned hosts through the embedded read-only Ansible operation. |
 | `maintenance report` | Render a verified receipt as table, JSON, or YAML. |
+| `maintenance policy plan` | Preview a digest-bound unattended-security APT policy for inventory hosts explicitly opted in with `unattended_security_updates: true`. Shows exact managed-file diffs and current timer state. PVE/PBS/DNS roles are always excluded. |
+| `maintenance policy apply` | Install `unattended-upgrades` if needed, back up any existing Nodex-owned policy file, apply the reviewed security-only APT drop-in, enable the daily timer, and verify postconditions. Requires `--yes --force --confirm-target <plan-id>`. It does not install OS updates in the apply transaction and never enables automatic reboot. |
+| `maintenance policy restore` | Restore the Nodex-managed policy file and prior timer state from the original plan after rechecking the current state and remote backup. Requires the same confirmation as apply; the `unattended-upgrades` package is retained. If apply used `--receipt-dir`, pass the same directory to restore. |
 
 Plans are tamper-evident (any modification breaks the digest), expiring, deterministic for unchanged inputs, and contain no secrets. A plan created with blockers is still emitted for review but apply refuses it. Backup requirements can only be verified when `--environment` links the hosts to a PVE/PBS pair; without it, `backup_required` hosts are a blocker by design.
+
+The unattended-security policy is distinct from `maintenance plan --policy
+security-only`, which applies one reviewed package-update batch. Policy plans
+configure future unattended security updates. Save the full JSON plan and
+retain it to support a later restore:
+
+```bash
+nodex --output json maintenance policy plan --host web-guest > policy.json
+plan_id=$(jq -r '.plan_id' policy.json)
+nodex --yes --force --confirm-target "$plan_id" maintenance policy apply --plan policy.json
+nodex --yes --force --confirm-target "$plan_id" maintenance policy restore --plan policy.json
+```
 
 ### `nodex environment`
 

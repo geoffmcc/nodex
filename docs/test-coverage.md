@@ -24,7 +24,9 @@ versions and CI runners are maintained in the workflow itself.
 
 - **Unit tests** validate parsing, configuration/schema versions, credentials,
   redaction, output, safety policies, task polling, plan/receipt integrity and
-  provider response mapping.
+  provider response mapping. Monitoring tests cover explicit ICMP classification
+  and enrolled systemd service result handling; security-policy tests cover
+  exact APT config generation, digest tamper checks, opt-in scope and restore.
 - **Mock-provider CLI tests** exercise command parsing, profile selection,
   confirmation gates, structured output and failures without a live PVE/PBS
   service.
@@ -52,9 +54,9 @@ versions and CI runners are maintained in the workflow itself.
 | Transport and TLS/retry behavior | `internal/transport/httpclient/` |
 | Confirmation and safety tiers | `internal/safety/` and CLI operation tests |
 | Task parsing/polling | `internal/task/` |
-| Maintenance plans and receipts | `internal/maintenance/`, `internal/ansible/`, and maintenance CLI tests |
+| Maintenance plans, receipts, unattended security policy | `internal/maintenance/`, `internal/ansible/`, and maintenance CLI tests |
 | Combined PVE/PBS health | `internal/backuphealth/` |
-| One-shot monitoring | `internal/monitor/` and monitor CLI tests |
+| One-shot monitoring, ICMP and systemd service checks | `internal/monitor/`, `internal/ansible/`, and monitor CLI tests |
 
 ## Scope of evidence
 

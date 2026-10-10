@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TestHelperProcess is not a real test: it is the stub ansible-playbook
@@ -217,6 +219,84 @@ func TestRunContainerOperationRequiresVMID(t *testing.T) {
 	r := newStubRunner(t, "ok", testHosts()[:1])
 	if _, err := r.Run(context.Background(), RunRequest{Operation: "check-container-updates", Hosts: testHosts()[:1]}); err == nil {
 		t.Fatal("container operation without VMID must be rejected")
+	}
+}
+
+func TestRunPolicyAndServiceArgumentsAreStructured(t *testing.T) {
+	hosts := testHosts()[:1]
+	policy := RunRequest{
+		Operation: "apply-security-policy", Hosts: hosts,
+		PolicyPlanID: "msp-123", PolicyConfig: "# Managed by Nodex: unattended security updates\nAPT::Periodic::Unattended-Upgrade \"1\";\n",
+	}
+	r := newStubRunner(t, "inspect-files", hosts)
+	result, err := r.Run(context.Background(), policy)
+	if err != nil {
+		t.Fatalf("Run policy: %v", err)
+	}
+	assertExtraVar := func(result *RunResult, key, want string) {
+		t.Helper()
+		var payload struct {
+			Args []string `json:"args"`
+		}
+		if err := json.Unmarshal([]byte(result.Stdout), &payload); err != nil {
+			t.Fatalf("parse stub payload: %v", err)
+		}
+		for i, arg := range payload.Args {
+			if arg != "--extra-vars" || i+1 == len(payload.Args) {
+				continue
+			}
+			var vars map[string]any
+			if err := json.Unmarshal([]byte(payload.Args[i+1]), &vars); err != nil {
+				t.Fatalf("parse structured extra-vars: %v", err)
+			}
+			if vars[key] != want {
+				t.Fatalf("extra-var %q = %#v, want %q", key, vars[key], want)
+			}
+			return
+		}
+		t.Fatalf("missing --extra-vars in args: %v", payload.Args)
+	}
+	assertExtraVar(result, "nodex_policy_plan_id", "msp-123")
+	assertExtraVar(result, "nodex_policy_config", policy.PolicyConfig)
+	assertExtraVar(result, "nodex_policy_config_path", SecurityPolicyConfigPath)
+	assertExtraVar(result, "nodex_security_policy_backup_root", SecurityPolicyBackupRoot)
+
+	r = newStubRunner(t, "inspect-files", hosts)
+	result, err = r.Run(context.Background(), RunRequest{Operation: "check-service", Hosts: hosts, Service: "smbd.service"})
+	if err != nil {
+		t.Fatalf("Run service: %v", err)
+	}
+	assertExtraVar(result, "nodex_service", "smbd.service")
+
+	checksum := strings.Repeat("a", 64)
+	r = newStubRunner(t, "inspect-files", hosts)
+	result, err = r.Run(context.Background(), RunRequest{
+		Operation: "restore-security-policy", Hosts: hosts, PolicyPlanID: "msp-123",
+		PolicyBeforeExists: true, PolicyBeforeChecksum: checksum,
+		PolicyCurrentExists: true, PolicyCurrentChecksum: checksum,
+		PolicyTimerWasEnabled: "enabled", PolicyTimerWasActive: "active",
+	})
+	if err != nil {
+		t.Fatalf("Run policy restore: %v", err)
+	}
+	assertExtraVar(result, "nodex_policy_current_checksum", checksum)
+	assertExtraVar(result, "nodex_policy_before_timer_enabled", "enabled")
+}
+
+func TestRunnerRejectsUnsafeServiceAndSecurityPolicyArguments(t *testing.T) {
+	hosts := testHosts()[:1]
+	tests := []RunRequest{
+		{Operation: "check-service", Hosts: hosts, Service: "smbd.service;touch-pwned"},
+		{Operation: "check-service", Hosts: hosts, Service: "smbd"},
+		{Operation: "apply-security-policy", Hosts: hosts, PolicyPlanID: "../escape", PolicyConfig: "# Managed by Nodex: unattended security updates\n"},
+		{Operation: "apply-security-policy", Hosts: hosts, PolicyPlanID: "msp-123", PolicyConfig: "arbitrary config\n"},
+		{Operation: "restore-security-policy", Hosts: hosts, PolicyPlanID: "msp-123", PolicyCurrentExists: true, PolicyCurrentChecksum: "not-a-sha256"},
+	}
+	for _, request := range tests {
+		r := newStubRunner(t, "ok", hosts)
+		if _, err := r.Run(context.Background(), request); err == nil {
+			t.Errorf("unsafe request was accepted: %+v", request)
+		}
 	}
 }
 
@@ -646,7 +726,7 @@ func countNodexTempDirs(t *testing.T) int {
 
 func TestRegistryAllowlist(t *testing.T) {
 	ids := OperationIDs()
-	want := []string{"apply-approved-updates", "apply-container-updates", "apply-security-updates", "check-container-updates", "check-updates", "verify-container-updates", "verify-host", "verify-maintenance"}
+	want := []string{"apply-approved-updates", "apply-container-updates", "apply-security-policy", "apply-security-updates", "check-container-updates", "check-service", "check-updates", "inspect-security-policy", "restore-security-policy", "verify-container-updates", "verify-host", "verify-maintenance"}
 	if len(ids) != len(want) || !reflect.DeepEqual(ids, want) {
 		t.Errorf("unexpected allowlist: %v", ids)
 	}
@@ -654,11 +734,15 @@ func TestRegistryAllowlist(t *testing.T) {
 		if op.Playbook() == "" {
 			t.Errorf("operation %q has no embedded playbook", op.ID)
 		}
+		var playbook any
+		if err := yaml.Unmarshal([]byte(op.Playbook()), &playbook); err != nil {
+			t.Errorf("operation %q playbook is not valid YAML: %v", op.ID, err)
+		}
 		if strings.Contains(op.Playbook(), "shell:") || strings.Contains(op.Playbook(), "ansible.builtin.shell") {
 			t.Errorf("operation %q playbook uses the shell module", op.ID)
 		}
 	}
-	for _, id := range []string{"apply-security-updates", "apply-approved-updates", "check-container-updates", "apply-container-updates", "verify-container-updates", "verify-maintenance"} {
+	for _, id := range []string{"apply-security-updates", "apply-approved-updates", "apply-security-policy", "restore-security-policy", "inspect-security-policy", "check-service", "check-container-updates", "apply-container-updates", "verify-container-updates", "verify-maintenance"} {
 		if _, err := Lookup(id); err != nil {
 			t.Errorf("operation %q must resolve: %v", id, err)
 		}
