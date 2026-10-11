@@ -241,15 +241,18 @@ var leafHelp = map[string]helpEntry{
 	"pbs garbage-collection run":    {desc: "Run PBS garbage collection", usage: "<datastore>"},
 
 	// Maintenance leaves.
-	"maintenance inventory": {usage: "[--environment <env>] [--group <group>] [--role <role>] [--host <name>]"},
-	"maintenance status":    {usage: "[--environment <env>] [--group <group>] [--role <role>] [--host <name>]"},
-	"maintenance plan":      {usage: "--policy security-only|approved-full-upgrade [--expires-in <duration>] [--batch-size <n>] [--environment <env>] [--group <group>] [--role <role>] [--host <name>]"},
-	"maintenance apply":     {usage: "--plan <file> [--receipt-dir <dir>]"},
-	"maintenance verify":    {usage: "--plan <file>"},
-	"maintenance resume":    {usage: "--plan <file> --receipt <file>"},
-	"maintenance reconcile": {usage: "--plan <file> --receipt <file>"},
-	"maintenance abandon":   {usage: "--receipt <file> --reason <reason> --yes --force --confirm-target <receipt-id>"},
-	"maintenance report":    {usage: "--receipt <file>"},
+	"maintenance inventory":      {usage: "[--environment <env>] [--group <group>] [--role <role>] [--host <name>]"},
+	"maintenance status":         {usage: "[--environment <env>] [--group <group>] [--role <role>] [--host <name>]"},
+	"maintenance plan":           {usage: "--policy security-only|approved-full-upgrade [--expires-in <duration>] [--batch-size <n>] [--environment <env>] [--group <group>] [--role <role>] [--host <name>]"},
+	"maintenance apply":          {usage: "--plan <file> [--receipt-dir <dir>]"},
+	"maintenance verify":         {usage: "--plan <file>"},
+	"maintenance resume":         {usage: "--plan <file> --receipt <file>"},
+	"maintenance reconcile":      {usage: "--plan <file> --receipt <file>"},
+	"maintenance abandon":        {usage: "--receipt <file> --reason <reason> --yes --force --confirm-target <receipt-id>"},
+	"maintenance report":         {usage: "--receipt <file>"},
+	"maintenance policy plan":    {usage: "[--expires-in <duration>] [--environment <env>] [--group <group>] [--role <role>] [--host <name>]"},
+	"maintenance policy apply":   {usage: "--plan <file> [--receipt-dir <dir>] --yes --force --confirm-target <plan-id>"},
+	"maintenance policy restore": {usage: "--plan <file> [--receipt-dir <dir>] --yes --force --confirm-target <plan-id>"},
 }
 
 // flagDisplay returns the flags a command owns as a sort-stable list of

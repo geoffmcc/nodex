@@ -79,9 +79,11 @@ written by a newer Nodex does not invalidate your other profiles — but any
 command that uses such a profile fails with an unknown-provider error. The
 `pbs` provider is Proxmox Backup Server. The schema-version-2
 `monitoring.targets` map contains explicit one-shot checks. Nodex never
-discovers monitoring targets. Generic HTTP(S), TCP, TLS and DNS checks need no
-provider environment; DNS targets require an explicit resolver. Provider-backed
-types use a named environment that links the relevant PVE and/or PBS profile.
+discovers monitoring targets. Generic HTTP(S), TCP, TLS, DNS and ICMP checks
+need no provider environment; DNS targets require an explicit resolver.
+Systemd service checks require an enrolled inventory host and Ansible.
+Provider-backed types use a named environment that links the relevant PVE
+and/or PBS profile.
 Endpoint, TLS, and credential rules below apply identically to every provider:
 PVE and PBS credentials are always separate credential-store entries, and there
 is no insecure TLS option for any provider.
@@ -92,15 +94,47 @@ Example monitoring configuration:
 monitoring:
   targets:
     pve-api:
-      type: https
-      address: https://pve.example.com:8006/api2/json/version
-      environment: lab
+      type: pve-api
+      address: https://pve.example.invalid:8006
+      environment: homelab
       timeout_seconds: 10
+    pbs-api:
+      type: pbs-api
+      address: https://pbs.example.invalid:8007
+      environment: homelab
+    pve-tasks:
+      type: pve-tasks
+      address: https://pve.example.invalid:8006
+      environment: homelab
+    pbs-backups:
+      type: backup-coverage
+      address: https://pve.example.invalid:8006
+      environment: homelab
     dns:
       type: dns
-      address: pve.example.com
+      address: pve.example.invalid
       resolver: 192.0.2.53:53
+    edge-ping:
+      type: icmp
+      address: 192.0.2.1
+    samba:
+      type: service
+      address: debian-guest
+      service: smbd.service
+      environment: homelab
+    jellyfin:
+      type: application
+      address: https://media.example.invalid:8096/health
+      expected_status: 200
+    generic-http:
+      type: http
+      address: http://intranet.example.invalid/health
+      expected_status: 200
 ```
+
+This example assumes an `environments.homelab` entry and an explicitly
+enrolled `inventory.hosts.debian-guest` entry with the same environment for the
+Samba service check.
 
 ### Monitoring target types
 
@@ -108,15 +142,16 @@ monitoring:
 
 | Type | Evidence and requirements |
 |---|---|
-| `http`, `https`, `application` | One bounded HTTP GET; an optional `expected_status` overrides the default 2xx/3xx success range. `application` is an HTTP check, not a product-specific integration. |
+| `http`, `https`, `application` | One bounded HTTP GET; an optional `expected_status` overrides the default 2xx/3xx success range. `application` is an HTTP check, not a product-specific integration (the `jellyfin` example is a generic health URL check). |
 | `tcp` | TCP connection to `address` (`host:port`). |
 | `tls` | TLS 1.2+ handshake and certificate expiry check; optional `ca_file` and `expiry_warning_days`. |
 | `dns` | Host lookup through the explicitly configured `resolver` (`host:port`). |
+| `icmp` | One bounded ICMP echo request to the configured hostname or IP. If the local platform or permissions do not support ICMP echo, the result is `unsupported`. |
 | `pve-api`, `pbs-api` | Authenticated provider/environment reachability check; specify `environment`. |
 | `pve-tasks`, `pbs-tasks` | Provider-backed task/backup-chain health check; specify the matching `environment` profile. |
 | `datastore` | PBS datastore/capacity health from the environment's PBS profile. |
 | `backup-age`, `backup-verification`, `backup-coverage` | Guest backup coverage/age/verification from the configured PVE/PBS environment. |
-| `service` | Accepted by the configuration schema but no service-check integration is currently wired into `monitor check`; the result is `unsupported`. |
+| `service` | Read the current systemd unit state through the allowlisted Ansible `service_facts` operation. `address` is the inventory host name, `service` must be a `.service` unit, and the host must be explicitly enrolled in `inventory`. Without Ansible, the result is `unsupported`. |
 
 Targets can specify `environment`, `timeout_seconds`, optional TLS/HTTP
 settings, and a name in the `targets` map. Global `monitoring.concurrency` is
@@ -314,7 +349,8 @@ path.
 
 The `inventory` section (schema version 2 only) declares the Linux hosts
 Nodex may manage over SSH through the allowlisted Ansible operations,
-consumed by the `maintenance` commands (see the CLI reference).
+consumed by the `maintenance` commands and systemd monitoring checks (see the
+CLI reference).
 Enrollment is always explicit: Proxmox discovery may suggest candidates, but
 a guest is never SSH-manageable until it has an inventory entry.
 
@@ -336,6 +372,14 @@ inventory:
       criticality: critical
       backup_required: true
       automatic_reboot: false
+    debian-guest:
+      address: guest.example.com
+      role: generic
+      environment: homelab
+      ssh_user: automation
+      ssh_key_file: ~/.ssh/nodex_automation
+      known_hosts_file: ~/.ssh/known_hosts_nodex
+      unattended_security_updates: true
 ```
 
 | Field | Required | Default | Description |
@@ -353,6 +397,32 @@ inventory:
 | `criticality` | no | `standard` | `critical` or `standard`. |
 | `backup_required` | no | false | Require a recent successful PBS backup before maintenance. |
 | `automatic_reboot` | no | false | Never enabled by default, for any role. |
+| `unattended_security_updates` | no | false | Explicit opt-in to `maintenance policy plan`; PVE, PBS, and DNS roles remain excluded regardless of this value. |
+
+### Unattended security updates
+
+Set `unattended_security_updates: true` only on explicitly enrolled Debian or
+Ubuntu guests that should receive unattended security updates. The policy
+planner excludes PVE, PBS, and DNS roles and shows the exact Nodex-owned APT
+drop-in before apply. It limits unattended origins to detected security
+origins, preserves other administrator-owned APT files, enables the daily
+upgrade timer, and never enables automatic reboot. Applying requires the normal
+`--yes --force --confirm-target <plan-id>` confirmation.
+
+Keep the generated plan JSON: it contains the prior Nodex-managed file and
+APT periodic/reboot settings and timer state and is the restore source. Reuse
+its plan ID to restore:
+
+```sh
+plan_id=$(jq -r '.plan_id' policy.json)
+nodex --yes --force --confirm-target "$plan_id" maintenance policy restore --plan policy.json
+```
+
+The `unattended-upgrades` package is retained; the host-side backup remains
+under `/var/lib/nodex/security-policy-backups/<plan-id>` for operator review.
+If Nodex installed the package, package-provided defaults remain, but the timer
+is restored to its prior state (normally absent/disabled), so unattended runs
+remain unscheduled.
 
 ### SSH trust model
 

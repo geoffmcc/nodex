@@ -201,12 +201,12 @@ func runMaintenanceInventory(_ context.Context, cmdCtx *Context, args []string) 
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, entries)
 	default:
-		headers := []string{"NAME", "ADDRESS", "ROLE", "PVE-NODE", "ENV", "GROUP", "CRITICALITY", "BACKUP-REQ", "AUTO-REBOOT"}
+		headers := []string{"NAME", "ADDRESS", "ROLE", "PVE-NODE", "ENV", "GROUP", "CRITICALITY", "BACKUP-REQ", "AUTO-REBOOT", "UNATTENDED-SECURITY"}
 		rows := make([][]string, 0, len(entries))
 		for _, e := range entries {
 			rows = append(rows, []string{
 				e.Name, e.Address, e.Role, e.PVENode, e.Environment, e.MaintenanceGroup,
-				e.Criticality, boolYes(e.BackupRequired), boolYes(e.AutomaticReboot),
+				e.Criticality, boolYes(e.BackupRequired), boolYes(e.AutomaticReboot), boolYes(e.UnattendedSecurityUpdates),
 			})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)

@@ -680,7 +680,11 @@ func sideEffects(op OperationMeta) ([]string, []string) {
 		return []string{}, []string{"remote_read"}
 	case "maintenance plan":
 		return []string{"local_immutable_plan_write"}, []string{"remote_read"}
+	case "maintenance policy plan":
+		return []string{"local_immutable_plan_write"}, []string{"remote_read"}
 	case "maintenance apply", "maintenance resume":
+		return []string{"local_maintenance_receipt_write"}, []string{"remote_mutation"}
+	case "maintenance policy apply", "maintenance policy restore":
 		return []string{"local_maintenance_receipt_write"}, []string{"remote_mutation"}
 	case "maintenance reconcile":
 		return []string{"local_maintenance_receipt_write"}, []string{"remote_read"}
@@ -748,6 +752,9 @@ func operationConstraints(op OperationMeta) []string {
 		constraints = append(constraints, "agent mode requires one --target and rejects unbounded target/environment fan-out")
 	case "maintenance apply", "maintenance resume", "maintenance reconcile":
 		constraints = append(constraints, "a valid immutable maintenance plan and its existing receipt are required")
+	case "maintenance policy apply", "maintenance policy restore":
+		constraints = append(constraints, "a valid immutable security policy plan is required")
+		constraints = append(constraints, "--confirm-target must equal the policy plan ID after --yes --force")
 	}
 	return constraints
 }
@@ -781,7 +788,7 @@ func agentModeSupport(op OperationMeta) (bool, string, bool) {
 		return false, "checks every configured profile and fans out across multiple provider endpoints", false
 	case "maintenance inventory", "maintenance status":
 		return false, "operates on configured multi-host inventory without one explicit immutable target context", false
-	case "maintenance verify", "maintenance plan", "maintenance apply", "maintenance resume", "maintenance reconcile", "maintenance abandon":
+	case "maintenance verify", "maintenance plan", "maintenance apply", "maintenance resume", "maintenance reconcile", "maintenance abandon", "maintenance policy plan", "maintenance policy apply", "maintenance policy restore":
 		return false, "uses immutable maintenance plans and their existing durable receipt/recovery controls", false
 	}
 	if !op.Inspection && op.CapabilityInterface == "" {

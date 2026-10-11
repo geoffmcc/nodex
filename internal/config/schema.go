@@ -122,6 +122,9 @@ type InventoryHost struct {
 	MaintenanceGroup string `yaml:"maintenance_group,omitempty" json:"maintenance_group,omitempty"`
 	Criticality      string `yaml:"criticality,omitempty" json:"criticality,omitempty"`
 	BackupRequired   bool   `yaml:"backup_required,omitempty" json:"backup_required,omitempty"`
+	// UnattendedSecurityUpdates is an explicit opt-in for the separately
+	// reviewed unattended-security APT policy workflow. It defaults off.
+	UnattendedSecurityUpdates bool `yaml:"unattended_security_updates,omitempty" json:"unattended_security_updates,omitempty"`
 
 	// AutomaticReboot must be explicitly enabled per host; the zero value
 	// (false) is the default for every role.

@@ -308,6 +308,11 @@ func init() {
 		&command{name: "abandon", short: "Mark an interrupted maintenance receipt abandoned", run: runMaintenanceAbandon},
 		&command{name: "verify", short: "Verify maintenance postconditions", run: runMaintenanceVerify},
 		&command{name: "report", short: "Show a durable maintenance receipt", run: runMaintenanceReport},
+		&command{name: "policy", short: "Manage unattended security-update policy", run: runMaintenancePolicyDispatch, sub: map[string]*command{
+			"plan":    {name: "plan", short: "Preview unattended security-update configuration", run: runMaintenancePolicyPlan},
+			"apply":   {name: "apply", short: "Apply a reviewed unattended security-update policy", run: runMaintenancePolicyApply},
+			"restore": {name: "restore", short: "Restore the prior unattended security-update policy", run: runMaintenancePolicyRestore},
+		}},
 	)
 	register("environment", "Unified PVE/PBS environment health", nil,
 		&command{name: "list", short: "List configured environments", run: runEnvironmentList},

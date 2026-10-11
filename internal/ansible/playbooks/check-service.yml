@@ -1,0 +1,18 @@
+---
+# Read-only systemd service state. The unit name is validated by Nodex and
+# passed as a structured extra-var; service_facts does not invoke a shell.
+- name: Check enrolled host service
+  hosts: all
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Gather systemd service facts
+      ansible.builtin.service_facts:
+      register: nodex_service_facts
+
+    - name: Report selected service state
+      vars:
+        nodex_evidence_id: monitor.service
+        nodex_service_entry: "{{ ansible_facts.services.get(nodex_service, {}) }}"
+      ansible.builtin.debug:
+        msg: "{{ {'service': nodex_service, 'found': nodex_service_entry | length > 0, 'state': nodex_service_entry.state | default('unknown'), 'status': nodex_service_entry.status | default('unknown')} | to_json }}"

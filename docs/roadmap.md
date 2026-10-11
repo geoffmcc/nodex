@@ -129,9 +129,9 @@ and honest unknown outcomes.
 
 ## Phase 7 — Security-update policy workflow
 
-Status: planned
+Status: active (implementation on `feat/roadmap-phases-7-8`; pending merge)
 
-- `nodex maintenance policy plan|apply` for unattended security updates on
+- `nodex maintenance policy plan|apply|restore` for unattended security updates on
   Debian/Ubuntu guests: opt-in, exact config diff shown, security repos only
   by default, automatic reboot disabled, no PVE/PBS/primary-DNS enrollment by
   default, preserves admin customizations, backs up changed files, validates
@@ -140,17 +140,17 @@ Status: planned
 
 ## Phase 8 — One-shot monitoring and external integration
 
-Status: partially implemented. Generic one-shot HTTP/HTTPS, TCP, TLS and DNS
-checks and provider-backed PVE/PBS API, task, datastore and backup checks are
-available. The `service` configuration type is accepted but returns
-`unsupported`; systemd service checks through Ansible are not implemented.
+Status: active (implementation on `feat/roadmap-phases-7-8`; pending merge).
+Generic and provider-backed checks were already available; this phase adds
+bounded ICMP echo, Ansible-backed systemd service checks, and external-scheduler
+integration examples.
 
 - Version-2-only `monitoring` config section; `nodex monitor targets|check`
   with `--environment/--target` filters.
 - Checks: HTTP(S) status, TCP, TLS validity/expiry, DNS (with specified
-  resolver), PVE/PBS API health, task/backup-chain health, datastore capacity,
-  and backup coverage/age/verification. Systemd service checks and ICMP are
-  not implemented.
+  resolver), ICMP echo, enrolled-host systemd service status, PVE/PBS API
+  health, task/backup-chain health, datastore capacity, and backup
+  coverage/age/verification.
 - Bounded concurrency, per-check timeouts, table/JSON/YAML, healthy /
   degraded / failed / unknown / unsupported, partial-failure exit codes.
 - Documentation for external integration: cron/systemd timer invocation, exit

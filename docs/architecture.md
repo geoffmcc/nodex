@@ -202,10 +202,12 @@ recovery contract.
 
 `internal/monitor` evaluates an explicitly configured set of targets with
 bounded concurrency and per-target/global timeouts. It supports generic HTTP,
-HTTPS, TCP, TLS and DNS checks and composes provider-backed checks through the
-existing environment/backup-health services. It has no discovery, daemon,
-history store or alerting path. `service` is accepted by configuration
-validation but is currently reported unsupported by the monitor command.
+HTTPS, TCP, TLS, DNS and ICMP checks, systemd service checks through the
+allowlisted Ansible facts operation, and provider-backed checks through the
+existing environment/backup-health services. Service checks require an
+explicit inventory host. ICMP uses one bounded echo request and reports
+unsupported when the local platform cannot open a ping socket. Monitoring has
+no discovery, daemon, history store or alerting path.
 
 ## PBS provider
 
@@ -309,6 +311,15 @@ any post-creation modification breaks the digest. Plans contain no secrets
 and are safe to store and display. `maintenance apply` executes exactly a
 verified plan, writes atomic receipts, and refuses stale, tampered, expired,
 or blocked plans. Verification and reporting consume the durable receipt.
+
+The separate `maintenance policy plan|apply|restore` workflow configures
+unattended security updates only for inventory hosts with the explicit
+`unattended_security_updates` opt-in. It previews a digest-bound Nodex-only APT
+drop-in, preserves administrator-owned APT files, backs up the prior managed
+file, keeps automatic reboot disabled, and verifies effective origins and
+timer state. PVE, PBS and DNS roles are excluded. Restore requires the original
+plan and verified host backup; it leaves the helper package installed and does
+not roll back packages.
 
 ## HTTP transport
 

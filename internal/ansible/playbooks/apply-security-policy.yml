@@ -1,0 +1,137 @@
+---
+- name: Apply unattended security-update policy
+  hosts: all
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Verify Debian or Ubuntu host
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family == 'Debian'
+          - ansible_facts.distribution in ['Debian', 'Ubuntu']
+        fail_msg: "unattended security policy supports Debian and Ubuntu only"
+
+    - name: Inspect managed file immediately before write
+      ansible.builtin.stat:
+        path: "{{ nodex_policy_config_path }}"
+        checksum_algorithm: sha256
+      register: nodex_policy_current
+
+    - name: Refuse a symlink at the managed policy path
+      ansible.builtin.assert:
+        that:
+          - not nodex_policy_current.stat.islnk
+        fail_msg: "reserved Nodex policy path is a symlink; policy apply refused"
+
+    - name: Refuse an unexpected managed-file change
+      ansible.builtin.assert:
+        that:
+          - nodex_policy_current.stat.exists == nodex_policy_before_exists
+          - not nodex_policy_before_exists or nodex_policy_current.stat.checksum == nodex_policy_before_checksum
+        fail_msg: "Nodex policy file changed after planning; create a new policy plan"
+
+    - name: Inspect Nodex backup parent directory
+      ansible.builtin.stat:
+        path: /var/lib/nodex
+      register: nodex_backup_parent
+
+    - name: Refuse a symlink backup parent
+      ansible.builtin.assert:
+        that:
+          - not nodex_backup_parent.stat.islnk
+        fail_msg: "Nodex backup parent is a symlink; policy apply refused"
+
+    - name: Inspect Nodex security-policy backup root
+      ansible.builtin.stat:
+        path: "{{ nodex_security_policy_backup_root }}"
+      register: nodex_backup_root
+
+    - name: Refuse a symlink backup root
+      ansible.builtin.assert:
+        that:
+          - not nodex_backup_root.stat.islnk
+        fail_msg: "Nodex security-policy backup root is a symlink; policy apply refused"
+
+    - name: Create private security-policy backup root
+      ansible.builtin.file:
+        path: "{{ nodex_security_policy_backup_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Inspect plan-specific backup directory
+      ansible.builtin.stat:
+        path: "{{ nodex_security_policy_backup_root }}/{{ nodex_policy_plan_id }}"
+      register: nodex_policy_backup_directory
+
+    - name: Refuse an unsafe plan-specific backup directory
+      ansible.builtin.assert:
+        that:
+          - not nodex_policy_backup_directory.stat.islnk
+          - not nodex_policy_backup_directory.stat.exists or nodex_policy_backup_directory.stat.isdir
+        fail_msg: "Nodex policy backup directory is not a real directory; policy apply refused"
+
+    - name: Create private policy backup directory
+      ansible.builtin.file:
+        path: "{{ nodex_security_policy_backup_root }}/{{ nodex_policy_plan_id }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Check for an existing backup
+      ansible.builtin.stat:
+        path: "{{ nodex_security_policy_backup_root }}/{{ nodex_policy_plan_id }}/99nodex-unattended-security"
+      register: nodex_policy_backup
+
+    - name: Refuse to overwrite a policy backup
+      ansible.builtin.assert:
+        that:
+          - not nodex_policy_backup.stat.exists
+        fail_msg: "a policy backup already exists for this plan; inspect the host before retrying"
+
+    - name: Back up existing Nodex policy file
+      ansible.builtin.copy:
+        src: "{{ nodex_policy_config_path }}"
+        dest: "{{ nodex_security_policy_backup_root }}/{{ nodex_policy_plan_id }}/99nodex-unattended-security"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0600"
+      when: nodex_policy_before_exists
+
+    - name: Record absent prior policy file
+      ansible.builtin.debug:
+        msg: "no prior Nodex policy file; the reviewed plan is the restore source"
+      when: not nodex_policy_before_exists
+
+    - name: Install unattended-upgrades package
+      vars:
+        nodex_evidence_id: policy.package
+      ansible.builtin.apt:
+        name: unattended-upgrades
+        state: present
+        update_cache: false
+
+    - name: Write Nodex security-only APT policy
+      vars:
+        nodex_evidence_id: policy.config
+      ansible.builtin.copy:
+        content: "{{ nodex_policy_config }}"
+        dest: "{{ nodex_policy_config_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable unattended security updates without automatic reboot
+      ansible.builtin.systemd:
+        name: apt-daily-upgrade.timer
+        enabled: true
+        state: started
+
+    - name: Confirm policy application request completed
+      vars:
+        nodex_evidence_id: policy.apply
+      ansible.builtin.debug:
+        msg: "unattended security policy configuration applied"

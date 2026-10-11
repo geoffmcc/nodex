@@ -5,16 +5,23 @@ package monitor
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/net/icmp"
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/output"
@@ -29,6 +36,13 @@ const (
 	DefaultTimeout      = 10 * time.Second
 	MaxResponseBytes    = 64 * 1024
 )
+
+var errICMPUnavailable = errors.New("ICMP echo is unavailable")
+
+// icmpProbe is replaceable in tests; production probes are always bounded by
+// the per-target context created in checkOne.
+var icmpProbe = probeICMP
+var icmpSequence atomic.Uint32
 
 type State string
 
@@ -175,6 +189,8 @@ func checkOne(parent context.Context, name string, target config.MonitorTarget, 
 		}
 	case "dns":
 		err = dnsCheck(ctx, target.Address, target.Resolver)
+	case "icmp":
+		err = icmpProbe(ctx, target.Address)
 	case "datastore", "backup-age", "backup-verification", "backup-coverage", "service":
 		// These checks require provider/Ansible evidence and are not inferred
 		// from a URL. The standalone monitor cannot fabricate that evidence.
@@ -189,6 +205,8 @@ func checkOne(parent context.Context, name string, target config.MonitorTarget, 
 	if err != nil {
 		if ctx.Err() != nil {
 			r.State, r.Detail = Unknown, "check timed out or was cancelled"
+		} else if errors.Is(err, errICMPUnavailable) {
+			r.State, r.Detail = Unsupported, "ICMP echo is unavailable on this host"
 		} else {
 			r.State, r.Detail = Failed, redact.String(output.SanitizeTerminal(err.Error()))
 		}
@@ -201,6 +219,105 @@ func checkOne(parent context.Context, name string, target config.MonitorTarget, 
 		r.Detail = "check passed"
 	}
 	return r
+}
+
+func probeICMP(ctx context.Context, address string) error {
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, strings.TrimSpace(address))
+	if err != nil {
+		return fmt.Errorf("ICMP target lookup failed")
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("ICMP target resolved to no addresses")
+	}
+	var lastErr error
+	for _, ip := range ips {
+		if err := icmpEcho(ctx, ip); err == nil {
+			return nil
+		} else if errors.Is(err, errICMPUnavailable) {
+			return err
+		} else {
+			lastErr = err
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("ICMP check timed out or was cancelled")
+		}
+	}
+	if lastErr == nil {
+		return fmt.Errorf("ICMP echo failed")
+	}
+	return lastErr
+}
+
+func icmpEcho(ctx context.Context, destination net.IPAddr) error {
+	network, listenAddress, protocol := "udp4", "0.0.0.0", ipv4.ICMPTypeEcho.Protocol()
+	var requestType, replyType icmp.Type = ipv4.ICMPTypeEcho, ipv4.ICMPTypeEchoReply
+	if destination.IP.To4() == nil {
+		network, listenAddress, protocol = "udp6", "::", ipv6.ICMPTypeEchoRequest.Protocol()
+		requestType, replyType = ipv6.ICMPTypeEchoRequest, ipv6.ICMPTypeEchoReply
+	} else {
+		destination.IP = destination.IP.To4()
+	}
+	conn, err := icmp.ListenPacket(network, listenAddress)
+	if err != nil {
+		if icmpUnavailableError(err) {
+			return errICMPUnavailable
+		}
+		return fmt.Errorf("ICMP socket unavailable")
+	}
+	defer func() { _ = conn.Close() }()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(DefaultTimeout)
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		return fmt.Errorf("ICMP deadline unavailable")
+	}
+	stopCancel := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	defer stopCancel()
+	identifier := os.Getpid() & 0xffff
+	sequence := int(icmpSequence.Add(1) & 0xffff)
+	request := icmp.Message{Type: requestType, Code: 0, Body: &icmp.Echo{ID: identifier, Seq: sequence, Data: []byte("nodex")}}
+	packet, err := request.Marshal(nil)
+	if err != nil {
+		return fmt.Errorf("ICMP request could not be encoded")
+	}
+	destinationIP := &net.IPAddr{IP: destination.IP, Zone: destination.Zone}
+	if _, err := conn.WriteTo(packet, destinationIP); err != nil {
+		if icmpUnavailableError(err) {
+			return errICMPUnavailable
+		}
+		return fmt.Errorf("ICMP request could not be sent")
+	}
+	buffer := make([]byte, 1500)
+	for {
+		n, peer, err := conn.ReadFrom(buffer)
+		if err != nil {
+			if ctx.Err() != nil {
+				return fmt.Errorf("ICMP check timed out or was cancelled")
+			}
+			return fmt.Errorf("ICMP reply was not received")
+		}
+		message, err := icmp.ParseMessage(protocol, buffer[:n])
+		if err != nil || message.Type != replyType {
+			continue
+		}
+		echo, ok := message.Body.(*icmp.Echo)
+		if !ok || echo.ID != identifier || echo.Seq != sequence {
+			continue
+		}
+		peerIP, ok := peer.(*net.IPAddr)
+		if !ok || !peerIP.IP.Equal(destination.IP) {
+			continue
+		}
+		return nil
+	}
+}
+
+func icmpUnavailableError(err error) bool {
+	message := strings.ToLower(err.Error())
+	return errors.Is(err, os.ErrPermission) || strings.Contains(message, "operation not permitted") ||
+		strings.Contains(message, "permission denied") || strings.Contains(message, "protocol not supported") ||
+		strings.Contains(message, "address family not supported")
 }
 
 func SafeAddress(address string) string {

@@ -14,6 +14,11 @@ import (
 	"github.com/geoffmcc/nodex/internal/safety"
 )
 
+const (
+	SecurityPolicyConfigPath = "/etc/apt/apt.conf.d/99nodex-unattended-security"
+	SecurityPolicyBackupRoot = "/var/lib/nodex/security-policy-backups"
+)
+
 //go:embed playbooks/check-updates.yml
 var checkUpdatesPlaybook string
 
@@ -37,6 +42,18 @@ var applyContainerUpdatesPlaybook string
 
 //go:embed playbooks/verify-container-updates.yml
 var verifyContainerUpdatesPlaybook string
+
+//go:embed playbooks/inspect-security-policy.yml
+var inspectSecurityPolicyPlaybook string
+
+//go:embed playbooks/apply-security-policy.yml
+var applySecurityPolicyPlaybook string
+
+//go:embed playbooks/restore-security-policy.yml
+var restoreSecurityPolicyPlaybook string
+
+//go:embed playbooks/check-service.yml
+var checkServicePlaybook string
 
 // Operation is one allowlisted maintenance operation backed by an embedded
 // playbook. The playbook content ships inside the Nodex binary; paths on
@@ -129,6 +146,30 @@ var registry = map[string]Operation{
 		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
 		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: containerVerifyEvidence,
 		playbook: verifyContainerUpdatesPlaybook,
+	},
+	"inspect-security-policy": {
+		ID: "inspect-security-policy", Description: "Inspect unattended security policy state (read-only)",
+		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: securityPolicyInspectEvidence,
+		playbook: inspectSecurityPolicyPlaybook,
+	},
+	"apply-security-policy": {
+		ID: "apply-security-policy", Description: "Configure unattended security updates",
+		Safety: safety.TierDisruptive, ReadOnly: false, RequiresBecome: true,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: securityPolicyApplyEvidence,
+		playbook: applySecurityPolicyPlaybook,
+	},
+	"restore-security-policy": {
+		ID: "restore-security-policy", Description: "Restore the prior unattended security policy",
+		Safety: safety.TierDisruptive, ReadOnly: false, RequiresBecome: true,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: securityPolicyRestoreEvidence,
+		playbook: restoreSecurityPolicyPlaybook,
+	},
+	"check-service": {
+		ID: "check-service", Description: "Read systemd service state",
+		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: monitorServiceEvidence,
+		playbook: checkServicePlaybook,
 	},
 }
 

@@ -60,12 +60,18 @@ execution.
 enrolled hosts. A compromised local Ansible installation, SSH trust store,
 operator key or managed host can undermine the workflow. Package updates can
 still cause service changes even when the plan and execution evidence are
-valid.
+valid. Opted-in unattended security updates install future security packages
+without a per-update Nodex confirmation or OS snapshot, so a vendor security
+update can still regress an application before an operator observes it.
 
 **Mitigation:** Use a trusted Ansible installation, strict SSH host-key
 verification, narrow SSH/sudo privileges, explicit inventory and reviewed
-plans. Nodex does not accept arbitrary playbooks or shell commands. Its current
-maintenance plans set reboot policy to `never`.
+plans. Opt in only appropriate Debian/Ubuntu guests, keep independent guest
+backups, and periodically review policy/timer state and external update logs.
+Nodex does not accept arbitrary playbooks or shell commands. Maintenance plans
+and unattended policy both keep automatic reboot disabled; policy restore
+reverts Nodex's managed APT file and prior timer state but does not roll back
+installed packages.
 
 ### Release and dependency trust
 
@@ -90,8 +96,10 @@ guarantee of the release process.
   made, not that verification passed.
 - Generic HTTP monitoring can be configured for plaintext HTTP. Monitoring
   addresses and target policy must be selected by the operator.
-- `service` monitoring targets are schema-valid but currently return
-  `unsupported`; there is no implemented systemd service monitoring adapter.
+- `service` monitoring targets require Ansible and an explicitly enrolled
+  inventory host; without Ansible the result is `unsupported`. ICMP targets
+  require the local operating system to permit an ICMP ping socket; otherwise
+  they report `unsupported` rather than healthy.
 - Cluster join is preflight-only. Corosync membership, subscription-key
   management, TFA enrollment and arbitrary remote execution are not provided.
 - Nodex is pre-1.0. See [compatibility policy](compatibility.md) for the

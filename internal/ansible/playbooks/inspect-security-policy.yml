@@ -1,0 +1,88 @@
+---
+# Read-only inspection for the unattended security-update policy planner.
+# Raw apt-config and managed-file output is suppressed; the final evidence
+# task emits only security-origin entries and the Nodex-owned drop-in.
+- name: Inspect unattended security-update policy
+  hosts: all
+  gather_facts: true
+  become: false
+  tasks:
+    - name: Read APT policy configuration
+      ansible.builtin.command: apt-config dump
+      register: nodex_apt_config
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Inspect installed unattended-upgrades package
+      ansible.builtin.package_facts:
+        manager: auto
+      no_log: true
+
+    - name: Inspect Nodex-managed policy file
+      ansible.builtin.stat:
+        path: "{{ nodex_policy_config_path }}"
+        checksum_algorithm: sha256
+      register: nodex_policy_file
+
+    - name: Read Nodex-managed policy file
+      ansible.builtin.slurp:
+        src: "{{ nodex_policy_config_path }}"
+      register: nodex_policy_file_content
+      when: nodex_policy_file.stat.exists and not nodex_policy_file.stat.islnk
+      no_log: true
+
+    - name: Read unattended-upgrade timer enablement
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-enabled
+          - apt-daily-upgrade.timer
+      register: nodex_timer_enabled
+      changed_when: false
+      failed_when: false
+
+    - name: Read unattended-upgrade timer activity
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - is-active
+          - apt-daily-upgrade.timer
+      register: nodex_timer_active
+      changed_when: false
+      failed_when: false
+
+    - name: Confirm ownership of the reserved policy file
+      ansible.builtin.set_fact:
+        nodex_policy_file_owned: >-
+          {{ (not nodex_policy_file.stat.exists) or
+             (not nodex_policy_file.stat.islnk and
+             ('# Managed by Nodex: unattended security updates' in
+              (nodex_policy_file_content.content | default('') | b64decode))) }}
+
+    - name: Report bounded policy evidence
+      vars:
+        nodex_evidence_id: policy.inspect
+      ansible.builtin.debug:
+        msg: >-
+          {{ {
+            'distribution': ansible_facts.distribution | default('unknown'),
+            'distribution_release': ansible_facts.distribution_release | default('unknown'),
+            'allowed_origins': (nodex_apt_config.stdout_lines | default([]) | select('match', '^Unattended-Upgrade::Allowed-Origins::') | select('search', '(?i)(^|[,=:_-])(security|esm)([,=:_-]|$)') | list),
+            'origins_patterns': (nodex_apt_config.stdout_lines | default([]) | select('match', '^Unattended-Upgrade::Origins-Pattern::') | select('search', '(?i)(^|[,=:_-])(security|esm)([,=:_-]|$)') | list),
+            'nonsecurity_origin_count': ((nodex_apt_config.stdout_lines | default([]) | select('match', '^Unattended-Upgrade::(Allowed-Origins|Origins-Pattern)::') | list | length) - (nodex_apt_config.stdout_lines | default([]) | select('match', '^Unattended-Upgrade::(Allowed-Origins|Origins-Pattern)::') | select('search', '(?i)(^|[,=:_-])(security|esm)([,=:_-]|$)') | list | length)),
+            'periodic_update_package_lists': (nodex_apt_config.stdout_lines | default([]) | select('match', '^APT::Periodic::Update-Package-Lists ') | list | last | default('')),
+            'periodic_unattended_upgrade': (nodex_apt_config.stdout_lines | default([]) | select('match', '^APT::Periodic::Unattended-Upgrade ') | list | last | default('')),
+            'automatic_reboot': (nodex_apt_config.stdout_lines | default([]) | select('match', '^Unattended-Upgrade::Automatic-Reboot ') | list | last | default('')),
+            'apt_config_rc': nodex_apt_config.rc | default(1),
+            'managed_file_exists': nodex_policy_file.stat.exists | default(false),
+            'managed_file_is_symlink': nodex_policy_file.stat.islnk | default(false),
+            'managed_file_checksum': nodex_policy_file.stat.checksum | default(''),
+            'managed_file_owned': nodex_policy_file_owned | default(false),
+            'managed_file_content_b64': (nodex_policy_file_content.content | default('') if nodex_policy_file_owned | default(false) else ''),
+            'package_installed': 'unattended-upgrades' in (ansible_facts.packages | default({})),
+            'timer_enabled': nodex_timer_enabled.stdout | default('unknown'),
+            'timer_enabled_rc': nodex_timer_enabled.rc | default(1),
+            'timer_active': nodex_timer_active.stdout | default('unknown'),
+            'timer_active_rc': nodex_timer_active.rc | default(1)
+          } | to_json }}

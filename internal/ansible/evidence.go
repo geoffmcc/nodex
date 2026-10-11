@@ -53,6 +53,11 @@ const (
 	ContainerEvidenceReboot     = "container.reboot"
 	ContainerEvidenceRoot       = "container.root"
 	ContainerEvidenceUpdate     = "container.update"
+
+	SecurityPolicyEvidenceInspect = "policy.inspect"
+	SecurityPolicyEvidenceApply   = "policy.apply"
+	SecurityPolicyEvidenceRestore = "policy.restore"
+	MonitorServiceEvidence        = "monitor.service"
 )
 
 var hostCheckEvidence = []string{
@@ -107,6 +112,11 @@ var containerVerifyEvidence = []string{
 	ContainerEvidenceReboot,
 	ContainerEvidenceRoot,
 }
+
+var securityPolicyInspectEvidence = []string{SecurityPolicyEvidenceInspect}
+var securityPolicyApplyEvidence = []string{SecurityPolicyEvidenceApply}
+var securityPolicyRestoreEvidence = []string{SecurityPolicyEvidenceRestore}
+var monitorServiceEvidence = []string{MonitorServiceEvidence}
 
 // RequiredEvidenceIDs returns an immutable copy of an operation's evidence
 // contract so callers cannot alter the registry through a returned slice.

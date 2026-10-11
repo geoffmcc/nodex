@@ -142,6 +142,9 @@ type HostSpec struct {
 // inventoryValueRe restricts inventory values to characters that cannot
 // break out of the generated INI line.
 var inventoryValueRe = regexp.MustCompile(`^[A-Za-z0-9._~/:-]+$`)
+var systemdUnitRe = regexp.MustCompile(`^[A-Za-z0-9_@.:-]+\.service$`)
+var securityPolicyPlanIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
+var sha256HexRe = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func (h HostSpec) validate() error {
 	if h.Name == "" || !inventoryValueRe.MatchString(h.Name) {
@@ -182,6 +185,86 @@ type RunRequest struct {
 	// ContainerVMID is accepted only by the fixed LXC guest operations. It is
 	// encoded as a structured extra-var, never interpolated into a command.
 	ContainerVMID int
+
+	// Service is accepted only by check-service and passed as a structured
+	// extra-var to the fixed service_facts playbook.
+	Service string
+
+	// Security-policy fields are accepted only by the matching embedded policy
+	// operation. Config content is generated and digest-bound by Nodex, then
+	// passed as JSON extra-vars rather than shell text.
+	PolicyPlanID          string
+	PolicyConfig          string
+	PolicyBeforeExists    bool
+	PolicyBeforeChecksum  string
+	PolicyCurrentExists   bool
+	PolicyCurrentChecksum string
+	PolicyTimerWasEnabled string
+	PolicyTimerWasActive  string
+}
+
+func validatePolicyRequest(req RunRequest) error {
+	policyOperation := req.Operation == "apply-security-policy" || req.Operation == "restore-security-policy"
+	if !policyOperation {
+		if req.PolicyPlanID != "" || req.PolicyConfig != "" || req.PolicyBeforeExists || req.PolicyBeforeChecksum != "" || req.PolicyCurrentExists || req.PolicyCurrentChecksum != "" || req.PolicyTimerWasEnabled != "" || req.PolicyTimerWasActive != "" {
+			return fmt.Errorf("security policy arguments are not supported for operation %q", req.Operation)
+		}
+		return nil
+	}
+	if !securityPolicyPlanIDRe.MatchString(req.PolicyPlanID) {
+		return fmt.Errorf("security policy operation requires a valid plan ID")
+	}
+	switch req.Operation {
+	case "apply-security-policy":
+		if len(req.PolicyConfig) == 0 || len(req.PolicyConfig) > 64*1024 || !strings.Contains(req.PolicyConfig, "# Managed by Nodex: unattended security updates") || !strings.HasSuffix(req.PolicyConfig, "\n") {
+			return fmt.Errorf("security policy operation requires bounded Nodex-managed config content")
+		}
+		if req.PolicyBeforeExists && !sha256HexRe.MatchString(req.PolicyBeforeChecksum) {
+			return fmt.Errorf("security policy operation requires the prior config checksum")
+		}
+		if !req.PolicyBeforeExists && req.PolicyBeforeChecksum != "" {
+			return fmt.Errorf("prior config checksum supplied for an absent policy file")
+		}
+		if req.PolicyCurrentExists || req.PolicyCurrentChecksum != "" || req.PolicyTimerWasEnabled != "" || req.PolicyTimerWasActive != "" {
+			return fmt.Errorf("restore-only fields supplied to security policy apply")
+		}
+	case "restore-security-policy":
+		if req.PolicyBeforeExists && !sha256HexRe.MatchString(req.PolicyBeforeChecksum) {
+			return fmt.Errorf("security policy restore requires the prior config checksum")
+		}
+		if !req.PolicyBeforeExists && req.PolicyBeforeChecksum != "" {
+			return fmt.Errorf("prior config checksum supplied for an originally absent policy file")
+		}
+		if req.PolicyCurrentExists && !sha256HexRe.MatchString(req.PolicyCurrentChecksum) {
+			return fmt.Errorf("security policy restore requires the current config checksum")
+		}
+		if !req.PolicyCurrentExists && req.PolicyCurrentChecksum != "" {
+			return fmt.Errorf("current config checksum supplied for an absent policy file")
+		}
+		if !validPolicyTimerState(req.PolicyTimerWasEnabled, true) || !validPolicyTimerState(req.PolicyTimerWasActive, false) {
+			return fmt.Errorf("security policy restore requires validated prior timer state")
+		}
+		if req.PolicyConfig != "" {
+			return fmt.Errorf("apply-only fields supplied to security policy restore")
+		}
+	}
+	return nil
+}
+
+func validPolicyTimerState(value string, enabledState bool) bool {
+	if enabledState {
+		switch value {
+		case "enabled", "disabled", "not-found":
+			return true
+		}
+		return false
+	}
+	switch value {
+	case "active", "inactive", "not-found":
+		return true
+	default:
+		return false
+	}
 }
 
 // HostResult is the per-host outcome parsed from Ansible's JSON callback.
@@ -293,6 +376,16 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	if req.ContainerVMID > 0 && !containerOperation {
 		return nil, fmt.Errorf("container VMID is not supported for operation %q", req.Operation)
 	}
+	if req.Operation == "check-service" {
+		if !systemdUnitRe.MatchString(req.Service) {
+			return nil, fmt.Errorf("service check requires a valid systemd .service unit")
+		}
+	} else if req.Service != "" {
+		return nil, fmt.Errorf("service is not supported for operation %q", req.Operation)
+	}
+	if err := validatePolicyRequest(req); err != nil {
+		return nil, err
+	}
 	for _, pkg := range req.Packages {
 		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._:-]*$`).MatchString(pkg) {
 			return nil, fmt.Errorf("invalid package name %q", pkg)
@@ -355,8 +448,38 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	defer cancel()
 
 	args := append(append([]string{}, r.testArgsPrefix...), "-i", inventoryPath)
-	if req.Operation == "apply-security-updates" {
-		vars, _ := json.Marshal(map[string][]string{"nodex_packages": req.Packages})
+	var extraVars map[string]any
+	switch req.Operation {
+	case "inspect-security-policy":
+		extraVars = map[string]any{"nodex_policy_config_path": SecurityPolicyConfigPath}
+	case "apply-security-updates":
+		extraVars = map[string]any{"nodex_packages": req.Packages}
+	case "check-service":
+		extraVars = map[string]any{"nodex_service": req.Service}
+	case "apply-security-policy":
+		extraVars = map[string]any{
+			"nodex_policy_plan_id":              req.PolicyPlanID,
+			"nodex_policy_config":               req.PolicyConfig,
+			"nodex_policy_before_exists":        req.PolicyBeforeExists,
+			"nodex_policy_before_checksum":      req.PolicyBeforeChecksum,
+			"nodex_policy_config_path":          SecurityPolicyConfigPath,
+			"nodex_security_policy_backup_root": SecurityPolicyBackupRoot,
+		}
+	case "restore-security-policy":
+		extraVars = map[string]any{
+			"nodex_policy_plan_id":              req.PolicyPlanID,
+			"nodex_policy_before_exists":        req.PolicyBeforeExists,
+			"nodex_policy_before_checksum":      req.PolicyBeforeChecksum,
+			"nodex_policy_current_exists":       req.PolicyCurrentExists,
+			"nodex_policy_current_checksum":     req.PolicyCurrentChecksum,
+			"nodex_policy_before_timer_enabled": req.PolicyTimerWasEnabled,
+			"nodex_policy_before_timer_active":  req.PolicyTimerWasActive,
+			"nodex_policy_config_path":          SecurityPolicyConfigPath,
+			"nodex_security_policy_backup_root": SecurityPolicyBackupRoot,
+		}
+	}
+	if len(extraVars) > 0 {
+		vars, _ := json.Marshal(extraVars)
 		args = append(args, "--extra-vars", string(vars))
 	}
 	if req.ContainerVMID > 0 {
