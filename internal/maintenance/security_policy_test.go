@@ -109,7 +109,7 @@ func TestSecurityPolicyPlanDigestAndExpiry(t *testing.T) {
 }
 
 func TestSecurityPolicyReceiptPathIsBounded(t *testing.T) {
-	if got := SecurityPolicyReceiptPath("/tmp/receipts", "msp-abc123", "apply"); got != "/tmp/receipts/msp-abc123-apply.json" {
+	if got, want := SecurityPolicyReceiptPath("/tmp/receipts", "msp-abc123", "apply"), filepath.Join("/tmp/receipts", "msp-abc123-apply.json"); got != want {
 		t.Fatalf("receipt path = %q", got)
 	}
 	if got := SecurityPolicyReceiptPath("/tmp/receipts", "../outside", "restore"); got != "" {
