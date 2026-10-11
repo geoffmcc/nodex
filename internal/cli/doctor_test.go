@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,7 +9,20 @@ import (
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/config"
+	"github.com/geoffmcc/nodex/internal/credentials"
+	"github.com/geoffmcc/nodex/internal/domain"
 )
+
+// storeSecureCredentialFixture creates a credential file through the real file
+// backend so it carries the platform-appropriate protections (0600 on Unix, a
+// protected owner-only DACL on Windows) that a raw os.WriteFile would not.
+func storeSecureCredentialFixture(t *testing.T, dir, name string) {
+	t.Helper()
+	creds := &domain.Credentials{Type: "token", TokenID: "fixture", TokenSecret: "fixture"}
+	if err := credentials.NewFileBackend(dir).Store(context.Background(), name, creds); err != nil {
+		t.Fatalf("store credential fixture: %v", err)
+	}
+}
 
 func privateDoctorTempDir(t *testing.T) string {
 	t.Helper()
@@ -23,10 +37,8 @@ func privateDoctorTempDir(t *testing.T) string {
 
 func TestCheckCredentialFile(t *testing.T) {
 	dir := privateDoctorTempDir(t)
+	storeSecureCredentialFixture(t, dir, "prod")
 	path := filepath.Join(dir, "prod.json")
-	if err := os.WriteFile(path, []byte(`{"type":"token"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
 
 	profile := config.Profile{CredentialRef: "file:prod"}
 	got, ok := checkCredentialFile("production", profile, dir)
@@ -61,10 +73,7 @@ func TestCheckCredentialFileMissingAndNonFileBackend(t *testing.T) {
 
 func TestCheckCredentialFileDefaultReference(t *testing.T) {
 	dir := privateDoctorTempDir(t)
-	path := filepath.Join(dir, "production.json")
-	if err := os.WriteFile(path, []byte(`{"type":"token"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	storeSecureCredentialFixture(t, dir, "production")
 	got, ok := checkCredentialFile("production", config.Profile{}, dir)
 	if !ok || got.Status != "pass" {
 		t.Fatalf("implicit file fallback = (%+v, %v), want pass", got, ok)
@@ -83,10 +92,8 @@ func TestCheckSSHKey(t *testing.T) {
 	}
 
 	dir := privateDoctorTempDir(t)
-	path := filepath.Join(dir, "id_ed25519")
-	if err := os.WriteFile(path, []byte("fake key bytes"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	storeSecureCredentialFixture(t, dir, "sshkey")
+	path := filepath.Join(dir, "sshkey.json")
 	profile := config.Profile{SSHKeyFile: path}
 	got, ok = checkSSHKey("production", profile)
 	if !ok || got.Status != "pass" || got.Name != "profile/production/ssh-key" {

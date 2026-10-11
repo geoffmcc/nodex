@@ -3,6 +3,7 @@ package credentials
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -86,7 +87,10 @@ func (b *FileBackend) Store(_ context.Context, profile string, creds *domain.Cre
 	// Avoid retaining the serialized secret buffer after the atomic write.
 	defer clear(data)
 	path := b.path(profile)
-	if err := checkCredentialFile(path); err != nil && !os.IsNotExist(err) {
+	// errors.Is (not os.IsNotExist) is required here: the Windows ACL probe
+	// wraps its error, and os.IsNotExist cannot unwrap a fmt error to reach the
+	// underlying ERROR_FILE_NOT_FOUND, whereas errors.Is can.
+	if err := checkCredentialFile(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("refuse unsafe existing credential file: %w", err)
 	}
 	tmp, err := os.CreateTemp(b.dir, "."+profile+"-*.tmp")

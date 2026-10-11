@@ -78,3 +78,12 @@ func TestFileBackendRefusesWritableParentDirectory(t *testing.T) {
 		t.Fatal("credential directory below a replaceable parent was accepted")
 	}
 }
+
+// writeSecureCredentialFileForTest writes a credential fixture that satisfies
+// the Unix file policy: mode 0600 owned by the current user.
+func writeSecureCredentialFileForTest(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write credential fixture: %v", err)
+	}
+}

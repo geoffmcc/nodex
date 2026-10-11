@@ -103,9 +103,7 @@ func TestFileBackend_List(t *testing.T) {
 	// Write some credential files directly.
 	for _, name := range []string{"alpha", "beta", "gamma"} {
 		data, _ := json.Marshal(&domain.Credentials{Type: "token"}) // #nosec G117 -- fixture intentionally matches credential schema.
-		if err := os.WriteFile(filepath.Join(dir, name+".json"), data, 0o600); err != nil {
-			t.Fatalf("write credential fixture: %v", err)
-		}
+		writeSecureCredentialFileForTest(t, filepath.Join(dir, name+".json"), data)
 	}
 	// Write a non-json file (should be ignored).
 	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hi"), 0o600); err != nil {
@@ -349,9 +347,7 @@ func TestCheckCredentialFilePermissionsSecure(t *testing.T) {
 	dir := privateCredentialTestDir(t)
 	path := filepath.Join(dir, "test.json")
 	data := []byte(`{"type":"token","token_id":"id","token_secret":"secret"}`)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
+	writeSecureCredentialFileForTest(t, path, data)
 	if err := CheckCredentialFilePermissions(path); err != nil {
 		t.Fatalf("CheckCredentialFilePermissions: %v", err)
 	}

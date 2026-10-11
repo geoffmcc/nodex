@@ -703,6 +703,22 @@ func TestRunGeneratedFilesAndPrivateDir(t *testing.T) {
 	}
 }
 
+func TestRenderInventoryQuotesCommonArgsAsOneValue(t *testing.T) {
+	knownHosts := "/home/automation/.ssh/known_hosts_nodex"
+	inventory := renderInventory([]HostSpec{{
+		Name: "web1", Address: "web1.example.invalid", Port: 2222,
+		User: "automation", KeyFile: "/home/automation/.ssh/id_ed25519",
+		KnownHostsFile: knownHosts,
+	}})
+	want := "ansible_ssh_common_args='" + strictSSHOptions(knownHosts) + "'"
+	if !strings.Contains(inventory, want) {
+		t.Errorf("common args must be single-quoted so ansible keeps them as one host variable:\n%s", inventory)
+	}
+	if strings.Contains(inventory, "ansible_ssh_common_args=-o") {
+		t.Errorf("common args must not be written unquoted:\n%s", inventory)
+	}
+}
+
 func TestStrictSSHOptionsOverridePermissiveAmbientOpenSSHConfig(t *testing.T) {
 	ssh, err := exec.LookPath("ssh")
 	if err != nil {

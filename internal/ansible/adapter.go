@@ -820,9 +820,13 @@ func renderInventory(hosts []HostSpec) string {
 			b.WriteString(" ansible_ssh_private_key_file=")
 			b.WriteString(h.KeyFile)
 		}
-		b.WriteString(" ansible_ssh_common_args=")
+		// The value is quoted so the INI parser keeps the space-separated
+		// options as one host variable. Unquoted, ansible splits on whitespace
+		// and silently discards every option after the first, dropping
+		// -oUserKnownHostsFile and the control-socket hardening.
+		b.WriteString(" ansible_ssh_common_args='")
 		b.WriteString(strictSSHOptions(h.KnownHostsFile))
-		b.WriteString("\n")
+		b.WriteString("'\n")
 	}
 	return b.String()
 }

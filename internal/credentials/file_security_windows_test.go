@@ -61,3 +61,25 @@ func TestWindowsFileBackendRejectsInheritedCredentialFileACL(t *testing.T) {
 		t.Fatal("file with inherited temporary-directory ACL was accepted")
 	}
 }
+
+// writeSecureCredentialFileForTest writes a credential fixture that satisfies
+// the Windows file policy: a protected DACL limited to the current user. A raw
+// os.WriteFile would inherit the parent directory ACL and be rejected.
+func writeSecureCredentialFileForTest(t *testing.T, path string, data []byte) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o600)
+	if err != nil {
+		t.Fatalf("create credential fixture: %v", err)
+	}
+	if err := protectCredentialFile(f); err != nil {
+		_ = f.Close()
+		t.Fatalf("protect credential fixture: %v", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		t.Fatalf("write credential fixture: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close credential fixture: %v", err)
+	}
+}
