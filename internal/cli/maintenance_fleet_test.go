@@ -64,7 +64,7 @@ func cannedHealthyResult(hosts []ansible.HostSpec) *ansible.RunResult {
 		Operation:        "check-updates",
 		EvidenceSchema:   ansible.EvidenceSchemaVersion,
 		EvidenceContract: ansible.EvidenceContract,
-		RequiredEvidence: []string{ansible.HostEvidenceDebian, ansible.HostEvidenceRefresh, ansible.HostEvidencePackages, ansible.HostEvidenceSimulation, ansible.HostEvidenceReboot, ansible.HostEvidenceFailedUnits, ansible.HostEvidenceRoot},
+		RequiredEvidence: []string{ansible.HostEvidenceDebian, ansible.HostEvidenceRefresh, ansible.HostEvidencePackages, ansible.HostEvidenceSimulation, ansible.HostEvidencePackagePolicy, ansible.HostEvidenceReboot, ansible.HostEvidenceFailedUnits, ansible.HostEvidenceRoot},
 		EvidenceComplete: true,
 		Success:          true,
 		ExitCode:         0,
@@ -82,6 +82,7 @@ func cannedHealthyResult(hosts []ansible.HostSpec) *ansible.RunResult {
 			{EvidenceID: ansible.HostEvidenceSimulation, Task: "renamed simulation task", StdoutLines: []string{
 				"Inst openssl [3.0.14-1] (3.0.15-1 Debian-Security:12/stable-security [amd64])",
 			}},
+			{EvidenceID: ansible.HostEvidencePackagePolicy, Task: "approval metadata", Message: `{"simulation":["Inst openssl [3.0.14-1] (3.0.15-1 Debian-Security:12/stable-security [amd64])"],"policies":[{"item":"openssl","rc":0,"stdout_lines":["openssl:","  Candidate: 3.0.15-1","  Version table:"," *** 3.0.15-1 500","        500 https://security.debian.org/debian-security stable-security/main amd64 Packages"]}],"index_targets":["https://security.debian.org/debian-security|stable-security|bookworm-security|Debian|Debian-Security|main|amd64"]}`},
 			{EvidenceID: ansible.HostEvidenceReboot, Task: "renamed reboot task", StatExists: boolPtrCLI(false)},
 			{EvidenceID: ansible.HostEvidenceFailedUnits, Task: "renamed failed-units task", StdoutLines: []string{}},
 			{EvidenceID: ansible.HostEvidenceRoot, Task: "renamed root task", StdoutLines: []string{
@@ -417,7 +418,7 @@ func TestMaintenancePlanTableOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan table: %v", err)
 	}
-	for _, want := range []string{"Plan:", "mp-", "Digest:", "security-only", "never", "standalone"} {
+	for _, want := range []string{"Plan:", "mp-", "Digest:", "security-only", "never", "standalone", "openssl", "3.0.15-1", "amd64", "Debian-Security", "stable-security"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("table output missing %q:\n%s", want, stdout)
 		}
@@ -437,7 +438,7 @@ func TestMaintenanceApplyRequiresExactConfirmation(t *testing.T) {
 	if err := os.WriteFile(planPath, []byte(stdout), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	withCannedMaintenanceOperation(t, func(_ context.Context, operation string, hosts []ansible.HostSpec, packages []string) (*ansible.RunResult, error) {
+	withCannedMaintenanceOperation(t, func(_ context.Context, operation string, hosts []ansible.HostSpec, packages []ansible.PackageApproval) (*ansible.RunResult, error) {
 		return cannedHealthyResult(hosts), nil
 	})
 	_, _, err = runPBSCommand(t, "maintenance", "apply", "--plan", planPath)
@@ -446,7 +447,7 @@ func TestMaintenanceApplyRequiresExactConfirmation(t *testing.T) {
 	}
 }
 
-func withCannedMaintenanceOperation(t *testing.T, fn func(context.Context, string, []ansible.HostSpec, []string) (*ansible.RunResult, error)) {
+func withCannedMaintenanceOperation(t *testing.T, fn func(context.Context, string, []ansible.HostSpec, []ansible.PackageApproval) (*ansible.RunResult, error)) {
 	t.Helper()
 	prev := runMaintenanceOperation
 	runMaintenanceOperation = fn
@@ -518,7 +519,7 @@ func TestMaintenanceBatchDurablyCheckpointsEachHost(t *testing.T) {
 		"web1":       {Address: "web1.example.invalid", SSHUser: "automation"},
 		"standalone": {Address: "standalone.example.invalid", SSHUser: "automation"},
 	}
-	withCannedMaintenanceOperation(t, func(_ context.Context, _ string, hosts []ansible.HostSpec, _ []string) (*ansible.RunResult, error) {
+	withCannedMaintenanceOperation(t, func(_ context.Context, _ string, hosts []ansible.HostSpec, _ []ansible.PackageApproval) (*ansible.RunResult, error) {
 		if hosts[0].Name == "standalone" {
 			return nil, stderrors.New("injected provider outage")
 		}
@@ -526,6 +527,7 @@ func TestMaintenanceBatchDurablyCheckpointsEachHost(t *testing.T) {
 			ansible.HostEvidenceDebian,
 			ansible.HostEvidenceRefresh,
 			ansible.HostEvidenceUpdate,
+			ansible.HostEvidenceUpdateVerify,
 			ansible.HostEvidenceUpdateReport,
 		})
 		result.Hosts[0].Changed = 1
@@ -562,11 +564,16 @@ func TestMaintenanceSecurityNoUpdatesAcceptsSkippedUpdateEvidence(t *testing.T) 
 		ansible.HostEvidenceDebian,
 		ansible.HostEvidenceRefresh,
 		ansible.HostEvidenceUpdate,
+		ansible.HostEvidenceUpdateVerify,
 		ansible.HostEvidenceUpdateReport,
 	})
 	result.Operation = "apply-security-updates"
 	for i := range result.TaskOutcomes["web1"] {
 		if result.TaskOutcomes["web1"][i].EvidenceID == ansible.HostEvidenceUpdate {
+			result.TaskOutcomes["web1"][i].Skipped = true
+			result.TaskOutcomes["web1"][i].RC = nil
+		}
+		if result.TaskOutcomes["web1"][i].EvidenceID == ansible.HostEvidenceUpdateVerify {
 			result.TaskOutcomes["web1"][i].Skipped = true
 			result.TaskOutcomes["web1"][i].RC = nil
 		}
@@ -614,7 +621,7 @@ func TestMaintenanceReconcilePreservesUnknownMutationOutcome(t *testing.T) {
 	if err := maintenance.SaveReceipt(receiptPath, receipt); err != nil {
 		t.Fatalf("save receipt: %v", err)
 	}
-	withCannedMaintenanceOperation(t, func(_ context.Context, operation string, hosts []ansible.HostSpec, _ []string) (*ansible.RunResult, error) {
+	withCannedMaintenanceOperation(t, func(_ context.Context, operation string, hosts []ansible.HostSpec, _ []ansible.PackageApproval) (*ansible.RunResult, error) {
 		if operation != "verify-maintenance" {
 			t.Fatalf("operation = %q, want verify-maintenance", operation)
 		}
@@ -669,7 +676,7 @@ func TestMaintenanceReconcileIncompleteEvidenceStaysUnknown(t *testing.T) {
 	if err := maintenance.SaveReceipt(receiptPath, receipt); err != nil {
 		t.Fatalf("save receipt: %v", err)
 	}
-	withCannedMaintenanceOperation(t, func(_ context.Context, _ string, hosts []ansible.HostSpec, _ []string) (*ansible.RunResult, error) {
+	withCannedMaintenanceOperation(t, func(_ context.Context, _ string, hosts []ansible.HostSpec, _ []ansible.PackageApproval) (*ansible.RunResult, error) {
 		result := cannedMaintenanceResult(hosts, []string{ansible.HostEvidenceConnectivity})
 		result.Success = false
 		result.EvidenceComplete = false

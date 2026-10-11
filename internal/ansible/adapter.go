@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -143,6 +144,10 @@ type HostSpec struct {
 // break out of the generated INI line.
 var inventoryValueRe = regexp.MustCompile(`^[A-Za-z0-9._~/:-]+$`)
 var systemdUnitRe = regexp.MustCompile(`^[A-Za-z0-9_@.:-]+\.service$`)
+var packageNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
+var packageVersionRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+:~_-]*$`)
+var packageArchitectureRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+var packageOriginRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:/+%\[\]-]*(?: [A-Za-z0-9._~:/+%\[\]-]+){2}$`)
 var securityPolicyPlanIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 var sha256HexRe = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -178,9 +183,9 @@ type RunRequest struct {
 	// Hosts are the explicit targets.
 	Hosts []HostSpec
 
-	// Packages is accepted only by the fixed security-update operation. It is
-	// encoded as structured extra-vars, never interpolated into a command.
-	Packages []string
+	// Packages contains the exact reviewed package, version, architecture and
+	// APT source intent. It is accepted only by the security-update operation.
+	Packages []PackageApproval
 
 	// ContainerVMID is accepted only by the fixed LXC guest operations. It is
 	// encoded as a structured extra-var, never interpolated into a command.
@@ -201,6 +206,67 @@ type RunRequest struct {
 	PolicyCurrentChecksum string
 	PolicyTimerWasEnabled string
 	PolicyTimerWasActive  string
+}
+
+// PackageApproval is one immutable APT package intent approved by a maintenance
+// plan. Spec is the exact package:architecture=version install selector.
+type PackageApproval struct {
+	Name         string          `json:"name"`
+	Version      string          `json:"version"`
+	Architecture string          `json:"architecture"`
+	Origins      []PackageOrigin `json:"origins"`
+	Spec         string          `json:"spec"`
+}
+
+// PackageOrigin binds one package source line to its signed Release identity.
+type PackageOrigin struct {
+	Source       string `json:"source"`
+	Site         string `json:"site"`
+	Release      string `json:"release"`
+	Codename     string `json:"codename"`
+	Origin       string `json:"origin"`
+	Label        string `json:"label"`
+	Component    string `json:"component"`
+	Architecture string `json:"architecture"`
+	Record       string `json:"record"`
+}
+
+func (p PackageApproval) validate() error {
+	if !packageNameRe.MatchString(p.Name) || !packageVersionRe.MatchString(p.Version) || !packageArchitectureRe.MatchString(p.Architecture) {
+		return fmt.Errorf("invalid approved package identity")
+	}
+	if p.Spec != p.Name+":"+p.Architecture+"="+p.Version {
+		return fmt.Errorf("approved package selector does not match its name, architecture, and version")
+	}
+	if len(p.Origins) == 0 {
+		return fmt.Errorf("approved package %s has no pinned APT origin", p.Name)
+	}
+	seen := map[string]bool{}
+	for _, origin := range p.Origins {
+		fields := []string{origin.Site, origin.Release, origin.Codename, origin.Origin, origin.Label, origin.Component, origin.Architecture}
+		unsafeField := false
+		for _, field := range fields {
+			if strings.ContainsAny(field, "\r\n|") {
+				unsafeField = true
+				break
+			}
+		}
+		if !packageOriginRe.MatchString(origin.Source) || origin.Site == "" || origin.Release == "" || origin.Origin == "" || origin.Component == "" || origin.Architecture != p.Architecture || unsafeField || seen[origin.Record] {
+			return fmt.Errorf("approved package %s has an invalid or duplicate APT origin", p.Name)
+		}
+		for _, uriValue := range []string{strings.Fields(origin.Source)[0], origin.Site} {
+			parsed, err := url.Parse(uriValue)
+			if err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+				return fmt.Errorf("approved package %s APT source contains embedded credentials or unsupported URL data; use APT auth configuration and regenerate the plan", p.Name)
+			}
+		}
+		record := strings.Join([]string{origin.Site, origin.Release, origin.Codename, origin.Origin, origin.Label, origin.Component, origin.Architecture}, "|")
+		if origin.Record != record {
+			return fmt.Errorf("approved package %s has an inconsistent APT Release record", p.Name)
+		}
+		seen[origin.Record] = true
+	}
+	return nil
 }
 
 func validatePolicyRequest(req RunRequest) error {
@@ -284,19 +350,29 @@ type HostResult struct {
 type TaskOutcome struct {
 	// EvidenceID is a stable machine-readable contract key. Task is retained
 	// only as presentation text and must not be used for control flow.
-	EvidenceID  string   `json:"evidence_id,omitempty" yaml:"evidence_id,omitempty"`
-	Task        string   `json:"task" yaml:"task"`
-	Failed      bool     `json:"failed,omitempty" yaml:"failed,omitempty"`
-	Skipped     bool     `json:"skipped,omitempty" yaml:"skipped,omitempty"`
-	Unreachable bool     `json:"unreachable,omitempty" yaml:"unreachable,omitempty"`
-	Changed     bool     `json:"changed,omitempty" yaml:"changed,omitempty"`
+	EvidenceID  string          `json:"evidence_id,omitempty" yaml:"evidence_id,omitempty"`
+	Task        string          `json:"task" yaml:"task"`
+	Failed      bool            `json:"failed,omitempty" yaml:"failed,omitempty"`
+	Skipped     bool            `json:"skipped,omitempty" yaml:"skipped,omitempty"`
+	Unreachable bool            `json:"unreachable,omitempty" yaml:"unreachable,omitempty"`
+	Changed     bool            `json:"changed,omitempty" yaml:"changed,omitempty"`
+	RC          *int            `json:"rc,omitempty" yaml:"rc,omitempty"`
+	Stdout      string          `json:"stdout,omitempty" yaml:"stdout,omitempty"`
+	StdoutLines []string        `json:"stdout_lines,omitempty" yaml:"stdout_lines,omitempty"`
+	Stderr      string          `json:"stderr,omitempty" yaml:"stderr,omitempty"`
+	StderrLines []string        `json:"stderr_lines,omitempty" yaml:"stderr_lines,omitempty"`
+	StatExists  *bool           `json:"stat_exists,omitempty" yaml:"stat_exists,omitempty"`
+	Results     []CommandResult `json:"results,omitempty" yaml:"results,omitempty"`
+	Message     string          `json:"msg,omitempty" yaml:"msg,omitempty"`
+}
+
+// CommandResult is one bounded item result for an Ansible looped command.
+type CommandResult struct {
+	Item        string   `json:"item,omitempty" yaml:"item,omitempty"`
 	RC          *int     `json:"rc,omitempty" yaml:"rc,omitempty"`
 	Stdout      string   `json:"stdout,omitempty" yaml:"stdout,omitempty"`
 	StdoutLines []string `json:"stdout_lines,omitempty" yaml:"stdout_lines,omitempty"`
-	Stderr      string   `json:"stderr,omitempty" yaml:"stderr,omitempty"`
-	StderrLines []string `json:"stderr_lines,omitempty" yaml:"stderr_lines,omitempty"`
-	StatExists  *bool    `json:"stat_exists,omitempty" yaml:"stat_exists,omitempty"`
-	Message     string   `json:"msg,omitempty" yaml:"msg,omitempty"`
+	Failed      bool     `json:"failed,omitempty" yaml:"failed,omitempty"`
 }
 
 // RunResult is the complete outcome of one adapter run. Success is derived
@@ -386,10 +462,15 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	if err := validatePolicyRequest(req); err != nil {
 		return nil, err
 	}
+	seenPackages := make(map[string]bool, len(req.Packages))
 	for _, pkg := range req.Packages {
-		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._:-]*$`).MatchString(pkg) {
-			return nil, fmt.Errorf("invalid package name %q", pkg)
+		if err := pkg.validate(); err != nil {
+			return nil, err
 		}
+		if seenPackages[pkg.Spec] {
+			return nil, fmt.Errorf("duplicate approved package selector %q", pkg.Spec)
+		}
+		seenPackages[pkg.Spec] = true
 	}
 	if r.Exe == "" || !filepath.IsAbs(r.Exe) {
 		return nil, fmt.Errorf("runner requires an absolute ansible-playbook path (run Detect first)")
@@ -579,6 +660,13 @@ func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec, op Ope
 					Stat        *struct {
 						Exists bool `json:"exists"`
 					} `json:"stat"`
+					Results []struct {
+						Item        any      `json:"item"`
+						RC          *int     `json:"rc"`
+						Stdout      string   `json:"stdout"`
+						StdoutLines []string `json:"stdout_lines"`
+						Failed      bool     `json:"failed"`
+					} `json:"results"`
 				} `json:"hosts"`
 			} `json:"tasks"`
 		} `json:"plays"`
@@ -620,6 +708,13 @@ func parseRunStats(result *RunResult, stdoutRaw []byte, hosts []HostSpec, op Ope
 				if hr.Stat != nil {
 					exists := hr.Stat.Exists
 					outcome.StatExists = &exists
+				}
+				for _, item := range hr.Results {
+					commandResult := CommandResult{RC: item.RC, Stdout: sanitizeOutput(item.Stdout), StdoutLines: sanitizeLines(item.StdoutLines), Failed: item.Failed}
+					if item.Item != nil {
+						commandResult.Item = sanitizeOutput(fmt.Sprint(item.Item))
+					}
+					outcome.Results = append(outcome.Results, commandResult)
 				}
 				if s, ok := hr.Msg.(string); ok {
 					outcome.Message = sanitizeOutput(s)
@@ -725,11 +820,13 @@ func renderInventory(hosts []HostSpec) string {
 			b.WriteString(" ansible_ssh_private_key_file=")
 			b.WriteString(h.KeyFile)
 		}
-		if h.KnownHostsFile != "" {
-			b.WriteString(" ansible_ssh_common_args=-oUserKnownHostsFile=")
-			b.WriteString(h.KnownHostsFile)
-		}
-		b.WriteString("\n")
+		// The value is quoted so the INI parser keeps the space-separated
+		// options as one host variable. Unquoted, ansible splits on whitespace
+		// and silently discards every option after the first, dropping
+		// -oUserKnownHostsFile and the control-socket hardening.
+		b.WriteString(" ansible_ssh_common_args='")
+		b.WriteString(strictSSHOptions(h.KnownHostsFile))
+		b.WriteString("'\n")
 	}
 	return b.String()
 }
@@ -745,10 +842,28 @@ callback_plugins = %s
 nocows = 1
 interpreter_python = auto_silent
 [ssh_connection]
+ssh_args = -C -o StrictHostKeyChecking=yes -o ControlMaster=no -o ControlPersist=no -o ControlPath=none -o BatchMode=yes
+scp_extra_args = -o StrictHostKeyChecking=yes -o ControlMaster=no -o ControlPersist=no -o ControlPath=none -o BatchMode=yes
+sftp_extra_args = -o StrictHostKeyChecking=yes -o ControlMaster=no -o ControlPersist=no -o ControlPath=none -o BatchMode=yes
 `
 
-// minimalEnv builds the allowlisted child environment: only PATH and HOME
-// pass through from the parent (both required for ssh), everything else is
+// strictSSHOptions are repeated in per-host common args because Ansible's
+// scp/sftp transfer commands do not consistently inherit ssh_args across
+// supported ansible-core releases. OpenSSH command-line options take
+// precedence over permissive user SSH configuration. Control sockets are
+// disabled so a connection established under a different trust policy cannot
+// be reused. An explicit known_hosts path replaces the user's default file.
+func strictSSHOptions(knownHosts string) string {
+	options := []string{"-oStrictHostKeyChecking=yes", "-oControlMaster=no", "-oControlPersist=no", "-oControlPath=none", "-oBatchMode=yes"}
+	if knownHosts != "" {
+		options = append(options, "-oUserKnownHostsFile="+knownHosts)
+	}
+	return strings.Join(options, " ")
+}
+
+// minimalEnv builds the allowlisted child environment. PATH/HOME and platform
+// temp/system paths support process execution; SSH_AUTH_SOCK preserves the
+// supported local-agent authentication path. All Ansible safety settings are
 // pinned by Nodex.
 func minimalEnv(extra map[string]string) []string {
 	env := []string{
@@ -759,7 +874,7 @@ func minimalEnv(extra map[string]string) []string {
 		"ANSIBLE_NOCOLOR=1",
 		"ANSIBLE_FORCE_COLOR=0",
 	}
-	for _, key := range []string{"PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "TEMP", "TMP"} {
+	for _, key := range []string{"PATH", "HOME", "SSH_AUTH_SOCK", "USERPROFILE", "SYSTEMROOT", "TEMP", "TMP"} {
 		if v, ok := os.LookupEnv(key); ok {
 			env = append(env, key+"="+v)
 		}

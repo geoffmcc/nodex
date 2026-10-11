@@ -11,8 +11,19 @@ import (
 	"github.com/geoffmcc/nodex/internal/domain"
 )
 
-func TestFileBackend_StoreAndGet(t *testing.T) {
+func privateCredentialTestDir(t *testing.T) string {
+	t.Helper()
 	dir := t.TempDir()
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Fatalf("restrict fixture directory: %v", err)
+		}
+	}
+	return dir
+}
+
+func TestFileBackend_StoreAndGet(t *testing.T) {
+	dir := privateCredentialTestDir(t)
 	b := NewFileBackend(dir)
 	ctx := context.Background()
 
@@ -43,7 +54,7 @@ func TestFileBackend_StoreAndGet(t *testing.T) {
 }
 
 func TestFileBackend_GetNotFound(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	b := NewFileBackend(dir)
 	ctx := context.Background()
 
@@ -54,7 +65,7 @@ func TestFileBackend_GetNotFound(t *testing.T) {
 }
 
 func TestFileBackend_Delete(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	b := NewFileBackend(dir)
 	ctx := context.Background()
 
@@ -74,7 +85,7 @@ func TestFileBackend_Delete(t *testing.T) {
 }
 
 func TestFileBackend_DeleteNotFound(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	b := NewFileBackend(dir)
 	ctx := context.Background()
 
@@ -85,16 +96,14 @@ func TestFileBackend_DeleteNotFound(t *testing.T) {
 }
 
 func TestFileBackend_List(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	b := NewFileBackend(dir)
 	ctx := context.Background()
 
 	// Write some credential files directly.
 	for _, name := range []string{"alpha", "beta", "gamma"} {
 		data, _ := json.Marshal(&domain.Credentials{Type: "token"}) // #nosec G117 -- fixture intentionally matches credential schema.
-		if err := os.WriteFile(filepath.Join(dir, name+".json"), data, 0o600); err != nil {
-			t.Fatalf("write credential fixture: %v", err)
-		}
+		writeSecureCredentialFileForTest(t, filepath.Join(dir, name+".json"), data)
 	}
 	// Write a non-json file (should be ignored).
 	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hi"), 0o600); err != nil {
@@ -112,7 +121,7 @@ func TestFileBackend_List(t *testing.T) {
 }
 
 func TestFileBackend_ListEmpty(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	b := NewFileBackend(dir)
 	ctx := context.Background()
 
@@ -126,7 +135,7 @@ func TestFileBackend_ListEmpty(t *testing.T) {
 }
 
 func TestFileBackend_Name(t *testing.T) {
-	b := NewFileBackend(t.TempDir())
+	b := NewFileBackend(privateCredentialTestDir(t))
 	if b.Name() != "file" {
 		t.Errorf("Name() = %q, want %q", b.Name(), "file")
 	}
@@ -315,7 +324,7 @@ func TestStdinBackendNilReaderDoesNotPanic(t *testing.T) {
 }
 
 func TestFileBackendInvalidStoreLeavesExistingCredential(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	b := NewFileBackend(dir)
 	ctx := context.Background()
 	good := &domain.Credentials{Type: "token", TokenID: "id", TokenSecret: "secret"}
@@ -335,12 +344,10 @@ func TestFileBackendInvalidStoreLeavesExistingCredential(t *testing.T) {
 }
 
 func TestCheckCredentialFilePermissionsSecure(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	path := filepath.Join(dir, "test.json")
 	data := []byte(`{"type":"token","token_id":"id","token_secret":"secret"}`)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
+	writeSecureCredentialFileForTest(t, path, data)
 	if err := CheckCredentialFilePermissions(path); err != nil {
 		t.Fatalf("CheckCredentialFilePermissions: %v", err)
 	}
@@ -350,7 +357,7 @@ func TestCheckCredentialFilePermissionsInsecure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission bits not enforced on Windows")
 	}
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	path := filepath.Join(dir, "test.json")
 	data := []byte(`{"type":"token","token_id":"id","token_secret":"secret"}`)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
@@ -365,7 +372,7 @@ func TestCheckCredentialFilePermissionsGroupReadable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission bits not enforced on Windows")
 	}
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	path := filepath.Join(dir, "test.json")
 	data := []byte(`{"type":"token","token_id":"id","token_secret":"secret"}`)
 	if err := os.WriteFile(path, data, 0o640); err != nil {

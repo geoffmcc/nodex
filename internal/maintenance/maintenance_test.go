@@ -15,7 +15,11 @@ func samplePlan(t *testing.T) Plan {
 	t.Helper()
 	hosts := []PlanHost{
 		{Name: "web1", Address: "web1.example.invalid", Role: "generic", Criticality: "standard",
-			PendingUpdates: []string{"nano", "openssl"}, SecurityUpdates: []string{"openssl"}},
+			PendingUpdates: []string{"nano", "openssl"}, SecurityUpdates: []string{"openssl"},
+			SecurityPackages: []PackageIntent{{Name: "openssl", Version: "3.0.15-1", Architecture: "amd64", Origins: []APTOrigin{{
+				Source: "https://security.debian.org/debian-security stable-security/main amd64", Site: "https://security.debian.org/debian-security",
+				Release: "stable-security", Codename: "bookworm-security", Origin: "Debian", Label: "Debian-Security", Component: "main", Architecture: "amd64",
+			}}}}},
 		{Name: "pve-primary", Address: "pve.example.invalid", Role: "pve", Criticality: "critical",
 			BackupRequired: true, RebootRequired: true},
 		{Name: "dns-primary", Address: "dns.example.invalid", Role: "dns", Criticality: "critical",
@@ -235,6 +239,7 @@ func TestInterpretCheckUpdates(t *testing.T) {
 					"Inst nano [7.2-1] (8.0-1 Debian:12.6/stable [amd64])",
 					"Conf openssl (3.0.15-1 Debian-Security:12/stable-security [amd64])",
 				}},
+				{EvidenceID: ansible.HostEvidencePackagePolicy, Task: "approval metadata", Message: `{"simulation":["Inst openssl [3.0.14-1] (3.0.15-1 Debian-Security:12/stable-security [amd64])"],"policies":[{"item":"openssl","rc":0,"stdout_lines":["openssl:","  Candidate: 3.0.15-1","  Version table:"," *** 3.0.15-1 500","        500 https://security.debian.org/debian-security stable-security/main amd64 Packages","        100 /var/lib/dpkg/status"]}],"index_targets":["https://security.debian.org/debian-security|stable-security|bookworm-security|Debian|Debian-Security|main|amd64"]}`},
 				{EvidenceID: ansible.HostEvidenceReboot, Task: "renamed reboot task", StatExists: boolPtr(true)},
 				{EvidenceID: ansible.HostEvidenceFailedUnits, Task: "renamed failed-units task", StdoutLines: []string{"smartd.service loaded failed failed Self Monitoring"}},
 				{EvidenceID: ansible.HostEvidenceRoot, Task: "renamed root task", StdoutLines: []string{
@@ -258,6 +263,9 @@ func TestInterpretCheckUpdates(t *testing.T) {
 	}
 	if len(web.SecurityUpdates) != 1 || web.SecurityUpdates[0] != "openssl" {
 		t.Errorf("security updates wrong: %v", web.SecurityUpdates)
+	}
+	if len(web.SecurityPackages) != 1 || web.SecurityPackages[0].Selector() != "openssl:amd64=3.0.15-1" || len(web.SecurityPackages[0].Origins) != 1 {
+		t.Errorf("approved security package intent wrong: %+v", web.SecurityPackages)
 	}
 	if !web.RebootRequired {
 		t.Error("reboot-required not detected")

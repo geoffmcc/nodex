@@ -1,5 +1,5 @@
 ---
-- name: Apply approved security updates
+- name: Apply reviewed security updates at exact package intent
   hosts: all
   gather_facts: true
   become: true
@@ -9,22 +9,127 @@
         nodex_evidence_id: host.os.debian
       ansible.builtin.assert:
         that: ansible_facts['os_family'] == 'Debian'
-    - name: Refresh package metadata
+
+    - name: Refresh package metadata immediately before approval checks
       vars:
         nodex_evidence_id: host.package.refresh
       ansible.builtin.apt:
         update_cache: true
-    - name: Install security updates
+
+    - name: Read held package names
+      ansible.builtin.command:
+        argv:
+          - apt-mark
+          - showhold
+      register: nodex_held_packages
+      changed_when: false
+      when: nodex_packages | length > 0
+
+    - name: Refuse held approved packages
+      ansible.builtin.assert:
+        that:
+          - item.name not in (nodex_held_packages.stdout_lines | default([]))
+          - item.spec not in (nodex_held_packages.stdout_lines | default([]))
+        fail_msg: "an approved security package is held; change the hold deliberately and create a new plan"
+      loop: "{{ nodex_packages }}"
+
+    - name: Re-read approved candidate versions and source records
+      ansible.builtin.command:
+        argv:
+          - apt-cache
+          - policy
+          - "{{ item.name }}:{{ item.architecture }}"
+      loop: "{{ nodex_packages }}"
+      register: nodex_current_package_policy
+      changed_when: false
+
+    - name: Re-read signed APT Release origin identities
+      ansible.builtin.command:
+        argv:
+          - apt-get
+          - indextargets
+          - --format
+          - "$(SITE)|$(RELEASE)|$(CODENAME)|$(ORIGIN)|$(LABEL)|$(COMPONENT)|$(ARCHITECTURE)"
+      register: nodex_current_apt_origins
+      changed_when: false
+
+    - name: Reject candidate version, architecture, or APT origin drift
+      ansible.builtin.assert:
+        that:
+          - "('Candidate: ' ~ item.item.version) in item.stdout"
+          - item.item.architecture in item.stdout
+          - item.item.origins | selectattr('source', 'in', item.stdout) | list | length == item.item.origins | length
+        fail_msg: "approved candidate version, architecture, or APT origin changed; create a new plan"
+      loop: "{{ nodex_current_package_policy.results | default([]) }}"
+
+    - name: Reject signed APT Release origin or label drift
+      ansible.builtin.assert:
+        that:
+          - item[1].record in (nodex_current_apt_origins.stdout_lines | default([]))
+        fail_msg: "approved APT Release origin, label, codename, component, or architecture changed; create a new plan"
+      loop: "{{ nodex_packages | subelements('origins') }}"
+
+    - name: Simulate exact approved package selectors without removals
+      ansible.builtin.command:
+        argv: "{{ ['apt-get', '-s', '--no-remove', 'install'] + (nodex_packages | map(attribute='spec') | list) }}"
+      register: nodex_exact_update_simulation
+      changed_when: false
+      when: nodex_packages | length > 0
+
+    - name: Reject dependency changes or package removals outside the approved set
+      vars:
+        nodex_simulated_package_lines: >-
+          {{ nodex_exact_update_simulation.stdout_lines
+             | select('match', '^Inst ' ~ (item.name | regex_escape) ~ '(:' ~ (item.architecture | regex_escape) ~ ')? ')
+             | list }}
+      ansible.builtin.assert:
+        that:
+          - (nodex_exact_update_simulation.stdout_lines | select('match', '^Remv ') | list | length) == 0
+          - (nodex_exact_update_simulation.stdout_lines | select('match', '^Inst ') | list | length) == (nodex_packages | length)
+          - nodex_simulated_package_lines | length == 1
+          - item.version in (nodex_simulated_package_lines | first)
+          - item.architecture in (nodex_simulated_package_lines | first)
+        fail_msg: "APT would change dependencies beyond the reviewed package set, remove packages, or cannot resolve the approved version; create a new plan"
+      loop: "{{ nodex_packages }}"
+      when: nodex_packages | length > 0
+
+    - name: Install only exact approved security package versions
       vars:
         nodex_evidence_id: host.update
       ansible.builtin.apt:
-        name: "{{ nodex_packages }}"
-        state: latest
+        name: "{{ nodex_packages | map(attribute='spec') | list }}"
+        state: present
         only_upgrade: true
+        fail_on_autoremove: true
+        install_recommends: false
+        allow_unauthenticated: false
       when: nodex_packages | length > 0
       register: nodex_update_result
+
+    - name: Verify exact installed versions and architectures
+      ansible.builtin.command:
+        argv:
+          - dpkg-query
+          - -W
+          - "-f=${Package} ${Version} ${Architecture}\\n"
+          - "{{ item.name }}:{{ item.architecture }}"
+      loop: "{{ nodex_packages }}"
+      register: nodex_installed_packages
+      changed_when: false
+      when: nodex_packages | length > 0
+
+    - name: Assert installed package outcome matches the approved intent
+      vars:
+        nodex_evidence_id: host.update_verify
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - (item.stdout | trim) == (item.item.name ~ ' ' ~ item.item.version ~ ' ' ~ item.item.architecture)
+        fail_msg: "installed package version or architecture does not match the reviewed intent"
+      loop: "{{ nodex_installed_packages.results | default([]) }}"
+
     - name: Report update result
       vars:
         nodex_evidence_id: host.update_report
       ansible.builtin.debug:
-        msg: "security update operation completed"
+        msg: "security update operation completed with the reviewed package intent"

@@ -41,7 +41,7 @@ var runCheckUpdates = func(ctx context.Context, hosts []ansible.HostSpec) (*ansi
 
 // runMaintenanceOperation is the only mutation seam. The operation ID is
 // selected by the verified plan and resolved by ansible's embedded allowlist.
-var runMaintenanceOperation = func(ctx context.Context, operation string, hosts []ansible.HostSpec, packages []string) (*ansible.RunResult, error) {
+var runMaintenanceOperation = func(ctx context.Context, operation string, hosts []ansible.HostSpec, packages []ansible.PackageApproval) (*ansible.RunResult, error) {
 	det, err := ansible.Detect(ctx)
 	if err != nil {
 		return nil, app.NewExitError(fmt.Errorf("maintenance requires Ansible: %w", err), app.ExitIncompatibility)
@@ -437,6 +437,10 @@ func runMaintenancePlan(ctx context.Context, cmdCtx *Context, args []string) err
 		if hasStatus {
 			ph.PendingUpdates = status.PendingUpdates
 			ph.SecurityUpdates = status.SecurityUpdates
+			ph.SecurityPackages = status.SecurityPackages
+			if policy == maintenance.PolicySecurityOnly && len(status.SecurityUpdates) != len(status.SecurityPackages) {
+				plan.Blockers = append(plan.Blockers, fmt.Sprintf("host %s lacks exact package version, architecture, and origin evidence; regenerate after checking APT metadata", name))
+			}
 			ph.RebootRequired = status.RebootRequired
 			ph.Warnings = status.Warnings
 			if !status.Reachable {
@@ -598,6 +602,28 @@ func writeMaintenancePlan(cmdCtx *Context, plan maintenance.Plan) error {
 		}
 		if err := output.WriteTable(cmdCtx.Writer, headers, rows); err != nil {
 			return err
+		}
+		if plan.Policy == maintenance.PolicySecurityOnly {
+			type approvalRow struct{ host, name, version, architecture, origin, label, release, codename, component, source string }
+			var approvals []approvalRow
+			for _, name := range plan.HostOrder {
+				for _, pkg := range hostByName[name].SecurityPackages {
+					for _, origin := range pkg.Origins {
+						approvals = append(approvals, approvalRow{name, pkg.Name, pkg.Version, pkg.Architecture, origin.Origin, origin.Label, origin.Release, origin.Codename, origin.Component, origin.Source})
+					}
+				}
+			}
+			if len(approvals) > 0 {
+				fmt.Fprintln(cmdCtx.Writer)
+				fmt.Fprintln(cmdCtx.Writer, "Exact security package intent (version, architecture, and signed APT source are digest-bound):")
+				approvalRows := make([][]string, 0, len(approvals))
+				for _, approval := range approvals {
+					approvalRows = append(approvalRows, []string{approval.host, approval.name, approval.version, approval.architecture, approval.origin, approval.label, approval.release, approval.codename, approval.component, approval.source})
+				}
+				if err := output.WriteTable(cmdCtx.Writer, []string{"HOST", "PACKAGE", "VERSION", "ARCH", "ORIGIN", "LABEL", "RELEASE", "CODENAME", "COMPONENT", "APT SOURCE"}, approvalRows); err != nil {
+					return err
+				}
+			}
 		}
 		if len(plan.Warnings) > 0 {
 			fmt.Fprintln(cmdCtx.Writer)
@@ -918,9 +944,19 @@ func executeMaintenanceBatch(ctx context.Context, path string, receipt *maintena
 	for _, name := range names {
 		name := name
 		go func() {
-			packages := []string{}
+			var packages []ansible.PackageApproval
 			if op == "apply-security-updates" {
-				packages = findPlanHost(plan, name).SecurityUpdates
+				for _, pkg := range findPlanHost(plan, name).SecurityPackages {
+					origins := make([]ansible.PackageOrigin, 0, len(pkg.Origins))
+					for _, origin := range pkg.Origins {
+						origins = append(origins, ansible.PackageOrigin{
+							Source: origin.Source, Site: origin.Site, Release: origin.Release, Codename: origin.Codename,
+							Origin: origin.Origin, Label: origin.Label, Component: origin.Component,
+							Architecture: origin.Architecture, Record: origin.Record(),
+						})
+					}
+					packages = append(packages, ansible.PackageApproval{Name: pkg.Name, Version: pkg.Version, Architecture: pkg.Architecture, Origins: origins, Spec: pkg.Selector()})
+				}
 			}
 			result, err := runMaintenanceOperation(ctx, op, hostSpecs(map[string]config.InventoryHost{name: selected[name]}), packages)
 			ch <- outcome{name: name, result: result, err: err}

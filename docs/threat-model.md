@@ -49,12 +49,16 @@ must not be interpreted as trusted instructions.
 
 Nodex resolves credentials from file, OS keyring, environment or stdin
 references. Credential values are not accepted as ordinary provider CLI
-arguments. File credentials are written atomically with restrictive permissions
-on supported Unix systems; they are not application-encrypted. Environment
-variables can be visible to sufficiently privileged local processes. Secrets
-are redacted from diagnostic output, and terminal escape sequences are
-sanitized. PVE and PBS have separate token schemes and should use separate
-credentials.
+arguments. File credentials are written atomically and fail closed unless
+opened as a regular, non-symlink object under a private directory with
+appropriate ownership and access controls. Unix files require owner-only
+permissions; Windows files require a protected DACL limited to the current
+user and trusted administrative principals. Unsafe credentials are not used or
+automatically repaired. The file backend is not application-encrypted;
+operators can use the OS keyring backend instead. Environment variables can be
+visible to sufficiently privileged local processes. Secrets are redacted from
+diagnostic output, and terminal escape sequences are sanitized. PVE and PBS
+have separate token schemes and should use separate credentials.
 
 ### Network interception or endpoint impersonation
 
@@ -83,11 +87,17 @@ resubmit; changed input conflicts. Refresh/reconcile never resubmits. Agent
 mode is not a sandbox against a caller that can run arbitrary local commands or
 modify Nodex files.
 
-Maintenance plans are expiring and digest-checked; receipts are written
-atomically and avoid persisting raw Ansible output or credentials. Certification
-uses an explicit disposable-environment allowlist and ledger. These controls
-reduce accidental scope and replay, but do not replace backup verification,
-operator review or provider-side least privilege.
+Maintenance plans are expiring and digest-checked. Security-only plan schema 2
+binds package version, architecture, APT source locator, and signed Release
+identity. Apply refreshes and revalidates that intent, refuses held packages,
+removals, unavailable versions, origin drift, and dependency changes outside
+the reviewed set, installs exact selectors, and verifies installed package
+facts. A race remains between remote metadata validation/simulation and the
+subsequent package-manager transaction. Receipts are written atomically and
+avoid persisting raw Ansible output or credentials. Certification uses an
+explicit disposable-environment allowlist and ledger. These controls reduce
+accidental scope and replay, but do not replace backup verification, operator
+review or provider-side least privilege.
 
 ### Excessive local process execution
 
@@ -95,9 +105,14 @@ The Ansible adapter accepts allowlisted operation IDs backed by playbooks
 embedded in the binary. It does not accept arbitrary shell commands, modules,
 playbook paths, inventory scripts or extra arguments. It validates the local
 executable, uses a minimal child environment and private temporary files, pins
-host-key checking, and bounds output. Ansible is only needed for its optional
-maintenance workflows. These controls constrain Nodex's own invocation; they
-do not make a compromised local machine or remote host trustworthy.
+host-key checking, and bounds output. SSH, SCP, and SFTP receive explicit strict
+host-key checking; configured known-hosts files are preserved and connection
+multiplexing is disabled. Local OpenSSH configuration remains trusted for
+routing and host-key identity mapping (including proxy commands, aliases, and
+system trust files); it cannot weaken Nodex's command-line strict host-key
+setting. Ansible is only needed for optional maintenance workflows. These
+controls constrain Nodex's own invocation; they do not make a compromised local
+machine or remote host trustworthy.
 
 ### Malicious or misleading provider/host data
 
@@ -126,7 +141,8 @@ identity or release account can still undermine artifact trust.
   Nodex cannot prove that a compromised provider reports truthful state.
 - Normal provider profiles rely on configured system/custom CA trust and do not
   provide general certificate pinning or mutual TLS.
-- File-backed credentials are permission-protected, not encrypted at rest.
+- File-backed credentials are protected by ownership, filesystem permissions,
+  and Windows ACL checks, not encrypted at rest; unsafe files fail closed.
 - Confirmation flags express the caller's intent; they do not authenticate a
   human approver or prove change authorization.
 - Provider task records can expire and provider resource identifiers can be
@@ -140,12 +156,21 @@ identity or release account can still undermine artifact trust.
 ## Verification map
 
 Security-relevant behavior has unit, fuzz, mock-provider and local HTTP contract
-tests. The main implementation boundaries are `internal/credentials`,
+tests. On Linux with Ansible installed, a local Ansible integration runs the
+embedded unattended-policy apply/restore tasks against temporary files and
+fixture package/timer modules; it does not install packages or change host
+services. A signed local APT repository integration tests candidate, version,
+and Release-origin drift without installing a package. An OpenSSH integration
+uses a disposable local `sshd` for unknown/changed key rejection across
+SSH/SCP/SFTP and the Ansible runner; CI installs that server on its disposable
+runner. The main implementation boundaries are `internal/credentials`,
 `internal/redact`, `internal/safety`, `internal/transport/httpclient`,
 `internal/agent`, `internal/ansible`, `internal/maintenance`, and both provider
 client packages. See [test-coverage.md](test-coverage.md) for a repository map
-and verification commands. Automated tests do not require live PVE, PBS or SSH
-infrastructure; disposable-environment certification is an explicit opt-in.
+and verification commands. Real loopback ICMP tests run when the kernel permits
+ping sockets and explicitly skip only when that protocol is unavailable.
+Automated tests do not require live PVE or PBS infrastructure;
+disposable-environment certification is an explicit opt-in.
 
 Review this threat model when a new provider, mutation surface, credential
 source, external process, or release workflow is introduced, and whenever a

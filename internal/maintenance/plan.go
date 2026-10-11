@@ -8,17 +8,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // PlanSchemaVersion versions the serialized plan shape.
-const PlanSchemaVersion = 1
+const PlanSchemaVersion = 2
 
 // DefaultPlanTTL is how long a plan stays applicable.
 const DefaultPlanTTL = 4 * time.Hour
@@ -40,6 +42,9 @@ func ValidPolicy(p string) bool {
 const RebootPolicyNever = "never"
 
 var planIdentifierRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
+var securityPackageNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
+var securityPackageVersionRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+:~_-]*$`)
+var securityPackageArchitectureRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 func validPlanIdentifier(value string) bool {
 	return planIdentifierRe.MatchString(value)
@@ -47,21 +52,22 @@ func validPlanIdentifier(value string) bool {
 
 // PlanHost is one target host inside a plan.
 type PlanHost struct {
-	Name            string   `json:"name" yaml:"name"`
-	Address         string   `json:"address" yaml:"address"`
-	Role            string   `json:"role" yaml:"role"`
-	Environment     string   `json:"environment,omitempty" yaml:"environment,omitempty"`
-	PVENode         string   `json:"pve_node,omitempty" yaml:"pve_node,omitempty"`
-	PVEProfile      string   `json:"pve_profile,omitempty" yaml:"pve_profile,omitempty"`
-	PBSProfile      string   `json:"pbs_profile,omitempty" yaml:"pbs_profile,omitempty"`
-	Group           string   `json:"group,omitempty" yaml:"group,omitempty"`
-	Criticality     string   `json:"criticality" yaml:"criticality"`
-	BackupRequired  bool     `json:"backup_required" yaml:"backup_required"`
-	AutomaticReboot bool     `json:"automatic_reboot" yaml:"automatic_reboot"`
-	PendingUpdates  []string `json:"pending_updates,omitempty" yaml:"pending_updates,omitempty"`
-	SecurityUpdates []string `json:"security_updates,omitempty" yaml:"security_updates,omitempty"`
-	RebootRequired  bool     `json:"reboot_required" yaml:"reboot_required"`
-	Warnings        []string `json:"warnings,omitempty" yaml:"warnings,omitempty"`
+	Name             string          `json:"name" yaml:"name"`
+	Address          string          `json:"address" yaml:"address"`
+	Role             string          `json:"role" yaml:"role"`
+	Environment      string          `json:"environment,omitempty" yaml:"environment,omitempty"`
+	PVENode          string          `json:"pve_node,omitempty" yaml:"pve_node,omitempty"`
+	PVEProfile       string          `json:"pve_profile,omitempty" yaml:"pve_profile,omitempty"`
+	PBSProfile       string          `json:"pbs_profile,omitempty" yaml:"pbs_profile,omitempty"`
+	Group            string          `json:"group,omitempty" yaml:"group,omitempty"`
+	Criticality      string          `json:"criticality" yaml:"criticality"`
+	BackupRequired   bool            `json:"backup_required" yaml:"backup_required"`
+	AutomaticReboot  bool            `json:"automatic_reboot" yaml:"automatic_reboot"`
+	PendingUpdates   []string        `json:"pending_updates,omitempty" yaml:"pending_updates,omitempty"`
+	SecurityUpdates  []string        `json:"security_updates,omitempty" yaml:"security_updates,omitempty"`
+	SecurityPackages []PackageIntent `json:"security_packages,omitempty" yaml:"security_packages,omitempty"`
+	RebootRequired   bool            `json:"reboot_required" yaml:"reboot_required"`
+	Warnings         []string        `json:"warnings,omitempty" yaml:"warnings,omitempty"`
 }
 
 // BackupState captures the backup requirements and their observed
@@ -94,31 +100,61 @@ type InfraSnapshot struct {
 // immediately before apply. It deliberately contains no credentials or raw
 // child-process output.
 type HostSnapshot struct {
-	Name                 string   `json:"name" yaml:"name"`
-	Address              string   `json:"address" yaml:"address"`
-	Role                 string   `json:"role" yaml:"role"`
-	Environment          string   `json:"environment,omitempty" yaml:"environment,omitempty"`
-	PVENode              string   `json:"pve_node,omitempty" yaml:"pve_node,omitempty"`
-	PVEProfile           string   `json:"pve_profile,omitempty" yaml:"pve_profile,omitempty"`
-	PBSProfile           string   `json:"pbs_profile,omitempty" yaml:"pbs_profile,omitempty"`
-	Group                string   `json:"group,omitempty" yaml:"group,omitempty"`
-	Criticality          string   `json:"criticality" yaml:"criticality"`
-	AutomaticReboot      bool     `json:"automatic_reboot" yaml:"automatic_reboot"`
-	SSHUser              string   `json:"ssh_user" yaml:"ssh_user"`
-	SSHPort              int      `json:"ssh_port" yaml:"ssh_port"`
-	KeyConfigured        bool     `json:"key_configured" yaml:"key_configured"`
-	KnownHostsConfigured bool     `json:"known_hosts_configured" yaml:"known_hosts_configured"`
-	Reachable            bool     `json:"reachable" yaml:"reachable"`
-	Supported            bool     `json:"supported" yaml:"supported"`
-	PendingUpdates       []string `json:"pending_updates,omitempty" yaml:"pending_updates,omitempty"`
-	SecurityUpdates      []string `json:"security_updates,omitempty" yaml:"security_updates,omitempty"`
-	HeldPackages         []string `json:"held_packages,omitempty" yaml:"held_packages,omitempty"`
-	BrokenDependencies   []string `json:"broken_dependencies,omitempty" yaml:"broken_dependencies,omitempty"`
-	RebootRequired       bool     `json:"reboot_required" yaml:"reboot_required"`
-	FailedUnits          []string `json:"failed_units,omitempty" yaml:"failed_units,omitempty"`
-	RootUsage            string   `json:"root_usage,omitempty" yaml:"root_usage,omitempty"`
-	EvidenceComplete     bool     `json:"evidence_complete" yaml:"evidence_complete"`
+	Name                 string          `json:"name" yaml:"name"`
+	Address              string          `json:"address" yaml:"address"`
+	Role                 string          `json:"role" yaml:"role"`
+	Environment          string          `json:"environment,omitempty" yaml:"environment,omitempty"`
+	PVENode              string          `json:"pve_node,omitempty" yaml:"pve_node,omitempty"`
+	PVEProfile           string          `json:"pve_profile,omitempty" yaml:"pve_profile,omitempty"`
+	PBSProfile           string          `json:"pbs_profile,omitempty" yaml:"pbs_profile,omitempty"`
+	Group                string          `json:"group,omitempty" yaml:"group,omitempty"`
+	Criticality          string          `json:"criticality" yaml:"criticality"`
+	AutomaticReboot      bool            `json:"automatic_reboot" yaml:"automatic_reboot"`
+	SSHUser              string          `json:"ssh_user" yaml:"ssh_user"`
+	SSHPort              int             `json:"ssh_port" yaml:"ssh_port"`
+	KeyConfigured        bool            `json:"key_configured" yaml:"key_configured"`
+	KnownHostsConfigured bool            `json:"known_hosts_configured" yaml:"known_hosts_configured"`
+	Reachable            bool            `json:"reachable" yaml:"reachable"`
+	Supported            bool            `json:"supported" yaml:"supported"`
+	PendingUpdates       []string        `json:"pending_updates,omitempty" yaml:"pending_updates,omitempty"`
+	SecurityUpdates      []string        `json:"security_updates,omitempty" yaml:"security_updates,omitempty"`
+	SecurityPackages     []PackageIntent `json:"security_packages,omitempty" yaml:"security_packages,omitempty"`
+	HeldPackages         []string        `json:"held_packages,omitempty" yaml:"held_packages,omitempty"`
+	BrokenDependencies   []string        `json:"broken_dependencies,omitempty" yaml:"broken_dependencies,omitempty"`
+	RebootRequired       bool            `json:"reboot_required" yaml:"reboot_required"`
+	FailedUnits          []string        `json:"failed_units,omitempty" yaml:"failed_units,omitempty"`
+	RootUsage            string          `json:"root_usage,omitempty" yaml:"root_usage,omitempty"`
+	EvidenceComplete     bool            `json:"evidence_complete" yaml:"evidence_complete"`
 }
+
+// PackageIntent records the exact security package version, target architecture
+// and candidate APT sources approved for one host. Additional dependency
+// upgrades/installations and removals are not part of this security-only plan.
+type PackageIntent struct {
+	Name         string      `json:"name" yaml:"name"`
+	Version      string      `json:"version" yaml:"version"`
+	Architecture string      `json:"architecture" yaml:"architecture"`
+	Origins      []APTOrigin `json:"origins" yaml:"origins"`
+}
+
+// APTOrigin captures both the exact apt-cache candidate source and the signed
+// Release identity reported by apt-get indextargets.
+type APTOrigin struct {
+	Source       string `json:"source" yaml:"source"`
+	Site         string `json:"site" yaml:"site"`
+	Release      string `json:"release" yaml:"release"`
+	Codename     string `json:"codename" yaml:"codename"`
+	Origin       string `json:"origin" yaml:"origin"`
+	Label        string `json:"label" yaml:"label"`
+	Component    string `json:"component" yaml:"component"`
+	Architecture string `json:"architecture" yaml:"architecture"`
+}
+
+func (o APTOrigin) Record() string {
+	return strings.Join([]string{o.Site, o.Release, o.Codename, o.Origin, o.Label, o.Component, o.Architecture}, "|")
+}
+
+func (p PackageIntent) Selector() string { return p.Name + ":" + p.Architecture + "=" + p.Version }
 
 // SafetySnapshot is the normalized, plan-bound precondition set. A zero
 // snapshot is accepted by Verify for old persisted plans, but apply treats it
@@ -194,7 +230,11 @@ func Finalize(p Plan) (Plan, error) {
 		sort.Strings(h.HeldPackages)
 		sort.Strings(h.BrokenDependencies)
 		sort.Strings(h.FailedUnits)
+		sortPackageIntents(h.SecurityPackages)
 		p.Snapshot.Hosts[name] = h
+	}
+	for i := range p.Hosts {
+		sortPackageIntents(p.Hosts[i].SecurityPackages)
 	}
 	digest, err := computeDigest(p)
 	if err != nil {
@@ -219,6 +259,9 @@ func computeDigest(p Plan) (string, error) {
 // the given time. It returns an error describing the first failed check.
 func Verify(p Plan, now time.Time) error {
 	if p.Schema != PlanSchemaVersion {
+		if p.Schema < PlanSchemaVersion && p.Policy == PolicySecurityOnly {
+			return fmt.Errorf("maintenance plan schema %d does not bind security package versions, architectures, APT origins, or dependency changes; regenerate the plan with this Nodex version", p.Schema)
+		}
 		return fmt.Errorf("unsupported plan schema %d (expected %d)", p.Schema, PlanSchemaVersion)
 	}
 	if !validPlanIdentifier(p.PlanID) {
@@ -255,6 +298,11 @@ func Verify(p Plan, now time.Time) error {
 			return fmt.Errorf("invalid or duplicate plan host %q", h.Name)
 		}
 		seen[h.Name] = true
+		if p.Policy == PolicySecurityOnly {
+			if err := validateSecurityPackageIntents(h.SecurityUpdates, h.SecurityPackages); err != nil {
+				return fmt.Errorf("host %q: %w", h.Name, err)
+			}
+		}
 	}
 	if len(p.HostOrder) != len(p.Hosts) {
 		return fmt.Errorf("host order does not cover the plan hosts")
@@ -269,6 +317,65 @@ func Verify(p Plan, now time.Time) error {
 		return fmt.Errorf("host order contains duplicate or missing hosts")
 	}
 	return nil
+}
+
+func validateSecurityPackageIntents(updates []string, intents []PackageIntent) error {
+	byName := make(map[string]bool, len(updates))
+	for _, name := range updates {
+		if !securityPackageNameRe.MatchString(name) || byName[name] {
+			return fmt.Errorf("security package list is invalid; regenerate the plan")
+		}
+		byName[name] = true
+	}
+	seen := make(map[string]bool, len(intents))
+	seenNames := make(map[string]bool, len(intents))
+	for _, intent := range intents {
+		key := intent.Name + ":" + intent.Architecture
+		if !securityPackageNameRe.MatchString(intent.Name) || !securityPackageVersionRe.MatchString(intent.Version) || !securityPackageArchitectureRe.MatchString(intent.Architecture) || len(intent.Origins) == 0 || !byName[intent.Name] || seen[key] {
+			return fmt.Errorf("security package intent is incomplete or inconsistent; regenerate the plan")
+		}
+		seen[key] = true
+		seenNames[intent.Name] = true
+		originSet := make(map[string]bool, len(intent.Origins))
+		for _, origin := range intent.Origins {
+			for _, field := range []string{origin.Site, origin.Release, origin.Codename, origin.Origin, origin.Label, origin.Component, origin.Architecture} {
+				if strings.ContainsAny(field, "\r\n|") {
+					return fmt.Errorf("security package %q has invalid APT Release metadata; regenerate the plan", intent.Name)
+				}
+			}
+			if strings.ContainsAny(origin.Source, "\r\n|") {
+				return fmt.Errorf("security package %q has invalid APT source evidence; regenerate the plan", intent.Name)
+			}
+			sourceFields := strings.Fields(origin.Source)
+			if len(sourceFields) != 3 || strings.Join(sourceFields, " ") != origin.Source {
+				return fmt.Errorf("security package %q has invalid APT source evidence; regenerate the plan", intent.Name)
+			}
+			sourceURL, urlErr := url.Parse(sourceFields[0])
+			archiveComponent := strings.SplitN(sourceFields[1], "/", 2)
+			if urlErr != nil || sourceURL.User != nil || sourceURL.RawQuery != "" || sourceURL.Fragment != "" || len(archiveComponent) != 2 ||
+				origin.Site != sourceFields[0] || origin.Release != archiveComponent[0] || origin.Component != archiveComponent[1] ||
+				origin.Origin == "" || origin.Architecture != intent.Architecture || sourceFields[2] != intent.Architecture || originSet[origin.Record()] {
+				return fmt.Errorf("security package %q has invalid APT origin evidence; regenerate the plan", intent.Name)
+			}
+			originSet[origin.Record()] = true
+		}
+	}
+	if len(seenNames) != len(byName) {
+		return fmt.Errorf("security package intent is incomplete; regenerate the plan")
+	}
+	return nil
+}
+
+func sortPackageIntents(intents []PackageIntent) {
+	for i := range intents {
+		sort.Slice(intents[i].Origins, func(a, b int) bool { return intents[i].Origins[a].Record() < intents[i].Origins[b].Record() })
+	}
+	sort.Slice(intents, func(i, j int) bool {
+		if intents[i].Name != intents[j].Name {
+			return intents[i].Name < intents[j].Name
+		}
+		return intents[i].Architecture < intents[j].Architecture
+	})
 }
 
 // Load decodes a plan from JSON or YAML, rejects unknown fields and verifies

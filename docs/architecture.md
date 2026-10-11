@@ -206,8 +206,10 @@ HTTPS, TCP, TLS, DNS and ICMP checks, systemd service checks through the
 allowlisted Ansible facts operation, and provider-backed checks through the
 existing environment/backup-health services. Service checks require an
 explicit inventory host. ICMP uses one bounded echo request and reports
-unsupported when the local platform cannot open a ping socket. Monitoring has
-no discovery, daemon, history store or alerting path.
+unsupported when the local platform cannot open a ping socket. Replies must
+match the socket's kernel-selected identifier, nonce, sequence, address family,
+and peer address; ICMP remains unauthenticated reachability evidence, not host
+identity. Monitoring has no discovery, daemon, history store or alerting path.
 
 ## PBS provider
 
@@ -265,8 +267,8 @@ identifiers:
   and guarded update operations are separate registry entries. There is no
   way to pass a playbook path, module, inventory script, callback plugin,
   extra argument, or environment variable through Nodex. The security-update
-  operation accepts only validated package names as structured variables, and
-  the allowlist
+  operation accepts only plan-bound package name/version/architecture/source
+  records as structured variables, and the allowlist
   grows only through code review.
 - **Shell-free process execution.** `ansible-playbook` is resolved to an
   absolute path, rejected if world-writable (or in a world-writable,
@@ -281,6 +283,11 @@ identifiers:
 - **Minimal environment.** Children receive a pinned allowlist (PATH, HOME,
   locale, and `ANSIBLE_*` safety settings including
   `ANSIBLE_HOST_KEY_CHECKING=True`); the parent environment never leaks.
+- **SSH host identity.** The pinned configuration and per-host common arguments
+  require `StrictHostKeyChecking=yes` for SSH and transfer paths, preserve an
+  explicit inventory known-hosts file, and disable SSH connection
+  multiplexing. The local OpenSSH configuration remains trusted for routing
+  and host-key alias mapping.
 - **Strict inventory generation.** Host fields are validated against a
   conservative character set before being written to the generated INI
   inventory, preventing variable-injection through addresses, users, or
@@ -302,11 +309,13 @@ Ansible remains optional: every PVE and PBS capability works without it.
 `internal/maintenance` interprets adapter results (pending and security
 updates, reboot-required state, failed units, disk usage) and builds
 immutable plans: plan ID, creation and expiry timestamps, update policy,
-per-host package intent, execution ordering (standard hosts first, critical
-hosts serial, PVE/PBS/DNS roles last), batch size, reboot policy (`never`
-in this phase), backup requirements with their observed state, an
-infrastructure snapshot, warnings, blockers, and a SHA-256 digest over the
-canonical plan content. `Verify` checks schema, digest, expiry, and policy;
+per-host package intent (security-only plans bind candidate version,
+architecture, source locator, and signed APT Release identity), execution
+ordering (standard hosts first, critical hosts serial, PVE/PBS/DNS roles
+last), batch size, reboot policy (`never` in this phase), backup requirements
+with their observed state, an infrastructure snapshot, warnings, blockers, and
+a SHA-256 digest over the canonical plan content. `Verify` checks schema,
+digest, expiry, and policy;
 any post-creation modification breaks the digest. Plans contain no secrets
 and are safe to store and display. `maintenance apply` executes exactly a
 verified plan, writes atomic receipts, and refuses stale, tampered, expired,

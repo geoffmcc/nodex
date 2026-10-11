@@ -165,11 +165,9 @@ func checkConfig() checkResult {
 // file-backend credential for a profile. Other credential backends are outside
 // this filesystem check. credDir may be empty to use the default directory.
 //
-// Permissive permissions are a warning rather than a failure on purpose.
-// Credential writes already enforce 0600, so a wider mode means the file was
-// changed outside nodex, and on a drvfs mount under WSL the chmod remedy may not
-// apply. Failing here would hand operators a nonzero exit they cannot clear,
-// which trains them to ignore the exit code on the checks that do matter.
+// Unsafe file-backed credentials fail closed because the resolver refuses to
+// use them. The message supplies remediation rather than treating the file as
+// usable after merely warning.
 func checkCredentialFile(profileName string, p config.Profile, credDir string) (checkResult, bool) {
 	ref := p.CredentialRef
 	if ref == "" {
@@ -188,6 +186,16 @@ func checkCredentialFile(profileName string, p config.Profile, credDir string) (
 			Status:  "fail",
 			Message: fmt.Sprintf("invalid credential reference: %v", err),
 		}, true
+	}
+	if err := credentials.CheckSecretFilePermissions(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) && p.CredentialRef == "" {
+			return checkResult{}, false
+		}
+		message := err.Error()
+		if errors.Is(err, fs.ErrNotExist) {
+			message = fmt.Sprintf("credential file %s is missing", path)
+		}
+		return checkResult{Name: fmt.Sprintf("credentials/%s", profileName), Status: "fail", Message: message}, true
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -211,31 +219,9 @@ func checkCredentialFile(profileName string, p config.Profile, credDir string) (
 			Message: fmt.Sprintf("credential path %s is a directory", path),
 		}, true
 	}
-	f, err := os.Open(path) // #nosec G304 -- path is constructed from a strictly validated credential name under the credential directory.
-	if err != nil {
-		return checkResult{
-			Name:    fmt.Sprintf("credentials/%s", profileName),
-			Status:  "fail",
-			Message: fmt.Sprintf("cannot read credential file %s: %v", path, err),
-		}, true
-	}
-	if err := f.Close(); err != nil {
-		return checkResult{
-			Name:    fmt.Sprintf("credentials/%s", profileName),
-			Status:  "fail",
-			Message: fmt.Sprintf("cannot close credential file %s: %v", path, err),
-		}, true
-	}
-	if err := credentials.CheckSecretFilePermissions(path); err != nil {
-		return checkResult{
-			Name:    fmt.Sprintf("credentials/%s", profileName),
-			Status:  "warn",
-			Message: err.Error(),
-		}, true
-	}
 	message := fmt.Sprintf("permissions %04o; no group/other access", info.Mode().Perm())
 	if runtime.GOOS == "windows" {
-		message = "present; POSIX permission bits unavailable"
+		message = "present; ACL is restricted to the current user and trusted administrators"
 	}
 	return checkResult{
 		Name:    fmt.Sprintf("credentials/%s", profileName),
@@ -252,6 +238,13 @@ func checkSSHKey(profileName string, p config.Profile) (checkResult, bool) {
 		return checkResult{}, false
 	}
 	resultName := fmt.Sprintf("profile/%s/ssh-key", profileName)
+	if err := credentials.CheckSecretFilePermissions(p.SSHKeyFile); err != nil {
+		message := err.Error()
+		if errors.Is(err, fs.ErrNotExist) {
+			message = fmt.Sprintf("SSH key %s is missing", p.SSHKeyFile)
+		}
+		return checkResult{Name: resultName, Status: "fail", Message: message}, true
+	}
 	info, err := os.Stat(p.SSHKeyFile)
 	if err != nil {
 		message := fmt.Sprintf("cannot inspect %s: %v", p.SSHKeyFile, err)
@@ -267,19 +260,9 @@ func checkSSHKey(profileName string, p config.Profile) (checkResult, bool) {
 	if info.IsDir() {
 		return checkResult{Name: resultName, Status: "fail", Message: fmt.Sprintf("%s is a directory", p.SSHKeyFile)}, true
 	}
-	f, err := os.Open(p.SSHKeyFile) // #nosec G304 -- this operator-configured path is opened only to confirm readability; no key bytes are read.
-	if err != nil {
-		return checkResult{Name: resultName, Status: "fail", Message: fmt.Sprintf("cannot read SSH key %s: %v", p.SSHKeyFile, err)}, true
-	}
-	if err := f.Close(); err != nil {
-		return checkResult{Name: resultName, Status: "fail", Message: fmt.Sprintf("cannot close SSH key %s: %v", p.SSHKeyFile, err)}, true
-	}
-	if err := credentials.CheckSecretFilePermissions(p.SSHKeyFile); err != nil {
-		return checkResult{Name: resultName, Status: "warn", Message: err.Error()}, true
-	}
 	message := fmt.Sprintf("present; permissions %04o, no group/other access", info.Mode().Perm())
 	if runtime.GOOS == "windows" {
-		message = "present; POSIX permission bits unavailable"
+		message = "present; ACL is restricted to the current user and trusted administrators"
 	}
 	return checkResult{Name: resultName, Status: "pass", Message: message}, true
 }

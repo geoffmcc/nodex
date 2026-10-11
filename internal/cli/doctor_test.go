@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,14 +9,36 @@ import (
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/config"
+	"github.com/geoffmcc/nodex/internal/credentials"
+	"github.com/geoffmcc/nodex/internal/domain"
 )
 
-func TestCheckCredentialFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "prod.json")
-	if err := os.WriteFile(path, []byte(`{"type":"token"}`), 0o600); err != nil {
-		t.Fatal(err)
+// storeSecureCredentialFixture creates a credential file through the real file
+// backend so it carries the platform-appropriate protections (0600 on Unix, a
+// protected owner-only DACL on Windows) that a raw os.WriteFile would not.
+func storeSecureCredentialFixture(t *testing.T, dir, name string) {
+	t.Helper()
+	creds := &domain.Credentials{Type: "token", TokenID: "fixture", TokenSecret: "fixture"}
+	if err := credentials.NewFileBackend(dir).Store(context.Background(), name, creds); err != nil {
+		t.Fatalf("store credential fixture: %v", err)
 	}
+}
+
+func privateDoctorTempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			t.Fatalf("restrict fixture directory: %v", err)
+		}
+	}
+	return dir
+}
+
+func TestCheckCredentialFile(t *testing.T) {
+	dir := privateDoctorTempDir(t)
+	storeSecureCredentialFixture(t, dir, "prod")
+	path := filepath.Join(dir, "prod.json")
 
 	profile := config.Profile{CredentialRef: "file:prod"}
 	got, ok := checkCredentialFile("production", profile, dir)
@@ -28,17 +51,14 @@ func TestCheckCredentialFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, ok = checkCredentialFile("production", profile, dir)
-		if !ok || got.Status != "warn" || !strings.Contains(got.Message, "0600") {
-			t.Fatalf("checkCredentialFile() insecure mode = (%+v, %v), want warn recommending 0600", got, ok)
-		}
-		if err := doctorExitError(0); err != nil {
-			t.Fatalf("warning should not make doctor fail: %v", err)
+		if !ok || got.Status != "fail" || !strings.Contains(got.Message, "0600") {
+			t.Fatalf("checkCredentialFile() insecure mode = (%+v, %v), want fail recommending 0600", got, ok)
 		}
 	}
 }
 
 func TestCheckCredentialFileMissingAndNonFileBackend(t *testing.T) {
-	got, ok := checkCredentialFile("production", config.Profile{CredentialRef: "file:missing"}, t.TempDir())
+	got, ok := checkCredentialFile("production", config.Profile{CredentialRef: "file:missing"}, privateDoctorTempDir(t))
 	if !ok || got.Status != "fail" || !strings.Contains(got.Message, "missing") {
 		t.Fatalf("missing credential = (%+v, %v), want fail", got, ok)
 	}
@@ -46,17 +66,14 @@ func TestCheckCredentialFileMissingAndNonFileBackend(t *testing.T) {
 	if got, ok := checkCredentialFile("production", config.Profile{CredentialRef: "keyring:production"}, t.TempDir()); ok {
 		t.Fatalf("non-file backend should be skipped, got %+v", got)
 	}
-	if got, ok := checkCredentialFile("production", config.Profile{}, t.TempDir()); ok {
+	if got, ok := checkCredentialFile("production", config.Profile{}, privateDoctorTempDir(t)); ok {
 		t.Fatalf("implicit missing file should be skipped because env credentials may be configured, got %+v", got)
 	}
 }
 
 func TestCheckCredentialFileDefaultReference(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "production.json")
-	if err := os.WriteFile(path, []byte(`{"type":"token"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	dir := privateDoctorTempDir(t)
+	storeSecureCredentialFixture(t, dir, "production")
 	got, ok := checkCredentialFile("production", config.Profile{}, dir)
 	if !ok || got.Status != "pass" {
 		t.Fatalf("implicit file fallback = (%+v, %v), want pass", got, ok)
@@ -68,17 +85,15 @@ func TestCheckSSHKey(t *testing.T) {
 		t.Fatalf("unconfigured SSH key should be skipped, got %+v", got)
 	}
 
-	missing := config.Profile{SSHKeyFile: filepath.Join(t.TempDir(), "missing")}
+	missing := config.Profile{SSHKeyFile: filepath.Join(privateDoctorTempDir(t), "missing")}
 	got, ok := checkSSHKey("production", missing)
 	if !ok || got.Status != "fail" || !strings.Contains(got.Message, "missing") {
 		t.Fatalf("missing SSH key = (%+v, %v), want fail", got, ok)
 	}
 
-	dir := t.TempDir()
-	path := filepath.Join(dir, "id_ed25519")
-	if err := os.WriteFile(path, []byte("fake key bytes"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	dir := privateDoctorTempDir(t)
+	storeSecureCredentialFixture(t, dir, "sshkey")
+	path := filepath.Join(dir, "sshkey.json")
 	profile := config.Profile{SSHKeyFile: path}
 	got, ok = checkSSHKey("production", profile)
 	if !ok || got.Status != "pass" || got.Name != "profile/production/ssh-key" {
@@ -90,8 +105,8 @@ func TestCheckSSHKey(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, ok = checkSSHKey("production", profile)
-		if !ok || got.Status != "warn" || !strings.Contains(got.Message, "0600") {
-			t.Fatalf("insecure SSH key = (%+v, %v), want warn recommending 0600", got, ok)
+		if !ok || got.Status != "fail" || !strings.Contains(got.Message, "0600") {
+			t.Fatalf("insecure SSH key = (%+v, %v), want fail recommending 0600", got, ok)
 		}
 	}
 }

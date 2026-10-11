@@ -3,7 +3,9 @@
 package monitor
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -43,6 +45,9 @@ var errICMPUnavailable = errors.New("ICMP echo is unavailable")
 // the per-target context created in checkOne.
 var icmpProbe = probeICMP
 var icmpSequence atomic.Uint32
+var listenICMP = func(network, address string) (icmpPacketConn, error) {
+	return icmp.ListenPacket(network, address)
+}
 
 type State string
 
@@ -248,6 +253,14 @@ func probeICMP(ctx context.Context, address string) error {
 	return lastErr
 }
 
+type icmpPacketConn interface {
+	Close() error
+	LocalAddr() net.Addr
+	SetDeadline(time.Time) error
+	WriteTo([]byte, net.Addr) (int, error)
+	ReadFrom([]byte) (int, net.Addr, error)
+}
+
 func icmpEcho(ctx context.Context, destination net.IPAddr) error {
 	network, listenAddress, protocol := "udp4", "0.0.0.0", ipv4.ICMPTypeEcho.Protocol()
 	var requestType, replyType icmp.Type = ipv4.ICMPTypeEcho, ipv4.ICMPTypeEchoReply
@@ -257,12 +270,14 @@ func icmpEcho(ctx context.Context, destination net.IPAddr) error {
 	} else {
 		destination.IP = destination.IP.To4()
 	}
-	conn, err := icmp.ListenPacket(network, listenAddress)
+	conn, err := listenICMP(network, listenAddress)
 	if err != nil {
-		if icmpUnavailableError(err) {
-			return errICMPUnavailable
-		}
-		return fmt.Errorf("ICMP socket unavailable")
+		// A host that cannot open an unprivileged ICMP socket (no kernel ping
+		// socket support, a restricted ping_group_range, or a platform such as
+		// Windows where raw sockets require elevation) cannot run this probe at
+		// all. Report it as unavailable so callers mark the check unsupported
+		// rather than treating an environment limitation as a failed endpoint.
+		return errICMPUnavailable
 	}
 	defer func() { _ = conn.Close() }()
 	deadline, ok := ctx.Deadline()
@@ -274,14 +289,28 @@ func icmpEcho(ctx context.Context, destination net.IPAddr) error {
 	}
 	stopCancel := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
 	defer stopCancel()
-	identifier := os.Getpid() & 0xffff
+	local, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok || local.Port <= 0 || local.Port > 0xffff {
+		// Without a kernel-assigned echo identifier the reply cannot be bound
+		// to this probe, so the check cannot run safely on this host.
+		return errICMPUnavailable
+	}
+	// Linux and Darwin ping sockets bind a kernel-selected ICMP identifier to
+	// the UDP-style local port. The kernel may replace the identifier supplied
+	// in the request, so bind our expectation to LocalAddr rather than assuming
+	// a PID-based value survives.
+	identifier := local.Port
 	sequence := int(icmpSequence.Add(1) & 0xffff)
-	request := icmp.Message{Type: requestType, Code: 0, Body: &icmp.Echo{ID: identifier, Seq: sequence, Data: []byte("nodex")}}
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("ICMP request nonce could not be generated")
+	}
+	request := icmp.Message{Type: requestType, Code: 0, Body: &icmp.Echo{ID: identifier, Seq: sequence, Data: nonce}}
 	packet, err := request.Marshal(nil)
 	if err != nil {
 		return fmt.Errorf("ICMP request could not be encoded")
 	}
-	destinationIP := &net.IPAddr{IP: destination.IP, Zone: destination.Zone}
+	destinationIP := &net.UDPAddr{IP: destination.IP, Zone: destination.Zone}
 	if _, err := conn.WriteTo(packet, destinationIP); err != nil {
 		if icmpUnavailableError(err) {
 			return errICMPUnavailable
@@ -298,15 +327,15 @@ func icmpEcho(ctx context.Context, destination net.IPAddr) error {
 			return fmt.Errorf("ICMP reply was not received")
 		}
 		message, err := icmp.ParseMessage(protocol, buffer[:n])
-		if err != nil || message.Type != replyType {
+		if err != nil || message.Type != replyType || message.Code != 0 {
 			continue
 		}
 		echo, ok := message.Body.(*icmp.Echo)
-		if !ok || echo.ID != identifier || echo.Seq != sequence {
+		if !ok || echo.ID != identifier || echo.Seq != sequence || !bytes.Equal(echo.Data, nonce) {
 			continue
 		}
-		peerIP, ok := peer.(*net.IPAddr)
-		if !ok || !peerIP.IP.Equal(destination.IP) {
+		peerIP, ok := peer.(*net.UDPAddr)
+		if !ok || !peerIP.IP.Equal(destination.IP) || (destination.Zone != "" && peerIP.Zone != destination.Zone) {
 			continue
 		}
 		return nil

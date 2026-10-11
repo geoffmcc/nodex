@@ -428,14 +428,56 @@ remain unscheduled.
 
 The inventory stores no secrets: no private keys, SSH passwords, vault
 passwords, or sudo passwords — only file path references. Authentication
-uses the SSH agent or the referenced key file. Host-key verification is
-always enforced (`ANSIBLE_HOST_KEY_CHECKING=True` is pinned by the
-execution boundary and cannot be disabled through Nodex); populate the
-configured `known_hosts_file` out of band before first use.
+uses the SSH agent or the referenced key file. Ansible host-key checking and
+OpenSSH `StrictHostKeyChecking=yes` are pinned at the execution boundary for
+SSH, SCP, and SFTP. Connection multiplexing is disabled so an existing control
+socket cannot reuse a connection established under another trust policy. A
+configured `known_hosts_file` is passed explicitly; otherwise OpenSSH's normal
+user and system known-host databases remain in effect. Populate the selected
+trust database out of band before first use. Unknown and changed keys fail;
+Nodex does not enroll keys or offer an accept-new/insecure mode.
+
+The local OpenSSH installation remains trusted for connection routing and
+identity mapping. In particular, reviewed `ProxyJump`/`ProxyCommand`, DNS,
+`HostKeyAlias`, and system-wide known-host configuration can affect which
+endpoint or host-key identity is reached. Keep that local SSH configuration
+and its trust databases under administrator control.
 
 ## File Credentials
 
-The file backend stores one JSON file per credential name under `~/.nodex/credentials/`. Files are written through a temporary file with restricted permissions and renamed into place.
+The file backend stores one JSON file per credential name under
+`~/.nodex/credentials/`. Nodex reads credentials only after checking the
+opened object and its containing directory. On Unix, the credential directory
+must be a real directory owned by the current user with no group/other access
+(`0700` is recommended); every credential must be a regular non-symlink file
+owned by that user with no group/other access (`0600` is written by Nodex).
+Symlink path components and replaceable group/world-writable ancestors are
+refused (the root-owned sticky temporary-directory case is permitted). On
+Windows, the credential directory ACL must exclude untrusted write access;
+credential files require a protected DACL limited to the current user, Local
+System, and built-in Administrators. Unsafe files fail closed for reads,
+writes, listing, and deletion; Nodex does not automatically repair permissions
+or ACLs.
+
+If an existing Unix directory or file is rejected, inspect the exact path and
+ownership before making a manual repair. For the default location, a typical
+mode repair is:
+
+```sh
+chmod 700 ~/.nodex ~/.nodex/credentials
+chmod 600 ~/.nodex/credentials/<profile>.json
+```
+
+Ensure the path is owned by the account running Nodex. Do not apply these
+commands to a path whose contents or owner you have not verified. On Windows,
+or where the file backend cannot satisfy the ACL policy, move the credential
+to the existing OS keyring backend and use
+`credential_ref: keyring:<profile>`. POSIX mode bits are not evidence of
+Windows ACL safety.
+
+Files are written through a private temporary file and renamed into place.
+This backend is not encrypted at rest; use the OS keyring when its security
+properties or filesystem compatibility are preferable.
 
 Example file shape (use fictional values):
 
