@@ -57,6 +57,15 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 		t.Skipf("cannot resolve local SSH test account: %v", err)
 	}
 	root := t.TempDir()
+	// Control sockets live in their own short-prefix temp directory: the Unix
+	// socket path limit is ~108 bytes and OpenSSH appends a random suffix, so a
+	// ControlPath under t.TempDir() (which embeds the long test name) overflows.
+	controlDir, err := os.MkdirTemp("", "nodex-ctl-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(controlDir) })
+	controlPath := filepath.Join(controlDir, "s")
 	clientKey := filepath.Join(root, "client")
 	firstHostKey := filepath.Join(root, "host-first")
 	secondHostKey := filepath.Join(root, "host-second")
@@ -71,14 +80,14 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 	}
 	knownHosts := filepath.Join(root, "known_hosts")
 	permissiveConfig := filepath.Join(root, "config")
-	if err := os.WriteFile(permissiveConfig, []byte("Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  ControlMaster yes\n  ControlPath "+filepath.Join(root, "ambient.sock")+"\n  ControlPersist 10m\n"), 0o600); err != nil {
+	if err := os.WriteFile(permissiveConfig, []byte("Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  ControlMaster yes\n  ControlPath "+controlPath+"\n  ControlPersist 10m\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	home := filepath.Join(root, "home")
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(home, ".ssh", "config"), []byte("Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  ControlMaster yes\n  ControlPath "+filepath.Join(root, "ambient.sock")+"\n  ControlPersist 10m\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".ssh", "config"), []byte("Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  ControlMaster yes\n  ControlPath "+controlPath+"\n  ControlPersist 10m\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", home)
