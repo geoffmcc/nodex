@@ -279,7 +279,7 @@ func runCheckUpdatesAPTFixture(t *testing.T, root string, aptConfig []string) (c
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, executable, "-i", inventory, "--extra-vars", string(vars), playbookPath)
+	command := exec.CommandContext(ctx, executable, "-i", inventory, "--extra-vars", string(vars), playbookPath) // #nosec G204 -- executable/playbook are test fixtures; args are generated paths
 	command.Env = append(os.Environ(), "ANSIBLE_CONFIG="+ansibleConfig, "ANSIBLE_LOCAL_TEMP="+localTmp, "PYTHONDONTWRITEBYTECODE=1")
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -365,7 +365,7 @@ func runSecurityUpdatePreflightFixture(t *testing.T, root string, aptConfig []st
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, executable, "-i", inventory, "--extra-vars", string(vars), playbookPath)
+	command := exec.CommandContext(ctx, executable, "-i", inventory, "--extra-vars", string(vars), playbookPath) // #nosec G204 -- executable/playbook are test fixtures; args are generated paths
 	command.Env = append(os.Environ(), "ANSIBLE_CONFIG="+ansibleConfig, "ANSIBLE_LOCAL_TEMP="+filepath.Join(root, "ansible-local-tmp"))
 	if err := os.MkdirAll(filepath.Join(root, "ansible-local-tmp"), 0o700); err != nil {
 		return err
@@ -423,7 +423,7 @@ func publishFixtureRepository(t *testing.T, repo, pool, indexDir string, debs []
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(pool, filepath.Base(deb)), data, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(pool, filepath.Base(deb)), data, 0o644); err != nil { // #nosec G703 -- deb is a fixture path under the test's private temporary directory
 			return err
 		}
 	}
@@ -455,7 +455,7 @@ func publishFixtureRepository(t *testing.T, repo, pool, indexDir string, debs []
 	if err := os.WriteFile(releasePath, []byte(release), 0o644); err != nil {
 		return err
 	}
-	command := exec.Command("gpg", "--batch", "--yes", "--homedir", keyHome, "--local-user", fingerprint, "--output", filepath.Join(repo, "dists", "nodex-security", "InRelease"), "--clearsign", releasePath)
+	command := exec.Command("gpg", "--batch", "--yes", "--homedir", keyHome, "--local-user", fingerprint, "--output", filepath.Join(repo, "dists", "nodex-security", "InRelease"), "--clearsign", releasePath) // #nosec G204 -- gpg is a fixed system tool; arguments are fixture-scoped paths
 	if output, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf("sign Release metadata: %w: %s", err, output)
 	}
@@ -463,7 +463,7 @@ func publishFixtureRepository(t *testing.T, repo, pool, indexDir string, debs []
 }
 
 func runFixtureCommand(dir, binary string, args ...string) (string, error) {
-	command := exec.Command(binary, args...)
+	command := exec.Command(binary, args...) // #nosec G204 -- binary and args are test-controlled fixture helpers
 	command.Dir = dir
 	output, err := command.CombinedOutput()
 	return string(output), err

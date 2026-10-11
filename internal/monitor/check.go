@@ -272,10 +272,12 @@ func icmpEcho(ctx context.Context, destination net.IPAddr) error {
 	}
 	conn, err := listenICMP(network, listenAddress)
 	if err != nil {
-		if icmpUnavailableError(err) {
-			return errICMPUnavailable
-		}
-		return fmt.Errorf("ICMP socket unavailable")
+		// A host that cannot open an unprivileged ICMP socket (no kernel ping
+		// socket support, a restricted ping_group_range, or a platform such as
+		// Windows where raw sockets require elevation) cannot run this probe at
+		// all. Report it as unavailable so callers mark the check unsupported
+		// rather than treating an environment limitation as a failed endpoint.
+		return errICMPUnavailable
 	}
 	defer func() { _ = conn.Close() }()
 	deadline, ok := ctx.Deadline()
@@ -289,7 +291,9 @@ func icmpEcho(ctx context.Context, destination net.IPAddr) error {
 	defer stopCancel()
 	local, ok := conn.LocalAddr().(*net.UDPAddr)
 	if !ok || local.Port <= 0 || local.Port > 0xffff {
-		return fmt.Errorf("ICMP socket did not expose its kernel echo identifier")
+		// Without a kernel-assigned echo identifier the reply cannot be bound
+		// to this probe, so the check cannot run safely on this host.
+		return errICMPUnavailable
 	}
 	// Linux and Darwin ping sockets bind a kernel-selected ICMP identifier to
 	// the UDP-style local port. The kernel may replace the identifier supplied

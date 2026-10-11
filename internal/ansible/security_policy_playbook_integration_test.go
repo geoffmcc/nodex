@@ -50,7 +50,7 @@ func TestEmbeddedSecurityPolicyPlaybooksAgainstIsolatedAnsibleFixture(t *testing
 		if !state.Enabled || state.State != "started" {
 			t.Fatalf("apply timer state = %+v, want enabled and started", state)
 		}
-		vars := f.restoreVars(false, "", true, checksum(appliedPolicyFixture), "not-found", "not-found", false)
+		vars := f.restoreVars(false, "", checksum(appliedPolicyFixture), "not-found", "not-found", false)
 		if err := f.run(t, restore.Playbook(), vars); err != nil {
 			t.Fatalf("restore absent prior policy: %v", err)
 		}
@@ -73,7 +73,7 @@ func TestEmbeddedSecurityPolicyPlaybooksAgainstIsolatedAnsibleFixture(t *testing
 		if got := readFixtureFile(t, backup); got != priorPolicyFixture {
 			t.Fatalf("retained backup = %q", got)
 		}
-		vars := f.restoreVars(true, checksum(priorPolicyFixture), true, checksum(appliedPolicyFixture), "disabled", "inactive", false)
+		vars := f.restoreVars(true, checksum(priorPolicyFixture), checksum(appliedPolicyFixture), "disabled", "inactive", false)
 		if err := f.run(t, restore.Playbook(), vars); err != nil {
 			t.Fatalf("restore prior managed file: %v", err)
 		}
@@ -198,7 +198,7 @@ func TestEmbeddedSecurityPolicyPlaybooksAgainstIsolatedAnsibleFixture(t *testing
 		if got := readFixtureFile(t, f.policyPath); got != appliedPolicyFixture {
 			t.Fatalf("partial apply policy = %q, want the write before timer failure", got)
 		}
-		if err := f.run(t, restore.Playbook(), f.restoreVars(false, "", true, checksum(appliedPolicyFixture), "disabled", "inactive", false)); err != nil {
+		if err := f.run(t, restore.Playbook(), f.restoreVars(false, "", checksum(appliedPolicyFixture), "disabled", "inactive", false)); err != nil {
 			t.Fatalf("restore after partial apply: %v", err)
 		}
 		if _, err := os.Lstat(f.policyPath); !os.IsNotExist(err) {
@@ -212,7 +212,7 @@ func TestEmbeddedSecurityPolicyPlaybooksAgainstIsolatedAnsibleFixture(t *testing
 		if err := f.run(t, apply.Playbook(), f.applyVars(true, checksum(priorPolicyFixture), false)); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
-		vars := f.restoreVars(true, checksum(priorPolicyFixture), true, checksum(appliedPolicyFixture), "enabled", "active", true)
+		vars := f.restoreVars(true, checksum(priorPolicyFixture), checksum(appliedPolicyFixture), "enabled", "active", true)
 		if err := f.run(t, restore.Playbook(), vars); err == nil {
 			t.Fatal("injected interrupted restore unexpectedly succeeded")
 		}
@@ -248,7 +248,7 @@ func TestEmbeddedSecurityPolicyPlaybooksAgainstIsolatedAnsibleFixture(t *testing
 		if err := os.Symlink(target, backup); err != nil {
 			t.Fatal(err)
 		}
-		vars := f.restoreVars(true, checksum(priorPolicyFixture), true, checksum(appliedPolicyFixture), "disabled", "inactive", false)
+		vars := f.restoreVars(true, checksum(priorPolicyFixture), checksum(appliedPolicyFixture), "disabled", "inactive", false)
 		if err := f.run(t, restore.Playbook(), vars); err == nil {
 			t.Fatal("restore followed a symlinked retained backup")
 		}
@@ -325,11 +325,11 @@ func (f *policyPlaybookFixture) applyVars(beforeExists bool, beforeChecksum stri
 	}
 }
 
-func (f *policyPlaybookFixture) restoreVars(beforeExists bool, beforeChecksum string, currentExists bool, currentChecksum, timerEnabled, timerActive string, failOnce bool) map[string]any {
+func (f *policyPlaybookFixture) restoreVars(beforeExists bool, beforeChecksum string, currentChecksum, timerEnabled, timerActive string, failOnce bool) map[string]any {
 	return map[string]any{
 		"nodex_policy_plan_id": "fixture-plan", "nodex_policy_config_path": f.policyPath,
 		"nodex_security_policy_backup_root": f.backupRoot, "nodex_policy_before_exists": beforeExists,
-		"nodex_policy_before_checksum": beforeChecksum, "nodex_policy_current_exists": currentExists,
+		"nodex_policy_before_checksum": beforeChecksum, "nodex_policy_current_exists": true,
 		"nodex_policy_current_checksum": currentChecksum, "nodex_policy_before_timer_enabled": timerEnabled,
 		"nodex_policy_before_timer_active": timerActive,
 		"nodex_test_state_path":            f.timerStatePath, "nodex_test_marker_path": f.failMarkerPath,
@@ -360,7 +360,7 @@ func (f *policyPlaybookFixture) run(t *testing.T, embedded string, extra map[str
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, f.executable, "-i", f.inventory, "--extra-vars", string(extraVars), f.playbook)
+	cmd := exec.CommandContext(ctx, f.executable, "-i", f.inventory, "--extra-vars", string(extraVars), f.playbook) // #nosec G204 -- f.executable is fixture-validated; inventory/playbook are private temp-dir paths
 	cmd.Env = append(os.Environ(), "ANSIBLE_CONFIG="+f.config, "ANSIBLE_LOCAL_TEMP="+filepath.Join(f.root, "local-tmp"), "ANSIBLE_HOST_KEY_CHECKING=True", "ANSIBLE_RETRY_FILES_ENABLED=False")
 	output, err := cmd.CombinedOutput()
 	if err != nil {

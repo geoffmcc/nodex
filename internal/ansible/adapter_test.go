@@ -715,10 +715,12 @@ func TestStrictSSHOptionsOverridePermissiveAmbientOpenSSHConfig(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(ambient), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	args := []string{"-G", "-F", configPath}
-	args = append(args, strings.Fields(strictSSHOptions(knownHosts))...)
+	strict := strings.Fields(strictSSHOptions(knownHosts))
+	args := make([]string, 0, 4+len(strict))
+	args = append(args, "-G", "-F", configPath)
+	args = append(args, strict...)
 	args = append(args, "host.example.invalid")
-	output, err := exec.Command(ssh, args...).CombinedOutput()
+	output, err := exec.Command(ssh, args...).CombinedOutput() // #nosec G204 -- ssh is resolved via exec.LookPath; arguments are test-controlled
 	if err != nil {
 		t.Fatalf("ssh -G: %v\n%s", err, output)
 	}
@@ -752,7 +754,7 @@ func TestPinnedAnsibleTransferOptionsAreRecognizedByAnsible(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(fmt.Sprintf(pinnedAnsibleCfg, filepath.Join(dir, "callbacks"))), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(ansibleConfig, "dump", "--only-changed", "-t", "connection", "ssh")
+	cmd := exec.Command(ansibleConfig, "dump", "--only-changed", "-t", "connection", "ssh") // #nosec G204 -- ansible-config is resolved via exec.LookPath; arguments are test-controlled
 	cmd.Env = append(os.Environ(), "ANSIBLE_CONFIG="+configPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

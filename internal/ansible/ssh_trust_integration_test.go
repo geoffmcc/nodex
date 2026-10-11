@@ -24,6 +24,18 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 	if err != nil {
 		t.Skip("ansible-playbook is unavailable")
 	}
+	if safetyErr := checkExecutableSafety(ansiblePlaybook); safetyErr != nil {
+		// Runner images can put a world-writable pipx shim ahead of the
+		// distro-provided ansible-core on PATH. Prefer the first candidate that
+		// passes the same safety gate so this SSH trust test still runs where a
+		// safe ansible-playbook is installed; otherwise the environment cannot
+		// exercise the probe and the test is skipped rather than failed.
+		if alternative, ok := safeAnsiblePlaybookCandidate(); ok {
+			ansiblePlaybook = alternative
+		} else {
+			t.Skipf("no safely executable ansible-playbook available: %v", safetyErr)
+		}
+	}
 	ssh, err := exec.LookPath("ssh")
 	if err != nil {
 		t.Skip("OpenSSH client is unavailable")
@@ -49,7 +61,7 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 	firstHostKey := filepath.Join(root, "host-first")
 	secondHostKey := filepath.Join(root, "host-second")
 	for _, key := range []string{clientKey, firstHostKey, secondHostKey} {
-		if output, err := exec.Command(keygen, "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		if output, err := exec.Command(keygen, "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil { // #nosec G204 -- ssh-keygen is resolved via exec.LookPath; arguments are test-controlled
 			t.Fatalf("ssh-keygen: %v\n%s", err, output)
 		}
 	}
@@ -83,7 +95,7 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(root, "authorized_keys"), clientPub, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "authorized_keys"), clientPub, 0o600); err != nil { // #nosec G703 -- path is derived from the test's private temporary directory
 		t.Fatal(err)
 	}
 	writeKnownHost := func(keyPath string) {
@@ -97,7 +109,7 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 			t.Fatalf("invalid host public key file")
 		}
 		entry := fmt.Sprintf("[127.0.0.1]:%s %s %s\n", portText, fields[0], fields[1])
-		if err := os.WriteFile(knownHosts, []byte(entry), 0o600); err != nil {
+		if err := os.WriteFile(knownHosts, []byte(entry), 0o600); err != nil { // #nosec G703 -- knownHosts is a path inside the test's private temporary directory
 			t.Fatal(err)
 		}
 	}
@@ -105,7 +117,7 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 		t.Helper()
 		writeServerConfig(hostKey)
 		ctx, cancel := context.WithCancel(context.Background())
-		cmd := exec.CommandContext(ctx, sshd, "-D", "-e", "-f", serverConfig)
+		cmd := exec.CommandContext(ctx, sshd, "-D", "-e", "-f", serverConfig) // #nosec G204 -- sshd is resolved via exec.LookPath; arguments are test-controlled
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		if err := cmd.Start(); err != nil {
@@ -145,23 +157,25 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 	defer os.Remove(remoteFile)
 	probe := func(tool string) error {
 		opts := strings.Fields(strictSSHOptions(knownHosts))
-		var args []string
 		switch tool {
 		case "ssh":
-			args = []string{"-F", permissiveConfig, "-p", portText, "-i", clientKey, "-oIdentitiesOnly=yes"}
+			args := make([]string, 0, 7+len(opts)+2)
+			args = append(args, "-F", permissiveConfig, "-p", portText, "-i", clientKey, "-oIdentitiesOnly=yes")
 			args = append(args, opts...)
 			args = append(args, account.Username+"@127.0.0.1", "true")
-			return exec.Command(ssh, args...).Run()
+			return exec.Command(ssh, args...).Run() // #nosec G204 -- ssh is resolved via exec.LookPath; arguments are test-controlled
 		case "sftp":
-			args = []string{"-F", permissiveConfig, "-P", portText, "-i", clientKey, "-oIdentitiesOnly=yes"}
+			args := make([]string, 0, 7+len(opts)+3)
+			args = append(args, "-F", permissiveConfig, "-P", portText, "-i", clientKey, "-oIdentitiesOnly=yes")
 			args = append(args, opts...)
 			args = append(args, "-b", "/dev/null", account.Username+"@127.0.0.1")
-			return exec.Command(sftp, args...).Run()
+			return exec.Command(sftp, args...).Run() // #nosec G204 -- sftp is resolved via exec.LookPath; arguments are test-controlled
 		case "scp":
-			args = []string{"-F", permissiveConfig, "-P", portText, "-i", clientKey, "-oIdentitiesOnly=yes"}
+			args := make([]string, 0, 7+len(opts)+2)
+			args = append(args, "-F", permissiveConfig, "-P", portText, "-i", clientKey, "-oIdentitiesOnly=yes")
 			args = append(args, opts...)
 			args = append(args, localFile, account.Username+"@127.0.0.1:"+remoteFile)
-			return exec.Command(scp, args...).Run()
+			return exec.Command(scp, args...).Run() // #nosec G204 -- scp is resolved via exec.LookPath; arguments are test-controlled
 		default:
 			return fmt.Errorf("unknown probe %s", tool)
 		}
@@ -190,14 +204,14 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 			t.Errorf("%s rejected the configured known host key: %v", tool, err)
 		}
 	}
-	master := exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-i", clientKey, "-oIdentitiesOnly=yes", "-MNf", account.Username+"@127.0.0.1")
+	master := exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-i", clientKey, "-oIdentitiesOnly=yes", "-MNf", account.Username+"@127.0.0.1") // #nosec G204 -- ssh is resolved via exec.LookPath; arguments are test-controlled
 	if output, err := master.CombinedOutput(); err != nil {
 		t.Fatalf("create pre-existing permissive SSH control connection: %v\n%s", err, output)
 	}
 	defer func() {
-		_ = exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-O", "exit", account.Username+"@127.0.0.1").Run()
+		_ = exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-O", "exit", account.Username+"@127.0.0.1").Run() // #nosec G204 -- ssh is resolved via exec.LookPath; arguments are test-controlled
 	}()
-	if output, err := exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-O", "check", account.Username+"@127.0.0.1").CombinedOutput(); err != nil {
+	if output, err := exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-O", "check", account.Username+"@127.0.0.1").CombinedOutput(); err != nil { // #nosec G204 -- ssh is resolved via exec.LookPath; arguments are test-controlled
 		t.Fatalf("verify permissive control connection exists: %v\n%s", err, output)
 	}
 	stopServer()
@@ -220,6 +234,27 @@ func runStrictAnsibleProbe(executable string, port int, username, keyPath, known
 	defer cancel()
 	host := HostSpec{Name: "fixture", Address: "127.0.0.1", Port: port, User: username, KeyFile: keyPath, KnownHostsFile: knownHosts}
 	return (&Runner{Exe: executable, Timeout: 25 * time.Second}).Run(ctx, RunRequest{Operation: "verify-host", Hosts: []HostSpec{host}})
+}
+
+// safeAnsiblePlaybookCandidate returns the first ansible-playbook on PATH that
+// passes the production executable-safety gate. It lets this integration test
+// avoid a world-writable shim that a runner image may place earlier on PATH,
+// while still refusing every candidate the production code would refuse.
+func safeAnsiblePlaybookCandidate() (string, bool) {
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if dir == "" {
+			continue
+		}
+		candidate := filepath.Join(dir, "ansible-playbook")
+		info, err := os.Stat(candidate) // #nosec G703 -- candidate is a PATH-derived fixture lookup, not untrusted input
+		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			continue
+		}
+		if checkExecutableSafety(candidate) == nil {
+			return candidate, true
+		}
+	}
+	return "", false
 }
 
 func unusedTCPPort() (int, error) {

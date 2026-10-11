@@ -74,6 +74,27 @@ func checkCredentialDirectory(path string) error {
 	return nil
 }
 
+// trustedCredentialOwner reports whether owner is the current Windows user or a
+// well-known administrative principal that the credential ACL allow-list already
+// trusts (Local System and Built-in Administrators). Elevated processes and
+// service accounts create objects owned by Administrators or System rather than
+// the interactive user, so those owners must remain acceptable even though a
+// directory owned by another unprivileged user would not be.
+func trustedCredentialOwner(owner *windows.SID) bool {
+	if owner == nil {
+		return false
+	}
+	switch owner.String() {
+	case "S-1-5-18", "S-1-5-32-544": // Local System, Built-in Administrators
+		return true
+	}
+	user, err := currentWindowsUser()
+	if err != nil {
+		return false
+	}
+	return windows.EqualSid(owner, user)
+}
+
 func validateWindowsDirectoryOwner(f *os.File) error {
 	sd, err := windows.GetSecurityInfo(windows.Handle(f.Fd()), windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
 	if err != nil {
@@ -83,12 +104,8 @@ func validateWindowsDirectoryOwner(f *os.File) error {
 	if err != nil {
 		return fmt.Errorf("read credential directory owner: %w", err)
 	}
-	user, err := currentWindowsUser()
-	if err != nil {
-		return fmt.Errorf("cannot establish the current Windows credential owner: %w; %s", err, windowsCredentialRemediation)
-	}
-	if !windows.EqualSid(owner, user) {
-		return fmt.Errorf("credential directory must be owned by the current Windows user")
+	if !trustedCredentialOwner(owner) {
+		return fmt.Errorf("credential directory must be owned by the current Windows user or a trusted administrative principal")
 	}
 	return nil
 }
@@ -161,8 +178,8 @@ func validateWindowsObject(f *os.File, requireUserOwner bool) error {
 	if err != nil {
 		return err
 	}
-	if requireUserOwner && !windows.EqualSid(owner, user) {
-		return fmt.Errorf("credential file must be owned by the current Windows user")
+	if requireUserOwner && !trustedCredentialOwner(owner) {
+		return fmt.Errorf("credential file must be owned by the current Windows user or a trusted administrative principal")
 	}
 	dacl, _, err := sd.DACL()
 	if err != nil || dacl == nil {
