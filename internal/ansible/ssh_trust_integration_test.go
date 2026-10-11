@@ -1,7 +1,6 @@
 package ansible
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -127,10 +126,20 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 		writeServerConfig(hostKey)
 		ctx, cancel := context.WithCancel(context.Background())
 		cmd := exec.CommandContext(ctx, sshd, "-D", "-e", "-f", serverConfig) // #nosec G204 -- sshd is resolved via exec.LookPath; arguments are test-controlled
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
+		// Route sshd's stderr to a file rather than an in-memory buffer: a buffer
+		// makes os/exec copy through a pipe, and a per-connection sshd child that
+		// outlives the listener (for example the ambient control master's connection)
+		// keeps that pipe open, so cmd.Wait() would block forever when the server is
+		// stopped.
+		stderrFile, err := os.CreateTemp(root, "sshd-stderr-")
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		cmd.Stderr = stderrFile
 		if err := cmd.Start(); err != nil {
 			cancel()
+			_ = stderrFile.Close()
 			t.Fatalf("start sshd: %v", err)
 		}
 		ready := false
@@ -150,11 +159,14 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 		if !ready {
 			cancel()
 			_ = cmd.Wait()
-			t.Fatalf("sshd did not become ready: %s", stderr.String())
+			diagnostics, _ := os.ReadFile(stderrFile.Name())
+			_ = stderrFile.Close()
+			t.Fatalf("sshd did not become ready: %s", diagnostics)
 		}
 		return func() {
 			cancel()
 			_ = cmd.Wait()
+			_ = stderrFile.Close()
 		}
 	}
 
