@@ -217,10 +217,14 @@ func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
 	if output, err := master.CombinedOutput(); err != nil {
 		t.Fatalf("create pre-existing permissive SSH control connection: %v\n%s", err, output)
 	}
+	// The permissive config sets ControlMaster=yes; a "-O" client command must
+	// override it to "no", otherwise OpenSSH skips the mux socket and attempts a
+	// fresh connection (no identity) that the server rejects with publickey.
+	controlOpt := "-oControlMaster=no"
 	defer func() {
-		_ = exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-O", "exit", account.Username+"@127.0.0.1").Run() // #nosec G204 -- ssh is resolved via exec.LookPath; arguments are test-controlled
+		_ = exec.Command(ssh, "-F", permissiveConfig, "-p", portText, controlOpt, "-O", "exit", account.Username+"@127.0.0.1").Run() // #nosec G204 -- ssh is resolved via exec.LookPath; arguments are test-controlled
 	}()
-	if output, err := exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-O", "check", account.Username+"@127.0.0.1").CombinedOutput(); err != nil { // #nosec G204 -- ssh is resolved via exec.LookPath; arguments are test-controlled
+	if output, err := exec.Command(ssh, "-F", permissiveConfig, "-p", portText, controlOpt, "-O", "check", account.Username+"@127.0.0.1").CombinedOutput(); err != nil { // #nosec G204 -- ssh is resolved via exec.LookPath; arguments are test-controlled
 		t.Fatalf("verify permissive control connection exists: %v\n%s", err, output)
 	}
 	stopServer()
