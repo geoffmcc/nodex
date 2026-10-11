@@ -105,6 +105,12 @@ func TestConsoleRejectsInvalidArguments(t *testing.T) {
 	}
 }
 
+func TestConsoleTreatsWriteAfterPeerCloseAsNormalShutdown(t *testing.T) {
+	if !isNormalConsoleClose(websocket.ErrCloseSent) {
+		t.Fatal("write after the peer's close frame should be treated as normal shutdown")
+	}
+}
+
 func writeServerCA(t *testing.T, cert *x509.Certificate) string {
 	t.Helper()
 	file, err := os.CreateTemp(t.TempDir(), "ca-*.pem")

@@ -1824,11 +1824,16 @@ func (c *Client) console(ctx context.Context, node, guestType string, vmid int, 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if errors.Is(err, io.EOF) || websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+		if isNormalConsoleClose(err) {
 			return nil
 		}
 		return fmt.Errorf("console relay: %w", err)
 	}
+}
+
+func isNormalConsoleClose(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, websocket.ErrCloseSent) ||
+		websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway)
 }
 
 func tlsConfig(rt http.RoundTripper) *tls.Config {
