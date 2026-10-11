@@ -1,0 +1,232 @@
+package ansible
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"os/user"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer(t *testing.T) {
+	sshd, err := exec.LookPath("sshd")
+	if err != nil {
+		t.Skip("sshd is unavailable; CI's ssh-hostkey integration job installs OpenSSH server")
+	}
+	ansiblePlaybook, err := exec.LookPath("ansible-playbook")
+	if err != nil {
+		t.Skip("ansible-playbook is unavailable")
+	}
+	ssh, err := exec.LookPath("ssh")
+	if err != nil {
+		t.Skip("OpenSSH client is unavailable")
+	}
+	sftp, err := exec.LookPath("sftp")
+	if err != nil {
+		t.Skip("OpenSSH sftp client is unavailable")
+	}
+	scp, err := exec.LookPath("scp")
+	if err != nil {
+		t.Skip("OpenSSH scp client is unavailable")
+	}
+	keygen, err := exec.LookPath("ssh-keygen")
+	if err != nil {
+		t.Skip("ssh-keygen is unavailable")
+	}
+	account, err := user.Current()
+	if err != nil {
+		t.Skipf("cannot resolve local SSH test account: %v", err)
+	}
+	root := t.TempDir()
+	clientKey := filepath.Join(root, "client")
+	firstHostKey := filepath.Join(root, "host-first")
+	secondHostKey := filepath.Join(root, "host-second")
+	for _, key := range []string{clientKey, firstHostKey, secondHostKey} {
+		if output, err := exec.Command(keygen, "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+			t.Fatalf("ssh-keygen: %v\n%s", err, output)
+		}
+	}
+	clientPub, err := os.ReadFile(clientKey + ".pub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	knownHosts := filepath.Join(root, "known_hosts")
+	permissiveConfig := filepath.Join(root, "config")
+	if err := os.WriteFile(permissiveConfig, []byte("Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  ControlMaster yes\n  ControlPath "+filepath.Join(root, "ambient.sock")+"\n  ControlPersist 10m\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(root, "home")
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".ssh", "config"), []byte("Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  ControlMaster yes\n  ControlPath "+filepath.Join(root, "ambient.sock")+"\n  ControlPersist 10m\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	port, err := unusedTCPPort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	portText := strconv.Itoa(port)
+	serverConfig := filepath.Join(root, "sshd_config")
+	writeServerConfig := func(hostKey string) {
+		t.Helper()
+		config := fmt.Sprintf("Port %s\nListenAddress 127.0.0.1\nHostKey %s\nPidFile %s\nAuthorizedKeysFile %s\nStrictModes no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin yes\nUsePAM no\nSubsystem sftp internal-sftp\nAllowUsers %s\nLogLevel ERROR\n", portText, hostKey, filepath.Join(root, "sshd.pid"), filepath.Join(root, "authorized_keys"), account.Username)
+		if err := os.WriteFile(serverConfig, []byte(config), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "authorized_keys"), clientPub, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeKnownHost := func(keyPath string) {
+		t.Helper()
+		pub, readErr := os.ReadFile(keyPath + ".pub")
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		fields := strings.Fields(string(pub))
+		if len(fields) < 2 {
+			t.Fatalf("invalid host public key file")
+		}
+		entry := fmt.Sprintf("[127.0.0.1]:%s %s %s\n", portText, fields[0], fields[1])
+		if err := os.WriteFile(knownHosts, []byte(entry), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	startServer := func(hostKey string) func() {
+		t.Helper()
+		writeServerConfig(hostKey)
+		ctx, cancel := context.WithCancel(context.Background())
+		cmd := exec.CommandContext(ctx, sshd, "-D", "-e", "-f", serverConfig)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		if err := cmd.Start(); err != nil {
+			cancel()
+			t.Fatalf("start sshd: %v", err)
+		}
+		ready := false
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			conn, dialErr := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", portText), 50*time.Millisecond)
+			if dialErr == nil {
+				_ = conn.Close()
+				ready = true
+				break
+			}
+			if cmd.ProcessState != nil {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if !ready {
+			cancel()
+			_ = cmd.Wait()
+			t.Fatalf("sshd did not become ready: %s", stderr.String())
+		}
+		return func() {
+			cancel()
+			_ = cmd.Wait()
+		}
+	}
+
+	localFile := filepath.Join(root, "transfer.txt")
+	if err := os.WriteFile(localFile, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	remoteFile := filepath.Join(account.HomeDir, "nodex-ssh-trust-"+strconv.Itoa(port)+".txt")
+	defer os.Remove(remoteFile)
+	probe := func(tool string) error {
+		opts := strings.Fields(strictSSHOptions(knownHosts))
+		var args []string
+		switch tool {
+		case "ssh":
+			args = []string{"-F", permissiveConfig, "-p", portText, "-i", clientKey, "-oIdentitiesOnly=yes"}
+			args = append(args, opts...)
+			args = append(args, account.Username+"@127.0.0.1", "true")
+			return exec.Command(ssh, args...).Run()
+		case "sftp":
+			args = []string{"-F", permissiveConfig, "-P", portText, "-i", clientKey, "-oIdentitiesOnly=yes"}
+			args = append(args, opts...)
+			args = append(args, "-b", "/dev/null", account.Username+"@127.0.0.1")
+			return exec.Command(sftp, args...).Run()
+		case "scp":
+			args = []string{"-F", permissiveConfig, "-P", portText, "-i", clientKey, "-oIdentitiesOnly=yes"}
+			args = append(args, opts...)
+			args = append(args, localFile, account.Username+"@127.0.0.1:"+remoteFile)
+			return exec.Command(scp, args...).Run()
+		default:
+			return fmt.Errorf("unknown probe %s", tool)
+		}
+	}
+
+	stopServer := startServer(firstHostKey)
+	if err := os.WriteFile(knownHosts, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unknownResult, unknownErr := runStrictAnsibleProbe(ansiblePlaybook, port, account.Username, clientKey, knownHosts)
+	if unknownErr != nil || unknownResult == nil || unknownResult.Success {
+		t.Fatalf("Ansible accepted unknown host key: result=%+v error=%v", unknownResult, unknownErr)
+	}
+	for _, tool := range []string{"ssh", "sftp", "scp"} {
+		if err := probe(tool); err == nil {
+			t.Errorf("%s accepted an unknown host key", tool)
+		}
+	}
+	writeKnownHost(firstHostKey)
+	knownResult, knownErr := runStrictAnsibleProbe(ansiblePlaybook, port, account.Username, clientKey, knownHosts)
+	if knownErr != nil || knownResult == nil || !knownResult.Success {
+		t.Fatalf("Ansible rejected configured known host: result=%+v error=%v", knownResult, knownErr)
+	}
+	for _, tool := range []string{"ssh", "sftp", "scp"} {
+		if err := probe(tool); err != nil {
+			t.Errorf("%s rejected the configured known host key: %v", tool, err)
+		}
+	}
+	master := exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-i", clientKey, "-oIdentitiesOnly=yes", "-MNf", account.Username+"@127.0.0.1")
+	if output, err := master.CombinedOutput(); err != nil {
+		t.Fatalf("create pre-existing permissive SSH control connection: %v\n%s", err, output)
+	}
+	defer func() {
+		_ = exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-O", "exit", account.Username+"@127.0.0.1").Run()
+	}()
+	if output, err := exec.Command(ssh, "-F", permissiveConfig, "-p", portText, "-O", "check", account.Username+"@127.0.0.1").CombinedOutput(); err != nil {
+		t.Fatalf("verify permissive control connection exists: %v\n%s", err, output)
+	}
+	stopServer()
+
+	stopServer = startServer(secondHostKey)
+	defer stopServer()
+	changedResult, changedErr := runStrictAnsibleProbe(ansiblePlaybook, port, account.Username, clientKey, knownHosts)
+	if changedErr != nil || changedResult == nil || changedResult.Success {
+		t.Fatalf("Ansible accepted changed host key or reused a permissive control connection: result=%+v error=%v", changedResult, changedErr)
+	}
+	for _, tool := range []string{"ssh", "sftp", "scp"} {
+		if err := probe(tool); err == nil {
+			t.Errorf("%s accepted a changed host key", tool)
+		}
+	}
+}
+
+func runStrictAnsibleProbe(executable string, port int, username, keyPath, knownHosts string) (*RunResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	host := HostSpec{Name: "fixture", Address: "127.0.0.1", Port: port, User: username, KeyFile: keyPath, KnownHostsFile: knownHosts}
+	return (&Runner{Exe: executable, Timeout: 25 * time.Second}).Run(ctx, RunRequest{Operation: "verify-host", Hosts: []HostSpec{host}})
+}
+
+func unusedTCPPort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port, nil
+}

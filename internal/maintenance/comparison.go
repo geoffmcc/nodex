@@ -179,6 +179,7 @@ func compareHost(c *HostComparison, p, n HostSnapshot) {
 	compare("supported", p.Supported == n.Supported)
 	compare("pending_updates", equalStrings(p.PendingUpdates, n.PendingUpdates))
 	compare("security_updates", equalStrings(p.SecurityUpdates, n.SecurityUpdates))
+	compare("security_package_intent", equalPackageIntents(p.SecurityPackages, n.SecurityPackages))
 	compare("held_packages", equalStrings(p.HeldPackages, n.HeldPackages))
 	compare("broken_dependencies", equalStrings(p.BrokenDependencies, n.BrokenDependencies))
 	compare("reboot_required", p.RebootRequired == n.RebootRequired)
@@ -242,4 +243,35 @@ func equalStrings(a, b []string) bool {
 	sort.Strings(aa)
 	sort.Strings(bb)
 	return strings.Join(aa, "\x00") == strings.Join(bb, "\x00")
+}
+
+func equalPackageIntents(a, b []PackageIntent) bool {
+	aa := append([]PackageIntent(nil), a...)
+	bb := append([]PackageIntent(nil), b...)
+	sortPackageIntents(aa)
+	sortPackageIntents(bb)
+	if len(aa) != len(bb) {
+		return false
+	}
+	for i := range aa {
+		if aa[i].Name != bb[i].Name || aa[i].Version != bb[i].Version || aa[i].Architecture != bb[i].Architecture || !equalAPTOrigins(aa[i].Origins, bb[i].Origins) {
+			return false
+		}
+	}
+	return true
+}
+
+func equalAPTOrigins(a, b []APTOrigin) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aa, bb := append([]APTOrigin(nil), a...), append([]APTOrigin(nil), b...)
+	sort.Slice(aa, func(i, j int) bool { return aa[i].Record() < aa[j].Record() })
+	sort.Slice(bb, func(i, j int) bool { return bb[i].Record() < bb[j].Record() })
+	for i := range aa {
+		if aa[i] != bb[i] {
+			return false
+		}
+	}
+	return true
 }

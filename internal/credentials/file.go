@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"runtime"
+	"strings"
 
 	"github.com/geoffmcc/nodex/internal/domain"
 )
@@ -30,16 +31,30 @@ func (b *FileBackend) Get(_ context.Context, profile string) (*domain.Credential
 		return nil, err
 	}
 	path := b.path(profile)
-	data, err := os.ReadFile(path) // #nosec G304 -- profile names are validated and resolved under the credential directory.
+	if err := checkCredentialDirectory(b.dir); err != nil {
+		return nil, err
+	}
+	f, err := openCredentialFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read credential file: %w", err)
+		return nil, fmt.Errorf("open credential file: %w", err)
+	}
+	data, readErr := io.ReadAll(io.LimitReader(f, 1<<20)) // #nosec G304 -- profile names are validated and resolved under the credential directory.
+	closeErr := f.Close()
+	if readErr != nil {
+		clear(data)
+		return nil, fmt.Errorf("read credential file: %w", readErr)
+	}
+	if closeErr != nil {
+		clear(data)
+		return nil, fmt.Errorf("close credential file: %w", closeErr)
+	}
+	if len(data) == 1<<20 {
+		clear(data)
+		return nil, fmt.Errorf("credential file exceeds the 1 MiB limit")
 	}
 	// Clear the temporary serialized copy after decoding. The returned
 	// Credentials use immutable Go strings and cannot be reliably zeroized.
 	defer clear(data)
-	if err := CheckCredentialFilePermissions(path); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-	}
 	var creds domain.Credentials
 	if err := json.Unmarshal(data, &creds); err != nil {
 		return nil, fmt.Errorf("parse credential file: %w", err)
@@ -59,7 +74,10 @@ func (b *FileBackend) Store(_ context.Context, profile string, creds *domain.Cre
 		return err
 	}
 	if err := os.MkdirAll(b.dir, 0o700); err != nil {
-		return fmt.Errorf("create credential directory: %w", err)
+		return fmt.Errorf("create credential directory: %w (secure the directory or use credential_ref: keyring:<profile>)", err)
+	}
+	if err := checkCredentialDirectory(b.dir); err != nil {
+		return err
 	}
 	data, err := json.Marshal(creds) // #nosec G117 -- this backend intentionally stores credential material in a 0600 file.
 	if err != nil {
@@ -68,9 +86,12 @@ func (b *FileBackend) Store(_ context.Context, profile string, creds *domain.Cre
 	// Avoid retaining the serialized secret buffer after the atomic write.
 	defer clear(data)
 	path := b.path(profile)
+	if err := checkCredentialFile(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("refuse unsafe existing credential file: %w", err)
+	}
 	tmp, err := os.CreateTemp(b.dir, "."+profile+"-*.tmp")
 	if err != nil {
-		return fmt.Errorf("create credential temp file: %w", err)
+		return fmt.Errorf("create credential temp file: %w (secure the directory or use credential_ref: keyring:<profile>)", err)
 	}
 	tmpPath := tmp.Name()
 	success := false
@@ -79,7 +100,7 @@ func (b *FileBackend) Store(_ context.Context, profile string, creds *domain.Cre
 			_ = os.Remove(tmpPath)
 		}
 	}()
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := protectCredentialFile(tmp); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("secure credential temp file: %w", err)
 	}
@@ -97,6 +118,9 @@ func (b *FileBackend) Store(_ context.Context, profile string, creds *domain.Cre
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("write credential file: %w", err)
 	}
+	if err := checkCredentialFile(path); err != nil {
+		return fmt.Errorf("verify stored credential file: %w", err)
+	}
 	success = true
 	return nil
 }
@@ -107,6 +131,9 @@ func (b *FileBackend) Delete(_ context.Context, profile string) error {
 		return err
 	}
 	path := b.path(profile)
+	if err := checkCredentialFile(path); err != nil {
+		return fmt.Errorf("refuse unsafe credential file: %w", err)
+	}
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("delete credential file: %w", err)
 	}
@@ -115,6 +142,9 @@ func (b *FileBackend) Delete(_ context.Context, profile string) error {
 
 // List returns all profile names with stored credentials.
 func (b *FileBackend) List(_ context.Context) ([]string, error) {
+	if err := checkCredentialDirectory(b.dir); err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(b.dir)
 	if err != nil {
 		return nil, fmt.Errorf("read credential directory: %w", err)
@@ -122,6 +152,9 @@ func (b *FileBackend) List(_ context.Context) ([]string, error) {
 	var profiles []string
 	for _, e := range entries {
 		if !e.IsDir() && filepath.Ext(e.Name()) == ".json" {
+			if err := checkCredentialFile(filepath.Join(b.dir, e.Name())); err != nil {
+				return nil, fmt.Errorf("credential profile %q is unsafe: %w", strings.TrimSuffix(e.Name(), ".json"), err)
+			}
 			profiles = append(profiles, e.Name()[:len(e.Name())-5])
 		}
 	}
@@ -132,27 +165,17 @@ func (b *FileBackend) path(profile string) string {
 	return filepath.Join(b.dir, profile+".json")
 }
 
-// CheckCredentialFilePermissions checks if a credential file has overly broad permissions.
+// CheckCredentialFilePermissions validates the credential object, parent
+// directory, ownership, type, and platform-specific access controls.
 func CheckCredentialFilePermissions(path string) error {
 	return CheckSecretFilePermissions(path)
 }
 
-// CheckSecretFilePermissions reports an error when a file holding secret
-// material is accessible to group or other. Windows has no POSIX permission
-// bits, so the check is a no-op there.
+// CheckSecretFilePermissions rejects secret files unless the platform helper
+// can validate the opened object and its access controls. Unsafe files are
+// never read or used by the file backend.
 func CheckSecretFilePermissions(path string) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("stat secret file: %w", err)
-	}
-	mode := info.Mode().Perm()
-	if mode&0o077 != 0 {
-		return fmt.Errorf("%s has permissions %o; recommended: 0600", path, mode)
-	}
-	return nil
+	return checkCredentialFile(path)
 }
 
 // CredentialFilePath returns the on-disk path the file backend uses for name.

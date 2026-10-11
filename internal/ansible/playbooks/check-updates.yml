@@ -40,6 +40,47 @@
       register: nodex_upgrade_simulation
       changed_when: false
 
+    - name: Select security update package names
+      ansible.builtin.set_fact:
+        nodex_security_package_names: >-
+          {{ nodex_upgrade_simulation.stdout_lines
+             | select('match', '^Inst ')
+             | select('search', '(?i)[(][^)]*(-security|esm)')
+             | map('regex_replace', '^Inst ', '')
+             | map('regex_replace', ' .*$', '')
+             | unique | list }}
+
+    - name: Inspect candidate versions and configured APT sources
+      ansible.builtin.command:
+        argv:
+          - apt-cache
+          - policy
+          - "{{ item }}"
+      loop: "{{ nodex_security_package_names }}"
+      register: nodex_security_package_policy
+      changed_when: false
+
+    - name: Read signed APT Release origin identities
+      ansible.builtin.command:
+        argv:
+          - apt-get
+          - indextargets
+          - --format
+          - "$(SITE)|$(RELEASE)|$(CODENAME)|$(ORIGIN)|$(LABEL)|$(COMPONENT)|$(ARCHITECTURE)"
+      register: nodex_apt_index_targets
+      changed_when: false
+
+    - name: Report bounded security package approval evidence
+      vars:
+        nodex_evidence_id: host.package_policy
+      ansible.builtin.debug:
+        msg: >-
+          {{ {
+            'simulation': (nodex_upgrade_simulation.stdout_lines | select('match', '^Inst ') | select('search', '(?i)[(][^)]*(-security|esm)') | list),
+            'policies': (nodex_security_package_policy.results | default([])),
+            'index_targets': (nodex_apt_index_targets.stdout_lines | default([]))
+          } | to_json }}
+
     - name: Check reboot-required marker
       vars:
         nodex_evidence_id: host.reboot_required

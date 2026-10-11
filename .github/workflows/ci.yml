@@ -15,6 +15,28 @@ permissions:
   contents: read
 
 jobs:
+  security-boundary-integration:
+    # These tests exercise actual Ansible/OpenSSH behavior against disposable
+    # localhost fixtures. Only the runner gets these test dependencies; no
+    # project or production host is configured or mutated.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+      - name: Install disposable-runner integration tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ansible-core dpkg-dev openssh-server
+      - name: Verify isolated APT candidate and origin drift
+        run: go test ./internal/maintenance -run TestAPTApprovedVersionDoesNotFollowCandidateDrift -count=1
+      - name: Verify Ansible policy playbooks and SSH trust boundaries
+        run: >-
+          go test ./internal/ansible
+          -run 'TestEmbeddedSecurityPolicyPlaybooksAgainstIsolatedAnsibleFixture|TestOpenSSHRejectsUnknownAndChangedKeysAcrossSSHAndTransfer|TestPinnedAnsibleTransferOptionsAreRecognizedByAnsible|TestStrictSSHOptionsOverridePermissiveAmbientOpenSSHConfig'
+          -count=1
+
   build:
     strategy:
       fail-fast: false

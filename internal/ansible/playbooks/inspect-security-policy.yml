@@ -25,11 +25,18 @@
         checksum_algorithm: sha256
       register: nodex_policy_file
 
+    - name: Require explicit managed-file inspection fields
+      ansible.builtin.assert:
+        that:
+          - nodex_policy_file.stat.exists is defined
+          - not nodex_policy_file.stat.exists or (nodex_policy_file.stat.islnk is defined and nodex_policy_file.stat.isreg is defined)
+        fail_msg: "managed policy stat evidence is incomplete; refusing to treat the path as absent"
+
     - name: Read Nodex-managed policy file
       ansible.builtin.slurp:
         src: "{{ nodex_policy_config_path }}"
       register: nodex_policy_file_content
-      when: nodex_policy_file.stat.exists and not nodex_policy_file.stat.islnk
+      when: (nodex_policy_file.stat.exists | default(false)) and (nodex_policy_file.stat.isreg | default(false)) and not (nodex_policy_file.stat.islnk | default(true))
       no_log: true
 
     - name: Read unattended-upgrade timer enablement
@@ -56,9 +63,9 @@
       ansible.builtin.set_fact:
         nodex_policy_file_owned: >-
           {{ (not nodex_policy_file.stat.exists) or
-             (not nodex_policy_file.stat.islnk and
-             ('# Managed by Nodex: unattended security updates' in
-              (nodex_policy_file_content.content | default('') | b64decode))) }}
+             (nodex_policy_file.stat.isreg | default(false) and not (nodex_policy_file.stat.islnk | default(true)) and
+              ('# Managed by Nodex: unattended security updates' in
+               (nodex_policy_file_content.content | default('') | b64decode))) }}
 
     - name: Report bounded policy evidence
       vars:
@@ -75,8 +82,9 @@
             'periodic_unattended_upgrade': (nodex_apt_config.stdout_lines | default([]) | select('match', '^APT::Periodic::Unattended-Upgrade ') | list | last | default('')),
             'automatic_reboot': (nodex_apt_config.stdout_lines | default([]) | select('match', '^Unattended-Upgrade::Automatic-Reboot ') | list | last | default('')),
             'apt_config_rc': nodex_apt_config.rc | default(1),
-            'managed_file_exists': nodex_policy_file.stat.exists | default(false),
+            'managed_file_exists': nodex_policy_file.stat.exists,
             'managed_file_is_symlink': nodex_policy_file.stat.islnk | default(false),
+            'managed_file_is_regular': nodex_policy_file.stat.isreg | default(false),
             'managed_file_checksum': nodex_policy_file.stat.checksum | default(''),
             'managed_file_owned': nodex_policy_file_owned | default(false),
             'managed_file_content_b64': (nodex_policy_file_content.content | default('') if nodex_policy_file_owned | default(false) else ''),

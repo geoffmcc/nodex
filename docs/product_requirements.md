@@ -46,7 +46,10 @@ Nodex is a local CLI for inspecting and operating Proxmox VE and Proxmox Backup 
   filters. Status runs the allowlisted read-only `check-updates` preflight
   (Ansible required, otherwise clearly reported); plan emits an immutable,
   expiring, tamper-evident (SHA-256 digest) plan with per-host package
-  intent, conservative ordering, `never` reboot policy, and explicit
+  intent; security-only intent binds package version, architecture, source
+  locator and signed APT Release identity. Apply revalidates intent, refuses
+  unexpected removals/dependencies, verifies installed versions, and uses
+  conservative ordering, `never` reboot policy, and explicit
   backup-requirement blockers. Apply requires the existing verified plan,
   exact typed plan-ID confirmation, and writes atomic secret-free receipts;
   verification and reporting refuse missing or tampered state.

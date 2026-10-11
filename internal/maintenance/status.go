@@ -6,6 +6,8 @@
 package maintenance
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/geoffmcc/nodex/internal/ansible"
@@ -26,18 +28,19 @@ const (
 
 // HostStatus is the interpreted preflight state of one host.
 type HostStatus struct {
-	Host               string   `json:"host" yaml:"host"`
-	Reachable          bool     `json:"reachable" yaml:"reachable"`
-	Supported          bool     `json:"supported" yaml:"supported"`
-	PendingUpdates     []string `json:"pending_updates,omitempty" yaml:"pending_updates,omitempty"`
-	SecurityUpdates    []string `json:"security_updates,omitempty" yaml:"security_updates,omitempty"`
-	RebootRequired     bool     `json:"reboot_required" yaml:"reboot_required"`
-	FailedUnits        []string `json:"failed_units,omitempty" yaml:"failed_units,omitempty"`
-	RootUsage          string   `json:"root_usage,omitempty" yaml:"root_usage,omitempty"`
-	HeldPackages       []string `json:"held_packages,omitempty" yaml:"held_packages,omitempty"`
-	BrokenDependencies []string `json:"broken_dependencies,omitempty" yaml:"broken_dependencies,omitempty"`
-	EvidenceComplete   bool     `json:"evidence_complete" yaml:"evidence_complete"`
-	Warnings           []string `json:"warnings,omitempty" yaml:"warnings,omitempty"`
+	Host               string          `json:"host" yaml:"host"`
+	Reachable          bool            `json:"reachable" yaml:"reachable"`
+	Supported          bool            `json:"supported" yaml:"supported"`
+	PendingUpdates     []string        `json:"pending_updates,omitempty" yaml:"pending_updates,omitempty"`
+	SecurityUpdates    []string        `json:"security_updates,omitempty" yaml:"security_updates,omitempty"`
+	SecurityPackages   []PackageIntent `json:"security_packages,omitempty" yaml:"security_packages,omitempty"`
+	RebootRequired     bool            `json:"reboot_required" yaml:"reboot_required"`
+	FailedUnits        []string        `json:"failed_units,omitempty" yaml:"failed_units,omitempty"`
+	RootUsage          string          `json:"root_usage,omitempty" yaml:"root_usage,omitempty"`
+	HeldPackages       []string        `json:"held_packages,omitempty" yaml:"held_packages,omitempty"`
+	BrokenDependencies []string        `json:"broken_dependencies,omitempty" yaml:"broken_dependencies,omitempty"`
+	EvidenceComplete   bool            `json:"evidence_complete" yaml:"evidence_complete"`
+	Warnings           []string        `json:"warnings,omitempty" yaml:"warnings,omitempty"`
 }
 
 // InterpretCheckUpdates converts an adapter run of the check-updates
@@ -116,7 +119,30 @@ func interpretOutcome(hs *HostStatus, o ansible.TaskOutcome) {
 	case taskUpgradable:
 		hs.PendingUpdates = parseUpgradable(o.StdoutLines)
 	case taskUpgradeSim:
-		hs.SecurityUpdates = parseSecurityUpdates(o.StdoutLines)
+		updates, err := parseSecurityUpdatesChecked(o.StdoutLines)
+		hs.SecurityUpdates = updates
+		if err != nil {
+			hs.EvidenceComplete = false
+			hs.Warnings = append(hs.Warnings, "security update simulation contains an unparseable security archive entry")
+		}
+	case ansible.HostEvidencePackagePolicy:
+		var evidence struct {
+			Simulation   []string            `json:"simulation"`
+			Policies     []aptPolicyEvidence `json:"policies"`
+			IndexTargets []string            `json:"index_targets"`
+		}
+		if err := json.Unmarshal([]byte(o.Message), &evidence); err != nil {
+			hs.EvidenceComplete = false
+			hs.Warnings = append(hs.Warnings, "security package origin evidence could not be decoded")
+			break
+		}
+		packages, err := parsePackageIntents(evidence.Simulation, evidence.Policies, evidence.IndexTargets)
+		if err != nil {
+			hs.EvidenceComplete = false
+			hs.Warnings = append(hs.Warnings, "security package approval intent is incomplete: "+err.Error())
+			break
+		}
+		hs.SecurityPackages = packages
 	case taskRebootRequired:
 		if o.StatExists != nil {
 			hs.RebootRequired = *o.StatExists
@@ -147,7 +173,8 @@ func Snapshot(host PlanHost, status HostStatus, sshUser string, sshPort int, key
 		KeyConfigured: keyConfigured, KnownHostsConfigured: knownHostsConfigured,
 		Reachable: status.Reachable, Supported: status.Supported,
 		PendingUpdates: append([]string(nil), status.PendingUpdates...), SecurityUpdates: append([]string(nil), status.SecurityUpdates...),
-		HeldPackages: append([]string(nil), status.HeldPackages...), BrokenDependencies: append([]string(nil), status.BrokenDependencies...),
+		SecurityPackages: append([]PackageIntent(nil), status.SecurityPackages...),
+		HeldPackages:     append([]string(nil), status.HeldPackages...), BrokenDependencies: append([]string(nil), status.BrokenDependencies...),
 		RebootRequired: status.RebootRequired, FailedUnits: append([]string(nil), status.FailedUnits...), RootUsage: status.RootUsage,
 		EvidenceComplete: status.EvidenceComplete,
 	}
@@ -169,22 +196,32 @@ func parseUpgradable(lines []string) []string {
 	return pkgs
 }
 
-// parseSecurityUpdates extracts package names from `apt-get -s dist-upgrade`
-// simulation lines of the form "Inst name [old] (new suite ...)" whose
-// source suite contains "-security".
+// parseSecurityUpdates extracts unique package names from security/ESM archive
+// entries in `apt-get -s dist-upgrade` output. Classification is based on the
+// simulated archive, never a package name that happens to contain "esm".
 func parseSecurityUpdates(lines []string) []string {
+	updates, _ := parseSecurityUpdatesChecked(lines)
+	return updates
+}
+
+func parseSecurityUpdatesChecked(lines []string) ([]string, error) {
 	var pkgs []string
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "Inst ") || !strings.Contains(line, "-security") {
+		match := simulatedInstallRe.FindStringSubmatch(line)
+		if match == nil {
+			lower := strings.ToLower(line)
+			if strings.HasPrefix(line, "Inst ") && (strings.Contains(lower, "security") || strings.Contains(lower, "esm")) {
+				return nil, fmt.Errorf("unparseable security archive entry")
+			}
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			pkgs = append(pkgs, fields[1])
+		if !isSecurityArchive(match[3]) {
+			continue
 		}
+		pkgs = append(pkgs, strings.SplitN(match[1], ":", 2)[0])
 	}
-	return pkgs
+	return uniqueSorted(pkgs), nil
 }
 
 // parseRootUsage extracts the use% of / from `df -P /` output.

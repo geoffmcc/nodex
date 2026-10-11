@@ -20,14 +20,15 @@
     - name: Refuse a symlink at the managed policy path
       ansible.builtin.assert:
         that:
-          - not nodex_policy_current.stat.islnk
+          - nodex_policy_current.stat.exists is defined
+          - not nodex_policy_current.stat.exists or (nodex_policy_current.stat.islnk is defined and not nodex_policy_current.stat.islnk and nodex_policy_current.stat.isreg is defined and nodex_policy_current.stat.isreg)
         fail_msg: "reserved Nodex policy path is a symlink; policy apply refused"
 
     - name: Refuse an unexpected managed-file change
       ansible.builtin.assert:
         that:
           - nodex_policy_current.stat.exists == nodex_policy_before_exists
-          - not nodex_policy_before_exists or nodex_policy_current.stat.checksum == nodex_policy_before_checksum
+          - not nodex_policy_before_exists or (nodex_policy_current.stat.checksum is defined and nodex_policy_current.stat.checksum == nodex_policy_before_checksum)
         fail_msg: "Nodex policy file changed after planning; create a new policy plan"
 
     - name: Inspect Nodex backup parent directory
@@ -38,7 +39,8 @@
     - name: Refuse a symlink backup parent
       ansible.builtin.assert:
         that:
-          - not nodex_backup_parent.stat.islnk
+          - nodex_backup_parent.stat.exists is defined
+          - not nodex_backup_parent.stat.exists or (nodex_backup_parent.stat.islnk is defined and not nodex_backup_parent.stat.islnk and nodex_backup_parent.stat.isdir is defined and nodex_backup_parent.stat.isdir)
         fail_msg: "Nodex backup parent is a symlink; policy apply refused"
 
     - name: Inspect Nodex security-policy backup root
@@ -49,7 +51,8 @@
     - name: Refuse a symlink backup root
       ansible.builtin.assert:
         that:
-          - not nodex_backup_root.stat.islnk
+          - nodex_backup_root.stat.exists is defined
+          - not nodex_backup_root.stat.exists or (nodex_backup_root.stat.islnk is defined and not nodex_backup_root.stat.islnk and nodex_backup_root.stat.isdir is defined and nodex_backup_root.stat.isdir)
         fail_msg: "Nodex security-policy backup root is a symlink; policy apply refused"
 
     - name: Create private security-policy backup root
@@ -68,8 +71,8 @@
     - name: Refuse an unsafe plan-specific backup directory
       ansible.builtin.assert:
         that:
-          - not nodex_policy_backup_directory.stat.islnk
-          - not nodex_policy_backup_directory.stat.exists or nodex_policy_backup_directory.stat.isdir
+          - nodex_policy_backup_directory.stat.exists is defined
+          - not nodex_policy_backup_directory.stat.exists or (nodex_policy_backup_directory.stat.islnk is defined and not nodex_policy_backup_directory.stat.islnk and nodex_policy_backup_directory.stat.isdir is defined and nodex_policy_backup_directory.stat.isdir)
         fail_msg: "Nodex policy backup directory is not a real directory; policy apply refused"
 
     - name: Create private policy backup directory
@@ -83,7 +86,15 @@
     - name: Check for an existing backup
       ansible.builtin.stat:
         path: "{{ nodex_security_policy_backup_root }}/{{ nodex_policy_plan_id }}/99nodex-unattended-security"
+        checksum_algorithm: sha256
       register: nodex_policy_backup
+
+    - name: Refuse an unsafe existing backup file
+      ansible.builtin.assert:
+        that:
+          - nodex_policy_backup.stat.exists is defined
+          - not nodex_policy_backup.stat.exists or (nodex_policy_backup.stat.islnk is defined and not nodex_policy_backup.stat.islnk and nodex_policy_backup.stat.isreg is defined and nodex_policy_backup.stat.isreg)
+        fail_msg: "existing Nodex policy backup is not a regular file; policy apply refused"
 
     - name: Refuse to overwrite a policy backup
       ansible.builtin.assert:

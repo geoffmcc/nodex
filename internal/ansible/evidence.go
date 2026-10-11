@@ -8,7 +8,8 @@ func EvidenceOutcomeUsable(operation string, outcome TaskOutcome) bool {
 		return false
 	}
 	if outcome.Skipped {
-		return operation == "apply-security-updates" && outcome.EvidenceID == HostEvidenceUpdate
+		return operation == "apply-security-updates" &&
+			(outcome.EvidenceID == HostEvidenceUpdate || outcome.EvidenceID == HostEvidenceUpdateVerify)
 	}
 	if outcome.RC == nil {
 		return true
@@ -33,16 +34,18 @@ const EvidenceContract = "nodex.ansible.task-results.v1"
 // Stable evidence IDs used by the embedded container playbooks. These values
 // are the contract consumed by the container update workflow.
 const (
-	HostEvidenceConnectivity = "host.connectivity"
-	HostEvidenceDebian       = "host.os.debian"
-	HostEvidenceRefresh      = "host.package.refresh"
-	HostEvidencePackages     = "host.packages"
-	HostEvidenceSimulation   = "host.upgrade_simulation"
-	HostEvidenceReboot       = "host.reboot_required"
-	HostEvidenceFailedUnits  = "host.failed_units"
-	HostEvidenceRoot         = "host.root_usage"
-	HostEvidenceUpdate       = "host.update"
-	HostEvidenceUpdateReport = "host.update_report"
+	HostEvidenceConnectivity  = "host.connectivity"
+	HostEvidenceDebian        = "host.os.debian"
+	HostEvidenceRefresh       = "host.package.refresh"
+	HostEvidencePackages      = "host.packages"
+	HostEvidenceSimulation    = "host.upgrade_simulation"
+	HostEvidencePackagePolicy = "host.package_policy"
+	HostEvidenceReboot        = "host.reboot_required"
+	HostEvidenceFailedUnits   = "host.failed_units"
+	HostEvidenceRoot          = "host.root_usage"
+	HostEvidenceUpdate        = "host.update"
+	HostEvidenceUpdateVerify  = "host.update_verify"
+	HostEvidenceUpdateReport  = "host.update_report"
 
 	ContainerEvidenceStatus     = "container.status"
 	ContainerEvidenceAPT        = "container.apt"
@@ -65,6 +68,7 @@ var hostCheckEvidence = []string{
 	HostEvidenceRefresh,
 	HostEvidencePackages,
 	HostEvidenceSimulation,
+	HostEvidencePackagePolicy,
 	HostEvidenceReboot,
 	HostEvidenceFailedUnits,
 	HostEvidenceRoot,
@@ -81,6 +85,7 @@ var hostUpdateEvidence = []string{
 	HostEvidenceDebian,
 	HostEvidenceRefresh,
 	HostEvidenceUpdate,
+	HostEvidenceUpdateVerify,
 	HostEvidenceUpdateReport,
 }
 

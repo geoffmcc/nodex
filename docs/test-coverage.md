@@ -25,8 +25,10 @@ versions and CI runners are maintained in the workflow itself.
 - **Unit tests** validate parsing, configuration/schema versions, credentials,
   redaction, output, safety policies, task polling, plan/receipt integrity and
   provider response mapping. Monitoring tests cover explicit ICMP classification
-  and enrolled systemd service result handling; security-policy tests cover
-  exact APT config generation, digest tamper checks, opt-in scope and restore.
+  plus real IPv4/IPv6 loopback ping sockets when supported, mismatched packet
+  rejection, timeout, cancellation and permission classification. Security
+  policy tests cover absent paths, symlinks, file types, backup conflicts,
+  interrupted restore and successful prior file/timer restoration.
 - **Mock-provider CLI tests** exercise command parsing, profile selection,
   confirmation gates, structured output and failures without a live PVE/PBS
   service.
@@ -37,6 +39,19 @@ versions and CI runners are maintained in the workflow itself.
   configuration, credentials, UPIDs, redaction and CLI inputs.
 - **Cross-platform checks** compile/test on the operating systems configured in
   CI. Release archives target Linux, Windows and macOS on amd64 and arm64.
+- **Security/integration boundary checks** run a signed local APT repository
+  through actual `apt-get`/`apt-cache` and `apt-get indextargets` to demonstrate
+  candidate-version and signed Release-origin drift without installing
+  packages. When Ansible is installed, an actual Ansible run executes the
+  embedded policy playbook tasks against
+  temporary paths; only the external package/timer providers are fixture
+  modules, while Ansible assertions, stats, file operations, backup, and
+  restore are real. The APT drift test executes the embedded `check-updates`
+  evidence extraction and security-update preflight under a fixture
+  `APT_CONFIG`, replacing the final install with a fail-only sentinel. CI runs
+  a separate OpenSSH `sshd` integration to verify
+  unknown/changed keys for SSH/SCP/SFTP and the Ansible adapter, including a
+  pre-existing permissive multiplexed connection.
 - **Opt-in certification** is a separate workflow for a declared disposable
   PVE environment. It is not part of the ordinary test suite and must not target
   production infrastructure; see [Certification](certification.md).

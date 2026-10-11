@@ -51,6 +51,16 @@ class CallbackModule(CallbackBase):
         for key in ("rc", "stdout", "stderr", "stdout_lines", "stderr_lines", "msg"):
             if key in data:
                 outcome[key] = data[key]
+        if isinstance(data.get("results"), list):
+            outcome["results"] = [
+                {
+                    key: item[key]
+                    for key in ("item", "rc", "stdout", "stdout_lines", "failed")
+                    if key in item
+                }
+                for item in data["results"]
+                if isinstance(item, dict)
+            ]
         if "stat" in data and isinstance(data["stat"], dict):
             outcome["stat"] = {"exists": bool(data["stat"].get("exists", False))}
         self.current_task["hosts"][host] = outcome

@@ -13,14 +13,15 @@
     - name: Refuse a symlink at the managed policy path
       ansible.builtin.assert:
         that:
-          - not nodex_policy_current.stat.islnk
+          - nodex_policy_current.stat.exists is defined
+          - not nodex_policy_current.stat.exists or (nodex_policy_current.stat.islnk is defined and not nodex_policy_current.stat.islnk and nodex_policy_current.stat.isreg is defined and nodex_policy_current.stat.isreg)
         fail_msg: "reserved Nodex policy path is a symlink; policy restore refused"
 
     - name: Refuse an unexpected managed-file change
       ansible.builtin.assert:
         that:
           - nodex_policy_current.stat.exists == nodex_policy_current_exists
-          - not nodex_policy_current_exists or nodex_policy_current.stat.checksum == nodex_policy_current_checksum
+          - not nodex_policy_current_exists or (nodex_policy_current.stat.checksum is defined and nodex_policy_current.stat.checksum == nodex_policy_current_checksum)
         fail_msg: "Nodex policy file changed after apply; refusing to overwrite administrator changes"
 
     - name: Determine whether the policy file is already restored
@@ -39,10 +40,11 @@
         - "{{ nodex_security_policy_backup_root }}/{{ nodex_policy_plan_id }}"
       register: nodex_backup_directories
 
-    - name: Refuse symlink backup directories
+    - name: Refuse unsafe backup directories
       ansible.builtin.assert:
         that:
-          - not item.stat.islnk
+          - item.stat.exists is defined
+          - not item.stat.exists or (item.stat.islnk is defined and not item.stat.islnk and item.stat.isdir is defined and item.stat.isdir)
         fail_msg: "Nodex policy backup path contains a symlink; policy restore refused"
       loop: "{{ nodex_backup_directories.results }}"
 
@@ -52,12 +54,18 @@
         checksum_algorithm: sha256
       register: nodex_policy_backup
 
+    - name: Refuse an unsafe retained backup file
+      ansible.builtin.assert:
+        that:
+          - nodex_policy_backup.stat.exists is defined
+          - not nodex_policy_backup.stat.exists or (nodex_policy_backup.stat.islnk is defined and not nodex_policy_backup.stat.islnk and nodex_policy_backup.stat.isreg is defined and nodex_policy_backup.stat.isreg)
+        fail_msg: "the retained policy backup is not a regular file"
+
     - name: Verify retained pre-change backup
       ansible.builtin.assert:
         that:
-          - not nodex_policy_backup.stat.islnk
           - nodex_policy_already_restored or not nodex_policy_before_exists or nodex_policy_backup.stat.exists
-          - nodex_policy_already_restored or not nodex_policy_before_exists or nodex_policy_backup.stat.checksum == nodex_policy_before_checksum
+          - nodex_policy_already_restored or not nodex_policy_before_exists or (nodex_policy_backup.stat.checksum is defined and nodex_policy_backup.stat.checksum == nodex_policy_before_checksum)
         fail_msg: "the retained policy backup is missing or has changed"
 
     - name: Restore prior Nodex policy file

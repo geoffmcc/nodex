@@ -208,6 +208,11 @@ unblocked plan and the usual safety acknowledgements. Supported plan policies
 are `security-only` and `approved-full-upgrade`. The current plan workflow sets
 reboot policy to `never`; it does not automatically reboot hosts. Backup
 requirements cannot be established without a configured PVE/PBS environment.
+For `security-only`, review the printed package/version/architecture and signed
+APT source identity table before confirmation. Schema-1 plans are insufficient
+for this approval and must be regenerated. Apply refuses changed candidates or
+origins, held packages, removals, and dependency changes outside the approved
+set; it installs the exact reviewed versions and verifies installed state.
 Read [Fleet Maintenance](maintenance.md) before applying a plan.
 
 The separate `container os-update` operation only supports

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -680,6 +681,11 @@ func TestRunGeneratedFilesAndPrivateDir(t *testing.T) {
 		"ansible_user=automation",
 		"ansible_ssh_private_key_file=/home/automation/.ssh/id_ed25519",
 		"-oUserKnownHostsFile=/home/automation/.ssh/known_hosts_nodex",
+		"-oStrictHostKeyChecking=yes",
+		"-oControlMaster=no",
+		"-oControlPersist=no",
+		"-oControlPath=none",
+		"-oBatchMode=yes",
 	} {
 		if !strings.Contains(payload.Inventory, want) {
 			t.Errorf("generated inventory missing %q:\n%s", want, payload.Inventory)
@@ -694,6 +700,68 @@ func TestRunGeneratedFilesAndPrivateDir(t *testing.T) {
 	// The private directory must be gone after the run.
 	if _, err := os.Stat(payload.CWD); !os.IsNotExist(err) {
 		t.Errorf("private work dir not cleaned up: %s", payload.CWD)
+	}
+}
+
+func TestStrictSSHOptionsOverridePermissiveAmbientOpenSSHConfig(t *testing.T) {
+	ssh, err := exec.LookPath("ssh")
+	if err != nil {
+		t.Skip("OpenSSH client is not installed")
+	}
+	root := t.TempDir()
+	configPath := filepath.Join(root, "config")
+	knownHosts := filepath.Join(root, "known_hosts")
+	ambient := "Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  ControlMaster yes\n  ControlPath " + filepath.Join(root, "ambient.sock") + "\n  ControlPersist 10m\n"
+	if err := os.WriteFile(configPath, []byte(ambient), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"-G", "-F", configPath}
+	args = append(args, strings.Fields(strictSSHOptions(knownHosts))...)
+	args = append(args, "host.example.invalid")
+	output, err := exec.Command(ssh, args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("ssh -G: %v\n%s", err, output)
+	}
+	for _, expected := range []string{
+		"stricthostkeychecking true",
+		"userknownhostsfile " + knownHosts,
+		"controlmaster false",
+		"controlpersist no",
+	} {
+		if !strings.Contains(string(output), expected) {
+			t.Errorf("effective OpenSSH config missing %q:\n%s", expected, output)
+		}
+	}
+	if strings.Contains(string(output), "\ncontrolpath ") {
+		t.Errorf("ControlPath from ambient configuration remained active:\n%s", output)
+	}
+	for _, option := range []string{"StrictHostKeyChecking=yes", "ControlMaster=no", "ControlPersist=no", "ControlPath=none", "BatchMode=yes"} {
+		if !strings.Contains(pinnedAnsibleCfg, option) {
+			t.Errorf("pinned Ansible config missing strict SSH option %q", option)
+		}
+	}
+}
+
+func TestPinnedAnsibleTransferOptionsAreRecognizedByAnsible(t *testing.T) {
+	ansibleConfig, err := exec.LookPath("ansible-config")
+	if err != nil {
+		t.Skip("ansible-config is unavailable")
+	}
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "ansible.cfg")
+	if err := os.WriteFile(configPath, []byte(fmt.Sprintf(pinnedAnsibleCfg, filepath.Join(dir, "callbacks"))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(ansibleConfig, "dump", "--only-changed", "-t", "connection", "ssh")
+	cmd.Env = append(os.Environ(), "ANSIBLE_CONFIG="+configPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("ansible-config rejected pinned SSH configuration: %v\n%s", err, output)
+	}
+	for _, setting := range []string{"ssh_args", "scp_extra_args", "sftp_extra_args", "StrictHostKeyChecking=yes", "ControlMaster=no", "ControlPath=none"} {
+		if !strings.Contains(string(output), setting) {
+			t.Errorf("Ansible did not report configured SSH safety setting %q:\n%s", setting, output)
+		}
 	}
 }
 
@@ -753,6 +821,66 @@ func TestRunnerRequiresAbsoluteExe(t *testing.T) {
 	r := &Runner{Exe: "ansible-playbook"}
 	if _, err := r.Run(context.Background(), RunRequest{Operation: "verify-host", Hosts: testHosts()}); err == nil {
 		t.Fatal("relative executable must be rejected")
+	}
+}
+
+func TestMinimalEnvironmentPreservesSupportedSSHAgentSocket(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "/tmp/nodex-test-agent.sock")
+	var got string
+	for _, entry := range minimalEnv(nil) {
+		if strings.HasPrefix(entry, "SSH_AUTH_SOCK=") {
+			got = strings.TrimPrefix(entry, "SSH_AUTH_SOCK=")
+		}
+	}
+	if got != "/tmp/nodex-test-agent.sock" {
+		t.Fatalf("SSH_AUTH_SOCK = %q; supported SSH-agent setting was not preserved", got)
+	}
+}
+
+func TestPackageApprovalRequiresExactSignedAPTIntent(t *testing.T) {
+	valid := PackageApproval{
+		Name: "openssl", Version: "3.0.15-1", Architecture: "amd64",
+		Origins: []PackageOrigin{{
+			Source: "https://security.debian.org/debian-security stable-security/main amd64",
+			Site:   "https://security.debian.org/debian-security", Release: "stable-security",
+			Codename: "bookworm-security", Origin: "Debian", Label: "Debian-Security",
+			Component: "main", Architecture: "amd64",
+			Record: "https://security.debian.org/debian-security|stable-security|bookworm-security|Debian|Debian-Security|main|amd64",
+		}},
+		Spec: "openssl:amd64=3.0.15-1",
+	}
+	if err := valid.validate(); err != nil {
+		t.Fatalf("valid exact package approval rejected: %v", err)
+	}
+	for _, invalid := range []PackageApproval{
+		{Spec: valid.Spec},
+		{valid.Name, "", valid.Architecture, valid.Origins, valid.Spec},
+		{valid.Name, valid.Version, valid.Architecture, nil, valid.Spec},
+		{valid.Name, valid.Version, valid.Architecture, []PackageOrigin{{Source: "repo", Record: "repo"}}, valid.Spec},
+	} {
+		if err := invalid.validate(); err == nil {
+			t.Errorf("invalid package approval was accepted: %+v", invalid)
+		}
+	}
+}
+
+func TestSecurityUpdatePlaybookCannotFallBackToLatest(t *testing.T) {
+	operation, err := Lookup("apply-security-updates")
+	if err != nil {
+		t.Fatal(err)
+	}
+	playbook := operation.Playbook()
+	if strings.Contains(playbook, "state: latest") {
+		t.Fatal("security update operation retains a latest-version fallback")
+	}
+	for _, required := range []string{
+		"apt-cache", "indextargets", "nodex_packages | map(attribute='spec')",
+		"fail_on_autoremove: true", "only_upgrade: true", "dpkg-query",
+		"Reject dependency changes", "Reject signed APT Release origin or label drift",
+	} {
+		if !strings.Contains(playbook, required) {
+			t.Errorf("security update playbook missing contract element %q", required)
+		}
 	}
 }
 

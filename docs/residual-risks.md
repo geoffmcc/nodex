@@ -12,8 +12,9 @@ repository, provider, and release workflow.
 
 **Risk:** A compromised operator account or sufficiently privileged local
 process may read file-backed credentials, environment variables, process
-memory, keyring entries or SSH-agent access. File credentials use restrictive
-permissions but are not application-encrypted.
+memory, keyring entries or SSH-agent access. File credentials now fail closed
+unless their opened file, directory ownership/mode and path are safe on Unix or
+their DACL is safe on Windows, but the file backend is not application-encrypted.
 
 **Mitigation:** Prefer the OS keyring or an appropriately isolated secret
 delivery method; limit API-token privileges and lifetime; protect the operator
@@ -60,14 +61,20 @@ execution.
 enrolled hosts. A compromised local Ansible installation, SSH trust store,
 operator key or managed host can undermine the workflow. Package updates can
 still cause service changes even when the plan and execution evidence are
-valid. Opted-in unattended security updates install future security packages
-without a per-update Nodex confirmation or OS snapshot, so a vendor security
-update can still regress an application before an operator observes it.
+valid. A race remains between immediate APT source/version revalidation and the
+subsequent separate install transaction. Opted-in unattended security updates
+install future security packages without a per-update Nodex confirmation or OS
+snapshot, so a vendor security update can still regress an application before
+an operator observes it.
 
-**Mitigation:** Use a trusted Ansible installation, strict SSH host-key
+**Mitigation:** Use a trusted Ansible installation, strict SSH/SCP/SFTP host-key
 verification, narrow SSH/sudo privileges, explicit inventory and reviewed
-plans. Opt in only appropriate Debian/Ubuntu guests, keep independent guest
-backups, and periodically review policy/timer state and external update logs.
+plans. Security-only one-shot plans bind exact package versions, architecture,
+APT source and signed Release identity; they refuse origin/candidate drift,
+holds, removals, and unexpected dependency changes, and verify installed
+versions. Keep the local OpenSSH routing and alias configuration trusted. Opt
+in only appropriate Debian/Ubuntu guests, keep independent guest backups, and
+periodically review policy/timer state and external update logs.
 Nodex does not accept arbitrary playbooks or shell commands. Maintenance plans
 and unattended policy both keep automatic reboot disabled; policy restore
 reverts Nodex's managed APT file and prior timer state but does not roll back
@@ -85,6 +92,13 @@ release checksums, Sigstore signature identity, and provenance when using
 published artifacts. Independent reproducible rebuild comparison is not a
 guarantee of the release process.
 
+At this review's Go 1.27.2 scan, `govulncheck` reported zero reachable code
+vulnerabilities and one module-level advisory, GO-2026-5932, for the unmaintained
+`golang.org/x/crypto/openpgp` package in the required `golang.org/x/crypto`
+module. Nodex imports `golang.org/x/crypto/ssh` and `ssh/knownhosts`, not
+`openpgp`; the advisory has no fixed release. Recheck reachability and module
+status when the SSH dependency changes.
+
 ## Scope limitations (not automatic failures)
 
 - PVE and PBS are the only implemented API providers.
@@ -96,6 +110,9 @@ guarantee of the release process.
   made, not that verification passed.
 - Generic HTTP monitoring can be configured for plaintext HTTP. Monitoring
   addresses and target policy must be selected by the operator.
+- ICMP echo is unauthenticated network evidence and can be spoofed by an
+  on-path or sufficiently positioned peer; Nodex validates the request/reply
+  tuple and nonce but does not use it as cryptographic host identity.
 - `service` monitoring targets require Ansible and an explicitly enrolled
   inventory host; without Ansible the result is `unsupported`. ICMP targets
   require the local operating system to permit an ICMP ping socket; otherwise

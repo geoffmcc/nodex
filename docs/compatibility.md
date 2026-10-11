@@ -57,6 +57,12 @@ provider names in a config file remain loadable (failing only when used) so
 newer configs do not invalidate older binaries' access to their other
 profiles.
 
+Fleet maintenance plans are separately versioned artifacts. Security-only
+plans now require schema 2 because they bind package version, architecture, APT
+source and signed Release identity. Schema-1 security-only plans are refused
+with an instruction to regenerate and review the package intent; Nodex does not
+silently expand an older package-name-only approval.
+
 ### Tier 2 — Profile import/export
 
 The exported profile JSON shape (`name`, `provider`, `endpoint`, `ca_file`)

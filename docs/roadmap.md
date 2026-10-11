@@ -129,7 +129,9 @@ and honest unknown outcomes.
 
 ## Phase 7 — Security-update policy workflow
 
-Status: active (implementation on `feat/roadmap-phases-7-8`; pending merge)
+Status: delivered in PR #107 (`feat/roadmap-phases-7-8`), merged at baseline
+`e0b0449`. Follow-up hardening is tracked in the
+[security review note](security-integration-hardening-review.md).
 
 - `nodex maintenance policy plan|apply|restore` for unattended security updates on
   Debian/Ubuntu guests: opt-in, exact config diff shown, security repos only
@@ -140,7 +142,9 @@ Status: active (implementation on `feat/roadmap-phases-7-8`; pending merge)
 
 ## Phase 8 — One-shot monitoring and external integration
 
-Status: active (implementation on `feat/roadmap-phases-7-8`; pending merge).
+Status: delivered in PR #107 (`feat/roadmap-phases-7-8`), merged at baseline
+`e0b0449`. Follow-up hardening is tracked in the
+[security review note](security-integration-hardening-review.md).
 Generic and provider-backed checks were already available; this phase adds
 bounded ICMP echo, Ansible-backed systemd service checks, and external-scheduler
 integration examples.

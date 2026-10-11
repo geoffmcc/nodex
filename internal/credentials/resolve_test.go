@@ -11,7 +11,7 @@ import (
 )
 
 func TestResolver_Resolve_EnvFallback(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	r := NewResolver(dir)
 	ctx := context.Background()
 
@@ -27,7 +27,7 @@ func TestResolver_Resolve_EnvFallback(t *testing.T) {
 }
 
 func TestResolver_EnvironmentCredentialPrecedesFileFallback(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	r := NewResolver(dir)
 	fileCreds := &domain.Credentials{Type: "token", TokenID: "file-id", TokenSecret: "file-secret"}
 	data, err := json.Marshal(fileCreds) // #nosec G117 -- synthetic test credentials exercise backend precedence.
@@ -49,7 +49,7 @@ func TestResolver_EnvironmentCredentialPrecedesFileFallback(t *testing.T) {
 }
 
 func TestResolver_Resolve_FileFallback(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	r := NewResolver(dir)
 	ctx := context.Background()
 
@@ -70,7 +70,7 @@ func TestResolver_Resolve_FileFallback(t *testing.T) {
 }
 
 func TestResolver_Resolve_FromRef(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	r := NewResolver(dir)
 	ctx := context.Background()
 
@@ -95,7 +95,7 @@ func TestResolver_Resolve_FromRef(t *testing.T) {
 }
 
 func TestResolver_Resolve_NoCredentials(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	r := NewResolver(dir)
 	ctx := context.Background()
 
@@ -106,7 +106,7 @@ func TestResolver_Resolve_NoCredentials(t *testing.T) {
 }
 
 func TestResolver_Resolve_UnknownBackend(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	r := NewResolver(dir)
 	ctx := context.Background()
 
@@ -117,7 +117,7 @@ func TestResolver_Resolve_UnknownBackend(t *testing.T) {
 }
 
 func TestResolver_GetBackend(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateCredentialTestDir(t)
 	r := NewResolver(dir)
 
 	if _, ok := r.GetBackend("file"); !ok {
