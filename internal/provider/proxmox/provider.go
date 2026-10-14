@@ -1396,20 +1396,30 @@ func (p *Provider) HACurrent(ctx context.Context) ([]domain.HACurrent, error) {
 	return result, nil
 }
 
-// BackupContent returns content items for backup on a specific storage.
+// BackupContent returns backup content items for a specific storage.
+//
+// Storage listings can also contain ISOs and container templates, so the
+// request is filtered to backup content and any non-backup rows are dropped
+// defensively in case a backend ignores the filter.
 func (p *Provider) BackupContent(ctx context.Context, node, storage string) ([]domain.BackupContentItem, error) {
 	if p.client == nil {
 		return nil, errors.New(errNotConnected)
 	}
-	items, err := p.client.GetStorageContent(ctx, node, storage)
+	items, err := p.client.GetStorageContentByType(ctx, node, storage, "backup")
 	if err != nil {
 		return nil, fmt.Errorf("get backup content: %w", err)
 	}
 	result := make([]domain.BackupContentItem, 0, len(items))
 	for _, item := range items {
+		if item.Content != "backup" {
+			continue
+		}
 		result = append(result, domain.BackupContentItem{
 			Content: item.Content,
 			Volid:   item.Volid,
+			VMID:    item.VMID,
+			Subtype: item.Subtype,
+			Ctime:   item.Ctime,
 			Size:    item.Size,
 			Format:  item.Format,
 		})

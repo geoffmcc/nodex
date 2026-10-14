@@ -462,6 +462,9 @@ type HACurrent struct {
 type BackupContentItem struct {
 	Content string `json:"content" yaml:"content"`
 	Volid   string `json:"volid" yaml:"volid"`
+	VMID    int    `json:"vmid,omitempty" yaml:"vmid,omitempty"`
+	Subtype string `json:"subtype,omitempty" yaml:"subtype,omitempty"`
+	Ctime   int    `json:"ctime,omitempty" yaml:"ctime,omitempty"`
 	Size    int64  `json:"size,omitempty" yaml:"size,omitempty"`
 	Format  string `json:"format,omitempty" yaml:"format,omitempty"`
 }

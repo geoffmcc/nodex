@@ -339,6 +339,16 @@ func (c *Client) GetContainerConfig(ctx context.Context, node string, vmid int) 
 
 // GetStorageContent returns the content of a specific storage.
 func (c *Client) GetStorageContent(ctx context.Context, node, storage string) ([]StorageContentItem, error) {
+	return c.GetStorageContentByType(ctx, node, storage, "")
+}
+
+// GetStorageContentByType returns the content of a specific storage, filtered
+// server-side by content type (for example "backup").
+//
+// The content filter keeps unrelated objects such as ISOs and container
+// templates out of backup listings. It is advisory: callers should not assume a
+// backend enforces it, so results may still need client-side filtering.
+func (c *Client) GetStorageContentByType(ctx context.Context, node, storage, content string) ([]StorageContentItem, error) {
 	if node == "" {
 		return nil, fmt.Errorf("node name is required")
 	}
@@ -347,6 +357,11 @@ func (c *Client) GetStorageContent(ctx context.Context, node, storage string) ([
 	}
 	var resp StorageContentResponse
 	path := "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/content"
+	if content != "" {
+		query := url.Values{}
+		query.Set("content", content)
+		path += "?" + query.Encode()
+	}
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
 	}
