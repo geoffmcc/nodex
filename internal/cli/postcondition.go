@@ -84,6 +84,26 @@ func applyPostcondition(result *output.OperationResult, outcome postconditionOut
 	}
 }
 
+// applyTaskCompletionStatus records a completed task's provider status on a
+// result and surfaces a successful-with-warnings outcome.
+//
+// A Proxmox task that finished with "WARNINGS: <count>" is a success, but the
+// warning count is the only evidence that the task did not complete cleanly.
+// Hard-coding "OK" discarded that evidence, so a clone, start, or reboot could
+// report plain success while the provider had actually emitted warnings. The
+// status is preserved verbatim and a warning is attached so both the native
+// result and agent receipts carry it.
+func applyTaskCompletionStatus(result *output.OperationResult, status string) {
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "OK"
+	}
+	result.Status = status
+	if strings.HasPrefix(status, "WARNINGS:") {
+		result.Warnings = append(result.Warnings, "provider task completed with warnings: "+status)
+	}
+}
+
 // presenceState describes what a single authoritative read established.
 type presenceState int
 

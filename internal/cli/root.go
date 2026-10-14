@@ -180,6 +180,7 @@ func init() {
 	register("task", "Manage tasks", nil,
 		&command{name: "list", short: "List all tasks for a node", run: runTaskList},
 		&command{name: "show", short: "Show task details", run: runTaskShow},
+		&command{name: "log", short: "Show a task's log output", run: runTaskLog},
 	)
 	register("container", "Manage containers", nil,
 		&command{name: "list", short: "List all containers", run: runContainerList},

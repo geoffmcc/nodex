@@ -663,6 +663,11 @@ func buildRegistry() []OperationMeta {
 		Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation,
 		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "TaskInspector", HandlerFunc: "runTaskShow",
 	})
+	ops = append(ops, OperationMeta{
+		Path: "task log", Description: "Show a task's log output",
+		Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation,
+		OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "TaskLogInspector", HandlerFunc: "runTaskLog",
+	})
 
 	// --- backup ---
 	ops = append(ops, OperationMeta{

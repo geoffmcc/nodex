@@ -32,6 +32,13 @@ var e2eTaskNodeOverride string
 var e2eVMTemplateConfigOverride bool
 var e2eContainerTemplateConfigOverride bool
 var e2eVMInventoryTemplateOverride bool
+var e2eContainerInventoryTemplateOverride bool
+var e2eCTTemplateNoTaskID bool
+
+// e2eNodeServicesOverride, when non-nil, replaces the (otherwise empty) node
+// service list so --limit bounding can be exercised. Tests must reset it and
+// run serially.
+var e2eNodeServicesOverride []domain.NodeService
 var e2eVMStartCalls int
 var e2eContainerStartCalls int
 
@@ -57,6 +64,17 @@ var e2eContainerStatusOverride string
 // HTTP status, so unverifiable postconditions can be exercised. Tests must reset
 // it and run serially.
 var e2eGuestStatusError int
+
+// e2eGuestRuntimeQMPOverride makes the mock's authoritative per-VM runtime read
+// report this QMP execution state while the QEMU process stays "running", which
+// is how a suspended-in-memory VM presents itself. Tests must reset it and run
+// serially.
+var e2eGuestRuntimeQMPOverride string
+
+// e2eGuestRuntimeError makes the mock's authoritative per-VM runtime read fail
+// with this HTTP status, so vm show falls back to the aggregate listing. Tests
+// must reset it and run serially.
+var e2eGuestRuntimeError int
 
 func init() {
 	provider.Register(e2eMockProviderName, func() domain.Provider { return &e2eMockProvider{} })
@@ -176,7 +194,7 @@ func (p *e2eMockProvider) VMs(_ context.Context) ([]domain.VM, error) {
 	return []domain.VM{{ID: "e2e-node/100", Name: "e2e-vm", Status: status, Node: "e2e-node", CPU: 2, Memory: 1024, Disk: 2048, Template: e2eVMInventoryTemplateOverride}}, nil
 }
 func (p *e2eMockProvider) Containers(_ context.Context) ([]domain.Container, error) {
-	return []domain.Container{{ID: "e2e-node/200", Name: "e2e-ct", Status: "running", Node: "e2e-node", CPU: 1, OS: "debian", Memory: 512, Disk: 1024}}, nil
+	return []domain.Container{{ID: "e2e-node/200", Name: "e2e-ct", Status: "running", Node: "e2e-node", CPU: 1, OS: "debian", Memory: 512, Disk: 1024, Template: e2eContainerInventoryTemplateOverride}}, nil
 }
 
 // GuestStatus reports the per-guest authoritative status, mirroring the real
@@ -207,6 +225,28 @@ func (p *e2eMockProvider) GuestStatus(_ context.Context, _ string, guestType str
 		status = e2eVMStatusOverride
 	}
 	return status, nil
+}
+
+// GuestRuntimeStatus mirrors the real provider's /status/current read, which
+// carries both the process state and the QEMU execution state. A QEMU process
+// reports "running" while its CPUs are paused, so the two are reported
+// separately instead of being collapsed into one field.
+func (p *e2eMockProvider) GuestRuntimeStatus(ctx context.Context, node, guestType string, vmid int) (*domain.GuestRuntimeStatus, error) {
+	if e2eGuestRuntimeError != 0 {
+		return nil, &app.ProviderError{StatusCode: e2eGuestRuntimeError, Detail: "guest runtime status unavailable"}
+	}
+	if e2eGuestRuntimeQMPOverride != "" {
+		return &domain.GuestRuntimeStatus{Status: "running", QMPStatus: e2eGuestRuntimeQMPOverride}, nil
+	}
+	status, err := p.GuestStatus(ctx, node, guestType, vmid)
+	if err != nil {
+		return nil, err
+	}
+	runtime := &domain.GuestRuntimeStatus{Status: status}
+	if guestType != "container" && status == "running" {
+		runtime.QMPStatus = "running"
+	}
+	return runtime, nil
 }
 func (p *e2eMockProvider) Storage(_ context.Context) ([]domain.Storage, error) {
 	return []domain.Storage{{ID: "storage/e2e-node/local", Name: "local", Type: "dir", Status: "available", Node: "e2e-node", Total: 4096, Used: 1024, Avail: 3072}}, nil
@@ -283,6 +323,18 @@ func (p *e2eMockProvider) Task(_ context.Context, node, upid string) (*domain.Ta
 		StartTime: 1700000000,
 		EndTime:   1700000010,
 	}, nil
+}
+
+func (p *e2eMockProvider) TaskLog(_ context.Context, _, upid string, limit int) ([]domain.TaskLogLine, error) {
+	lines := []domain.TaskLogLine{
+		{LineNumber: 1, Text: "INFO: starting task " + upid},
+		{LineNumber: 2, Text: "INFO: finished with warnings"},
+		{LineNumber: 3, Text: "WARN: template conversion left a container template"},
+	}
+	if limit > 0 && limit < len(lines) {
+		lines = lines[:limit]
+	}
+	return lines, nil
 }
 func (p *e2eMockProvider) VMSnapshots(_ context.Context, node string, vmid int) ([]domain.Snapshot, error) {
 	all := []domain.Snapshot{
@@ -362,7 +414,7 @@ func (p *e2eMockProvider) NodeStatus(_ context.Context, name string) (map[string
 	}, nil
 }
 func (p *e2eMockProvider) NodeServices(_ context.Context, node string) ([]domain.NodeService, error) {
-	return nil, nil
+	return e2eNodeServicesOverride, nil
 }
 func (p *e2eMockProvider) NodeNetwork(_ context.Context, node string) ([]domain.NodeNetwork, error) {
 	return []domain.NodeNetwork{
@@ -565,6 +617,11 @@ func (p *e2eMockProvider) VMTemplate(_ context.Context, node string, vmid int) (
 }
 
 func (p *e2eMockProvider) CTTemplate(_ context.Context, node string, vmid int) (string, error) {
+	// The real Proxmox LXC template endpoint applies synchronously and returns
+	// no task ID; the knob lets tests model that response.
+	if e2eCTTemplateNoTaskID {
+		return "", nil
+	}
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12371, 1700000000), nil
 }
 
@@ -824,6 +881,59 @@ func TestTemplateStartPreflightBlocksVMAndContainerTemplates(t *testing.T) {
 	}
 	if e2eVMStartCalls != 0 || e2eContainerStartCalls != 0 {
 		t.Fatalf("template preflight submitted lifecycle calls: VM=%d container=%d", e2eVMStartCalls, e2eContainerStartCalls)
+	}
+}
+
+// The Proxmox LXC template endpoint applies synchronously and returns no task
+// ID. Nodex must model that as a confirmed synchronous completion and verify
+// the template flag, not report an unresolvable OUTCOME_UNKNOWN receipt.
+func TestContainerTemplateWithoutTaskIDIsVerifiedSynchronously(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	e2eCTTemplateNoTaskID = true
+	e2eContainerTemplateConfigOverride = true
+	defer func() {
+		e2eCTTemplateNoTaskID = false
+		e2eContainerTemplateConfigOverride = false
+	}()
+
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"--output", "json", "--yes", "--force", "container", "template", "e2e-node/200"}, &stdout, &stderr); err != nil {
+		t.Fatalf("container template: %v", err)
+	}
+	out := stdout.String()
+	for _, want := range []string{`"success": true`, `"synchronous": true`, `"verification": "verified"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output: %s", want, out)
+		}
+	}
+	if strings.Contains(out, "OUTCOME_UNKNOWN") {
+		t.Errorf("synchronous template conversion must not report OUTCOME_UNKNOWN: %s", out)
+	}
+}
+
+func TestContainerTemplateSyncVerificationFailureIsReported(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	e2eCTTemplateNoTaskID = true
+	e2eContainerTemplateConfigOverride = false
+	defer func() {
+		e2eCTTemplateNoTaskID = false
+		e2eContainerTemplateConfigOverride = false
+	}()
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--output", "json", "--yes", "--force", "container", "template", "e2e-node/200"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected a partial failure when the template flag is not observed")
+	}
+	if code := app.ExitCodeFromError(err); code != app.ExitPartialFailure {
+		t.Errorf("exit = %d, want %d (partial failure)", code, app.ExitPartialFailure)
+	}
+	if out := stdout.String(); !strings.Contains(out, `"verification": "failed"`) {
+		t.Errorf("expected a failed verification in the result: %s", out)
 	}
 }
 

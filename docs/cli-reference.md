@@ -463,7 +463,15 @@ Inspect tasks. Safety: Tier 0.
 | Command | Description |
 |---------|-------------|
 | `task list --node <node>` | List all tasks for a node |
-| `task show --node <node> <upid>` | Show task details |
+| `task show <node> <upid>` | Show task details |
+| `task log <node> <upid>` | Show bounded provider task log lines; supports table, JSON, and YAML |
+
+Proxmox task logs default to 200 lines and accept `--limit`, capped at 2000.
+They return the beginning of the log; this is not a complete-log or pagination
+guarantee. Access requires task-read permission (normally `Sys.Audit` on the
+node for tasks owned by other users); the provider enforces permissions.
+Successful tasks with `WARNINGS: N` retain that status and expose a warning in
+waited results and refreshed agent receipts.
 
 ### `nodex status`
 
@@ -971,6 +979,31 @@ inspect `verification` when present. `verification: "failed"` or
 automation must evaluate `success` and `verification` separately. A missing
 `verification` field means no postcondition check was attempted. A successful
 task may carry warnings without becoming a task failure.
+
+A checked postcondition that contradicts the request returns exit 11 (partial
+failure), including create, lifecycle, and synchronous configuration/template
+operations. Task success remains a separate fact. Unavailable verification
+alone does not turn a successful completed operation into a failure. Receipt
+replay preserves the recorded error exit; terminal refreshed receipts do not
+recommend another refresh as recovery.
+
+`profile test` and `storage download` honor JSON and YAML output. Profile tests
+return connectivity/version fields; downloads return node, storage, volume ID,
+destination, and size. Container inventory includes `template`; `vm show`
+includes `qmpstatus` when authoritative runtime inspection is available,
+separately from the process `status`.
+
+`node certificates` reads certificate details, including subject, issuer,
+fingerprint, and integer Unix timestamps `not_before`/`not_after`; tables format
+the timestamps for people. `sdn subnets` enumerates subnets under each vnet.
+`backup content` includes only backups, with guest ID, subtype, and creation time.
+Provider inventory lists such as node services honor `--limit`; agent output
+marks a reached limit as potentially truncated, without promising completeness.
+
+Backup job create/update accepts `schedule=<calendar>` (quote values containing
+spaces), or legacy `starttime=<HH:MM>` with optional `dow`. Do not combine
+`schedule` and `starttime`. Job list/show exposes `schedule` and `next-run`
+when supplied by the provider, with legacy timing as a table fallback.
 
 Postconditions are emitted only when the provider exposes a distinct state to
 observe. For example, Proxmox's LXC `status/current` reports only `running` or

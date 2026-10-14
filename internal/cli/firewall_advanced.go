@@ -29,7 +29,7 @@ func runFirewallAliases(ctx context.Context, cmdCtx *Context, args []string) err
 	if err != nil {
 		return fmt.Errorf("list firewall aliases: %w", err)
 	}
-	return writeFirewallAliases(cmdCtx, aliases)
+	return writeFirewallAliases(cmdCtx, applyLimit(aliases, cmdCtx.Opts.Limit))
 }
 
 func writeFirewallAliases(cmdCtx *Context, aliases []domain.FirewallAlias) error {
@@ -69,7 +69,7 @@ func runFirewallIPSets(ctx context.Context, cmdCtx *Context, args []string) erro
 	if err != nil {
 		return fmt.Errorf("list firewall IP sets: %w", err)
 	}
-	return writeFirewallIPSets(cmdCtx, ipsets)
+	return writeFirewallIPSets(cmdCtx, applyLimit(ipsets, cmdCtx.Opts.Limit))
 }
 
 func writeFirewallIPSets(cmdCtx *Context, ipsets []domain.FirewallIPSet) error {
@@ -109,7 +109,7 @@ func runFirewallIPSet(ctx context.Context, cmdCtx *Context, args []string) error
 	if err != nil {
 		return fmt.Errorf("get firewall IP set: %w", err)
 	}
-	return writeFirewallIPSetEntries(cmdCtx, entries)
+	return writeFirewallIPSetEntries(cmdCtx, applyLimit(entries, cmdCtx.Opts.Limit))
 }
 
 func writeFirewallIPSetEntries(cmdCtx *Context, entries []domain.FirewallIPSetEntry) error {
@@ -149,7 +149,7 @@ func runFirewallSecurityGroups(ctx context.Context, cmdCtx *Context, args []stri
 	if err != nil {
 		return fmt.Errorf("list firewall security groups: %w", err)
 	}
-	return writeFirewallSecurityGroups(cmdCtx, groups)
+	return writeFirewallSecurityGroups(cmdCtx, applyLimit(groups, cmdCtx.Opts.Limit))
 }
 
 func writeFirewallSecurityGroups(cmdCtx *Context, groups []domain.FirewallSecurityGroup) error {
@@ -228,7 +228,7 @@ func runFirewallNodeRules(ctx context.Context, cmdCtx *Context, args []string) e
 	if err != nil {
 		return err
 	}
-	return writeFirewallRules(cmdCtx, rules)
+	return writeFirewallRules(cmdCtx, applyLimit(rules, cmdCtx.Opts.Limit))
 }
 
 func runFirewallVMRules(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -258,5 +258,5 @@ func runFirewallVMRules(ctx context.Context, cmdCtx *Context, args []string) err
 	if err != nil {
 		return err
 	}
-	return writeFirewallRules(cmdCtx, rules)
+	return writeFirewallRules(cmdCtx, applyLimit(rules, cmdCtx.Opts.Limit))
 }

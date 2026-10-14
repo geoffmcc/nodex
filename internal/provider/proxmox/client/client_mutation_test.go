@@ -1241,6 +1241,21 @@ func TestCTTemplatePath(t *testing.T) {
 	}
 }
 
+func TestCTTemplateSynchronousNullResponse(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/nodes/pve1/lxc/200/template" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	upid, err := c.CTTemplate(context.Background(), "pve1", 200)
+	if err != nil || upid != "" {
+		t.Fatalf("synchronous template response: upid=%q err=%v", upid, err)
+	}
+}
+
 func TestDeleteSDNSubnetUsesObjectID(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {

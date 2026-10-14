@@ -2,6 +2,13 @@
 
 Nodex is a single-process Go CLI. The command entry point wires signal handling, command parsing, configuration, credential resolution, provider connections, output formatting, and redacted error reporting.
 
+Optional `TaskLogInspector` exposes bounded task log reads independently of task
+status inspection. The Proxmox implementation defaults to 200 lines and caps
+requests at 2000. `GuestRuntimeInspector` exposes process status and QMP execution
+state separately; VM show uses it to enrich aggregate inventory when available.
+Config decoders retain key presence separately from scalar values so explicit
+zero and false values survive provider mapping and postcondition comparison.
+
 ## Component overview
 
 ```mermaid

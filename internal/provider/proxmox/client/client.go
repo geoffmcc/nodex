@@ -413,6 +413,31 @@ func (c *Client) GetTask(ctx context.Context, node, upid string) (*TaskListItem,
 	return &resp.Data, nil
 }
 
+// GetTaskLog returns the log of a specific task, bounded to limit lines.
+//
+// The limit is applied server-side so a long-running or verbose task does not
+// require downloading its entire log. A limit of zero or less requests the
+// provider default.
+func (c *Client) GetTaskLog(ctx context.Context, node, upid string, limit int) ([]TaskLogLine, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if upid == "" {
+		return nil, fmt.Errorf("task UPID is required")
+	}
+	var resp TaskLogResponse
+	path := "/nodes/" + url.PathEscape(node) + "/tasks/" + url.PathEscape(upid) + "/log"
+	if limit > 0 {
+		query := url.Values{}
+		query.Set("limit", strconv.Itoa(limit))
+		path += "?" + query.Encode()
+	}
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
 // GetVMSnapshots returns snapshots for a VM.
 func (c *Client) GetVMSnapshots(ctx context.Context, node string, vmid int) ([]SnapshotListItem, error) {
 	if node == "" {

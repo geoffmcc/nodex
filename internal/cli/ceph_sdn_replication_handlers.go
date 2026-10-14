@@ -82,7 +82,7 @@ func runCephOSDList(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeCephOSDsTable(cmdCtx, osds)
+	return writeCephOSDsTable(cmdCtx, applyLimit(osds, cmdCtx.Opts.Limit))
 }
 
 func writeCephOSDsTable(cmdCtx *Context, osds []domain.CephOSD) error {
@@ -137,7 +137,7 @@ func runCephMONList(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeCephMONsTable(cmdCtx, mons)
+	return writeCephMONsTable(cmdCtx, applyLimit(mons, cmdCtx.Opts.Limit))
 }
 
 func writeCephMONsTable(cmdCtx *Context, mons []domain.CephMON) error {
@@ -186,7 +186,7 @@ func runCephPoolList(ctx context.Context, cmdCtx *Context, args []string) error 
 	if err != nil {
 		return err
 	}
-	return writeCephPoolsTable(cmdCtx, pools)
+	return writeCephPoolsTable(cmdCtx, applyLimit(pools, cmdCtx.Opts.Limit))
 }
 
 func writeCephPoolsTable(cmdCtx *Context, pools []domain.CephPool) error {
@@ -767,7 +767,7 @@ func runReplicationList(ctx context.Context, cmdCtx *Context, args []string) err
 	if err != nil {
 		return err
 	}
-	return writeReplicationJobsTable(cmdCtx, jobs)
+	return writeReplicationJobsTable(cmdCtx, applyLimit(jobs, cmdCtx.Opts.Limit))
 }
 
 func writeReplicationJobsTable(cmdCtx *Context, jobs []domain.ReplicationJob) error {

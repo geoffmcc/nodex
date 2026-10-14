@@ -19,6 +19,13 @@ import (
 const (
 	ProviderName    = "proxmox"
 	ProviderVersion = "0.1.0"
+
+	// defaultTaskLogLimit bounds a task log request when the caller does not
+	// specify a limit, and maxTaskLogLimit caps an explicit higher limit. A
+	// long-running task can produce a very large log, so the provider never
+	// requests an unbounded one.
+	defaultTaskLogLimit = 200
+	maxTaskLogLimit     = 2000
 )
 
 func init() {
@@ -409,6 +416,27 @@ func (p *Provider) GuestStatus(ctx context.Context, node, guestType string, vmid
 	return reportedGuestStatus(segment, *status), nil
 }
 
+// GuestRuntimeStatus returns both the process state and, for virtual machines,
+// the QEMU execution state of a single guest.
+//
+// Keeping the two apart is what makes a guest suspended in memory readable: the
+// QEMU process is "running" while the guest CPUs are "paused". Collapsing them
+// into one field is what made a suspended VM look like it was executing.
+func (p *Provider) GuestRuntimeStatus(ctx context.Context, node, guestType string, vmid int) (*domain.GuestRuntimeStatus, error) {
+	segment, err := guestStatusSegment(guestType)
+	if err != nil {
+		return nil, err
+	}
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	status, err := p.client.GetGuestStatus(ctx, node, segment, vmid)
+	if err != nil {
+		return nil, fmt.Errorf("get guest runtime status: %w", err)
+	}
+	return &domain.GuestRuntimeStatus{Status: status.Status, QMPStatus: status.QMPStatus}, nil
+}
+
 // reportedGuestStatus returns the state relevant to lifecycle decisions.
 // Proxmox's QEMU `status` only says whether the QEMU process is running; the
 // QMP state distinguishes a running guest from one suspended in memory.
@@ -684,6 +712,30 @@ func (p *Provider) Task(ctx context.Context, node, upid string) (*domain.Task, e
 	}
 	task := mapTask(*item, node)
 	return &task, nil
+}
+
+// TaskLog returns a bounded log for a specific task by UPID.
+//
+// A non-positive limit means the provider default; an over-large limit is
+// capped so a single call cannot download an unbounded task log.
+func (p *Provider) TaskLog(ctx context.Context, node, upid string, limit int) ([]domain.TaskLogLine, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	if limit <= 0 {
+		limit = defaultTaskLogLimit
+	} else if limit > maxTaskLogLimit {
+		limit = maxTaskLogLimit
+	}
+	items, err := p.client.GetTaskLog(ctx, node, upid, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get task log: %w", err)
+	}
+	result := make([]domain.TaskLogLine, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.TaskLogLine{LineNumber: item.N, Text: item.T})
+	}
+	return result, nil
 }
 
 func mapTask(item client.TaskListItem, node string) domain.Task {

@@ -379,7 +379,7 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 			app.ExitTaskFailure,
 		))
 	}
-	opResult.Status = "OK"
+	applyTaskCompletionStatus(&opResult, tr.Status)
 
 	// A finished lifecycle task is not evidence the guest reached the requested
 	// state, so confirm it with a per-guest read when the operation has one.
@@ -392,7 +392,16 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 		priorState = presencePresent
 	}
 	applyPostcondition(&opResult, guestStateVerifier(prov, resourceType, node, vmid, desired, priorState, priorStatus)(ctx))
-	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
+	if err := output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult); err != nil {
+		return err
+	}
+	if opResult.Verification == "failed" {
+		return app.MarkEmitted(app.NewExitError(
+			fmt.Errorf("%s %s task %s succeeded but the guest did not reach the requested state", resourceType, operation, upid),
+			app.ExitPartialFailure,
+		))
+	}
+	return nil
 }
 
 // executeLifecycleOp calls the appropriate lifecycle method.

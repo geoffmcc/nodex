@@ -52,10 +52,40 @@ type GuestStatusInspector interface {
 	GuestStatus(ctx context.Context, node, guestType string, vmid int) (string, error)
 }
 
+// GuestRuntimeStatus describes a single guest's process state together with
+// the execution state of its processor subsystem.
+//
+// For a virtual machine the two can differ: the QEMU process stays "running"
+// while the guest CPUs are "paused" after an in-memory suspend. Reporting only
+// the process status would imply the guest is executing; reporting only the
+// QMP state would hide that the process itself is alive.
+type GuestRuntimeStatus struct {
+	// Status is the process-level state, for example "running" or "stopped".
+	Status string `json:"status" yaml:"status"`
+	// QMPStatus is the QEMU execution state for virtual machines. It is empty
+	// for stopped guests and for containers, which have no separate execution
+	// state.
+	QMPStatus string `json:"qmpstatus,omitempty" yaml:"qmpstatus,omitempty"`
+}
+
+// GuestRuntimeInspector reports both the process status and the execution state
+// of a single guest. It is optional: providers whose guests have no separate
+// execution state need not implement it.
+type GuestRuntimeInspector interface {
+	GuestRuntimeStatus(ctx context.Context, node, guestType string, vmid int) (*GuestRuntimeStatus, error)
+}
+
 // TaskInspector provides task listing and detail retrieval.
 type TaskInspector interface {
 	Tasks(ctx context.Context, node string) ([]Task, error)
 	Task(ctx context.Context, node, upid string) (*Task, error)
+}
+
+// TaskLogInspector exposes bounded task log output for providers that support
+// it. It is separate from TaskInspector so providers without a task log
+// endpoint are not required to implement it.
+type TaskLogInspector interface {
+	TaskLog(ctx context.Context, node, upid string, limit int) ([]TaskLogLine, error)
 }
 
 // SnapshotInspector provides snapshot listing for VMs and containers.

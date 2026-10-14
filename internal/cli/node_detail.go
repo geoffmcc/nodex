@@ -38,7 +38,7 @@ func runNodeServices(ctx context.Context, cmdCtx *Context, args []string) error 
 	// standalone host. Annotate them so the state is not mistaken for a fault
 	// (nit #28). A failed cluster query leaves the output untouched.
 	annotateStandaloneServices(services, detectQuorum(ctx, prov))
-	return writeNodeServices(cmdCtx, services)
+	return writeNodeServices(cmdCtx, applyLimit(services, cmdCtx.Opts.Limit))
 }
 
 func writeNodeServices(cmdCtx *Context, services []domain.NodeService) error {
@@ -82,7 +82,7 @@ func runNodeNetwork(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeNodeNetwork(cmdCtx, interfaces)
+	return writeNodeNetwork(cmdCtx, applyLimit(interfaces, cmdCtx.Opts.Limit))
 }
 
 func writeNodeNetwork(cmdCtx *Context, interfaces []domain.NodeNetwork) error {
@@ -237,7 +237,7 @@ func runNodeDisks(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeNodeDisks(cmdCtx, disks)
+	return writeNodeDisks(cmdCtx, applyLimit(disks, cmdCtx.Opts.Limit))
 }
 
 func writeNodeDisks(cmdCtx *Context, disks []domain.NodeDisk) error {
@@ -277,7 +277,7 @@ func runNodeCertificates(ctx context.Context, cmdCtx *Context, args []string) er
 	if err != nil {
 		return err
 	}
-	return writeNodeCertificates(cmdCtx, certs)
+	return writeNodeCertificates(cmdCtx, applyLimit(certs, cmdCtx.Opts.Limit))
 }
 
 func writeNodeCertificates(cmdCtx *Context, certs []domain.NodeCertificate) error {
@@ -364,7 +364,7 @@ func runNodeUpdates(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeNodeUpdates(cmdCtx, updates)
+	return writeNodeUpdates(cmdCtx, applyLimit(updates, cmdCtx.Opts.Limit))
 }
 
 func writeNodeUpdates(cmdCtx *Context, updates []domain.NodeUpdate) error {

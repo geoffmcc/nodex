@@ -86,14 +86,15 @@ func MapVM(res client.ClusterResource) domain.VM {
 // MapContainer converts a client.ClusterResource to a domain.Container.
 func MapContainer(res client.ClusterResource) domain.Container {
 	return domain.Container{
-		ID:     vmID(res),
-		Name:   res.Name,
-		Status: res.Status,
-		Node:   res.Node,
-		CPU:    res.MaxCPU,
-		Memory: res.MaxMem,
-		Disk:   res.MaxDisk,
-		IP:     res.IP,
+		ID:       vmID(res),
+		Name:     res.Name,
+		Status:   res.Status,
+		Node:     res.Node,
+		CPU:      res.MaxCPU,
+		Memory:   res.MaxMem,
+		Disk:     res.MaxDisk,
+		Template: res.Template != 0,
+		IP:       res.IP,
 	}
 }
 

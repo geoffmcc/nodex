@@ -694,6 +694,18 @@ type TaskDetailResponse struct {
 	Data TaskListItem `json:"data"`
 }
 
+// TaskLogResponse is the response from /nodes/{node}/tasks/{upid}/log.
+type TaskLogResponse struct {
+	Data []TaskLogLine `json:"data"`
+}
+
+// TaskLogLine is one line of a task log. Proxmox spells the line number "n" and
+// the text "t".
+type TaskLogLine struct {
+	N int64  `json:"n"`
+	T string `json:"t"`
+}
+
 // SnapshotListResponse is the response from /nodes/{node}/qemu/{vmid}/snapshot.
 type SnapshotListResponse struct {
 	Data []SnapshotListItem `json:"data"`
@@ -1284,7 +1296,7 @@ type SDNVNetItem struct {
 	Alias string `json:"alias,omitempty"`
 }
 
-// SDNSubnetsResponse is the response from /cluster/sdn/subnets.
+// SDNSubnetsResponse is the response from /cluster/sdn/vnets/{vnet}/subnets.
 type SDNSubnetsResponse struct {
 	Data []SDNSubnetItem `json:"data"`
 }

@@ -421,6 +421,22 @@ func TestMapVMPreservesTemplateFlag(t *testing.T) {
 	}
 }
 
+// TestMapContainerPreservesTemplateFlag covers finding F11: /cluster/resources
+// reports the template flag for lxc rows as well as qemu rows, but the
+// container mapper dropped it, so CT template 9101 was indistinguishable from
+// an ordinary container in `container list`/`container show` output.
+func TestMapContainerPreservesTemplateFlag(t *testing.T) {
+	ct := MapContainer(client.ClusterResource{ID: "node/9101", Type: "lxc", Template: 1})
+	if !ct.Template {
+		t.Fatal("Template = false, want true")
+	}
+
+	ordinary := MapContainer(client.ClusterResource{ID: "node/100", Type: "lxc"})
+	if ordinary.Template {
+		t.Fatal("ordinary container must not be reported as a template")
+	}
+}
+
 // TestSplitContentIsCanonical guards against the upstream-unstable ordering
 // defect: PVE builds the content list from unordered hash iteration, so the
 // same unchanged state returns a different order on each call. Without
