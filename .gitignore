@@ -50,4 +50,8 @@ coverage.out
 Thumbs.db
 Desktop.ini
 
+# Python bytecode caches (for example, Ansible callback test imports)
+__pycache__/
+*.py[cod]
+
 .claude/
