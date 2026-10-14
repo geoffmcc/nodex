@@ -35,6 +35,11 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Ansible's embedded callback tests import Python modules. Do not let
+    # those imports create untracked __pycache__ files that make GoReleaser's
+    # clean-worktree check reject the tagged source tree.
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       # Resolve which tag is being released before anything is checked out.
       # On a tag push the ref already is the tag; on dispatch it comes from
