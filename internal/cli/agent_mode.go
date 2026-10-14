@@ -1444,6 +1444,9 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 		r.Error = &agent.AgentError{Code: "TASK_FAILED", Message: safeMessage(status), Exit: app.ExitTaskFailure}
 	}
 	if state == "succeeded" {
+		if strings.HasPrefix(strings.TrimSpace(status), "WARNINGS:") {
+			addAgentWarning(&r.Result, agent.Warning{Code: "PROVIDER_TASK_WARNING", Message: safeMessage("provider task completed with warnings: " + status)})
+		}
 		parts := strings.Fields(r.Operation)
 		if len(parts) == 2 && lifecycleDesiredState(parts[0], parts[1]) != "" {
 			vmid, parseErr := strconv.Atoi(r.Context.ResourceID)
@@ -1461,6 +1464,12 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 				addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_FAILED", Message: "task succeeded, but the observed guest state does not match the requested postcondition"})
 			}
 		}
+	}
+	if r.Execution == agent.ExecutionSucceeded || r.Execution == agent.ExecutionFailed {
+		r.NextActions = nil
+	}
+	if r.Verification == agent.VerificationFailed {
+		r.Error = &agent.AgentError{Code: "POSTCONDITION_FAILED", Message: "task succeeded, but the observed guest state does not match the requested postcondition", Exit: app.ExitPartialFailure}
 	}
 	r.ObservedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	return nil

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/agent"
+	"github.com/geoffmcc/nodex/internal/app"
 )
 
 // P1-C regression coverage.
@@ -22,6 +23,24 @@ import (
 // depending on a provider mutation actually taking place.
 
 const preservationRequestID = "req_0123456789abcdef0123456789abcdef"
+
+func TestTerminalReceiptRefreshPreservesVerificationFailureExit(t *testing.T) {
+	seedPreservationReceipt(t, func(r *agent.Receipt) {
+		r.Execution = agent.ExecutionSucceeded
+		r.Verification = agent.VerificationFailed
+		r.Retry = agent.RetryDoNotAutomatic
+		r.Error = &agent.AgentError{Code: "POSTCONDITION_FAILED", Message: "config differs", Exit: app.ExitPartialFailure}
+	})
+	for i := 0; i < 2; i++ {
+		receipt, err := refreshPreservationReceipt(t)
+		if app.ExitCodeFromError(err) != app.ExitPartialFailure {
+			t.Fatalf("refresh exit = %v, want partial failure", err)
+		}
+		if len(receipt.NextActions) != 0 || receipt.Verification != agent.VerificationFailed {
+			t.Fatalf("terminal receipt lost failure or retained stale advice: %+v", receipt.Result)
+		}
+	}
+}
 
 // seedPreservationReceipt writes a receipt whose execution context matches the
 // e2e profile, because refresh refuses to inspect a receipt from any other

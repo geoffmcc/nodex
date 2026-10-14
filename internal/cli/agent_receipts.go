@@ -241,7 +241,17 @@ func reconcileAgentReceipt(ctx context.Context, cmdCtx *Context, args []string, 
 	if receipt.Submission == agent.SubmissionNotAttempted || receipt.Submission == agent.SubmissionRejected ||
 		receipt.Submission == agent.SubmissionAccepted && receipt.Execution == agent.ExecutionFailed ||
 		receipt.Submission == agent.SubmissionAccepted && receipt.Execution == agent.ExecutionSucceeded && receipt.Verification != agent.VerificationUnknown && !lifecyclePath(receipt.Operation) {
-		return output.WriteJSON(cmdCtx.Writer, receipt)
+		receipt.NextActions = nil
+		if err := lease.Save(receipt); err != nil {
+			return app.NewExitError(fmt.Errorf("save refreshed receipt: %w", err), app.ExitConfig)
+		}
+		if err := output.WriteJSON(cmdCtx.Writer, receipt); err != nil {
+			return err
+		}
+		if receipt.Error != nil {
+			return app.MarkEmitted(app.NewExitError(errors.New(receipt.Error.Message), receipt.Error.Exit))
+		}
+		return nil
 	}
 	if err := taskExecutionStatus(ctx, cmdCtx, &receipt); err != nil {
 		receipt.Error = &agent.AgentError{Code: "RECONCILIATION_UNAVAILABLE", Message: safeError(err), Exit: app.ExitCodeFromError(err)}
