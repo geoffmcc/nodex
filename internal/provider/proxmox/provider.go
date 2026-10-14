@@ -19,6 +19,13 @@ import (
 const (
 	ProviderName    = "proxmox"
 	ProviderVersion = "0.1.0"
+
+	// defaultTaskLogLimit bounds a task log request when the caller does not
+	// specify a limit, and maxTaskLogLimit caps an explicit higher limit. A
+	// long-running task can produce a very large log, so the provider never
+	// requests an unbounded one.
+	defaultTaskLogLimit = 200
+	maxTaskLogLimit     = 2000
 )
 
 func init() {
@@ -409,6 +416,27 @@ func (p *Provider) GuestStatus(ctx context.Context, node, guestType string, vmid
 	return reportedGuestStatus(segment, *status), nil
 }
 
+// GuestRuntimeStatus returns both the process state and, for virtual machines,
+// the QEMU execution state of a single guest.
+//
+// Keeping the two apart is what makes a guest suspended in memory readable: the
+// QEMU process is "running" while the guest CPUs are "paused". Collapsing them
+// into one field is what made a suspended VM look like it was executing.
+func (p *Provider) GuestRuntimeStatus(ctx context.Context, node, guestType string, vmid int) (*domain.GuestRuntimeStatus, error) {
+	segment, err := guestStatusSegment(guestType)
+	if err != nil {
+		return nil, err
+	}
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	status, err := p.client.GetGuestStatus(ctx, node, segment, vmid)
+	if err != nil {
+		return nil, fmt.Errorf("get guest runtime status: %w", err)
+	}
+	return &domain.GuestRuntimeStatus{Status: status.Status, QMPStatus: status.QMPStatus}, nil
+}
+
 // reportedGuestStatus returns the state relevant to lifecycle decisions.
 // Proxmox's QEMU `status` only says whether the QEMU process is running; the
 // QMP state distinguishes a running guest from one suspended in memory.
@@ -445,6 +473,18 @@ func (p *Provider) ContainerConfig(ctx context.Context, node string, vmid int) (
 	return containerConfigToMap(config), nil
 }
 
+// configKeyPresent reports whether a provider config response explicitly
+// carried the named key.
+//
+// A decoded zero value is ambiguous on its own: it can mean the provider sent
+// `0`, or that it omitted the field entirely. When the provider did send the
+// key — even with a zero or false value — the value must survive into the
+// readback map, otherwise an explicit `swap=0` or `onboot=0` request looks
+// unsatisfied and is reported as a verification failure.
+func configKeyPresent(present map[string]bool, key string) bool {
+	return present[key]
+}
+
 func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	m := map[string]interface{}{
 		"vmid": c.VMID,
@@ -452,16 +492,16 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.Name != "" {
 		m["name"] = c.Name
 	}
-	if c.CPU > 0 {
+	if c.CPU != 0 || configKeyPresent(c.Present, "cores") {
 		m["cores"] = c.CPU
 	}
 	if c.CPUType != "" {
 		m["cpu"] = c.CPUType
 	}
-	if c.Memory > 0 {
+	if c.Memory != 0 || configKeyPresent(c.Present, "memory") {
 		m["memory"] = c.Memory
 	}
-	if c.Balloon > 0 {
+	if c.Balloon != 0 || configKeyPresent(c.Present, "balloon") {
 		m["balloon"] = c.Balloon
 	}
 	if c.Net0 != "" {
@@ -473,10 +513,10 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.Boot != "" {
 		m["boot"] = c.Boot
 	}
-	if c.OnBoot != 0 {
+	if c.OnBoot != 0 || configKeyPresent(c.Present, "onboot") {
 		m["onboot"] = c.OnBoot
 	}
-	if c.Agent != 0 {
+	if c.Agent != 0 || configKeyPresent(c.Present, "agent") {
 		m["agent"] = c.Agent
 	}
 	if c.OSType != "" {
@@ -485,7 +525,7 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.Description != "" {
 		m["description"] = c.Description
 	}
-	if c.Protection != 0 {
+	if c.Protection != 0 || configKeyPresent(c.Present, "protection") {
 		m["protection"] = c.Protection
 	}
 	if c.Tags != "" {
@@ -509,7 +549,7 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.SMBIOS1 != "" {
 		m["smbios1"] = c.SMBIOS1
 	}
-	if c.Numa != 0 {
+	if c.Numa != 0 || configKeyPresent(c.Present, "numa") {
 		m["numa"] = c.Numa
 	}
 	if c.Machine != "" {
@@ -549,13 +589,13 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	if c.Hostname != "" {
 		m["hostname"] = c.Hostname
 	}
-	if c.CPU > 0 {
+	if c.CPU != 0 || configKeyPresent(c.Present, "cores") {
 		m["cores"] = c.CPU
 	}
-	if c.Memory > 0 {
+	if c.Memory != 0 || configKeyPresent(c.Present, "memory") {
 		m["memory"] = c.Memory
 	}
-	if c.Swap > 0 {
+	if c.Swap != 0 || configKeyPresent(c.Present, "swap") {
 		m["swap"] = c.Swap
 	}
 	if c.Rootfs != "" {
@@ -567,7 +607,7 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	if c.Net0 != "" {
 		m["net0"] = c.Net0
 	}
-	if c.OnBoot != 0 {
+	if c.OnBoot != 0 || configKeyPresent(c.Present, "onboot") {
 		m["onboot"] = c.OnBoot
 	}
 	if c.OSType != "" {
@@ -576,13 +616,13 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	if c.Description != "" {
 		m["description"] = c.Description
 	}
-	if c.Protection != 0 {
+	if c.Protection != 0 || configKeyPresent(c.Present, "protection") {
 		m["protection"] = c.Protection
 	}
 	if c.Tags != "" {
 		m["tags"] = c.Tags
 	}
-	if c.Unfiltered != 0 {
+	if c.Unfiltered != 0 || configKeyPresent(c.Present, "unfiltered") {
 		m["unfiltered"] = c.Unfiltered
 	}
 	if c.Features != "" {
@@ -672,6 +712,30 @@ func (p *Provider) Task(ctx context.Context, node, upid string) (*domain.Task, e
 	}
 	task := mapTask(*item, node)
 	return &task, nil
+}
+
+// TaskLog returns a bounded log for a specific task by UPID.
+//
+// A non-positive limit means the provider default; an over-large limit is
+// capped so a single call cannot download an unbounded task log.
+func (p *Provider) TaskLog(ctx context.Context, node, upid string, limit int) ([]domain.TaskLogLine, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	if limit <= 0 {
+		limit = defaultTaskLogLimit
+	} else if limit > maxTaskLogLimit {
+		limit = maxTaskLogLimit
+	}
+	items, err := p.client.GetTaskLog(ctx, node, upid, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get task log: %w", err)
+	}
+	result := make([]domain.TaskLogLine, 0, len(items))
+	for _, item := range items {
+		result = append(result, domain.TaskLogLine{LineNumber: item.N, Text: item.T})
+	}
+	return result, nil
 }
 
 func mapTask(item client.TaskListItem, node string) domain.Task {
@@ -1130,7 +1194,15 @@ func (p *Provider) NodeCertificates(ctx context.Context, node string) ([]domain.
 	result := make([]domain.NodeCertificate, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.NodeCertificate{
-			Name: item.Name,
+			Filename:      item.Filename,
+			Subject:       item.Subject,
+			Issuer:        item.Issuer,
+			Fingerprint:   item.Fingerprint,
+			NotBefore:     item.NotBefore,
+			NotAfter:      item.NotAfter,
+			PublicKeyType: item.PublicKeyType,
+			PublicKeyBits: item.PublicKeyBits,
+			SAN:           item.SAN,
 		})
 	}
 	return result, nil
@@ -1376,20 +1448,30 @@ func (p *Provider) HACurrent(ctx context.Context) ([]domain.HACurrent, error) {
 	return result, nil
 }
 
-// BackupContent returns content items for backup on a specific storage.
+// BackupContent returns backup content items for a specific storage.
+//
+// Storage listings can also contain ISOs and container templates, so the
+// request is filtered to backup content and any non-backup rows are dropped
+// defensively in case a backend ignores the filter.
 func (p *Provider) BackupContent(ctx context.Context, node, storage string) ([]domain.BackupContentItem, error) {
 	if p.client == nil {
 		return nil, errors.New(errNotConnected)
 	}
-	items, err := p.client.GetStorageContent(ctx, node, storage)
+	items, err := p.client.GetStorageContentByType(ctx, node, storage, "backup")
 	if err != nil {
 		return nil, fmt.Errorf("get backup content: %w", err)
 	}
 	result := make([]domain.BackupContentItem, 0, len(items))
 	for _, item := range items {
+		if item.Content != "backup" {
+			continue
+		}
 		result = append(result, domain.BackupContentItem{
 			Content: item.Content,
 			Volid:   item.Volid,
+			VMID:    item.VMID,
+			Subtype: item.Subtype,
+			Ctime:   item.Ctime,
 			Size:    item.Size,
 			Format:  item.Format,
 		})
@@ -2175,6 +2257,7 @@ func (p *Provider) CreateBackupSchedule(ctx context.Context, params domain.Backu
 		All:              params.All,
 		Dow:              params.Dow,
 		Starttime:        params.Starttime,
+		Schedule:         params.Schedule,
 		Mode:             params.Mode,
 		Enabled:          params.Enabled,
 		Compress:         params.Compress,
@@ -2204,6 +2287,7 @@ func (p *Provider) UpdateBackupSchedule(ctx context.Context, id string, params d
 		All:              params.All,
 		Dow:              params.Dow,
 		Starttime:        params.Starttime,
+		Schedule:         params.Schedule,
 		Mode:             params.Mode,
 		Enabled:          params.Enabled,
 		Compress:         params.Compress,
@@ -2238,6 +2322,8 @@ func backupScheduleToDomain(item client.BackupScheduleItem) domain.BackupSchedul
 		All:              item.All,
 		Dow:              item.Dow,
 		Starttime:        item.Starttime,
+		Schedule:         item.Schedule,
+		NextRun:          item.NextRun,
 		Mode:             item.Mode,
 		Enabled:          item.Enabled,
 		Compress:         item.Compress,

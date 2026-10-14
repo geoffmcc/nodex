@@ -366,6 +366,12 @@ type VMConfigData struct {
 	Unused0      string            `json:"unused0,omitempty"`
 	Digest       string            `json:"digest,omitempty"`
 	Raw          map[string]string `json:"raw,omitempty"`
+	// Present records which known config keys the provider actually returned.
+	// It exists because the typed fields above use Go zero values, so an
+	// explicit `onboot: 0` or `swap: 0` is otherwise indistinguishable from a
+	// field the provider omitted. Callers that must round-trip explicit zero or
+	// false values consult this set instead of guessing from the zero value.
+	Present map[string]bool `json:"-"`
 }
 
 func (d *VMConfigData) UnmarshalJSON(data []byte) error {
@@ -437,6 +443,7 @@ func (d *VMConfigData) UnmarshalJSON(data []byte) error {
 		Unused0:      raw.Unused0,
 		Digest:       raw.Digest,
 		Raw:          configRaw(data, vmConfigKnownKeys),
+		Present:      configPresentKeys(data, vmConfigKnownKeys),
 	}
 	return nil
 }
@@ -476,6 +483,9 @@ type ContainerConfigData struct {
 	Hookscript   string            `json:"hookscript,omitempty"`
 	Digest       string            `json:"digest,omitempty"`
 	Raw          map[string]string `json:"raw,omitempty"`
+	// Present records which known config keys the provider actually returned so
+	// explicit zero/false values survive the readback; see VMConfigData.Present.
+	Present map[string]bool `json:"-"`
 }
 
 func (d *ContainerConfigData) UnmarshalJSON(data []byte) error {
@@ -535,6 +545,7 @@ func (d *ContainerConfigData) UnmarshalJSON(data []byte) error {
 		Hookscript:   raw.Hookscript,
 		Digest:       raw.Digest,
 		Raw:          configRaw(data, containerConfigKnownKeys),
+		Present:      configPresentKeys(data, containerConfigKnownKeys),
 	}
 	return nil
 }
@@ -681,6 +692,18 @@ type TaskListItem struct {
 // TaskDetailResponse is the response from /nodes/{node}/tasks/{upid}.
 type TaskDetailResponse struct {
 	Data TaskListItem `json:"data"`
+}
+
+// TaskLogResponse is the response from /nodes/{node}/tasks/{upid}/log.
+type TaskLogResponse struct {
+	Data []TaskLogLine `json:"data"`
+}
+
+// TaskLogLine is one line of a task log. Proxmox spells the line number "n" and
+// the text "t".
+type TaskLogLine struct {
+	N int64  `json:"n"`
+	T string `json:"t"`
 }
 
 // SnapshotListResponse is the response from /nodes/{node}/qemu/{vmid}/snapshot.
@@ -913,16 +936,27 @@ type NodeDiskItem struct {
 	WWN     string `json:"wwn,omitempty"`
 }
 
-// NodeCertificatesResponse is the response from /nodes/{node}/certificates.
+// NodeCertificatesResponse is the response from /nodes/{node}/certificates/info.
 type NodeCertificatesResponse struct {
 	Data []NodeCertificateItem `json:"data"`
 }
 
-// NodeCertificateItem represents a TLS certificate category on a node.
-// Proxmox 9 /nodes/{node}/certificates returns certificate categories with a name field.
-// Individual certificate details (fingerprint, etc.) are available under .../certificates/{name}.
+// NodeCertificateItem represents a TLS certificate on a node.
+//
+// Proxmox exposes certificate metadata (subject, issuer, fingerprint and
+// validity window) only through the /nodes/{node}/certificates/info child
+// endpoint. The parent /nodes/{node}/certificates route lists certificate
+// categories (acme, custom, info), not certificates.
 type NodeCertificateItem struct {
-	Name string `json:"name"`
+	Filename      string   `json:"filename"`
+	Subject       string   `json:"subject"`
+	Issuer        string   `json:"issuer"`
+	Fingerprint   string   `json:"fingerprint"`
+	NotBefore     int64    `json:"notbefore,omitempty"`
+	NotAfter      int64    `json:"notafter,omitempty"`
+	PublicKeyType string   `json:"public-key-type,omitempty"`
+	PublicKeyBits int      `json:"public-key-bits,omitempty"`
+	SAN           []string `json:"san,omitempty"`
 }
 
 // NodeSubscriptionResponse is the response from /nodes/{node}/subscription.
@@ -1158,6 +1192,32 @@ func configRaw(data []byte, known map[string]struct{}) map[string]string {
 	return out
 }
 
+// configPresentKeys reports which of the known keys a PVE config response
+// actually carried.
+//
+// The typed config structs decode numbers and booleans into Go zero values, so
+// a provider that returns `swap: 0` or `onboot: 0` produces the same struct as
+// one that omits the field. That ambiguity made an explicit zero vanish from
+// config readback and turned a successful create with an explicit zero into a
+// spurious verification failure. Keeping the presence set alongside the typed
+// values lets callers preserve what the provider actually said.
+func configPresentKeys(data []byte, known map[string]struct{}) map[string]bool {
+	var flat map[string]json.RawMessage
+	if err := json.Unmarshal(data, &flat); err != nil {
+		return nil
+	}
+	out := make(map[string]bool, len(known))
+	for key := range flat {
+		if _, ok := known[key]; ok {
+			out[key] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func decodeString(raw json.RawMessage) string {
 	if len(raw) == 0 || string(raw) == "null" {
 		return ""
@@ -1236,7 +1296,7 @@ type SDNVNetItem struct {
 	Alias string `json:"alias,omitempty"`
 }
 
-// SDNSubnetsResponse is the response from /cluster/sdn/subnets.
+// SDNSubnetsResponse is the response from /cluster/sdn/vnets/{vnet}/subnets.
 type SDNSubnetsResponse struct {
 	Data []SDNSubnetItem `json:"data"`
 }
@@ -1322,13 +1382,19 @@ type BackupScheduleDetailResponse struct {
 
 // BackupScheduleItem represents a single backup job schedule.
 type BackupScheduleItem struct {
-	ID               string `json:"id"`
-	Node             string `json:"node,omitempty"`
-	Storage          string `json:"storage"`
-	VMID             string `json:"vmid,omitempty"`
-	All              int    `json:"all,omitempty"`
-	Dow              string `json:"dow,omitempty"`
-	Starttime        string `json:"starttime"`
+	ID        string `json:"id"`
+	Node      string `json:"node,omitempty"`
+	Storage   string `json:"storage"`
+	VMID      string `json:"vmid,omitempty"`
+	All       int    `json:"all,omitempty"`
+	Dow       string `json:"dow,omitempty"`
+	Starttime string `json:"starttime"`
+	// Schedule is the modern systemd-calendar schedule. PVE 8+ converts the
+	// deprecated starttime/dow pair into this field on write and returns it on
+	// read, so a job configured with a calendar schedule has a blank starttime.
+	Schedule string `json:"schedule,omitempty"`
+	// NextRun is the UNIX timestamp of the next execution, when PVE computes one.
+	NextRun          int64  `json:"next-run,omitempty"`
 	Mode             string `json:"mode"`
 	Enabled          int    `json:"enabled,omitempty"`
 	Compress         string `json:"compress,omitempty"`
@@ -1352,7 +1418,8 @@ type BackupScheduleCreateRequest struct {
 	VMID             string `json:"vmid,omitempty"`
 	All              int    `json:"all,omitempty"`
 	Dow              string `json:"dow,omitempty"`
-	Starttime        string `json:"starttime"`
+	Starttime        string `json:"starttime,omitempty"`
+	Schedule         string `json:"schedule,omitempty"`
 	Mode             string `json:"mode"`
 	Enabled          int    `json:"enabled,omitempty"`
 	Compress         string `json:"compress,omitempty"`

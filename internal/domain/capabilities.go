@@ -52,10 +52,40 @@ type GuestStatusInspector interface {
 	GuestStatus(ctx context.Context, node, guestType string, vmid int) (string, error)
 }
 
+// GuestRuntimeStatus describes a single guest's process state together with
+// the execution state of its processor subsystem.
+//
+// For a virtual machine the two can differ: the QEMU process stays "running"
+// while the guest CPUs are "paused" after an in-memory suspend. Reporting only
+// the process status would imply the guest is executing; reporting only the
+// QMP state would hide that the process itself is alive.
+type GuestRuntimeStatus struct {
+	// Status is the process-level state, for example "running" or "stopped".
+	Status string `json:"status" yaml:"status"`
+	// QMPStatus is the QEMU execution state for virtual machines. It is empty
+	// for stopped guests and for containers, which have no separate execution
+	// state.
+	QMPStatus string `json:"qmpstatus,omitempty" yaml:"qmpstatus,omitempty"`
+}
+
+// GuestRuntimeInspector reports both the process status and the execution state
+// of a single guest. It is optional: providers whose guests have no separate
+// execution state need not implement it.
+type GuestRuntimeInspector interface {
+	GuestRuntimeStatus(ctx context.Context, node, guestType string, vmid int) (*GuestRuntimeStatus, error)
+}
+
 // TaskInspector provides task listing and detail retrieval.
 type TaskInspector interface {
 	Tasks(ctx context.Context, node string) ([]Task, error)
 	Task(ctx context.Context, node, upid string) (*Task, error)
+}
+
+// TaskLogInspector exposes bounded task log output for providers that support
+// it. It is separate from TaskInspector so providers without a task log
+// endpoint are not required to implement it.
+type TaskLogInspector interface {
+	TaskLog(ctx context.Context, node, upid string, limit int) ([]TaskLogLine, error)
 }
 
 // SnapshotInspector provides snapshot listing for VMs and containers.
@@ -385,10 +415,17 @@ type NodeDisk struct {
 	Health string `json:"health,omitempty" yaml:"health,omitempty"`
 }
 
-// NodeCertificate represents a TLS certificate category on a node.
-// Proxmox 9 returns certificate categories; individual details are under .../certificates/{name}.
+// NodeCertificate represents a TLS certificate on a node.
 type NodeCertificate struct {
-	Name string `json:"name" yaml:"name"`
+	Filename      string   `json:"filename" yaml:"filename"`
+	Subject       string   `json:"subject" yaml:"subject"`
+	Issuer        string   `json:"issuer" yaml:"issuer"`
+	Fingerprint   string   `json:"fingerprint" yaml:"fingerprint"`
+	NotBefore     int64    `json:"not_before,omitempty" yaml:"not_before,omitempty"`
+	NotAfter      int64    `json:"not_after,omitempty" yaml:"not_after,omitempty"`
+	PublicKeyType string   `json:"public_key_type,omitempty" yaml:"public_key_type,omitempty"`
+	PublicKeyBits int      `json:"public_key_bits,omitempty" yaml:"public_key_bits,omitempty"`
+	SAN           []string `json:"san,omitempty" yaml:"san,omitempty"`
 }
 
 // NodeSubscription represents the subscription status for a node.
@@ -455,6 +492,9 @@ type HACurrent struct {
 type BackupContentItem struct {
 	Content string `json:"content" yaml:"content"`
 	Volid   string `json:"volid" yaml:"volid"`
+	VMID    int    `json:"vmid,omitempty" yaml:"vmid,omitempty"`
+	Subtype string `json:"subtype,omitempty" yaml:"subtype,omitempty"`
+	Ctime   int    `json:"ctime,omitempty" yaml:"ctime,omitempty"`
 	Size    int64  `json:"size,omitempty" yaml:"size,omitempty"`
 	Format  string `json:"format,omitempty" yaml:"format,omitempty"`
 }

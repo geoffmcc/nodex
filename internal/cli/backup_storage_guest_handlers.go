@@ -332,7 +332,7 @@ func runBackupJobShow(ctx context.Context, cmdCtx *Context, args []string) error
 
 func runBackupJobCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) < 1 {
-		return app.NewExitError(fmt.Errorf("usage: nodex backup job create storage=<name> mode=<mode> starttime=<HH:MM> [node=<n>] [vmid=<id>] [dow=<d>] [compress=<c>] [comment=<c>] [mailnotification=<m>] [mailto=<m>] [prune-backups=<p>] [pool=<p>]"), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex backup job create storage=<name> mode=<mode> schedule=<calendar> (or starttime=<HH:MM> [dow=<d>]) [node=<n>] [vmid=<id>] [compress=<c>] [comment=<c>] [mailnotification=<m>] [mailto=<m>] [prune-backups=<p>] [pool=<p>]"), app.ExitUsage)
 	}
 
 	params, err := parseBackupScheduleArgs(args)
@@ -340,8 +340,11 @@ func runBackupJobCreate(ctx context.Context, cmdCtx *Context, args []string) err
 		return app.NewExitError(err, app.ExitUsage)
 	}
 
-	if params.Storage == "" || params.Mode == "" || params.Starttime == "" {
-		return app.NewExitError(fmt.Errorf("storage, mode, and starttime are required"), app.ExitUsage)
+	if params.Storage == "" || params.Mode == "" {
+		return app.NewExitError(fmt.Errorf("storage and mode are required"), app.ExitUsage)
+	}
+	if params.Schedule == "" && params.Starttime == "" {
+		return app.NewExitError(fmt.Errorf("a schedule is required: pass schedule=<systemd calendar> or starttime=<HH:MM>"), app.ExitUsage)
 	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
@@ -355,7 +358,11 @@ func runBackupJobCreate(ctx context.Context, cmdCtx *Context, args []string) err
 		return err
 	}
 
-	desc := fmt.Sprintf("backup job on storage %s (mode: %s, start: %s)", params.Storage, params.Mode, params.Starttime)
+	when := params.Schedule
+	if when == "" {
+		when = params.Starttime
+	}
+	desc := fmt.Sprintf("backup job on storage %s (mode: %s, schedule: %s)", params.Storage, params.Mode, when)
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
 	}
@@ -626,8 +633,40 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		return fmt.Errorf("finalize download: %w", err)
 	}
 
-	fmt.Fprintf(cmdCtx.Writer, "Downloaded %s/%s/%s to %s\n", node, storage, volumeID, cleaned)
-	return nil
+	var sizeBytes int64
+	if info, statErr := os.Stat(cleaned); statErr == nil {
+		sizeBytes = info.Size()
+	}
+	return writeStorageDownloadResult(cmdCtx, storageDownloadResult{
+		Node:        node,
+		Storage:     storage,
+		VolumeID:    volumeID,
+		Destination: cleaned,
+		SizeBytes:   sizeBytes,
+	})
+}
+
+// storageDownloadResult is the structured form of `storage download`. The
+// command used to print a single prose line regardless of `--output`, so a
+// machine consumer asking for JSON received text it could not parse.
+type storageDownloadResult struct {
+	Node        string `json:"node" yaml:"node"`
+	Storage     string `json:"storage" yaml:"storage"`
+	VolumeID    string `json:"volume_id" yaml:"volume_id"`
+	Destination string `json:"destination" yaml:"destination"`
+	SizeBytes   int64  `json:"size_bytes,omitempty" yaml:"size_bytes,omitempty"`
+}
+
+func writeStorageDownloadResult(cmdCtx *Context, r storageDownloadResult) error {
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, r)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, r)
+	default:
+		fmt.Fprintf(cmdCtx.Writer, "Downloaded %s/%s/%s to %s\n", r.Node, r.Storage, r.VolumeID, r.Destination)
+		return nil
+	}
 }
 
 // --- Storage Delete (Tier 3: destructive) ---
@@ -1278,6 +1317,8 @@ func parseBackupScheduleArgs(args []string) (domain.BackupScheduleCreateParams, 
 			params.Mode = val
 		case "starttime":
 			params.Starttime = val
+		case "schedule":
+			params.Schedule = val
 		case "node":
 			params.Node = val
 		case "vmid":
@@ -1330,7 +1371,38 @@ func parseBackupScheduleArgs(args []string) (domain.BackupScheduleCreateParams, 
 			return params, fmt.Errorf("unknown parameter: %s", key)
 		}
 	}
+	// Local validation: reject a malformed start time before any provider round
+	// trip, and surface the deprecated/modern schedule conflict as a usage error
+	// rather than letting the provider silently choose one representation.
+	if params.Starttime != "" && !looksLikeClockTime(params.Starttime) {
+		return params, fmt.Errorf("invalid starttime %q: expected H:MM (for example 03:30)", params.Starttime)
+	}
+	if params.Starttime != "" && params.Schedule != "" {
+		return params, fmt.Errorf("starttime and schedule are mutually exclusive: schedule is the modern systemd-calendar form and starttime/dow are the deprecated pair")
+	}
 	return params, nil
+}
+
+// looksLikeClockTime reports whether s has the H:MM/HH:MM digit shape PVE's
+// own starttime pattern accepts (\\d{1,2}:\\d{1,2}), without interpreting
+// ranges so the provider stays the authority on the actual time.
+func looksLikeClockTime(s string) bool {
+	h, m, ok := strings.Cut(s, ":")
+	if !ok {
+		return false
+	}
+	allDigits := func(part string) bool {
+		if part == "" || len(part) > 2 {
+			return false
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+		return true
+	}
+	return allDigits(h) && allDigits(m)
 }
 
 // writeBackupSchedule writes a single backup schedule. JSON/YAML emit the
@@ -1357,7 +1429,7 @@ func writeBackupSchedules(cmdCtx *Context, schedules []domain.BackupSchedule) er
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, schedules)
 	default:
-		headers := []string{"ID", "STORAGE", "MODE", "START", "DOW", "VMID", "ENABLED", "COMMENT"}
+		headers := []string{"ID", "STORAGE", "MODE", "SCHEDULE", "NEXT", "VMID", "ENABLED", "COMMENT"}
 		rows := make([][]string, 0, len(schedules))
 		for _, s := range schedules {
 			enabled := "no"
@@ -1368,8 +1440,8 @@ func writeBackupSchedules(cmdCtx *Context, schedules []domain.BackupSchedule) er
 				s.ID,
 				s.Storage,
 				s.Mode,
-				s.Starttime,
-				s.Dow,
+				backupScheduleTiming(s),
+				formatEpoch(s.NextRun),
 				s.VMID,
 				enabled,
 				s.Comment,
@@ -1377,4 +1449,21 @@ func writeBackupSchedules(cmdCtx *Context, schedules []domain.BackupSchedule) er
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
+}
+
+// backupScheduleTiming renders when a job runs. PVE 8+ stores modern jobs as a
+// systemd-calendar `schedule` and leaves the deprecated starttime blank, so
+// falling back to the raw starttime/dow pair keeps legacy jobs readable.
+func backupScheduleTiming(s domain.BackupSchedule) string {
+	if s.Schedule != "" {
+		return s.Schedule
+	}
+	parts := make([]string, 0, 2)
+	if s.Dow != "" {
+		parts = append(parts, s.Dow)
+	}
+	if s.Starttime != "" {
+		parts = append(parts, s.Starttime)
+	}
+	return strings.Join(parts, " ")
 }

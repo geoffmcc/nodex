@@ -802,6 +802,27 @@ func TestGetStorageContentLeavesUnusableTimestampsAtZeroRatherThanFailing(t *tes
 	}
 }
 
+func TestGetStorageContentByTypeFiltersByContent(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/storage/local/content" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("content"); got != "backup" {
+			t.Fatalf("content query = %q, want backup", got)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"content":"backup","volid":"local:backup/vzdump-lxc-9100.tar","vmid":9100}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	items, err := c.GetStorageContentByType(context.Background(), "proxmox", "local", "backup")
+	if err != nil {
+		t.Fatalf("GetStorageContentByType: %v", err)
+	}
+	if len(items) != 1 || items[0].VMID != 9100 {
+		t.Fatalf("items = %+v", items)
+	}
+}
+
 func TestGetStorageContentRejectsEmptyNode(t *testing.T) {
 	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
 	_, err := c.GetStorageContent(context.Background(), "", "local")
@@ -903,6 +924,49 @@ func TestGetTaskRejectsEmptyUPID(t *testing.T) {
 	_, err := c.GetTask(context.Background(), "proxmox", "")
 	if err == nil || !strings.Contains(err.Error(), "task UPID is required") {
 		t.Fatalf("GetTask('') error = %v, want UPID required", err)
+	}
+}
+
+func TestGetTaskLogBounded(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/tasks/UPID:proxmox/00012345/0/log" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("limit"); got != "2" {
+			t.Fatalf("limit query = %q, want 2", got)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"n":1,"t":"INFO: start"},{"n":2,"t":"WARN: something"}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	lines, err := c.GetTaskLog(context.Background(), "proxmox", "UPID:proxmox/00012345/0", 2)
+	if err != nil {
+		t.Fatalf("GetTaskLog: %v", err)
+	}
+	if len(lines) != 2 || lines[1].N != 2 || lines[1].T != "WARN: something" {
+		t.Fatalf("lines = %+v", lines)
+	}
+}
+
+func TestGetTaskLogOmitsLimitWhenZero(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			t.Fatalf("unexpected query: %q", r.URL.RawQuery)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	if _, err := c.GetTaskLog(context.Background(), "proxmox", "UPID:proxmox/00012345/0", 0); err != nil {
+		t.Fatalf("GetTaskLog: %v", err)
+	}
+}
+
+func TestGetTaskLogRejectsEmptyNode(t *testing.T) {
+	c := &Client{baseURL: "https://example.com", client: httpclient.New()}
+	_, err := c.GetTaskLog(context.Background(), "", "UPID:test/1/0", 10)
+	if err == nil || !strings.Contains(err.Error(), "node name is required") {
+		t.Fatalf("GetTaskLog('') error = %v, want node name required", err)
 	}
 }
 

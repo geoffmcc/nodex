@@ -511,14 +511,39 @@ func runProfileTest(ctx context.Context, cmdCtx *Context, args []string) error {
 		)
 	}
 
-	fmt.Fprintf(cmdCtx.Writer, "Profile %q (%s): OK\n", name, p.Endpoint)
-	fmt.Fprintf(cmdCtx.Writer, "  Provider version: %s\n", prov.Version())
+	result := profileTestResult{Profile: name, Endpoint: p.Endpoint, Status: "ok", ProviderVersion: prov.Version()}
 	if api, ok := prov.(interface{ APIVersion() string }); ok {
-		if version := api.APIVersion(); version != "" {
-			fmt.Fprintf(cmdCtx.Writer, "  Proxmox version: %s\n", version)
-		}
+		result.APIVersion = api.APIVersion()
 	}
-	return nil
+	return writeProfileTestResult(cmdCtx, result)
+}
+
+// profileTestResult is the structured form of `profile test`. The command used
+// to print prose unconditionally, so `--output json` produced text that no
+// machine consumer could parse. A typed result keeps the human and structured
+// renderers describing the same facts.
+type profileTestResult struct {
+	Profile         string `json:"profile" yaml:"profile"`
+	Endpoint        string `json:"endpoint" yaml:"endpoint"`
+	Status          string `json:"status" yaml:"status"`
+	ProviderVersion string `json:"provider_version,omitempty" yaml:"provider_version,omitempty"`
+	APIVersion      string `json:"api_version,omitempty" yaml:"api_version,omitempty"`
+}
+
+func writeProfileTestResult(cmdCtx *Context, r profileTestResult) error {
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, r)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, r)
+	default:
+		fmt.Fprintf(cmdCtx.Writer, "Profile %q (%s): OK\n", r.Profile, r.Endpoint)
+		fmt.Fprintf(cmdCtx.Writer, "  Provider version: %s\n", r.ProviderVersion)
+		if r.APIVersion != "" {
+			fmt.Fprintf(cmdCtx.Writer, "  Proxmox version: %s\n", r.APIVersion)
+		}
+		return nil
+	}
 }
 
 func runProfileRemove(_ context.Context, cmdCtx *Context, args []string) error {

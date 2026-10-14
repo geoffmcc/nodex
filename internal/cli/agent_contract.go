@@ -260,6 +260,12 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 		verification = []string{"after task success, VM config is read back and CPU, memory, and any requested disk storage/size are compared with the request"}
 	case "container create":
 		verification = []string{"after task success, container config is read back and requested CPU, memory, swap, unprivileged status, and any requested rootfs storage/size are compared with the request"}
+	case "container update":
+		verification = []string{"after synchronous application, current container config is read back and compared with the requested fields; asynchronous provider updates expose task completion only"}
+	case "vm template", "container template":
+		verification = []string{"after synchronous application or waited task success, current guest config is inspected for template:1"}
+	case "vm snapshot delete", "container snapshot delete":
+		verification = []string{"after waited task success, the snapshot list is read back to confirm the named snapshot is absent"}
 	}
 	var recovery []string
 	switch {
@@ -340,6 +346,9 @@ func operationFlags(path, usage string, profileRequired bool) []AgentFlag {
 				limit.Default = 20
 				limit.Maximum = 100
 				limit.ValueSyntax = "minimum 0; 0 selects the default 20; maximum 100"
+			}
+			if path == "task log" {
+				limit.ValueSyntax = "minimum 0; Proxmox uses 200 when 0 and caps requests at 2000 lines"
 			}
 			result = append(result, limit)
 		case "--request-id":

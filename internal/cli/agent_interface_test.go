@@ -583,8 +583,8 @@ func TestAgentPVEVMMutationUsesBoundProviderAndWritesReceipt(t *testing.T) {
 		t.Fatalf("PVE receipt missing exact target/task context: %+v err=%v", receipt, err)
 	}
 	stdout.Reset()
-	if err := Run(context.Background(), []string{"--profile", "e2e", "agent", "receipt", "refresh", "req_vm_stop"}, &stdout, &stderr); err != nil {
-		t.Fatalf("refresh PVE task and postcondition: %v\n%s", err, stdout.String())
+	if err := Run(context.Background(), []string{"--profile", "e2e", "agent", "receipt", "refresh", "req_vm_stop"}, &stdout, &stderr); app.ExitCodeFromError(err) != app.ExitPartialFailure {
+		t.Fatalf("refresh with mismatched postcondition must return partial failure: %v\n%s", err, stdout.String())
 	}
 	var refreshed agent.Receipt
 	if err := json.Unmarshal(stdout.Bytes(), &refreshed); err != nil {
@@ -860,6 +860,8 @@ func TestAgentReceiptRefreshTreatsWarningTaskStatusAsSuccess(t *testing.T) {
 				t.Fatalf("submit VM stop: %v", err)
 			}
 			stdout.Reset()
+			e2eGuestStatusOverride = "stopped"
+			t.Cleanup(func() { e2eGuestStatusOverride = "" })
 			refreshErr := Run(context.Background(), []string{"--profile", "e2e", "agent", "receipt", "refresh", "req_warn_status"}, &stdout, &stderr)
 
 			var receipt agent.Receipt
@@ -868,6 +870,12 @@ func TestAgentReceiptRefreshTreatsWarningTaskStatusAsSuccess(t *testing.T) {
 			}
 			if receipt.Execution != tt.wantExec {
 				t.Errorf("Execution = %q for task status %q, want %q", receipt.Execution, tt.status, tt.wantExec)
+			}
+			if len(receipt.NextActions) != 0 {
+				t.Errorf("terminal receipt retained recovery actions: %+v", receipt.NextActions)
+			}
+			if strings.HasPrefix(tt.status, "WARNINGS:") && !hasPreservationWarning(receipt.Warnings, "PROVIDER_TASK_WARNING") {
+				t.Errorf("provider warning was lost on refresh: %+v", receipt.Warnings)
 			}
 			if tt.wantExec == agent.ExecutionSucceeded {
 				if refreshErr != nil {

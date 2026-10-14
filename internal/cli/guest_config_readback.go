@@ -310,6 +310,81 @@ func createdVolumeMatches(actual string, expected createdVolumeExpectation) bool
 	return false
 }
 
+// templateConfigVerifier confirms that a guest became a template by reading the
+// authoritative config endpoint after the conversion and checking the template
+// flag. The provider's container template endpoint applies the change
+// synchronously and returns no task identifier, so completion must be modelled
+// from the observed flag rather than from a task ID that never exists.
+//
+// A readable config that does not report the template flag is a contradiction,
+// not an unknown: the guest is demonstrably not a template. Only a config read
+// that could not complete leaves the outcome unverifiable.
+func templateConfigVerifier(prov domain.Provider, resourceType, node string, vmid int) postconditionVerifier {
+	return func(ctx context.Context) postconditionOutcome {
+		var config map[string]interface{}
+		var err error
+		switch resourceType {
+		case "vm":
+			inspector, ok := prov.(domain.VMInspector)
+			if !ok {
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s/%d VM config readback is unsupported", node, vmid)}
+			}
+			config, err = inspector.VMConfig(ctx, node, vmid)
+		case "container":
+			inspector, ok := prov.(domain.ContainerInspector)
+			if !ok {
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s/%d container config readback is unsupported", node, vmid)}
+			}
+			config, err = inspector.ContainerConfig(ctx, node, vmid)
+		default:
+			return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("template verification is unsupported for resource type %q", resourceType)}
+		}
+		if err != nil {
+			return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s/%d config could not be read after conversion: %v", node, vmid, err)}
+		}
+		value, exists := config["template"]
+		if !exists {
+			return postconditionOutcome{Detail: fmt.Sprintf("%s/%d config does not report the template flag after the conversion", node, vmid)}
+		}
+		canonical := canonicalConfigValue(value)
+		if canonical == "1" || strings.EqualFold(canonical, "true") {
+			return postconditionOutcome{Verified: true, Detail: fmt.Sprintf("%s/%d config reports template:1", node, vmid)}
+		}
+		return postconditionOutcome{Detail: fmt.Sprintf("%s/%d config reports template:%s after the conversion", node, vmid, canonical)}
+	}
+}
+
+// runSynchronousMutation models a mutation endpoint that applies inline and
+// returns no task identifier.
+//
+// Some provider endpoints have no task to poll even though the command name
+// looks asynchronous. Treating them as task-based produced an OUTCOME_UNKNOWN
+// receipt and a reconcile recommendation that could never resolve. Reporting
+// them as synchronous, then confirming the requested postcondition by readback,
+// describes what the endpoint actually guarantees.
+func runSynchronousMutation(ctx context.Context, cmdCtx *Context, prov domain.Provider, operation, target, safetyTier string, verify postconditionVerifier) error {
+	profileName, _ := resolveProfileName(cmdCtx)
+	result := output.NewOperationResult(operation, prov.Name(), profileName)
+	result.Target = target
+	result.Safety = safetyTier
+	result.Submitted = true
+	result.Success = true
+	result.Synchronous = true
+	if verify != nil {
+		applyPostcondition(&result, verify(ctx))
+	}
+	if err := output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result); err != nil {
+		return err
+	}
+	if result.Verification == "failed" {
+		return app.MarkEmitted(app.NewExitError(
+			fmt.Errorf("%s was applied but the observed result does not satisfy the request", operation),
+			app.ExitPartialFailure,
+		))
+	}
+	return nil
+}
+
 // readbackContainerConfig reads the current container config for comparison.
 func readbackContainerConfig(ctx context.Context, prov domain.Provider, node string, vmid int) (map[string]interface{}, error) {
 	ci, ok := prov.(domain.ContainerInspector)
@@ -354,16 +429,18 @@ func runSynchronousConfigUpdate(
 	observed, err := readbackContainerConfig(ctx, prov, node, vmid)
 	if err != nil {
 		// The change was applied; only the postcondition is unobservable.
-		// Report that honestly rather than claiming either success or failure.
+		// Report that honestly rather than claiming either success or failure,
+		// and use the same exit semantics as a completed asynchronous task
+		// whose postcondition could not be checked: success with `unsupported`
+		// verification and a warning, not an error.
+		result.Status = "applied-unverified"
+		result.Verification = "unsupported"
 		result.Warnings = append(result.Warnings,
 			"configuration was applied by a synchronous provider endpoint, but readback verification is unavailable: "+err.Error())
 		if writeErr := output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result); writeErr != nil {
 			return writeErr
 		}
-		return app.MarkEmitted(app.NewExitError(
-			fmt.Errorf("applied %s but could not verify: %w", target, err),
-			app.ExitAmbiguousOutcome,
-		))
+		return nil
 	}
 
 	matched, mismatches := verifyConfigReadback(observed, requested)

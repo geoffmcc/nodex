@@ -117,7 +117,7 @@ func runHACurrent(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeHACurrentTable(cmdCtx, current)
+	return writeHACurrentTable(cmdCtx, applyLimit(current, cmdCtx.Opts.Limit))
 }
 
 func writeHACurrentTable(cmdCtx *Context, current []domain.HACurrent) error {
@@ -162,7 +162,7 @@ func runBackupContent(ctx context.Context, cmdCtx *Context, args []string) error
 	if err != nil {
 		return err
 	}
-	return writeBackupContentTable(cmdCtx, items)
+	return writeBackupContentTable(cmdCtx, applyLimit(items, cmdCtx.Opts.Limit))
 }
 
 func writeBackupContentTable(cmdCtx *Context, items []domain.BackupContentItem) error {
@@ -175,10 +175,22 @@ func writeBackupContentTable(cmdCtx *Context, items []domain.BackupContentItem) 
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, items)
 	default:
-		headers := []string{"CONTENT", "VOLID", "FORMAT", "SIZE"}
+		headers := []string{"CONTENT", "VOLID", "VMID", "SUBTYPE", "CREATED", "FORMAT", "SIZE"}
 		rows := make([][]string, 0, len(items))
 		for _, item := range items {
-			rows = append(rows, []string{item.Content, item.Volid, item.Format, formatBytes(item.Size)})
+			vmid := ""
+			if item.VMID > 0 {
+				vmid = strconv.Itoa(item.VMID)
+			}
+			rows = append(rows, []string{
+				item.Content,
+				item.Volid,
+				vmid,
+				item.Subtype,
+				formatEpoch(int64(item.Ctime)),
+				item.Format,
+				formatBytes(item.Size),
+			})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
@@ -202,7 +214,7 @@ func runSDNZones(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeSDNZonesTable(cmdCtx, zones)
+	return writeSDNZonesTable(cmdCtx, applyLimit(zones, cmdCtx.Opts.Limit))
 }
 
 func writeSDNZonesTable(cmdCtx *Context, zones []domain.SDNZone) error {
@@ -242,7 +254,7 @@ func runSDNVNets(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeSDNVNetsTable(cmdCtx, vnets)
+	return writeSDNVNetsTable(cmdCtx, applyLimit(vnets, cmdCtx.Opts.Limit))
 }
 
 func writeSDNVNetsTable(cmdCtx *Context, vnets []domain.SDNVNet) error {
@@ -286,7 +298,7 @@ func runSDNSubnets(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return writeSDNSubnetsTable(cmdCtx, subnets)
+	return writeSDNSubnetsTable(cmdCtx, applyLimit(subnets, cmdCtx.Opts.Limit))
 }
 
 func writeSDNSubnetsTable(cmdCtx *Context, subnets []domain.SDNSubnet) error {
@@ -326,7 +338,7 @@ func runSDNControllers(ctx context.Context, cmdCtx *Context, args []string) erro
 	if err != nil {
 		return err
 	}
-	return writeSDNControllersTable(cmdCtx, controllers)
+	return writeSDNControllersTable(cmdCtx, applyLimit(controllers, cmdCtx.Opts.Limit))
 }
 
 func writeSDNControllersTable(cmdCtx *Context, controllers []domain.SDNController) error {

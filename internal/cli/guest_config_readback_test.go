@@ -663,12 +663,12 @@ func TestRunCTUpdateSynchronousUnreadablePostcondition(t *testing.T) {
 	cmdCtx, out := syncCTCtx(t)
 	syncCTState.readErr = errors.New("connection refused")
 
-	err := runCTUpdate(context.Background(), cmdCtx, []string{"e2e-node/200", "cores=4"})
-	if err == nil {
-		t.Fatal("expected an error when the postcondition cannot be observed")
-	}
-	if app.ExitCodeFromError(err) != app.ExitAmbiguousOutcome {
-		t.Errorf("exit = %d, want %d (ambiguous outcome)", app.ExitCodeFromError(err), app.ExitAmbiguousOutcome)
+	// The endpoint applied the change; only the readback failed. That is the
+	// same class as a completed task whose postcondition could not be checked:
+	// success with `unsupported` verification, not an error. This matches the
+	// asynchronous path so shell-level handling is predictable.
+	if err := runCTUpdate(context.Background(), cmdCtx, []string{"e2e-node/200", "cores=4"}); err != nil {
+		t.Fatalf("runCTUpdate: %v", err)
 	}
 
 	var got output.OperationResult
@@ -680,8 +680,11 @@ func TestRunCTUpdateSynchronousUnreadablePostcondition(t *testing.T) {
 	if got.Status == "verified" {
 		t.Error("must not report verified when readback is unavailable")
 	}
-	if !got.Submitted || !got.Synchronous {
-		t.Errorf("submitted=%v synchronous=%v, want both true", got.Submitted, got.Synchronous)
+	if got.Verification != "unsupported" {
+		t.Errorf("verification = %q, want %q", got.Verification, "unsupported")
+	}
+	if !got.Submitted || !got.Synchronous || !got.Success {
+		t.Errorf("submitted=%v synchronous=%v success=%v, want all true", got.Submitted, got.Synchronous, got.Success)
 	}
 }
 

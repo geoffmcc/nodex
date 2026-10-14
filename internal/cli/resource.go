@@ -255,7 +255,40 @@ func runVMShow(ctx context.Context, cmdCtx *Context, args []string) error {
 	if !ok {
 		return app.NotFoundError("VM %q", args[0])
 	}
+	enrichVMRuntimeStatus(ctx, prov, cmdCtx, &vm)
 	return writeVM(cmdCtx, vm)
+}
+
+// enrichVMRuntimeStatus refreshes one VM from the authoritative per-guest read
+// when the provider exposes it.
+//
+// The aggregate listing only knows that the QEMU process is "running", which
+// makes a VM suspended in memory look like it is executing. The per-guest read
+// also carries the QMP execution state, so both process status and execution
+// state are reported. A failed read leaves the aggregate values in place rather
+// than inventing a runtime state, and the absence of QMPStatus then means "not
+// observed", not "running".
+func enrichVMRuntimeStatus(ctx context.Context, prov domain.Provider, cmdCtx *Context, vm *domain.VM) {
+	rti, ok := prov.(domain.GuestRuntimeInspector)
+	if !ok {
+		return
+	}
+	node, vmid, err := parseNodeVMID(vm.ID)
+	if err != nil || node == "" || vmid <= 0 {
+		return
+	}
+	status, err := rti.GuestRuntimeStatus(ctx, node, "vm", vmid)
+	if err != nil {
+		// The aggregate view is still a truthful statement of what was read;
+		// note that the authoritative refresh failed rather than dropping it.
+		fmt.Fprintf(cmdCtx.ErrW, "warning: authoritative VM status unavailable, reporting aggregate state: %v\n", err)
+		return
+	}
+	if status == nil {
+		return
+	}
+	vm.Status = status.Status
+	vm.QMPStatus = status.QMPStatus
 }
 
 func findVM(vms []domain.VM, id string) (domain.VM, bool) {
@@ -285,6 +318,12 @@ func writeVM(cmdCtx *Context, vm domain.VM) error {
 			{"DISK", formatBytes(vm.Disk)},
 			{"IP", vm.IP},
 			{"OS", vm.OS},
+		}
+		// The execution state is a distinct axis from the process status: a
+		// guest suspended in memory keeps a running QEMU process with paused
+		// CPUs. Only shown when it was actually observed.
+		if vm.QMPStatus != "" {
+			rows = append(rows, []string{"EXECUTION", vm.QMPStatus})
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
@@ -410,6 +449,7 @@ func writeContainer(cmdCtx *Context, container domain.Container) error {
 			{"MEMORY", formatBytes(container.Memory)},
 			{"DISK", formatBytes(container.Disk)},
 			{"IP", container.IP},
+			{"TEMPLATE", yesNo(container.Template)},
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
@@ -428,7 +468,7 @@ func writeContainers(cmdCtx *Context, containers []domain.Container) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, containers)
 	default:
-		headers := []string{"ID", "NAME", "STATUS", "NODE", "CPU", "OS", "MEMORY", "DISK"}
+		headers := []string{"ID", "NAME", "STATUS", "NODE", "CPU", "OS", "MEMORY", "DISK", "TEMPLATE"}
 		rows := make([][]string, 0, len(containers))
 		for _, c := range containers {
 			rows = append(rows, []string{
@@ -440,6 +480,7 @@ func writeContainers(cmdCtx *Context, containers []domain.Container) error {
 				c.OS,
 				formatBytes(c.Memory),
 				formatBytes(c.Disk),
+				yesNo(c.Template),
 			})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
@@ -734,7 +775,7 @@ func runStorageContent(ctx context.Context, cmdCtx *Context, args []string) erro
 	if err != nil {
 		return err
 	}
-	return writeStorageContent(cmdCtx, items)
+	return writeStorageContent(cmdCtx, applyLimit(items, cmdCtx.Opts.Limit))
 }
 
 func writeStorageContent(cmdCtx *Context, items []domain.StorageContentItem) error {
@@ -860,6 +901,49 @@ func writeTaskDetail(cmdCtx *Context, task *domain.Task) error {
 			{"ENDED", fmt.Sprintf("%d", task.EndTime)},
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
+	}
+}
+
+func runTaskLog(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 2 {
+		return app.NewExitError(fmt.Errorf("usage: nodex task log <node> <upid>"), app.ExitUsage)
+	}
+	node := args[0]
+	upid := args[1]
+	if node == "" || upid == "" {
+		return app.NewExitError(fmt.Errorf("usage: nodex task log <node> <upid>"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	tl, err := requireTaskLog(prov)
+	if err != nil {
+		return err
+	}
+	lines, err := tl.TaskLog(ctx, node, upid, cmdCtx.Opts.Limit)
+	if err != nil {
+		return err
+	}
+	return writeTaskLog(cmdCtx, lines)
+}
+
+func writeTaskLog(cmdCtx *Context, lines []domain.TaskLogLine) error {
+	if lines == nil {
+		lines = []domain.TaskLogLine{}
+	}
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, lines)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, lines)
+	default:
+		for _, l := range lines {
+			fmt.Fprintf(cmdCtx.Writer, "%s\n", l.Text)
+		}
+		return nil
 	}
 }
 

@@ -209,14 +209,31 @@ func runMutationWithPostcondition(ctx context.Context, cmdCtx *Context, prov dom
 			app.ExitTaskFailure,
 		))
 	}
-	result.Status = "OK"
+	applyTaskCompletionStatus(&result, tr.Status)
 	if verify == nil {
 		return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 	}
 
 	// The task completed, so the postcondition is now meaningful to check.
+	//
+	// A confirmed contradiction of the requested end state is a partial
+	// failure: the mutation was applied, but its observable result does not
+	// match the request. A postcondition that could not be checked at all stays
+	// a successful submission with an explicit `unsupported` verification, so
+	// an inability to look is never reported as an operation failure. Both
+	// real-world synchronous and asynchronous mutation paths must follow this
+	// same rule so shell-level exit handling is predictable.
 	applyPostcondition(&result, verify(ctx))
-	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
+	if err := output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result); err != nil {
+		return err
+	}
+	if result.Verification == "failed" {
+		return app.MarkEmitted(app.NewExitError(
+			fmt.Errorf("%s task %s succeeded but the postcondition was not satisfied in the observed state", operation, upid),
+			app.ExitPartialFailure,
+		))
+	}
+	return nil
 }
 
 // --- VM Config Update ---
@@ -805,7 +822,12 @@ func runVMTemplate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("template VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm template", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	target := fmt.Sprintf("%s/%d", node, vmid)
+	verify := templateConfigVerifier(prov, "vm", node, vmid)
+	if upid == "" {
+		return runSynchronousMutation(ctx, cmdCtx, prov, "vm template", target, "disruptive", verify)
+	}
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm template", target, "disruptive", verify)
 }
 
 // --- Container Template (Tier 2: disruptive) ---
@@ -841,7 +863,16 @@ func runCTTemplate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("template container %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container template", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	// The Proxmox LXC template endpoint applies synchronously and returns no
+	// task ID, unlike the QEMU endpoint. Model that contract directly and verify
+	// the resulting template flag instead of reporting an outcome that no task
+	// could ever resolve.
+	target := fmt.Sprintf("%s/%d", node, vmid)
+	verify := templateConfigVerifier(prov, "container", node, vmid)
+	if upid == "" {
+		return runSynchronousMutation(ctx, cmdCtx, prov, "container template", target, "disruptive", verify)
+	}
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container template", target, "disruptive", verify)
 }
 
 // --- Snapshot Dispatch Handlers ---

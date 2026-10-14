@@ -339,6 +339,16 @@ func (c *Client) GetContainerConfig(ctx context.Context, node string, vmid int) 
 
 // GetStorageContent returns the content of a specific storage.
 func (c *Client) GetStorageContent(ctx context.Context, node, storage string) ([]StorageContentItem, error) {
+	return c.GetStorageContentByType(ctx, node, storage, "")
+}
+
+// GetStorageContentByType returns the content of a specific storage, filtered
+// server-side by content type (for example "backup").
+//
+// The content filter keeps unrelated objects such as ISOs and container
+// templates out of backup listings. It is advisory: callers should not assume a
+// backend enforces it, so results may still need client-side filtering.
+func (c *Client) GetStorageContentByType(ctx context.Context, node, storage, content string) ([]StorageContentItem, error) {
 	if node == "" {
 		return nil, fmt.Errorf("node name is required")
 	}
@@ -347,6 +357,11 @@ func (c *Client) GetStorageContent(ctx context.Context, node, storage string) ([
 	}
 	var resp StorageContentResponse
 	path := "/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) + "/content"
+	if content != "" {
+		query := url.Values{}
+		query.Set("content", content)
+		path += "?" + query.Encode()
+	}
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
 	}
@@ -396,6 +411,31 @@ func (c *Client) GetTask(ctx context.Context, node, upid string) (*TaskListItem,
 		return nil, err
 	}
 	return &resp.Data, nil
+}
+
+// GetTaskLog returns the log of a specific task, bounded to limit lines.
+//
+// The limit is applied server-side so a long-running or verbose task does not
+// require downloading its entire log. A limit of zero or less requests the
+// provider default.
+func (c *Client) GetTaskLog(ctx context.Context, node, upid string, limit int) ([]TaskLogLine, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if upid == "" {
+		return nil, fmt.Errorf("task UPID is required")
+	}
+	var resp TaskLogResponse
+	path := "/nodes/" + url.PathEscape(node) + "/tasks/" + url.PathEscape(upid) + "/log"
+	if limit > 0 {
+		query := url.Values{}
+		query.Set("limit", strconv.Itoa(limit))
+		path += "?" + query.Encode()
+	}
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
 }
 
 // GetVMSnapshots returns snapshots for a VM.
@@ -607,14 +647,25 @@ func (c *Client) GetNodeDisks(ctx context.Context, node string) ([]NodeDiskItem,
 }
 
 // GetNodeCertificates returns TLS certificates for a specific node.
+//
+// Certificate details live under the /nodes/{node}/certificates/info child
+// endpoint; the parent route only enumerates certificate categories.
 func (c *Client) GetNodeCertificates(ctx context.Context, node string) ([]NodeCertificateItem, error) {
 	if node == "" {
 		return nil, fmt.Errorf("node name is required")
 	}
 	var resp NodeCertificatesResponse
-	path := "/nodes/" + url.PathEscape(node) + "/certificates"
+	path := "/nodes/" + url.PathEscape(node) + "/certificates/info"
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
+	}
+	if len(resp.Data) == 0 {
+		return nil, fmt.Errorf("no certificate information returned for node %q", node)
+	}
+	for _, cert := range resp.Data {
+		if cert.Subject == "" && cert.Issuer == "" && cert.Fingerprint == "" {
+			return nil, fmt.Errorf("certificate metadata missing for node %q", node)
+		}
 	}
 	return resp.Data, nil
 }
@@ -760,12 +811,35 @@ func (c *Client) GetSDNVNets(ctx context.Context) ([]SDNVNetItem, error) {
 }
 
 // GetSDNSubnets returns SDN subnets.
+//
+// PVE exposes subnets only per virtual network via
+// GET /cluster/sdn/vnets/{vnet}/subnets; there is no cluster-wide subnet
+// listing endpoint (GET /cluster/sdn/subnets returns 501). Enumerate the
+// virtual networks and query each one, so an empty topology yields an empty
+// result rather than an error.
 func (c *Client) GetSDNSubnets(ctx context.Context) ([]SDNSubnetItem, error) {
-	var resp SDNSubnetsResponse
-	if err := c.get(ctx, "/cluster/sdn/subnets", &resp); err != nil {
+	vnets, err := c.GetSDNVNets(ctx)
+	if err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	subnets := make([]SDNSubnetItem, 0)
+	for _, vnet := range vnets {
+		var resp SDNSubnetsResponse
+		path := "/cluster/sdn/vnets/" + url.PathEscape(vnet.Name) + "/subnets"
+		if err := c.get(ctx, path, &resp); err != nil {
+			return nil, err
+		}
+		for _, item := range resp.Data {
+			if item.VNet == "" {
+				item.VNet = vnet.Name
+			}
+			if item.Zone == "" {
+				item.Zone = vnet.Zone
+			}
+			subnets = append(subnets, item)
+		}
+	}
+	return subnets, nil
 }
 
 // GetSDNControllers returns SDN controllers.
@@ -1264,14 +1338,19 @@ func (c *Client) CreateBackupSchedule(ctx context.Context, schedule BackupSchedu
 	if schedule.Mode == "" {
 		return "", fmt.Errorf("backup mode is required")
 	}
-	if schedule.Starttime == "" {
-		return "", fmt.Errorf("start time is required")
+	if schedule.Schedule == "" && schedule.Starttime == "" {
+		return "", fmt.Errorf("a schedule is required: supply schedule (systemd calendar) or starttime")
 	}
 	var resp TaskResponse
 	body := url.Values{}
 	body.Set("storage", schedule.Storage)
 	body.Set("mode", schedule.Mode)
-	body.Set("starttime", schedule.Starttime)
+	if schedule.Schedule != "" {
+		body.Set("schedule", schedule.Schedule)
+	}
+	if schedule.Starttime != "" {
+		body.Set("starttime", schedule.Starttime)
+	}
 	if schedule.Node != "" {
 		body.Set("node", schedule.Node)
 	}
@@ -1341,6 +1420,9 @@ func (c *Client) UpdateBackupSchedule(ctx context.Context, id string, schedule B
 	}
 	if schedule.Mode != "" {
 		body.Set("mode", schedule.Mode)
+	}
+	if schedule.Schedule != "" {
+		body.Set("schedule", schedule.Schedule)
 	}
 	if schedule.Starttime != "" {
 		body.Set("starttime", schedule.Starttime)

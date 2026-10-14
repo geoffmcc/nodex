@@ -75,6 +75,7 @@ var leafHelp = map[string]helpEntry{
 	"vm console":                   {usage: "<node>/<vmid>"},
 	"task list":                    {usage: "<node>"},
 	"task show":                    {usage: "<node> <upid>"},
+	"task log":                     {usage: "<node> <upid>"},
 	"container list":               {usage: ""},
 	"container show":               {usage: "<id>"},
 	"container config":             {usage: "<node>/<vmid>"},

@@ -20,35 +20,44 @@ type Node struct {
 
 // VM represents a virtual machine.
 type VM struct {
-	ID          string            `json:"id" yaml:"id"`
-	Name        string            `json:"name" yaml:"name"`
-	Status      string            `json:"status" yaml:"status"` // running, stopped, paused
-	Node        string            `json:"node" yaml:"node"`
-	CPU         int               `json:"cpu" yaml:"cpu"`
-	Memory      int64             `json:"memory" yaml:"memory"` // bytes
-	Disk        int64             `json:"disk" yaml:"disk"`     // bytes
-	MemoryHuman string            `json:"memory_human,omitempty" yaml:"memory_human,omitempty"`
-	DiskHuman   string            `json:"disk_human,omitempty" yaml:"disk_human,omitempty"`
-	Template    bool              `json:"template,omitempty" yaml:"template,omitempty"`
-	IP          string            `json:"ip,omitempty" yaml:"ip,omitempty"`
-	OS          string            `json:"os,omitempty" yaml:"os,omitempty"`
-	Labels      map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	ID          string `json:"id" yaml:"id"`
+	Name        string `json:"name" yaml:"name"`
+	Status      string `json:"status" yaml:"status"` // process state: running, stopped
+	Node        string `json:"node" yaml:"node"`
+	CPU         int    `json:"cpu" yaml:"cpu"`
+	Memory      int64  `json:"memory" yaml:"memory"` // bytes
+	Disk        int64  `json:"disk" yaml:"disk"`     // bytes
+	MemoryHuman string `json:"memory_human,omitempty" yaml:"memory_human,omitempty"`
+	DiskHuman   string `json:"disk_human,omitempty" yaml:"disk_human,omitempty"`
+	Template    bool   `json:"template,omitempty" yaml:"template,omitempty"`
+	// QMPStatus is the QEMU execution state (for example "paused" for a guest
+	// suspended in memory while its QEMU process stays running). It is empty
+	// when the guest is stopped or when only the aggregate listing was
+	// available.
+	QMPStatus string            `json:"qmpstatus,omitempty" yaml:"qmpstatus,omitempty"`
+	IP        string            `json:"ip,omitempty" yaml:"ip,omitempty"`
+	OS        string            `json:"os,omitempty" yaml:"os,omitempty"`
+	Labels    map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 }
 
 // Container represents a container (e.g., LXC).
 type Container struct {
-	ID          string            `json:"id" yaml:"id"`
-	Name        string            `json:"name" yaml:"name"`
-	Status      string            `json:"status" yaml:"status"` // running, stopped, paused
-	Node        string            `json:"node" yaml:"node"`
-	CPU         int               `json:"cpu" yaml:"cpu"`
-	OS          string            `json:"os,omitempty" yaml:"os,omitempty"`
-	Memory      int64             `json:"memory" yaml:"memory"` // bytes
-	Disk        int64             `json:"disk" yaml:"disk"`     // bytes
-	MemoryHuman string            `json:"memory_human,omitempty" yaml:"memory_human,omitempty"`
-	DiskHuman   string            `json:"disk_human,omitempty" yaml:"disk_human,omitempty"`
-	IP          string            `json:"ip,omitempty" yaml:"ip,omitempty"`
-	Labels      map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	ID          string `json:"id" yaml:"id"`
+	Name        string `json:"name" yaml:"name"`
+	Status      string `json:"status" yaml:"status"` // running, stopped, paused
+	Node        string `json:"node" yaml:"node"`
+	CPU         int    `json:"cpu" yaml:"cpu"`
+	OS          string `json:"os,omitempty" yaml:"os,omitempty"`
+	Memory      int64  `json:"memory" yaml:"memory"` // bytes
+	Disk        int64  `json:"disk" yaml:"disk"`     // bytes
+	MemoryHuman string `json:"memory_human,omitempty" yaml:"memory_human,omitempty"`
+	DiskHuman   string `json:"disk_human,omitempty" yaml:"disk_human,omitempty"`
+	// Template marks an LXC container that has been converted to a template.
+	// The cluster resource inventory reports the template flag for both qemu
+	// and lxc rows, so the indicator is available without a per-guest read.
+	Template bool              `json:"template,omitempty" yaml:"template,omitempty"`
+	IP       string            `json:"ip,omitempty" yaml:"ip,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 }
 
 // Storage represents a storage pool or device.
@@ -155,6 +164,12 @@ type Task struct {
 	EndTime   int    `json:"endtime,omitempty" yaml:"endtime,omitempty"`
 	Status    string `json:"status,omitempty" yaml:"status,omitempty"`
 	Node      string `json:"node,omitempty" yaml:"node,omitempty"`
+}
+
+// TaskLogLine is one line of a provider task log.
+type TaskLogLine struct {
+	LineNumber int64  `json:"n" yaml:"n"`
+	Text       string `json:"t" yaml:"t"`
 }
 
 // Snapshot represents a VM or container snapshot.
@@ -264,14 +279,23 @@ type ClusterStatusDetail struct {
 }
 
 // BackupSchedule represents a backup job schedule.
+//
+// PVE has migrated scheduling from the deprecated starttime/dow pair to a
+// systemd-calendar `schedule`; jobs configured with the modern form return a
+// blank starttime, so both representations are carried and the calendar form
+// is the one that explains when the job actually runs.
 type BackupSchedule struct {
-	ID               string `json:"id" yaml:"id"`
-	Node             string `json:"node,omitempty" yaml:"node,omitempty"`
-	Storage          string `json:"storage" yaml:"storage"`
-	VMID             string `json:"vmid,omitempty" yaml:"vmid,omitempty"`
-	All              int    `json:"all,omitempty" yaml:"all,omitempty"`
-	Dow              string `json:"dow,omitempty" yaml:"dow,omitempty"`
-	Starttime        string `json:"starttime" yaml:"starttime"`
+	ID        string `json:"id" yaml:"id"`
+	Node      string `json:"node,omitempty" yaml:"node,omitempty"`
+	Storage   string `json:"storage" yaml:"storage"`
+	VMID      string `json:"vmid,omitempty" yaml:"vmid,omitempty"`
+	All       int    `json:"all,omitempty" yaml:"all,omitempty"`
+	Dow       string `json:"dow,omitempty" yaml:"dow,omitempty"`
+	Starttime string `json:"starttime" yaml:"starttime"`
+	// Schedule is the systemd-calendar schedule; empty for legacy starttime/dow jobs.
+	Schedule string `json:"schedule,omitempty" yaml:"schedule,omitempty"`
+	// NextRun is the UNIX timestamp of the next execution when PVE computes one.
+	NextRun          int64  `json:"next-run,omitempty" yaml:"next-run,omitempty"`
 	Mode             string `json:"mode" yaml:"mode"`
 	Enabled          int    `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 	Compress         string `json:"compress,omitempty" yaml:"compress,omitempty"`
@@ -285,12 +309,15 @@ type BackupSchedule struct {
 
 // BackupScheduleCreateParams holds the parameters for creating or updating a backup job schedule.
 type BackupScheduleCreateParams struct {
-	Node             string
-	Storage          string
-	VMID             string
-	All              int
-	Dow              string
-	Starttime        string
+	Node      string
+	Storage   string
+	VMID      string
+	All       int
+	Dow       string
+	Starttime string
+	// Schedule is the modern systemd-calendar schedule; when set it replaces
+	// the deprecated starttime/dow pair.
+	Schedule         string
 	Mode             string
 	Enabled          int
 	Compress         string

@@ -178,6 +178,18 @@ func requireTaskInspector(prov domain.Provider) (domain.TaskInspector, error) {
 	return p, nil
 }
 
+// requireTaskLog asserts the provider has TaskLogInspector.
+func requireTaskLog(prov domain.Provider) (domain.TaskLogInspector, error) {
+	p, ok := prov.(domain.TaskLogInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: task log retrieval not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
 // requireSnapshotInspector asserts the provider has SnapshotInspector.
 func requireSnapshotInspector(prov domain.Provider) (domain.SnapshotInspector, error) {
 	p, ok := prov.(domain.SnapshotInspector)

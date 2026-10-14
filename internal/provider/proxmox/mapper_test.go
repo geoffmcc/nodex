@@ -1,6 +1,7 @@
 package proxmox
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -355,10 +356,84 @@ func TestContainerConfigToMapPreservesRawFields(t *testing.T) {
 	}
 }
 
+// An explicit zero or false must survive the provider readback. The decoded
+// typed struct uses Go zero values for both "present and zero" and "absent", so
+// the presence set is what keeps `swap: 0` and `onboot: 0` from vanishing and
+// being reported as an unsatisfied verification.
+func TestContainerConfigToMapPreservesExplicitZero(t *testing.T) {
+	var data client.ContainerConfigData
+	if err := json.Unmarshal([]byte(`{"vmid":100,"swap":0,"onboot":0,"cores":2}`), &data); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got := containerConfigToMap(&data)
+	if _, ok := got["swap"]; !ok {
+		t.Error("explicit swap:0 was dropped from the readback map")
+	}
+	if _, ok := got["onboot"]; !ok {
+		t.Error("explicit onboot:0 was dropped from the readback map")
+	}
+	if got["swap"] != 0 || got["onboot"] != 0 {
+		t.Errorf("swap=%#v onboot=%#v, want both zero", got["swap"], got["onboot"])
+	}
+
+	// A field the provider omitted must stay absent rather than defaulting to 0.
+	var absent client.ContainerConfigData
+	if err := json.Unmarshal([]byte(`{"vmid":100,"cores":2}`), &absent); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	absentMap := containerConfigToMap(&absent)
+	if _, ok := absentMap["swap"]; ok {
+		t.Error("absent swap must not be invented as 0")
+	}
+	if _, ok := absentMap["onboot"]; ok {
+		t.Error("absent onboot must not be invented as 0")
+	}
+}
+
+func TestVMConfigToMapPreservesExplicitZeroAndFalse(t *testing.T) {
+	var data client.VMConfigData
+	if err := json.Unmarshal([]byte(`{"vmid":100,"onboot":0,"agent":0,"numa":0,"balloon":0}`), &data); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got := vmConfigToMap(&data)
+	for _, key := range []string{"onboot", "agent", "numa", "balloon"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("explicit %s:0 was dropped from the readback map", key)
+		}
+	}
+
+	var absent client.VMConfigData
+	if err := json.Unmarshal([]byte(`{"vmid":100}`), &absent); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	absentMap := vmConfigToMap(&absent)
+	for _, key := range []string{"onboot", "agent", "numa", "balloon"} {
+		if _, ok := absentMap[key]; ok {
+			t.Errorf("absent %s must not be invented as 0", key)
+		}
+	}
+}
+
 func TestMapVMPreservesTemplateFlag(t *testing.T) {
 	vm := MapVM(client.ClusterResource{ID: "node/100", Type: "qemu", Template: 1})
 	if !vm.Template {
 		t.Fatal("Template = false, want true")
+	}
+}
+
+// TestMapContainerPreservesTemplateFlag covers finding F11: /cluster/resources
+// reports the template flag for lxc rows as well as qemu rows, but the
+// container mapper dropped it, so CT template 9101 was indistinguishable from
+// an ordinary container in `container list`/`container show` output.
+func TestMapContainerPreservesTemplateFlag(t *testing.T) {
+	ct := MapContainer(client.ClusterResource{ID: "node/9101", Type: "lxc", Template: 1})
+	if !ct.Template {
+		t.Fatal("Template = false, want true")
+	}
+
+	ordinary := MapContainer(client.ClusterResource{ID: "node/100", Type: "lxc"})
+	if ordinary.Template {
+		t.Fatal("ordinary container must not be reported as a template")
 	}
 }
 

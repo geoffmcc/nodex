@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
+	"gopkg.in/yaml.v3"
 )
 
 func TestRun_NoArgs(t *testing.T) {
@@ -929,6 +931,68 @@ func setupE2EConfig(t *testing.T) {
 	}
 	if err := config.WriteTo(cfg, path); err != nil {
 		t.Fatalf("seed config: %v", err)
+	}
+}
+
+// `profile test --output json` used to emit human prose. A structured consumer
+// asking for JSON must be able to parse the result.
+func TestRun_ProfileTestStructuredOutput(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	for _, format := range []string{"json", "yaml"} {
+		t.Run(format, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if err := Run(context.Background(), []string{"profile", "test", "e2e", "--output", format}, &stdout, &stderr); err != nil {
+				t.Fatalf("profile test --output %s: %v (stderr %q)", format, err, stderr.String())
+			}
+			var got map[string]any
+			switch format {
+			case "json":
+				if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+					t.Fatalf("output is not valid JSON: %v (output %q)", err, stdout.String())
+				}
+			default:
+				if err := yaml.Unmarshal(stdout.Bytes(), &got); err != nil {
+					t.Fatalf("output is not valid YAML: %v (output %q)", err, stdout.String())
+				}
+			}
+			if got["profile"] != "e2e" {
+				t.Errorf("profile = %v, want e2e", got["profile"])
+			}
+			if got["status"] != "ok" {
+				t.Errorf("status = %v, want ok", got["status"])
+			}
+		})
+	}
+}
+
+// `storage download --output json` also used to emit prose. Validate the typed
+// renderer directly so the contract is pinned even without a live download.
+func TestWriteStorageDownloadResultStructured(t *testing.T) {
+	r := storageDownloadResult{Node: "n1", Storage: "local", VolumeID: "local:iso/x.iso", Destination: "/tmp/x.iso", SizeBytes: 42}
+	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+		t.Run(string(format), func(t *testing.T) {
+			var buf bytes.Buffer
+			ctx := &Context{Writer: &buf, Opts: Options{Output: format}}
+			if err := writeStorageDownloadResult(ctx, r); err != nil {
+				t.Fatalf("writeStorageDownloadResult: %v", err)
+			}
+			var got storageDownloadResult
+			switch format {
+			case output.FormatJSON:
+				if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+					t.Fatalf("output is not valid JSON: %v (output %q)", err, buf.String())
+				}
+			default:
+				if err := yaml.Unmarshal(buf.Bytes(), &got); err != nil {
+					t.Fatalf("output is not valid YAML: %v (output %q)", err, buf.String())
+				}
+			}
+			if got != r {
+				t.Errorf("round trip = %+v, want %+v", got, r)
+			}
+		})
 	}
 }
 
@@ -2274,13 +2338,20 @@ func TestLifecyclePostconditionVerificationIsAuthoritative(t *testing.T) {
 
 	t.Run("contradicted-state-is-reported", func(t *testing.T) {
 		// The task reports success but the guest never leaves "paused", so the
-		// postcondition must be reported as failed with the observation.
+		// postcondition must be reported as failed with the observation. A
+		// confirmed contradiction is a partial failure at the shell level (exit
+		// 11), matching the synchronous config-update path; the envelope still
+		// records the successful task verdict separately.
 		e2eGuestStatusOverride = "paused"
 		defer func() { e2eGuestStatusOverride = "" }()
 
 		var stdout, stderr bytes.Buffer
-		if err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/101"}, &stdout, &stderr); err != nil {
-			t.Fatalf("vm start --wait: %v", err)
+		err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/101"}, &stdout, &stderr)
+		if err == nil {
+			t.Fatal("expected a partial-failure error for a contradicted postcondition")
+		}
+		if code := app.ExitCodeFromError(err); code != app.ExitPartialFailure {
+			t.Errorf("exit = %d, want %d (partial failure)", code, app.ExitPartialFailure)
 		}
 		out := stdout.String()
 		for _, want := range []string{`"verification": "failed"`, `"status": "OK"`, `paused`} {
@@ -2299,4 +2370,95 @@ func TestLifecyclePostconditionVerificationIsAuthoritative(t *testing.T) {
 			t.Errorf("an un-waited operation must not report a postcondition verdict: %s", out)
 		}
 	})
+}
+
+// applyTaskCompletionStatus must preserve a successful-with-warnings task
+// status and surface it as a warning, rather than flattening it to "OK". The
+// warning count is the only evidence a task did not complete cleanly.
+func TestApplyTaskCompletionStatus(t *testing.T) {
+	cases := []struct {
+		name         string
+		status       string
+		wantStatus   string
+		wantWarnings int
+	}{
+		{name: "clean success", status: "OK", wantStatus: "OK", wantWarnings: 0},
+		{name: "warnings preserved", status: "WARNINGS: 1", wantStatus: "WARNINGS: 1", wantWarnings: 1},
+		{name: "multiple warnings", status: "WARNINGS: 3", wantStatus: "WARNINGS: 3", wantWarnings: 1},
+		{name: "empty defaults to OK", status: "", wantStatus: "OK", wantWarnings: 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := output.NewOperationResult("vm start", "proxmox", "prod")
+			applyTaskCompletionStatus(&result, tc.status)
+			if result.Status != tc.wantStatus {
+				t.Errorf("status = %q, want %q", result.Status, tc.wantStatus)
+			}
+			if len(result.Warnings) != tc.wantWarnings {
+				t.Errorf("warnings = %v, want %d entries", result.Warnings, tc.wantWarnings)
+			}
+			if tc.wantWarnings > 0 && !strings.Contains(result.Warnings[0], tc.wantStatus) {
+				t.Errorf("warning %q does not mention status %q", result.Warnings[0], tc.wantStatus)
+			}
+		})
+	}
+}
+
+// A lifecycle task that succeeded with warnings must not be reported as a bare
+// success: the status and warning survive into the result and the agent receipt.
+func TestLifecycleWarningsPreserved(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	e2eTaskStatusOverride = "WARNINGS: 1"
+	defer func() { e2eTaskStatusOverride = "" }()
+
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"--output", "json", "--yes", "--wait", "vm", "start", "e2e-node/101"}, &stdout, &stderr); err != nil {
+		t.Fatalf("vm start --wait: %v", err)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"status": "WARNINGS: 1"`) {
+		t.Errorf("provider warning status was lost: %s", out)
+	}
+	if !strings.Contains(out, "provider task completed with warnings") {
+		t.Errorf("expected a warning describing the task status: %s", out)
+	}
+}
+
+func TestTaskLogCommand(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"--output", "json", "--profile", "e2e", "task", "log", "e2e-node", "UPID:e2e-node/00012345/0"}, &stdout, &stderr); err != nil {
+		t.Fatalf("task log: %v", err)
+	}
+	var lines []domain.TaskLogLine
+	if err := json.Unmarshal(stdout.Bytes(), &lines); err != nil {
+		t.Fatalf("decode task log: %v\n%s", err, stdout.String())
+	}
+	if len(lines) != 3 {
+		t.Fatalf("lines = %d, want 3: %+v", len(lines), lines)
+	}
+	if lines[2].Text == "" || lines[2].LineNumber != 3 {
+		t.Errorf("unexpected final line: %+v", lines[2])
+	}
+}
+
+func TestTaskLogHonorsLimit(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"--output", "json", "--profile", "e2e", "--limit", "1", "task", "log", "e2e-node", "UPID:e2e-node/00012345/0"}, &stdout, &stderr); err != nil {
+		t.Fatalf("task log --limit 1: %v", err)
+	}
+	var lines []domain.TaskLogLine
+	if err := json.Unmarshal(stdout.Bytes(), &lines); err != nil {
+		t.Fatalf("decode task log: %v\n%s", err, stdout.String())
+	}
+	if len(lines) != 1 {
+		t.Fatalf("lines = %d, want 1 (bounded): %+v", len(lines), lines)
+	}
 }

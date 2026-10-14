@@ -445,7 +445,7 @@ func writeContainersAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.
 		decorateContainerResults(&out)
 		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
-		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "CPU", "OS", "MEMORY", "DISK"}
+		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "CPU", "OS", "MEMORY", "DISK", "TEMPLATE"}
 		var rows [][]string
 		for _, r := range out.Results {
 			if !r.Success {
@@ -453,13 +453,13 @@ func writeContainersAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.
 				if r.Error != nil {
 					errDetail = r.Error.Detail
 				}
-				rows = append(rows, []string{r.Profile, "", "", "", "", "", "", "", fmt.Sprintf("ERROR: %s", errDetail)})
+				rows = append(rows, []string{r.Profile, "", "", "", "", "", "", "", "", fmt.Sprintf("ERROR: %s", errDetail)})
 				continue
 			}
 			sort.Slice(r.Data, func(i, j int) bool { return r.Data[i].Name < r.Data[j].Name })
 			for _, c := range r.Data {
 				rows = append(rows, []string{r.Profile, c.ID, c.Name, c.Status, c.Node,
-					fmt.Sprintf("%d", c.CPU), c.OS, formatBytes(c.Memory), formatBytes(c.Disk)})
+					fmt.Sprintf("%d", c.CPU), c.OS, formatBytes(c.Memory), formatBytes(c.Disk), yesNo(c.Template)})
 			}
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)

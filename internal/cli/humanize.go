@@ -112,3 +112,12 @@ func decorateContainerResults(out *output.MultiProfileOutput[[]domain.Container]
 		out.Results[i].Data = decorateContainers(out.Results[i].Data)
 	}
 }
+
+// yesNo renders a boolean flag as the yes/no label used throughout the table
+// views, so a template indicator reads the same wherever it appears.
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
+}

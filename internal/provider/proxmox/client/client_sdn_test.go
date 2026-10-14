@@ -4,22 +4,36 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/transport/httpclient"
 )
 
 func TestGetSDNSubnets(t *testing.T) {
-	var gotPath string
+	var gotPaths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
 		if r.Method != http.MethodGet {
 			t.Fatalf("method = %s", r.Method)
 		}
-		_, _ = w.Write([]byte(`{"data":[
-			{"subnet":"10.0.0.0-10.0.0.255","type":"vnet","vnet":"vnetA","zone":"simple","cidr":"24","gateway":"10.0.0.1"},
-			{"subnet":"10.0.1.0-10.0.1.255","type":"vnet","vnet":"vnetB","zone":"simple","cidr":"24"}
-		]}`))
+		gotPaths = append(gotPaths, r.URL.Path)
+		switch r.URL.Path {
+		case "/cluster/sdn/vnets":
+			_, _ = w.Write([]byte(`{"data":[
+				{"vnet":"vnetA","zone":"simple"},
+				{"vnet":"vnetB","zone":"simple"}
+			]}`))
+		case "/cluster/sdn/vnets/vnetA/subnets":
+			_, _ = w.Write([]byte(`{"data":[
+				{"subnet":"vnetA-10.0.0.0-24","type":"subnet","vnet":"vnetA","zone":"simple","cidr":"10.0.0.0/24","gateway":"10.0.0.1"}
+			]}`))
+		case "/cluster/sdn/vnets/vnetB/subnets":
+			_, _ = w.Write([]byte(`{"data":[
+				{"subnet":"vnetB-10.0.1.0-24","type":"subnet","vnet":"vnetB","zone":"simple","cidr":"10.0.1.0/24"}
+			]}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
 	}))
 	defer server.Close()
 
@@ -28,21 +42,76 @@ func TestGetSDNSubnets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSDNSubnets: %v", err)
 	}
-	if gotPath != "/cluster/sdn/subnets" {
-		t.Errorf("path = %q", gotPath)
+	wantPaths := []string{
+		"/cluster/sdn/vnets",
+		"/cluster/sdn/vnets/vnetA/subnets",
+		"/cluster/sdn/vnets/vnetB/subnets",
+	}
+	if strings.Join(gotPaths, ",") != strings.Join(wantPaths, ",") {
+		t.Errorf("paths = %v, want %v", gotPaths, wantPaths)
 	}
 	if len(subnets) != 2 {
 		t.Fatalf("len = %d", len(subnets))
 	}
 	first := subnets[0]
-	if first.Subnet != "10.0.0.0-10.0.0.255" || first.VNet != "vnetA" || first.Zone != "simple" {
+	if first.Subnet != "vnetA-10.0.0.0-24" || first.VNet != "vnetA" || first.Zone != "simple" {
 		t.Errorf("first = %+v", first)
 	}
-	if first.CIDR != "24" || first.Gateway != "10.0.0.1" {
+	if first.CIDR != "10.0.0.0/24" || first.Gateway != "10.0.0.1" {
 		t.Errorf("first cidr/gateway = %q/%q", first.CIDR, first.Gateway)
 	}
 	if subnets[1].Gateway != "" {
 		t.Errorf("absent gateway should be empty, got %q", subnets[1].Gateway)
+	}
+}
+
+func TestGetSDNSubnetsNoVNets(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path != "/cluster/sdn/vnets" {
+			t.Fatalf("unexpected subnet request for empty topology: %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer server.Close()
+
+	c := &Client{baseURL: server.URL, client: httpclient.New()}
+	subnets, err := c.GetSDNSubnets(context.Background())
+	if err != nil {
+		t.Fatalf("GetSDNSubnets: %v", err)
+	}
+	if len(subnets) != 0 {
+		t.Fatalf("len = %d, want 0", len(subnets))
+	}
+	if len(paths) != 1 || paths[0] != "/cluster/sdn/vnets" {
+		t.Errorf("paths = %v, want only the vnets listing", paths)
+	}
+}
+
+func TestGetSDNSubnetsFillsMissingVNetZone(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cluster/sdn/vnets":
+			_, _ = w.Write([]byte(`{"data":[{"vnet":"vnetA","zone":"simple"}]}`))
+		case "/cluster/sdn/vnets/vnetA/subnets":
+			_, _ = w.Write([]byte(`{"data":[{"subnet":"vnetA-10.0.0.0-24","cidr":"10.0.0.0/24"}]}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	c := &Client{baseURL: server.URL, client: httpclient.New()}
+	subnets, err := c.GetSDNSubnets(context.Background())
+	if err != nil {
+		t.Fatalf("GetSDNSubnets: %v", err)
+	}
+	if len(subnets) != 1 {
+		t.Fatalf("len = %d", len(subnets))
+	}
+	if subnets[0].VNet != "vnetA" || subnets[0].Zone != "simple" {
+		t.Errorf("vnet/zone not filled from VNet: %+v", subnets[0])
 	}
 }
 
@@ -76,7 +145,7 @@ func TestGetSDNControllers(t *testing.T) {
 	}
 }
 
-func TestGetSDNSubnetsPropagatesError(t *testing.T) {
+func TestGetSDNSubnetsPropagatesVNetsError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
@@ -85,5 +154,21 @@ func TestGetSDNSubnetsPropagatesError(t *testing.T) {
 	c := &Client{baseURL: server.URL, client: httpclient.New()}
 	if _, err := c.GetSDNSubnets(context.Background()); err == nil {
 		t.Fatal("expected error from forbidden response")
+	}
+}
+
+func TestGetSDNSubnetsPropagatesSubnetError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/cluster/sdn/vnets" {
+			_, _ = w.Write([]byte(`{"data":[{"vnet":"vnetA","zone":"simple"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	c := &Client{baseURL: server.URL, client: httpclient.New()}
+	if _, err := c.GetSDNSubnets(context.Background()); err == nil {
+		t.Fatal("expected error from forbidden subnet response")
 	}
 }
