@@ -760,12 +760,35 @@ func (c *Client) GetSDNVNets(ctx context.Context) ([]SDNVNetItem, error) {
 }
 
 // GetSDNSubnets returns SDN subnets.
+//
+// PVE exposes subnets only per virtual network via
+// GET /cluster/sdn/vnets/{vnet}/subnets; there is no cluster-wide subnet
+// listing endpoint (GET /cluster/sdn/subnets returns 501). Enumerate the
+// virtual networks and query each one, so an empty topology yields an empty
+// result rather than an error.
 func (c *Client) GetSDNSubnets(ctx context.Context) ([]SDNSubnetItem, error) {
-	var resp SDNSubnetsResponse
-	if err := c.get(ctx, "/cluster/sdn/subnets", &resp); err != nil {
+	vnets, err := c.GetSDNVNets(ctx)
+	if err != nil {
 		return nil, err
 	}
-	return resp.Data, nil
+	subnets := make([]SDNSubnetItem, 0)
+	for _, vnet := range vnets {
+		var resp SDNSubnetsResponse
+		path := "/cluster/sdn/vnets/" + url.PathEscape(vnet.Name) + "/subnets"
+		if err := c.get(ctx, path, &resp); err != nil {
+			return nil, err
+		}
+		for _, item := range resp.Data {
+			if item.VNet == "" {
+				item.VNet = vnet.Name
+			}
+			if item.Zone == "" {
+				item.Zone = vnet.Zone
+			}
+			subnets = append(subnets, item)
+		}
+	}
+	return subnets, nil
 }
 
 // GetSDNControllers returns SDN controllers.
