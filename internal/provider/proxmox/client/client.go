@@ -1313,14 +1313,19 @@ func (c *Client) CreateBackupSchedule(ctx context.Context, schedule BackupSchedu
 	if schedule.Mode == "" {
 		return "", fmt.Errorf("backup mode is required")
 	}
-	if schedule.Starttime == "" {
-		return "", fmt.Errorf("start time is required")
+	if schedule.Schedule == "" && schedule.Starttime == "" {
+		return "", fmt.Errorf("a schedule is required: supply schedule (systemd calendar) or starttime")
 	}
 	var resp TaskResponse
 	body := url.Values{}
 	body.Set("storage", schedule.Storage)
 	body.Set("mode", schedule.Mode)
-	body.Set("starttime", schedule.Starttime)
+	if schedule.Schedule != "" {
+		body.Set("schedule", schedule.Schedule)
+	}
+	if schedule.Starttime != "" {
+		body.Set("starttime", schedule.Starttime)
+	}
 	if schedule.Node != "" {
 		body.Set("node", schedule.Node)
 	}
@@ -1390,6 +1395,9 @@ func (c *Client) UpdateBackupSchedule(ctx context.Context, id string, schedule B
 	}
 	if schedule.Mode != "" {
 		body.Set("mode", schedule.Mode)
+	}
+	if schedule.Schedule != "" {
+		body.Set("schedule", schedule.Schedule)
 	}
 	if schedule.Starttime != "" {
 		body.Set("starttime", schedule.Starttime)

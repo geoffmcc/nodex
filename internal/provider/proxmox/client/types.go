@@ -1370,13 +1370,19 @@ type BackupScheduleDetailResponse struct {
 
 // BackupScheduleItem represents a single backup job schedule.
 type BackupScheduleItem struct {
-	ID               string `json:"id"`
-	Node             string `json:"node,omitempty"`
-	Storage          string `json:"storage"`
-	VMID             string `json:"vmid,omitempty"`
-	All              int    `json:"all,omitempty"`
-	Dow              string `json:"dow,omitempty"`
-	Starttime        string `json:"starttime"`
+	ID        string `json:"id"`
+	Node      string `json:"node,omitempty"`
+	Storage   string `json:"storage"`
+	VMID      string `json:"vmid,omitempty"`
+	All       int    `json:"all,omitempty"`
+	Dow       string `json:"dow,omitempty"`
+	Starttime string `json:"starttime"`
+	// Schedule is the modern systemd-calendar schedule. PVE 8+ converts the
+	// deprecated starttime/dow pair into this field on write and returns it on
+	// read, so a job configured with a calendar schedule has a blank starttime.
+	Schedule string `json:"schedule,omitempty"`
+	// NextRun is the UNIX timestamp of the next execution, when PVE computes one.
+	NextRun          int64  `json:"next-run,omitempty"`
 	Mode             string `json:"mode"`
 	Enabled          int    `json:"enabled,omitempty"`
 	Compress         string `json:"compress,omitempty"`
@@ -1400,7 +1406,8 @@ type BackupScheduleCreateRequest struct {
 	VMID             string `json:"vmid,omitempty"`
 	All              int    `json:"all,omitempty"`
 	Dow              string `json:"dow,omitempty"`
-	Starttime        string `json:"starttime"`
+	Starttime        string `json:"starttime,omitempty"`
+	Schedule         string `json:"schedule,omitempty"`
 	Mode             string `json:"mode"`
 	Enabled          int    `json:"enabled,omitempty"`
 	Compress         string `json:"compress,omitempty"`

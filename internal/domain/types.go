@@ -264,14 +264,23 @@ type ClusterStatusDetail struct {
 }
 
 // BackupSchedule represents a backup job schedule.
+//
+// PVE has migrated scheduling from the deprecated starttime/dow pair to a
+// systemd-calendar `schedule`; jobs configured with the modern form return a
+// blank starttime, so both representations are carried and the calendar form
+// is the one that explains when the job actually runs.
 type BackupSchedule struct {
-	ID               string `json:"id" yaml:"id"`
-	Node             string `json:"node,omitempty" yaml:"node,omitempty"`
-	Storage          string `json:"storage" yaml:"storage"`
-	VMID             string `json:"vmid,omitempty" yaml:"vmid,omitempty"`
-	All              int    `json:"all,omitempty" yaml:"all,omitempty"`
-	Dow              string `json:"dow,omitempty" yaml:"dow,omitempty"`
-	Starttime        string `json:"starttime" yaml:"starttime"`
+	ID        string `json:"id" yaml:"id"`
+	Node      string `json:"node,omitempty" yaml:"node,omitempty"`
+	Storage   string `json:"storage" yaml:"storage"`
+	VMID      string `json:"vmid,omitempty" yaml:"vmid,omitempty"`
+	All       int    `json:"all,omitempty" yaml:"all,omitempty"`
+	Dow       string `json:"dow,omitempty" yaml:"dow,omitempty"`
+	Starttime string `json:"starttime" yaml:"starttime"`
+	// Schedule is the systemd-calendar schedule; empty for legacy starttime/dow jobs.
+	Schedule string `json:"schedule,omitempty" yaml:"schedule,omitempty"`
+	// NextRun is the UNIX timestamp of the next execution when PVE computes one.
+	NextRun          int64  `json:"next-run,omitempty" yaml:"next-run,omitempty"`
 	Mode             string `json:"mode" yaml:"mode"`
 	Enabled          int    `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 	Compress         string `json:"compress,omitempty" yaml:"compress,omitempty"`
@@ -285,12 +294,15 @@ type BackupSchedule struct {
 
 // BackupScheduleCreateParams holds the parameters for creating or updating a backup job schedule.
 type BackupScheduleCreateParams struct {
-	Node             string
-	Storage          string
-	VMID             string
-	All              int
-	Dow              string
-	Starttime        string
+	Node      string
+	Storage   string
+	VMID      string
+	All       int
+	Dow       string
+	Starttime string
+	// Schedule is the modern systemd-calendar schedule; when set it replaces
+	// the deprecated starttime/dow pair.
+	Schedule         string
 	Mode             string
 	Enabled          int
 	Compress         string
