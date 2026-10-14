@@ -1142,7 +1142,15 @@ func (p *Provider) NodeCertificates(ctx context.Context, node string) ([]domain.
 	result := make([]domain.NodeCertificate, 0, len(items))
 	for _, item := range items {
 		result = append(result, domain.NodeCertificate{
-			Name: item.Name,
+			Filename:      item.Filename,
+			Subject:       item.Subject,
+			Issuer:        item.Issuer,
+			Fingerprint:   item.Fingerprint,
+			NotBefore:     item.NotBefore,
+			NotAfter:      item.NotAfter,
+			PublicKeyType: item.PublicKeyType,
+			PublicKeyBits: item.PublicKeyBits,
+			SAN:           item.SAN,
 		})
 	}
 	return result, nil

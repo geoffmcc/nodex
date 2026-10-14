@@ -607,14 +607,25 @@ func (c *Client) GetNodeDisks(ctx context.Context, node string) ([]NodeDiskItem,
 }
 
 // GetNodeCertificates returns TLS certificates for a specific node.
+//
+// Certificate details live under the /nodes/{node}/certificates/info child
+// endpoint; the parent route only enumerates certificate categories.
 func (c *Client) GetNodeCertificates(ctx context.Context, node string) ([]NodeCertificateItem, error) {
 	if node == "" {
 		return nil, fmt.Errorf("node name is required")
 	}
 	var resp NodeCertificatesResponse
-	path := "/nodes/" + url.PathEscape(node) + "/certificates"
+	path := "/nodes/" + url.PathEscape(node) + "/certificates/info"
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
+	}
+	if len(resp.Data) == 0 {
+		return nil, fmt.Errorf("no certificate information returned for node %q", node)
+	}
+	for _, cert := range resp.Data {
+		if cert.Subject == "" && cert.Issuer == "" && cert.Fingerprint == "" {
+			return nil, fmt.Errorf("certificate metadata missing for node %q", node)
+		}
 	}
 	return resp.Data, nil
 }

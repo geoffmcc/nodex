@@ -290,10 +290,17 @@ func writeNodeCertificates(cmdCtx *Context, certs []domain.NodeCertificate) erro
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, certs)
 	default:
-		headers := []string{"NAME"}
+		headers := []string{"FILE", "SUBJECT", "ISSUER", "FINGERPRINT", "NOT BEFORE", "NOT AFTER"}
 		rows := make([][]string, 0, len(certs))
 		for _, c := range certs {
-			rows = append(rows, []string{c.Name})
+			rows = append(rows, []string{
+				c.Filename,
+				c.Subject,
+				c.Issuer,
+				c.Fingerprint,
+				formatEpoch(c.NotBefore),
+				formatEpoch(c.NotAfter),
+			})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}

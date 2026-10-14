@@ -385,10 +385,17 @@ type NodeDisk struct {
 	Health string `json:"health,omitempty" yaml:"health,omitempty"`
 }
 
-// NodeCertificate represents a TLS certificate category on a node.
-// Proxmox 9 returns certificate categories; individual details are under .../certificates/{name}.
+// NodeCertificate represents a TLS certificate on a node.
 type NodeCertificate struct {
-	Name string `json:"name" yaml:"name"`
+	Filename      string   `json:"filename" yaml:"filename"`
+	Subject       string   `json:"subject" yaml:"subject"`
+	Issuer        string   `json:"issuer" yaml:"issuer"`
+	Fingerprint   string   `json:"fingerprint" yaml:"fingerprint"`
+	NotBefore     int64    `json:"not_before,omitempty" yaml:"not_before,omitempty"`
+	NotAfter      int64    `json:"not_after,omitempty" yaml:"not_after,omitempty"`
+	PublicKeyType string   `json:"public_key_type,omitempty" yaml:"public_key_type,omitempty"`
+	PublicKeyBits int      `json:"public_key_bits,omitempty" yaml:"public_key_bits,omitempty"`
+	SAN           []string `json:"san,omitempty" yaml:"san,omitempty"`
 }
 
 // NodeSubscription represents the subscription status for a node.

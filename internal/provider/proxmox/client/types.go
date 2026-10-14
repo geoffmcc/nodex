@@ -924,16 +924,27 @@ type NodeDiskItem struct {
 	WWN     string `json:"wwn,omitempty"`
 }
 
-// NodeCertificatesResponse is the response from /nodes/{node}/certificates.
+// NodeCertificatesResponse is the response from /nodes/{node}/certificates/info.
 type NodeCertificatesResponse struct {
 	Data []NodeCertificateItem `json:"data"`
 }
 
-// NodeCertificateItem represents a TLS certificate category on a node.
-// Proxmox 9 /nodes/{node}/certificates returns certificate categories with a name field.
-// Individual certificate details (fingerprint, etc.) are available under .../certificates/{name}.
+// NodeCertificateItem represents a TLS certificate on a node.
+//
+// Proxmox exposes certificate metadata (subject, issuer, fingerprint and
+// validity window) only through the /nodes/{node}/certificates/info child
+// endpoint. The parent /nodes/{node}/certificates route lists certificate
+// categories (acme, custom, info), not certificates.
 type NodeCertificateItem struct {
-	Name string `json:"name"`
+	Filename      string   `json:"filename"`
+	Subject       string   `json:"subject"`
+	Issuer        string   `json:"issuer"`
+	Fingerprint   string   `json:"fingerprint"`
+	NotBefore     int64    `json:"notbefore,omitempty"`
+	NotAfter      int64    `json:"notafter,omitempty"`
+	PublicKeyType string   `json:"public-key-type,omitempty"`
+	PublicKeyBits int      `json:"public-key-bits,omitempty"`
+	SAN           []string `json:"san,omitempty"`
 }
 
 // NodeSubscriptionResponse is the response from /nodes/{node}/subscription.
