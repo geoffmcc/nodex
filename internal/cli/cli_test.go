@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
+	"gopkg.in/yaml.v3"
 )
 
 func TestRun_NoArgs(t *testing.T) {
@@ -929,6 +931,68 @@ func setupE2EConfig(t *testing.T) {
 	}
 	if err := config.WriteTo(cfg, path); err != nil {
 		t.Fatalf("seed config: %v", err)
+	}
+}
+
+// `profile test --output json` used to emit human prose. A structured consumer
+// asking for JSON must be able to parse the result.
+func TestRun_ProfileTestStructuredOutput(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	for _, format := range []string{"json", "yaml"} {
+		t.Run(format, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if err := Run(context.Background(), []string{"profile", "test", "e2e", "--output", format}, &stdout, &stderr); err != nil {
+				t.Fatalf("profile test --output %s: %v (stderr %q)", format, err, stderr.String())
+			}
+			var got map[string]any
+			switch format {
+			case "json":
+				if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+					t.Fatalf("output is not valid JSON: %v (output %q)", err, stdout.String())
+				}
+			default:
+				if err := yaml.Unmarshal(stdout.Bytes(), &got); err != nil {
+					t.Fatalf("output is not valid YAML: %v (output %q)", err, stdout.String())
+				}
+			}
+			if got["profile"] != "e2e" {
+				t.Errorf("profile = %v, want e2e", got["profile"])
+			}
+			if got["status"] != "ok" {
+				t.Errorf("status = %v, want ok", got["status"])
+			}
+		})
+	}
+}
+
+// `storage download --output json` also used to emit prose. Validate the typed
+// renderer directly so the contract is pinned even without a live download.
+func TestWriteStorageDownloadResultStructured(t *testing.T) {
+	r := storageDownloadResult{Node: "n1", Storage: "local", VolumeID: "local:iso/x.iso", Destination: "/tmp/x.iso", SizeBytes: 42}
+	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+		t.Run(string(format), func(t *testing.T) {
+			var buf bytes.Buffer
+			ctx := &Context{Writer: &buf, Opts: Options{Output: format}}
+			if err := writeStorageDownloadResult(ctx, r); err != nil {
+				t.Fatalf("writeStorageDownloadResult: %v", err)
+			}
+			var got storageDownloadResult
+			switch format {
+			case output.FormatJSON:
+				if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+					t.Fatalf("output is not valid JSON: %v (output %q)", err, buf.String())
+				}
+			default:
+				if err := yaml.Unmarshal(buf.Bytes(), &got); err != nil {
+					t.Fatalf("output is not valid YAML: %v (output %q)", err, buf.String())
+				}
+			}
+			if got != r {
+				t.Errorf("round trip = %+v, want %+v", got, r)
+			}
+		})
 	}
 }
 

@@ -219,7 +219,7 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "profile test", Description: "Test profile connectivity",
 		Inspection: true, Scope: ScopeProfile, SafetyTier: safety.TierObservation,
-		OutputModes: []string{"table"}, HandlerFunc: "runProfileTest",
+		OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runProfileTest",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "profile diagnose-permissions", Description: "Diagnose profile permissions",
@@ -601,7 +601,7 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "storage download", Description: "Download a volume from storage",
 		Inspection: false, Scope: ScopeStorage, SafetyTier: safety.TierReversible,
-		OutputModes:         []string{"table"},
+		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "StorageMutationProvider", HandlerFunc: "runStorageDownload",
 	})
 	ops = append(ops, OperationMeta{

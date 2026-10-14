@@ -633,8 +633,40 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		return fmt.Errorf("finalize download: %w", err)
 	}
 
-	fmt.Fprintf(cmdCtx.Writer, "Downloaded %s/%s/%s to %s\n", node, storage, volumeID, cleaned)
-	return nil
+	var sizeBytes int64
+	if info, statErr := os.Stat(cleaned); statErr == nil {
+		sizeBytes = info.Size()
+	}
+	return writeStorageDownloadResult(cmdCtx, storageDownloadResult{
+		Node:        node,
+		Storage:     storage,
+		VolumeID:    volumeID,
+		Destination: cleaned,
+		SizeBytes:   sizeBytes,
+	})
+}
+
+// storageDownloadResult is the structured form of `storage download`. The
+// command used to print a single prose line regardless of `--output`, so a
+// machine consumer asking for JSON received text it could not parse.
+type storageDownloadResult struct {
+	Node        string `json:"node" yaml:"node"`
+	Storage     string `json:"storage" yaml:"storage"`
+	VolumeID    string `json:"volume_id" yaml:"volume_id"`
+	Destination string `json:"destination" yaml:"destination"`
+	SizeBytes   int64  `json:"size_bytes,omitempty" yaml:"size_bytes,omitempty"`
+}
+
+func writeStorageDownloadResult(cmdCtx *Context, r storageDownloadResult) error {
+	switch cmdCtx.Opts.Output {
+	case output.FormatJSON:
+		return output.WriteJSON(cmdCtx.Writer, r)
+	case output.FormatYAML:
+		return output.WriteYAML(cmdCtx.Writer, r)
+	default:
+		fmt.Fprintf(cmdCtx.Writer, "Downloaded %s/%s/%s to %s\n", r.Node, r.Storage, r.VolumeID, r.Destination)
+		return nil
+	}
 }
 
 // --- Storage Delete (Tier 3: destructive) ---
