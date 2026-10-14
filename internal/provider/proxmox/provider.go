@@ -445,6 +445,18 @@ func (p *Provider) ContainerConfig(ctx context.Context, node string, vmid int) (
 	return containerConfigToMap(config), nil
 }
 
+// configKeyPresent reports whether a provider config response explicitly
+// carried the named key.
+//
+// A decoded zero value is ambiguous on its own: it can mean the provider sent
+// `0`, or that it omitted the field entirely. When the provider did send the
+// key — even with a zero or false value — the value must survive into the
+// readback map, otherwise an explicit `swap=0` or `onboot=0` request looks
+// unsatisfied and is reported as a verification failure.
+func configKeyPresent(present map[string]bool, key string) bool {
+	return present[key]
+}
+
 func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	m := map[string]interface{}{
 		"vmid": c.VMID,
@@ -452,16 +464,16 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.Name != "" {
 		m["name"] = c.Name
 	}
-	if c.CPU > 0 {
+	if c.CPU != 0 || configKeyPresent(c.Present, "cores") {
 		m["cores"] = c.CPU
 	}
 	if c.CPUType != "" {
 		m["cpu"] = c.CPUType
 	}
-	if c.Memory > 0 {
+	if c.Memory != 0 || configKeyPresent(c.Present, "memory") {
 		m["memory"] = c.Memory
 	}
-	if c.Balloon > 0 {
+	if c.Balloon != 0 || configKeyPresent(c.Present, "balloon") {
 		m["balloon"] = c.Balloon
 	}
 	if c.Net0 != "" {
@@ -473,10 +485,10 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.Boot != "" {
 		m["boot"] = c.Boot
 	}
-	if c.OnBoot != 0 {
+	if c.OnBoot != 0 || configKeyPresent(c.Present, "onboot") {
 		m["onboot"] = c.OnBoot
 	}
-	if c.Agent != 0 {
+	if c.Agent != 0 || configKeyPresent(c.Present, "agent") {
 		m["agent"] = c.Agent
 	}
 	if c.OSType != "" {
@@ -485,7 +497,7 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.Description != "" {
 		m["description"] = c.Description
 	}
-	if c.Protection != 0 {
+	if c.Protection != 0 || configKeyPresent(c.Present, "protection") {
 		m["protection"] = c.Protection
 	}
 	if c.Tags != "" {
@@ -509,7 +521,7 @@ func vmConfigToMap(c *client.VMConfigData) map[string]interface{} {
 	if c.SMBIOS1 != "" {
 		m["smbios1"] = c.SMBIOS1
 	}
-	if c.Numa != 0 {
+	if c.Numa != 0 || configKeyPresent(c.Present, "numa") {
 		m["numa"] = c.Numa
 	}
 	if c.Machine != "" {
@@ -549,13 +561,13 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	if c.Hostname != "" {
 		m["hostname"] = c.Hostname
 	}
-	if c.CPU > 0 {
+	if c.CPU != 0 || configKeyPresent(c.Present, "cores") {
 		m["cores"] = c.CPU
 	}
-	if c.Memory > 0 {
+	if c.Memory != 0 || configKeyPresent(c.Present, "memory") {
 		m["memory"] = c.Memory
 	}
-	if c.Swap > 0 {
+	if c.Swap != 0 || configKeyPresent(c.Present, "swap") {
 		m["swap"] = c.Swap
 	}
 	if c.Rootfs != "" {
@@ -567,7 +579,7 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	if c.Net0 != "" {
 		m["net0"] = c.Net0
 	}
-	if c.OnBoot != 0 {
+	if c.OnBoot != 0 || configKeyPresent(c.Present, "onboot") {
 		m["onboot"] = c.OnBoot
 	}
 	if c.OSType != "" {
@@ -576,13 +588,13 @@ func containerConfigToMap(c *client.ContainerConfigData) map[string]interface{} 
 	if c.Description != "" {
 		m["description"] = c.Description
 	}
-	if c.Protection != 0 {
+	if c.Protection != 0 || configKeyPresent(c.Present, "protection") {
 		m["protection"] = c.Protection
 	}
 	if c.Tags != "" {
 		m["tags"] = c.Tags
 	}
-	if c.Unfiltered != 0 {
+	if c.Unfiltered != 0 || configKeyPresent(c.Present, "unfiltered") {
 		m["unfiltered"] = c.Unfiltered
 	}
 	if c.Features != "" {

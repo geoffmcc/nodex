@@ -366,6 +366,12 @@ type VMConfigData struct {
 	Unused0      string            `json:"unused0,omitempty"`
 	Digest       string            `json:"digest,omitempty"`
 	Raw          map[string]string `json:"raw,omitempty"`
+	// Present records which known config keys the provider actually returned.
+	// It exists because the typed fields above use Go zero values, so an
+	// explicit `onboot: 0` or `swap: 0` is otherwise indistinguishable from a
+	// field the provider omitted. Callers that must round-trip explicit zero or
+	// false values consult this set instead of guessing from the zero value.
+	Present map[string]bool `json:"-"`
 }
 
 func (d *VMConfigData) UnmarshalJSON(data []byte) error {
@@ -437,6 +443,7 @@ func (d *VMConfigData) UnmarshalJSON(data []byte) error {
 		Unused0:      raw.Unused0,
 		Digest:       raw.Digest,
 		Raw:          configRaw(data, vmConfigKnownKeys),
+		Present:      configPresentKeys(data, vmConfigKnownKeys),
 	}
 	return nil
 }
@@ -476,6 +483,9 @@ type ContainerConfigData struct {
 	Hookscript   string            `json:"hookscript,omitempty"`
 	Digest       string            `json:"digest,omitempty"`
 	Raw          map[string]string `json:"raw,omitempty"`
+	// Present records which known config keys the provider actually returned so
+	// explicit zero/false values survive the readback; see VMConfigData.Present.
+	Present map[string]bool `json:"-"`
 }
 
 func (d *ContainerConfigData) UnmarshalJSON(data []byte) error {
@@ -535,6 +545,7 @@ func (d *ContainerConfigData) UnmarshalJSON(data []byte) error {
 		Hookscript:   raw.Hookscript,
 		Digest:       raw.Digest,
 		Raw:          configRaw(data, containerConfigKnownKeys),
+		Present:      configPresentKeys(data, containerConfigKnownKeys),
 	}
 	return nil
 }
@@ -1150,6 +1161,32 @@ func configRaw(data []byte, known map[string]struct{}) map[string]string {
 			out[key] = s
 		} else if len(value) > 0 {
 			out[key] = string(value)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// configPresentKeys reports which of the known keys a PVE config response
+// actually carried.
+//
+// The typed config structs decode numbers and booleans into Go zero values, so
+// a provider that returns `swap: 0` or `onboot: 0` produces the same struct as
+// one that omits the field. That ambiguity made an explicit zero vanish from
+// config readback and turned a successful create with an explicit zero into a
+// spurious verification failure. Keeping the presence set alongside the typed
+// values lets callers preserve what the provider actually said.
+func configPresentKeys(data []byte, known map[string]struct{}) map[string]bool {
+	var flat map[string]json.RawMessage
+	if err := json.Unmarshal(data, &flat); err != nil {
+		return nil
+	}
+	out := make(map[string]bool, len(known))
+	for key := range flat {
+		if _, ok := known[key]; ok {
+			out[key] = true
 		}
 	}
 	if len(out) == 0 {
