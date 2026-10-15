@@ -1363,7 +1363,7 @@ func resolveExplicitProfile(name string) (*config.Config, agent.ExecutionContext
 var errTaskReconciliationUnavailable = errors.New("task reconciliation is unavailable for this receipt")
 
 func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt) error {
-	if r.TaskID == "" {
+	if r.TaskID == "" && !templateReceiptReobservable(r) {
 		return fmt.Errorf("%w: receipt has no provider task ID", errTaskReconciliationUnavailable)
 	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
@@ -1373,6 +1373,9 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 	defer cleanup()
 	if prov.Name() != r.Context.Provider {
 		return fmt.Errorf("%w: resolved provider %q does not match the receipt", errTaskReconciliationUnavailable, prov.Name())
+	}
+	if templateReceiptReobservable(r) {
+		return reobserveTemplateReceipt(ctx, prov, r)
 	}
 	var state string
 	var status string

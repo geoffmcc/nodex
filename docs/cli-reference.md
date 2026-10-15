@@ -428,6 +428,8 @@ nodex container create pve-a 200 local:vztmpl/debian-12.tar.zst app-200 \
 | `container snapshot rollback <id> <name>` | Roll back to a container snapshot (`--yes --force`) |
 | `container clone <id> --newid <id>` | Clone a container |
 
+Taskless VM/container template conversion verifies the config flag with up to seven reads and bounded backoff (250 ms initially, capped at 2 s), honoring cancellation. A persistent readable mismatch returns exit 11. `agent receipt refresh` and `reconcile` can check the bound guest again after a completed conversion, even without a task ID. Earlier errors remain in warnings; a matching current flag does not establish historical causation. These checks never resubmit conversion.
+
 `container os-update` is a disruptive operation and requires `--yes --force`.
 It accepts only `--policy approved-full-upgrade`, targets an explicitly
 identified running LXC, and executes the fixed APT full-upgrade procedure

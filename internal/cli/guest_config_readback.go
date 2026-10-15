@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
@@ -316,9 +317,8 @@ func createdVolumeMatches(actual string, expected createdVolumeExpectation) bool
 // synchronously and returns no task identifier, so completion must be modelled
 // from the observed flag rather than from a task ID that never exists.
 //
-// A readable config that does not report the template flag is a contradiction,
-// not an unknown: the guest is demonstrably not a template. Only a config read
-// that could not complete leaves the outcome unverifiable.
+// A missing flag can be a stale observation. Taskless callers use bounded
+// convergence checks before treating a readable mismatch as a failure.
 func templateConfigVerifier(prov domain.Provider, resourceType, node string, vmid int) postconditionVerifier {
 	return func(ctx context.Context) postconditionOutcome {
 		var config map[string]interface{}
@@ -351,6 +351,33 @@ func templateConfigVerifier(prov domain.Provider, resourceType, node string, vmi
 			return postconditionOutcome{Verified: true, Detail: fmt.Sprintf("%s/%d config reports template:1", node, vmid)}
 		}
 		return postconditionOutcome{Detail: fmt.Sprintf("%s/%d config reports template:%s after the conversion", node, vmid, canonical)}
+	}
+}
+
+// convergeTemplateReadback retries reads only, never the conversion. Both the
+// attempt count and each wait are bounded, and caller cancellation is honored.
+func convergeTemplateReadback(verify postconditionVerifier, initialDelay time.Duration, attempts int) postconditionVerifier {
+	return func(ctx context.Context) postconditionOutcome {
+		delay := initialDelay
+		var result postconditionOutcome
+		for attempt := 0; attempt < attempts; attempt++ {
+			if err := ctx.Err(); err != nil {
+				return postconditionOutcome{Unverifiable: true, Detail: "template readback interrupted: " + err.Error()}
+			}
+			result = verify(ctx)
+			if result.Verified || result.Unverifiable || attempt == attempts-1 {
+				return result
+			}
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return postconditionOutcome{Unverifiable: true, Detail: "template readback interrupted: " + ctx.Err().Error()}
+			case <-timer.C:
+			}
+			delay = min(delay*2, 2*time.Second)
+		}
+		return result
 	}
 }
 

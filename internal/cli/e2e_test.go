@@ -34,6 +34,7 @@ var e2eContainerTemplateConfigOverride bool
 var e2eVMInventoryTemplateOverride bool
 var e2eContainerInventoryTemplateOverride bool
 var e2eCTTemplateNoTaskID bool
+var e2eCTTemplateCalls int
 
 // e2eNodeServicesOverride, when non-nil, replaces the (otherwise empty) node
 // service list so --limit bounding can be exercised. Tests must reset it and
@@ -617,6 +618,7 @@ func (p *e2eMockProvider) VMTemplate(_ context.Context, node string, vmid int) (
 }
 
 func (p *e2eMockProvider) CTTemplate(_ context.Context, node string, vmid int) (string, error) {
+	e2eCTTemplateCalls++
 	// The real Proxmox LXC template endpoint applies synchronously and returns
 	// no task ID; the knob lets tests model that response.
 	if e2eCTTemplateNoTaskID {
