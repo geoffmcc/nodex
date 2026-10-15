@@ -1,13 +1,16 @@
 import io
 import json
+import os
 from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 import zipfile
 
 from verify_release import (NOTICES, extract_source, inspect_binary, inspect_sbom,
-                            notice_matches,
+                            notice_matches, verify_native_version,
                             validate_names, verify_vendor_license_coverage)
 
 
@@ -166,6 +169,16 @@ class ReleaseArchiveTests(unittest.TestCase):
                 "github.com/geoffmcc/nodex": "v0.4.2",
                 "example.org/dependency": "v1.2.3",
             }, "go1.27.2", {"CGO_ENABLED": "0"}, "nodex", "wrongdigest")
+
+    @patch("verify_release.subprocess.run")
+    def test_native_version_smoke_makes_binary_executable(self, run):
+        def check_executable(command, **kwargs):
+            if os.name != "nt":
+                self.assertTrue(os.access(command[0], os.X_OK))
+            return SimpleNamespace(stdout="Nodex 1.2.3\nCommit: abc123\n")
+
+        run.side_effect = check_executable
+        verify_native_version(b"test binary", "nodex", "1.2.3", "abc123")
 
     def test_non_spdx_document_fails(self):
         path = self.root / "archive.tar.gz.spdx.json"

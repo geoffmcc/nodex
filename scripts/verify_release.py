@@ -202,6 +202,8 @@ def verify_native_version(binary, executable, version, commit):
     with tempfile.TemporaryDirectory(prefix="nodex-version-check-") as temporary:
         binary_path = Path(temporary) / executable
         binary_path.write_bytes(binary)
+        if os.name != "nt":
+            binary_path.chmod(0o755)
         result = subprocess.run([str(binary_path), "version"], check=True,
                                 capture_output=True, text=True)
     if f"Nodex {version}" not in result.stdout or f"Commit: {commit}" not in result.stdout:
