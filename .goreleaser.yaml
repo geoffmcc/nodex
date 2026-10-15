@@ -44,6 +44,8 @@ checksum:
 
 sboms:
   - artifacts: archive
+    documents:
+      - "${artifact}.spdx.json"
 
 signs:
   - artifacts: checksum

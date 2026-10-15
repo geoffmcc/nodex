@@ -5,7 +5,8 @@ import tempfile
 import unittest
 import zipfile
 
-from verify_release import (NOTICES, extract_source, inspect_binary,
+from verify_release import (NOTICES, extract_source, inspect_binary, inspect_sbom,
+                            notice_matches,
                             validate_names, verify_vendor_license_coverage)
 
 
@@ -69,6 +70,11 @@ class ReleaseArchiveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Stale notice"):
             inspect_binary(path, "nodex.exe", self.root)
 
+    def test_notice_line_endings_are_platform_independent(self):
+        notice = self.root / "LICENSE"
+        notice.write_bytes(b"current LICENSE\r\n")
+        self.assertTrue(notice_matches(b"current LICENSE\n", notice))
+
     def test_vendor_and_license_inventory_must_match(self):
         vendor = self.root / "modules.txt"
         licenses = self.root / "THIRD_PARTY_LICENSES.md"
@@ -94,6 +100,29 @@ class ReleaseArchiveTests(unittest.TestCase):
         licenses.write_text("## example.org/module v1.2.2\n")
         with self.assertRaisesRegex(ValueError, "version mismatch"):
             verify_vendor_license_coverage(vendor, licenses)
+
+    def test_spdx_sbom_requires_tool_and_package_inventory(self):
+        path = self.root / "archive.tar.gz.spdx.json"
+        path.write_text('{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0",'
+                        '"documentNamespace":"https://example.invalid/sbom",'
+                        '"creationInfo":{"creators":["Tool: syft-v1.30.0"]},'
+                        '"packages":[{"name":"nodex"}]}')
+        inspect_sbom(path)
+
+    def test_spdx_sbom_without_package_inventory_fails(self):
+        path = self.root / "archive.tar.gz.spdx.json"
+        path.write_text('{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0",'
+                        '"documentNamespace":"https://example.invalid/sbom",'
+                        '"creationInfo":{"creators":["Tool: syft-v1.30.0"]},'
+                        '"packages":[]}')
+        with self.assertRaisesRegex(ValueError, "no package inventory"):
+            inspect_sbom(path)
+
+    def test_non_spdx_document_fails(self):
+        path = self.root / "archive.tar.gz.spdx.json"
+        path.write_text('{"spdxVersion":"SPDX-2.2"}')
+        with self.assertRaisesRegex(ValueError, "Not an SPDX 2.3"):
+            inspect_sbom(path)
 
 
 if __name__ == "__main__":

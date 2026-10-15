@@ -25,7 +25,7 @@ Prebuilt archives for Linux, macOS, and Windows on amd64 and arm64 are published
 
 - `nodex_<version>_<os>_<arch>.tar.gz` (Linux and macOS) or `nodex_<version>_<os>_<arch>.zip` (Windows)
 - `checksums.txt` and `checksums.txt.sigstore.json` for integrity and Sigstore verification
-- an SPDX SBOM for every archive, plus build provenance for the checksum manifest
+- an SPDX SBOM for each binary archive, plus build provenance for the checksum manifest
 
 Download the archive for your platform, then verify and install it.
 

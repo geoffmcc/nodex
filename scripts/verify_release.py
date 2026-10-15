@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -35,6 +36,12 @@ def require_files(names, required):
     missing = required - names
     if missing:
         raise ValueError(f"Missing archive files: {', '.join(sorted(missing))}")
+
+
+def notice_matches(archived, repository_file):
+    expected = repository_file.read_bytes()
+    normalize = lambda content: content.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return normalize(archived) == normalize(expected)
 
 
 def module_versions_from_vendor(path):
@@ -88,13 +95,32 @@ def verify_vendor_license_coverage(vendor_modules, licenses):
                          + "; ".join(details))
 
 
+def inspect_sbom(path):
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"Invalid SPDX SBOM {path.name}: {error}") from error
+    if not isinstance(document, dict) or document.get("spdxVersion") != "SPDX-2.3":
+        raise ValueError(f"Not an SPDX 2.3 document: {path.name}")
+    if document.get("dataLicense") != "CC0-1.0" or not document.get("documentNamespace"):
+        raise ValueError(f"Incomplete SPDX metadata: {path.name}")
+    creation = document.get("creationInfo")
+    creators = creation.get("creators", []) if isinstance(creation, dict) else []
+    if not any(isinstance(creator, str) and creator.lower().startswith("tool: syft-")
+               for creator in creators):
+        raise ValueError(f"SBOM does not identify Syft as its creator: {path.name}")
+    packages = document.get("packages")
+    if not isinstance(packages, list) or not packages:
+        raise ValueError(f"SBOM has no package inventory: {path.name}")
+
+
 def inspect_binary(path, executable, repository):
     if path.suffix == ".zip":
         with zipfile.ZipFile(path) as archive:
             names = validate_names(archive.namelist())
             require_files(names, NOTICES | {"README.md", executable})
             for notice in NOTICES:
-                if archive.read(notice) != (repository / notice).read_bytes():
+                if not notice_matches(archive.read(notice), repository / notice):
                     raise ValueError(f"Stale notice in {path.name}: {notice}")
     else:
         with tarfile.open(path, "r:gz") as archive:
@@ -106,7 +132,7 @@ def inspect_binary(path, executable, repository):
                     raise ValueError(f"Unexpected archive entry: {member.name}")
             for notice in NOTICES:
                 with archive.extractfile(notice) as content:
-                    if content.read() != (repository / notice).read_bytes():
+                    if not notice_matches(content.read(), repository / notice):
                         raise ValueError(f"Stale notice in {path.name}: {notice}")
 
 
@@ -136,7 +162,7 @@ def extract_source(path, destination, repository):
                     target.write_bytes(content.read())
         source = destination / prefix
         for notice in NOTICES:
-            if (source / notice).read_bytes() != (repository / notice).read_bytes():
+            if not notice_matches((source / notice).read_bytes(), repository / notice):
                 raise ValueError(f"Stale source notice: {notice}")
         return source
 
@@ -153,6 +179,9 @@ def verify(dist, repository):
         binary = dist / f"{stem}_{goos}_{arch}.{extension}"
         inspect_binary(binary, "nodex.exe" if goos == "windows" else "nodex", repository)
         expected.append(binary)
+        sbom = dist / f"{binary.name}.spdx.json"
+        inspect_sbom(sbom)
+        expected.append(sbom)
     checksums = {}
     for line in (dist / "checksums.txt").read_text().splitlines():
         digest, name = line.split(maxsplit=1)
@@ -177,7 +206,7 @@ def verify(dist, repository):
                             str(workspace / f"nodex-{goos}-{arch}"), "./cmd/nodex"],
                            cwd=source, env=env, check=True)
             print(f"Verified offline source build: {goos}/{arch}", flush=True)
-    print("Verified all six binary archives, notices, source, and checksum coverage.")
+    print("Verified all six binary archives, SPDX SBOMs, notices, source, and checksum coverage.")
 
 
 if __name__ == "__main__":

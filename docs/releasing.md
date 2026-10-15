@@ -27,19 +27,20 @@ go install github.com/goreleaser/goreleaser/v2@v2.10.0
 go install github.com/anchore/syft/cmd/syft@v1.30.0
 goreleaser check
 syft version
-goreleaser release --snapshot --clean --skip=sign
+goreleaser release --snapshot --clean --skip=sign,publish
 python3 scripts/verify_release.py
 ```
 
 Snapshot builds do not create tags or publish releases. Set
 `SOURCE_DATE_EPOCH` for reproducible archive timestamps.
 
-The verifier checks notices in every binary and source archive, verifies checksum
-coverage, then extracts the source and builds all six targets with an empty module
-cache and `GOPROXY=off`, `GOSUMDB=off`, and `GOTOOLCHAIN=local`. The Go toolchain
-must already be installed. Run this with the release workflow's pinned Go version.
-CI runs the same check on snapshot archives (without signing or SBOM generation);
-the release workflow checks the real draft artifacts before publication.
+The verifier checks notices in every binary and source archive, validates each
+SPDX SBOM and its checksum entry, verifies vendored-module license coverage, then
+extracts the source and builds all six targets with an empty module cache and
+`GOPROXY=off`, `GOSUMDB=off`, and `GOTOOLCHAIN=local`. The Go toolchain must
+already be installed. Run this with the release workflow's pinned Go version.
+CI runs the same check on snapshot archives; the release workflow checks the real
+draft artifacts before publication.
 
 Source archives use committed files. Commit the intended changes before a
 snapshot build; uncommitted source changes are not included by `git archive`.
