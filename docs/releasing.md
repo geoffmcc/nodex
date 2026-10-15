@@ -60,18 +60,9 @@ Confirm the source link in the release notes points to the same tag. Preserve
 these source materials while distributing the binaries. Re-review dependency
 and file-level notices whenever module versions or the Go toolchain change.
 
-## Corrections to older releases
+## Historical corrections
 
-Preserve old tags and signed archives. Add separately named, version-specific
-supplemental notices and source archives with their own checksum manifest, and
-add prominent links and a correction date to the original release description.
-Historical source archives must contain that tag's code and dependencies; label
-any added licensing documentation as a later supplement. Check the actual
-historical toolchain's notices as well as its module versions.
-
-Do not overwrite original archives or `checksums.txt`: they are already signed
-and may have been downloaded. Mark corrected releases as superseding the older
-ones. If incomplete binary downloads need to be withdrawn, treat that as an
-explicit release-management action, preserving their source and correction
-materials. An immutable release may require a separate correction release with
-links instead of additional assets.
+The seven older releases (v0.1.2, v0.1.3, v0.2.0, v0.3.0, v0.3.1, v0.4.1, and
+v0.4.2) were corrected with version-specific supplemental source archives,
+third-party license notices, and separate checksum manifests. The original
+release assets remain unchanged.
