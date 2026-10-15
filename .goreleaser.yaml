@@ -3,6 +3,7 @@ version: 2
 before:
   hooks:
     - go mod verify
+    - go mod vendor -o .release-source/vendor
 
 builds:
   - id: nodex
@@ -23,9 +24,19 @@ archives:
       - LICENSE
       - README.md
       - THIRD_PARTY_LICENSES.md
+      - SOURCE.md
     format_overrides:
       - goos: windows
         formats: [zip]
+
+source:
+  enabled: true
+  name_template: "nodex_{{ .Version }}_source"
+  prefix_template: "nodex_{{ .Version }}_source/"
+  format: tar.gz
+  files:
+    - src: .release-source/vendor/**
+      dst: vendor
 
 checksum:
   name_template: checksums.txt
@@ -47,3 +58,10 @@ signs:
 release:
   draft: true
   prerelease: auto
+  header: |
+    ## Source and licenses
+
+    Download [nodex_{{ .Version }}_source.tar.gz](https://github.com/geoffmcc/nodex/releases/download/{{ .Tag }}/nodex_{{ .Version }}_source.tar.gz)
+    for this release's source, vendored dependencies, upstream notices, and build instructions.
+    The source archive is covered by the signed checksums.txt manifest.
+    Each binary archive includes LICENSE, THIRD_PARTY_LICENSES.md, and SOURCE.md.

@@ -7,6 +7,8 @@ GOVERSION ?= $(shell go version | cut -d' ' -f3)
 
 GO       := go
 GOFMT    := gofmt
+# Format project code only; release preparation contains upstream Go source.
+GO_DIRS  := cmd internal
 LDFLAGS  := -X '$(MODULE)/internal/version.Version=$(VERSION)' \
             -X '$(MODULE)/internal/version.Commit=$(COMMIT)' \
             -X '$(MODULE)/internal/version.BuildDate=$(BUILT)' \
@@ -27,11 +29,11 @@ vet:
 	$(GO) vet ./...
 
 fmt:
-	$(GOFMT) -s -w .
+	$(GOFMT) -s -w $(GO_DIRS)
 
 fmt-check:
 	@echo "Checking gofmt..."
-	@diff=$$($(GOFMT) -s -d .); \
+	@diff=$$($(GOFMT) -s -d $(GO_DIRS)); \
 	if [ -n "$$diff" ]; then \
 		echo "$$diff"; \
 		exit 1; \
