@@ -128,7 +128,7 @@ jobs:
       - name: Govulncheck
         run: govulncheck ./...
       - name: Install Syft
-        run: go install github.com/anchore/syft/cmd/syft@v1.30.0
+        run: go install github.com/anchore/syft/cmd/syft@v1.54.1
       - name: Validate Syft
         run: syft version
       - name: Validate GoReleaser configuration

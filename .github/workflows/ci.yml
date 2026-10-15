@@ -102,7 +102,7 @@ jobs:
       - name: Install GoReleaser
         run: go install github.com/goreleaser/goreleaser/v2@v2.10.0
       - name: Install Syft
-        run: go install github.com/anchore/syft/cmd/syft@v1.30.0
+        run: go install github.com/anchore/syft/cmd/syft@v1.54.1
       - name: Validate release configuration
         run: goreleaser check --config .goreleaser.yaml
       - name: Test release archive validation

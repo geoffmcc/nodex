@@ -1,4 +1,5 @@
 import io
+import json
 from pathlib import Path
 import tarfile
 import tempfile
@@ -17,6 +18,34 @@ class ReleaseArchiveTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         for name in NOTICES:
             (self.root / name).write_text(f"current {name}\n")
+
+    def write_sbom(self, path, modules=None, binary_digest="abc123", go_version="go1.27.2"):
+        modules = modules or {
+            "github.com/geoffmcc/nodex": "v0.4.2",
+            "example.org/dependency": "v1.2.3",
+        }
+        packages = [
+            {"name": name, "versionInfo": version, "externalRefs": [
+                {"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl",
+                 "referenceLocator": f"pkg:golang/{name}@{version}"}
+            ]}
+            for name, version in modules.items()
+        ]
+        packages.extend([
+            {"name": "stdlib", "versionInfo": go_version,
+             "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER",
+                               "referenceType": "purl",
+                               "referenceLocator": f"pkg:golang/stdlib@{go_version[2:]}"}]},
+            {"name": "dist/nodex", "versionInfo": f"sha256:{binary_digest}"},
+        ])
+        document = {
+            "spdxVersion": "SPDX-2.3",
+            "dataLicense": "CC0-1.0",
+            "documentNamespace": "https://example.invalid/sbom",
+            "creationInfo": {"creators": ["Tool: syft-[not provided]"]},
+            "packages": packages,
+        }
+        path.write_text(json.dumps(document))
 
     def source(self, omit=None, extra=None):
         files = {name: (self.root / name).read_bytes() for name in NOTICES}
@@ -102,27 +131,47 @@ class ReleaseArchiveTests(unittest.TestCase):
             verify_vendor_license_coverage(vendor, licenses)
 
     def test_spdx_sbom_requires_tool_and_package_inventory(self):
-        path = self.root / "archive.tar.gz.spdx.json"
-        path.write_text('{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0",'
-                        '"documentNamespace":"https://example.invalid/sbom",'
-                        '"creationInfo":{"creators":["Tool: syft-v1.30.0"]},'
-                        '"packages":[{"name":"nodex"}]}')
-        inspect_sbom(path)
+        path = self.root / "nodex-linux-amd64.spdx.json"
+        self.write_sbom(path)
+        inspect_sbom(path, {
+            "github.com/geoffmcc/nodex": "v0.4.2",
+            "example.org/dependency": "v1.2.3",
+        }, "go1.27.2", {"CGO_ENABLED": "0"}, "nodex", "abc123")
 
     def test_spdx_sbom_without_package_inventory_fails(self):
-        path = self.root / "archive.tar.gz.spdx.json"
-        path.write_text('{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0",'
-                        '"documentNamespace":"https://example.invalid/sbom",'
-                        '"creationInfo":{"creators":["Tool: syft-v1.30.0"]},'
-                        '"packages":[]}')
+        path = self.root / "nodex-linux-amd64.spdx.json"
+        self.write_sbom(path)
+        document = json.loads(path.read_text())
+        document["packages"] = []
+        path.write_text(json.dumps(document))
         with self.assertRaisesRegex(ValueError, "no package inventory"):
-            inspect_sbom(path)
+            inspect_sbom(path, {}, "go1.27.2", {"CGO_ENABLED": "0"}, "nodex", "abc123")
+
+    def test_spdx_sbom_must_match_binary_dependencies(self):
+        path = self.root / "nodex-linux-amd64.spdx.json"
+        self.write_sbom(path, modules={
+            "github.com/geoffmcc/nodex": "v0.4.2",
+        })
+        with self.assertRaisesRegex(ValueError, "Go module inventory mismatch"):
+            inspect_sbom(path, {
+                "github.com/geoffmcc/nodex": "v0.4.2",
+                "example.org/dependency": "v1.2.3",
+            }, "go1.27.2", {"CGO_ENABLED": "0"}, "nodex", "abc123")
+
+    def test_spdx_sbom_must_match_binary_digest(self):
+        path = self.root / "nodex-linux-amd64.spdx.json"
+        self.write_sbom(path)
+        with self.assertRaisesRegex(ValueError, "executable digest"):
+            inspect_sbom(path, {
+                "github.com/geoffmcc/nodex": "v0.4.2",
+                "example.org/dependency": "v1.2.3",
+            }, "go1.27.2", {"CGO_ENABLED": "0"}, "nodex", "wrongdigest")
 
     def test_non_spdx_document_fails(self):
         path = self.root / "archive.tar.gz.spdx.json"
         path.write_text('{"spdxVersion":"SPDX-2.2"}')
         with self.assertRaisesRegex(ValueError, "Not an SPDX 2.3"):
-            inspect_sbom(path)
+            inspect_sbom(path, {}, "go1.27.2", {"CGO_ENABLED": "0"}, "nodex", "abc123")
 
 
 if __name__ == "__main__":
