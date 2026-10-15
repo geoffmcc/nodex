@@ -41,8 +41,11 @@ coverage, then extracts the source and builds all six targets with an empty
 module cache and `GOPROXY=off`, `GOSUMDB=off`, and `GOTOOLCHAIN=local`. The Go
 toolchain must already be installed. Run this with the release workflow's pinned
 Go version.
-CI runs the same check on snapshot archives; the release workflow checks the real
-draft artifacts before publication.
+CI runs the same snapshot verification on Linux, macOS, and Windows. Each runner
+checks all six target archives and executes the native archive's version command;
+the verifier also cross-builds the vendored source for all six targets. The
+tagged release workflow checks the real draft artifacts, checksum signature,
+and provenance before publication.
 
 Source archives use committed files. Commit the intended changes before a
 snapshot build; uncommitted source changes are not included by `git archive`.
