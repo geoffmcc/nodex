@@ -30,9 +30,10 @@ The major capability areas are:
 - **Linux fleet maintenance:** explicit inventory, read-only preflight,
   immutable expiring plans, guarded apply, durable receipts, verification,
   reconciliation and reporting. Requires Ansible and enrolled hosts.
-- **One-shot monitoring:** configured HTTP(S), TCP, TLS and DNS checks, plus
-  configured PVE/PBS health, task, datastore and backup checks. Results are
-  structured for an external scheduler or monitoring system.
+- **One-shot monitoring:** configured HTTP(S), TCP, TLS, DNS and ICMP checks,
+  Ansible-backed systemd service checks, plus configured PVE/PBS health, task,
+  datastore and backup checks. Results are structured for an external scheduler
+  or monitoring system.
 - **Automation:** stable JSON/YAML interfaces, command-operation discovery,
   and an opt-in agent execution contract with mutation receipts and
   deduplication.

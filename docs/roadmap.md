@@ -79,10 +79,13 @@ playbooks (check-updates, verify-host), and the shell-free Ansible adapter.
   maintenance group, criticality, `backup_required`,
   `automatic_reboot: false` default). No secrets in config; host-key
   verification required.
-- Allowlisted operation registry (`check-updates`,
-  `configure-security-updates`, `install-security-updates`,
-  `install-approved-updates`, `restart-approved-services`,
-  `reboot-approved-host`, `verify-host`, `verify-service`).
+- Allowlisted operation registry, starting with the read-only `check-updates`
+  and `verify-host` operations. Later phases extend it with the maintenance,
+  container-update, and security-policy operations
+  (`apply-security-updates`, `apply-approved-updates`, `verify-maintenance`,
+  `check-container-updates`, `apply-container-updates`,
+  `verify-container-updates`, `inspect-security-policy`,
+  `apply-security-policy`, `restore-security-policy`, `check-service`).
 - Shell-free Ansible adapter: version detection, minimal environment, private
   temp dirs, unsafe-path rejection, bounded time/output, cancellation, child
   termination, separated streams, redaction, per-host structured results,
@@ -131,7 +134,7 @@ and honest unknown outcomes.
 
 Status: delivered in PR #107 (`feat/roadmap-phases-7-8`), merged at baseline
 `e0b0449`. Follow-up hardening is tracked in the
-[security review note](security-integration-hardening-review.md).
+[residual risk register](residual-risks.md).
 
 - `nodex maintenance policy plan|apply|restore` for unattended security updates on
   Debian/Ubuntu guests: opt-in, exact config diff shown, security repos only
@@ -144,7 +147,7 @@ Status: delivered in PR #107 (`feat/roadmap-phases-7-8`), merged at baseline
 
 Status: delivered in PR #107 (`feat/roadmap-phases-7-8`), merged at baseline
 `e0b0449`. Follow-up hardening is tracked in the
-[security review note](security-integration-hardening-review.md).
+[residual risk register](residual-risks.md).
 Generic and provider-backed checks were already available; this phase adds
 bounded ICMP echo, Ansible-backed systemd service checks, and external-scheduler
 integration examples.

@@ -36,7 +36,7 @@ For suspected vulnerabilities, follow the [security policy](SECURITY.md). Do not
 - **Proxmox Backup Server provider** — a separate `pbs` profile with status, datastore, snapshot, task, job, and garbage-collection inspection; guarded verify, sync, prune and GC runs
 - **PVE/PBS environments** — combined reachability, datastore, task and per-guest backup coverage/age/verification evaluation
 - **Fleet maintenance** — optional Ansible-backed workflows for explicitly enrolled Linux hosts: inventory, status/preflight, immutable plans, guarded apply, verify, recover/reconcile and report
-- **One-shot monitoring** — explicitly configured generic HTTP(S), TCP, TLS and DNS checks, plus provider-backed PVE/PBS API, task, datastore and backup checks
+- **One-shot monitoring** — explicitly configured generic HTTP(S), TCP, TLS, DNS and ICMP checks, Ansible-backed systemd `service` checks, plus provider-backed PVE/PBS API, task, datastore and backup checks
 - **Agent/automation interface** — JSON/YAML output, operation discovery, opt-in versioned `--agent` execution, mutation receipt deduplication and read-only reconciliation
 - **Configuration** via YAML schemas v1 and v2
 - **Credential management** through file, keyring, environment, and stdin backends
@@ -53,11 +53,13 @@ For suspected vulnerabilities, follow the [security policy](SECURITY.md). Do not
 - `container os-update` supports only the fixed `approved-full-upgrade` policy
   for an explicitly enrolled running LXC. It does not reboot the guest. VM OS
   updates and arbitrary remote shell/Ansible commands are not provided.
-- Fleet maintenance requires a supported local Ansible installation. Most
-  PVE/PBS CLI operations do not require Ansible; no Ansible-backed service
-  monitoring integration is currently implemented.
+- Fleet maintenance and Ansible-backed `service` monitoring checks require a
+  supported local Ansible installation and an explicitly enrolled inventory
+  host. Most PVE/PBS CLI operations do not require Ansible.
 - One-shot monitoring does not discover targets, schedule checks, store history
-  or send alerts. Configured `service` targets currently report `unsupported`.
+  or send alerts. A configured `service` target reports `unsupported` only when
+  Ansible is unavailable; otherwise it reports the enrolled host's systemd
+  service state.
 - Agent mode is not a sandbox or proof of human approval. Some local, fan-out,
   interactive, credential and native-ledger operations intentionally remain
   outside its supported operation set; inspect `nodex operation describe`.
@@ -78,7 +80,7 @@ The internal Go APIs (everything under `internal/`) are not stable and may chang
 ## Building from Source
 
 Requirements:
-- Go 1.27.2
+- Go 1.27.0 or newer (CI and release builds use Go 1.27.2)
 - `make` (optional; `go build` works directly)
 
 ```bash

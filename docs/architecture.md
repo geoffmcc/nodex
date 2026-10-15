@@ -67,7 +67,7 @@ internal/version/                  Build metadata resolution
 ## Runtime flow
 
 1. `cmd/nodex/main.go` creates a cancellable context and registers SIGINT/SIGTERM handlers.
-2. `internal/cli.Run` parses global flags with Go's `flag` package.
+2. `internal/cli.Run` parses global flags with the custom `parseGlobal` scanner in `internal/cli`, so flags may appear anywhere on the command line.
 3. The CLI dispatches to a command handler registered in `internal/cli/root.go`.
 4. Commands that need provider access read the configuration, choose a profile, resolve credentials, create the provider, and defer provider cleanup.
 5. The Proxmox provider uses the internal Proxmox client to call API endpoints.
@@ -101,7 +101,7 @@ Mutation flags:
 | `--yes` | bool | Confirm reversible operations (Tier 1) |
 | `--force` | bool | Confirm disruptive operations (Tier 2, requires `--yes`) |
 | `--wait` | bool | Wait for provider task to complete before exiting |
-| `--expert` | bool | Enable expert-mode operations (Tier 4: identity, ACL changes) |
+| `--expert` | bool | Enable expert-mode operations (Tier 4: identity, ACL changes); Tier 4 also requires `--yes --force` |
 | `--password-stdin` | bool | Read password from stdin instead of interactive prompt |
 
 ## Safety authorization
@@ -114,7 +114,7 @@ Mutation flags:
 | 1 | Reversible | `--yes` or interactive prompt |
 | 2 | Disruptive | `--yes --force` or double confirmation |
 | 3 | Destructive | Type-in target verification |
-| 4 | SecurityAdmin | `--expert` flag |
+| 4 | SecurityAdmin | `--yes --force --expert`, plus the target confirmation for removals |
 
 Each operation declares a `ConfirmationPolicy` with its tier, resource description, and optional type-confirm target. The `Check` method evaluates flags and interactivity mode to produce a `ConfirmationResult`.
 
@@ -191,7 +191,7 @@ The Proxmox provider (`internal/provider/proxmox/`) is the built-in provider. It
 - Uses the typed Proxmox client (`internal/provider/proxmox/client/`) for all API calls
 - Maps Proxmox API response fields into `internal/domain` resource types through mapper functions
 
-The Proxmox provider advertises 37 capabilities, spanning node/guest/storage/cluster inspection; node detail; firewall and HA; backups; SDN; snapshots; pools and cluster logs; VM/LXC lifecycle, creation, restoration, cloning, migration, disks and configuration; storage/network/firewall mutation; access; Ceph; replication; consoles; and guarded cluster administration. The PBS provider advertises 10 capabilities: six inspection capabilities (system, datastores, snapshots, tasks, jobs and garbage collection) plus four guarded task runners (verify, sync, prune and garbage collection). The provider's `Capabilities()` implementation and `nodex provider capabilities <name>` are authoritative; a listed capability is static implementation support, not live authorization or readiness.
+The Proxmox provider advertises 36 capabilities, spanning node/guest/storage/cluster inspection; node detail; firewall and HA; backups; SDN; snapshots; pools and cluster logs; VM/LXC lifecycle, creation, restoration, cloning, migration, disks and configuration; storage/network/firewall mutation; access; Ceph; replication; consoles; and guarded cluster administration. The PBS provider advertises 10 capabilities: six inspection capabilities (system, datastores, snapshots, tasks, jobs and garbage collection) plus four guarded task runners (verify, sync, prune and garbage collection). The provider's `Capabilities()` implementation and `nodex provider capabilities <name>` are authoritative; a listed capability is static implementation support, not live authorization or readiness.
 
 ## Agent execution and operation discovery
 

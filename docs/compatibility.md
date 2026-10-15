@@ -26,16 +26,19 @@ argument order will not change without a documented deprecation period.
 
 Global flags (`--profile`, `--output`, `--timeout`, `--wait`, `--yes`,
 `--force`, `--expert`, `--all`, `--quiet`, `--verbose`, `--debug`,
-`--non-interactive`, `--no-color`, `--limit`) are considered stable in
-name and semantics.  New flags may be added.
+`--non-interactive`, `--no-color`, `--limit`, `--agent`, `--request-id`,
+`--password-stdin`, `--confirm-target`) are expected to remain stable in name
+and semantics; a rename or semantic change is announced in the release notes
+before release. New flags may be added.
 
-Mutation-specific flags (e.g. `--node`, `--storage`, `--delete-orphan-disks`)
-may be renamed or restructured before 1.0.
+Mutation-specific flags (e.g. `--disk-storage`, `--rootfs-storage`, `--cores`,
+`--memory`, `--policy`, `--suite`) may be renamed or restructured before 1.0.
 
 ### Tier 3 — Argument conventions
 
 Resource addressing uses `<node>/<vmid>` or `<node>/<vmid>/<snapshot>` for
-nested resources. This convention is considered stable.
+nested resources. This convention is expected to remain stable; a change is
+announced in the release notes before release.
 
 ## Configuration
 

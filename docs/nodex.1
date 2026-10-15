@@ -1,4 +1,4 @@
-.TH NODEX 1 "2026-10-08" "nodex 0.3.1" "User Commands"
+.TH NODEX 1 "2026-10-15" "nodex 0.4.2" "User Commands"
 .SH NAME
 nodex \- local CLI for inspecting and operating self-hosted infrastructure
 .SH SYNOPSIS
@@ -102,7 +102,8 @@ Requires --yes --force or the operation's interactive confirmation.
 Requires the operation's target confirmation, plus any other listed flags.
 .TP
 .B Tier 4 (Security administration)
-Requires --expert, plus any other listed flags.
+Requires --yes --force --expert. Operations that remove identity or access state
+additionally require an exact --confirm-target.
 .PP
 The live operation registry provides the exact confirmation target and safety
 requirements for each operation. In non-interactive mode, missing requirements

@@ -32,9 +32,9 @@ version is newer than the running binary supports is rejected with an error
 asking you to upgrade Nodex.
 
 Version 2 is the multi-provider schema: profiles may use any known provider
-(`proxmox` for Proxmox VE, `pbs` for Proxmox Backup Server), and future
-optional sections (environments, inventory, monitoring) attach to version 2.
-Versions 1 and 2 are structurally identical for the fields below.
+(`proxmox` for Proxmox VE, `pbs` for Proxmox Backup Server), and the optional
+sections (environments, inventory, monitoring, certifications) attach to
+version 2. Versions 1 and 2 are structurally identical for the fields below.
 
 ```yaml
 version: 2
@@ -199,10 +199,10 @@ Writes a sanitized JSON object to stdout with `name`, `provider`, `endpoint`, an
 ### Import
 
 ```bash
-nodex profile import < lab-profile.json
+nodex profile import lab < lab-profile.json
 ```
 
-Reads a JSON profile from stdin and adds it to the configuration. The profile must have at minimum a `name` field.
+Reads a JSON profile from stdin and adds it to the configuration under the name given on the command line. The positional `<name>` is required and must match the profile-name rule; any `name` field inside the JSON body is ignored.
 
 ## Credential References
 
@@ -442,6 +442,53 @@ identity mapping. In particular, reviewed `ProxyJump`/`ProxyCommand`, DNS,
 `HostKeyAlias`, and system-wide known-host configuration can affect which
 endpoint or host-key identity is reached. Keep that local SSH configuration
 and its trust databases under administrator control.
+
+## Certification Environments
+
+The `certifications` section (schema version 2 only) declares the disposable
+test environments that the opt-in `nodex certification` suites may use. It is
+an explicit authorization record, not a discovery hint: every certification
+mutation must match a declared environment exactly. See
+[certification.md](certification.md) for the workflow.
+
+```yaml
+version: 2
+certifications:
+  test-lab:
+    profile: nodex-test-admin
+    endpoint: https://pve-test.example.invalid:8006
+    provider: proxmox
+    nodes: [pve-test]
+    storage: [local]
+    vmid_min: 9000
+    vmid_max: 9099
+    suites: [readonly, disposable-mutations]
+    allow_mutations: true
+    max_resources: 1
+    expires_at: 1798761600
+    expected_fingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    trusted_ca_identity: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `profile` | yes | Must be `nodex-test-admin`; certification never falls back to the current profile. |
+| `endpoint` | yes | HTTPS endpoint; must match the referenced profile's endpoint exactly. |
+| `provider` | yes | Must match the referenced profile's provider (`proxmox` or `pbs`). |
+| `nodes` | yes | Allowed node names for the suite. |
+| `storage` | yes | Allowed storage names for the suite. |
+| `vmid_min` / `vmid_max` | yes | Inclusive VMID range the suite may use. |
+| `suites` | yes | One or both of `readonly` and `disposable-mutations`. |
+| `allow_mutations` | for `disposable-mutations` | Must be `true` before the mutation suite may run. |
+| `max_resources` | yes | Maximum simultaneous resources, 1–100. |
+| `expires_at` | yes | Unix timestamp; the authorization is refused once it has passed. |
+| `expected_fingerprint` | yes | SHA-256 fingerprint of the authorized provider leaf certificate. |
+| `trusted_ca_identity` | yes | SHA-256 fingerprint of the trusted CA identity. |
+
+A certification environment whose profile, endpoint, or provider does not match
+its referenced profile, whose VMID range or `max_resources` is invalid, whose
+`expires_at` has passed, or whose `disposable-mutations` suite lacks
+`allow_mutations: true` is rejected at configuration load.
 
 ## File Credentials
 
