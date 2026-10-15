@@ -9,6 +9,14 @@ signed with a Sigstore bundle and the workflow requires build provenance
 attestation permissions; a release is not considered publishable until both
 are verified.
 
+Every release also includes `nodex_<version>_source.tar.gz`, containing the
+tagged repository plus vendored dependency source and upstream license notices.
+GoReleaser creates it from the exact release commit and includes it in the signed
+checksum manifest. Its preparation hook writes dependencies to the ignored
+`.release-source/vendor/` directory; this does not change normal local builds
+to vendor mode. Binary archives include `LICENSE`, `THIRD_PARTY_LICENSES.md`, and
+`SOURCE.md`. Release notes link directly to the corresponding source archive.
+
 ## Validate Locally
 
 Use the pinned GoReleaser version from `.github/workflows/release.yml` and run:
@@ -20,10 +28,21 @@ go install github.com/anchore/syft/cmd/syft@v1.30.0
 goreleaser check
 syft version
 goreleaser release --snapshot --clean --skip=sign
+python3 scripts/verify_release.py
 ```
 
 Snapshot builds do not create tags or publish releases. Set
 `SOURCE_DATE_EPOCH` for reproducible archive timestamps.
+
+The verifier checks notices in every binary and source archive, verifies checksum
+coverage, then extracts the source and builds all six targets with an empty module
+cache and `GOPROXY=off`, `GOSUMDB=off`, and `GOTOOLCHAIN=local`. The Go toolchain
+must already be installed. Run this with the release workflow's pinned Go version.
+CI runs the same check on snapshot archives (without signing or SBOM generation);
+the release workflow checks the real draft artifacts before publication.
+
+Source archives use committed files. Commit the intended changes before a
+snapshot build; uncommitted source changes are not included by `git archive`.
 
 ## Verify Artifacts
 
@@ -34,3 +53,16 @@ SPDX document before installation. For a published draft, verify
 GitHub Actions certificate identity and OIDC issuer
 `https://token.actions.githubusercontent.com`. Also verify the GitHub build
 provenance attestation for the checksum manifest before installation.
+
+Before publishing the draft, confirm all seven archives (six binary archives
+plus source), six binary SBOMs, checksums, and the signature bundle are attached.
+Confirm the source link in the release notes points to the same tag. Preserve
+these source materials while distributing the binaries. Re-review dependency
+and file-level notices whenever module versions or the Go toolchain change.
+
+## Historical corrections
+
+The seven older releases (v0.1.2, v0.1.3, v0.2.0, v0.3.0, v0.3.1, v0.4.1, and
+v0.4.2) were corrected with version-specific supplemental source archives,
+third-party license notices, and separate checksum manifests. The original
+release assets remain unchanged.

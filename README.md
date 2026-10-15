@@ -53,7 +53,7 @@ cosign verify-blob \
 
 The identity is pinned to this repository, this workflow file, and a release tag. You can tighten it further by replacing the version pattern with your exact tag. The release workflow also publishes build provenance for the checksum manifest; verify it using GitHub's attestation verification interface when provenance evidence is required.
 
-**2. Extract the archive.** Each archive contains the `nodex` binary (`nodex.exe` on Windows), `README.md`, and `LICENSE`.
+**2. Extract the archive.** Each binary archive contains the `nodex` binary (`nodex.exe` on Windows), `README.md`, and `LICENSE`. Releases with the licensing correction also include `THIRD_PARTY_LICENSES.md` and `SOURCE.md`; consult the release notes for supplemental notices on older versions.
 
 ```bash
 tar -xzf nodex_0.4.2_linux_amd64.tar.gz
@@ -81,6 +81,11 @@ nodex version
 ```
 
 ### Install with Go
+
+For source with vendored dependencies and offline build instructions, download
+the explicitly attached `nodex_<version>_source.tar.gz` from the matching release.
+See [SOURCE.md](SOURCE.md). GitHub's automatic source archives do not include the
+dependency sources.
 
 If you already have a Go toolchain, you can install directly:
 
