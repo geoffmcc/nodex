@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
@@ -825,7 +826,7 @@ func runVMTemplate(ctx context.Context, cmdCtx *Context, args []string) error {
 	target := fmt.Sprintf("%s/%d", node, vmid)
 	verify := templateConfigVerifier(prov, "vm", node, vmid)
 	if upid == "" {
-		return runSynchronousMutation(ctx, cmdCtx, prov, "vm template", target, "disruptive", verify)
+		return runSynchronousMutation(ctx, cmdCtx, prov, "vm template", target, "disruptive", convergeTemplateReadback(verify, 250*time.Millisecond, 7))
 	}
 	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm template", target, "disruptive", verify)
 }
@@ -870,7 +871,7 @@ func runCTTemplate(ctx context.Context, cmdCtx *Context, args []string) error {
 	target := fmt.Sprintf("%s/%d", node, vmid)
 	verify := templateConfigVerifier(prov, "container", node, vmid)
 	if upid == "" {
-		return runSynchronousMutation(ctx, cmdCtx, prov, "container template", target, "disruptive", verify)
+		return runSynchronousMutation(ctx, cmdCtx, prov, "container template", target, "disruptive", convergeTemplateReadback(verify, 250*time.Millisecond, 7))
 	}
 	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container template", target, "disruptive", verify)
 }

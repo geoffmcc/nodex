@@ -158,6 +158,11 @@ A checked postcondition mismatch returns exit 11 while preserving the successful
 provider task outcome. Unavailable verification is reported separately.
 Profile test and storage download support JSON and YAML.
 .PP
+Taskless template conversion checks configuration up to seven times with bounded
+backoff and cancellation. Receipt refresh/reconcile can re-observe completed
+template conversions without resubmitting them. Previous errors remain as
+warnings; current template state does not prove historical causation.
+.PP
 task log <node> <upid> reads provider log lines (default 200; --limit capped at
 2000 for Proxmox). Successful provider warnings are preserved in waited results
 and refreshed receipts. Container inventory includes template state; vm show
