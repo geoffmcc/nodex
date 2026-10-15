@@ -159,6 +159,15 @@ A checked postcondition mismatch returns exit 11 while preserving the successful
 provider task outcome. Unavailable verification is reported separately.
 Profile test and storage download support JSON and YAML.
 .PP
+status groups verified configured storage capacity identities while retaining
+every storage ID and node view. PBS namespaces share datastore-wide capacity.
+Unknown identities and conflicting or unavailable readings remain explicit.
+Physical disk totals are not established: different logical stores may share
+backing, so do not sum entries or groups. JSON/YAML retain per-entry storage
+metrics and add a versioned storage_capacity object with evidence, group
+membership, collection time and unknown source freshness. Use
+status --output json for a one-shot structured snapshot.
+.PP
 Taskless template conversion checks configuration up to seven times with bounded
 backoff and cancellation. Receipt refresh/reconcile can re-observe completed
 template conversions without resubmitting them. Previous errors remain as

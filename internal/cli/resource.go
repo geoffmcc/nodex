@@ -1049,16 +1049,17 @@ type statusOverview struct {
 	QuorumKnown bool   `json:"quorum_known" yaml:"quorum_known"`
 	// Standalone reports that the provider confirmed no cluster exists, so a
 	// zero quorum is expected rather than a fault (nit #36).
-	Standalone  bool            `json:"standalone" yaml:"standalone"`
-	NodesDetail []statusNode    `json:"nodes_detail" yaml:"nodes_detail"`
-	VMs         int             `json:"vms" yaml:"vms"`
-	VMsRunning  int             `json:"vms_running" yaml:"vms_running"`
-	VMsStopped  int             `json:"vms_stopped" yaml:"vms_stopped"`
-	Containers  int             `json:"containers" yaml:"containers"`
-	CTsRunning  int             `json:"cts_running" yaml:"cts_running"`
-	CTsStopped  int             `json:"cts_stopped" yaml:"cts_stopped"`
-	Storage     []statusStorage `json:"storage" yaml:"storage"`
-	HA          *statusHA       `json:"ha,omitempty" yaml:"ha,omitempty"`
+	Standalone      bool                   `json:"standalone" yaml:"standalone"`
+	NodesDetail     []statusNode           `json:"nodes_detail" yaml:"nodes_detail"`
+	VMs             int                    `json:"vms" yaml:"vms"`
+	VMsRunning      int                    `json:"vms_running" yaml:"vms_running"`
+	VMsStopped      int                    `json:"vms_stopped" yaml:"vms_stopped"`
+	Containers      int                    `json:"containers" yaml:"containers"`
+	CTsRunning      int                    `json:"cts_running" yaml:"cts_running"`
+	CTsStopped      int                    `json:"cts_stopped" yaml:"cts_stopped"`
+	Storage         []statusStorage        `json:"storage" yaml:"storage"`
+	StorageCapacity *statusStorageCapacity `json:"storage_capacity,omitempty" yaml:"storage_capacity,omitempty"`
+	HA              *statusHA              `json:"ha,omitempty" yaml:"ha,omitempty"`
 }
 
 type statusHA struct {
@@ -1079,14 +1080,19 @@ type statusNode struct {
 }
 
 type statusStorage struct {
-	Name       string `json:"name" yaml:"name"`
-	Type       string `json:"type" yaml:"type"`
-	Total      int64  `json:"total" yaml:"total"`
-	Used       int64  `json:"used" yaml:"used"`
-	Avail      int64  `json:"avail" yaml:"avail"`
-	TotalHuman string `json:"total_human,omitempty" yaml:"total_human,omitempty"`
-	UsedHuman  string `json:"used_human,omitempty" yaml:"used_human,omitempty"`
-	AvailHuman string `json:"avail_human,omitempty" yaml:"avail_human,omitempty"`
+	Name          string                          `json:"name" yaml:"name"`
+	Type          string                          `json:"type" yaml:"type"`
+	Total         int64                           `json:"total" yaml:"total"`
+	Used          int64                           `json:"used" yaml:"used"`
+	Avail         int64                           `json:"avail" yaml:"avail"`
+	TotalHuman    string                          `json:"total_human,omitempty" yaml:"total_human,omitempty"`
+	UsedHuman     string                          `json:"used_human,omitempty" yaml:"used_human,omitempty"`
+	AvailHuman    string                          `json:"avail_human,omitempty" yaml:"avail_human,omitempty"`
+	ID            string                          `json:"id" yaml:"id"`
+	Node          string                          `json:"node" yaml:"node"`
+	Status        string                          `json:"status" yaml:"status"`
+	Identity      *domain.StorageCapacityIdentity `json:"identity" yaml:"identity"`
+	CapacityGroup string                          `json:"capacity_group,omitempty" yaml:"capacity_group,omitempty"`
 }
 
 func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -1145,23 +1151,7 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 		}
 	}
 
-	if si, ok := prov.(domain.StorageInspector); ok {
-		if stors, err := si.Storage(ctx); err == nil {
-			for _, s := range stors {
-				st := statusStorage{
-					Name:  s.Name,
-					Type:  s.Type,
-					Total: s.Total,
-					Used:  s.Used,
-					Avail: s.Avail,
-				}
-				st.TotalHuman = formatBytes(st.Total)
-				st.UsedHuman = formatBytes(st.Used)
-				st.AvailHuman = formatBytes(st.Avail)
-				overview.Storage = append(overview.Storage, st)
-			}
-		}
-	}
+	collectStatusStorage(ctx, prov, &overview)
 
 	if cl, ok := prov.(domain.ClusterInspector); ok {
 		if cluster, err := cl.Cluster(ctx); err == nil && cluster != nil {
@@ -1221,23 +1211,7 @@ func writeStatus(cmdCtx *Context, overview *statusOverview) error {
 				fmt.Fprintf(w, "HA: %s (quorum: unavailable)\n", overview.HA.Status)
 			}
 		}
-		if len(overview.Storage) > 0 {
-			fmt.Fprintln(w, "\nStorage:")
-			for _, s := range overview.Storage {
-				health := ""
-				pct := 0.0
-				if s.Total > 0 {
-					pct = float64(s.Used) / float64(s.Total) * 100
-				}
-				if pct > 90 {
-					health = " [WARN]"
-				} else if pct > 75 {
-					health = " [HIGH]"
-				}
-				fmt.Fprintf(w, "  %-20s %-8s %s / %s (%.1f%%)%s\n", s.Name, s.Type, formatBytes(s.Used), formatBytes(s.Total), pct, health)
-			}
-		}
-		return nil
+		return writeStatusStorage(w, overview)
 	}
 }
 

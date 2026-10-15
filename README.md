@@ -160,6 +160,14 @@ PVE and PBS API tokens are the supported provider-authentication method. Passwor
 
 Structured output never contains human-readable text mixed in. Empty lists are `[]`.
 
+Use `nodex status` for a quick cluster overview, or `nodex status --output json`
+for a one-shot snapshot. Storage entries with matching verified configured
+capacity identities are grouped in human output; all storage IDs and node views
+remain in structured output. PBS namespaces share datastore-wide capacity.
+Different datastores and local/thin pools can still share physical backing, so
+these capacities must not be summed as physical disk totals. See the
+[status output contract](docs/cli-reference.md#nodex-status).
+
 ## Commands
 
 ```text

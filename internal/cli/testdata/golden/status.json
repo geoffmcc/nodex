@@ -29,9 +29,29 @@
       "avail": 3072,
       "total_human": "4.0 KiB",
       "used_human": "1.0 KiB",
-      "avail_human": "3.0 KiB"
+      "avail_human": "3.0 KiB",
+      "id": "storage/e2e-node/local",
+      "node": "e2e-node",
+      "status": "available",
+      "identity": {
+        "scope": "unknown",
+        "evidence": "none",
+        "reason": "identity_not_established"
+      }
     }
   ],
+  "storage_capacity": {
+    "schema": 1,
+    "state": "available",
+    "collected_at": "2026-10-15T12:00:00Z",
+    "source_freshness": "unknown",
+    "groups": [],
+    "unresolved_entries": [
+      0
+    ],
+    "physical_total_state": "not_established",
+    "physical_total_reason": "backing_topology_unverified"
+  },
   "ha": {
     "status": "online",
     "quorum": 1,

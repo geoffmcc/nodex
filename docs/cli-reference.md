@@ -484,7 +484,50 @@ Show cluster status overview. Safety: Tier 0.
 
 ```bash
 nodex status
+nodex status --output json
+nodex status --profile homelab
 ```
+
+Storage capacity is reported with evidence and uncertainty:
+
+- Configured PBS entries with the same normalized server, port and datastore
+  share a capacity group. Namespaces remain distinct backup views; capacity is
+  datastore-wide. This verifies the configured relationship, not physical disks
+  or an independently probed server UUID. Credentials are not exposed or used
+  as distinct capacities. Different endpoints (including DNS aliases) and
+  different datastores are never merged by matching byte counts. Node-relative
+  names, loopback/link-local addresses and malformed endpoints stay unresolved.
+- An explicit PVE `shared` flag identifies repeated node views of the same
+  configured non-PBS storage ID. Separate IDs are not assumed independent.
+- All IDs and node views remain visible. Unknown identity, forbidden config
+  access, unavailable metrics and conflicting views are explicit. Group metrics
+  are omitted when any member is unavailable/disabled or readings disagree;
+  per-entry values remain available in JSON/YAML. These are cached provider
+  readings, not an atomic or guaranteed-current filesystem measurement.
+- Physical disk totals are not established. Do not sum entries or groups:
+  distinct datastores, thin pools and local directories may share backing.
+
+The existing `storage[]` numeric fields retain their per-entry meanings. Additive
+fields are `id`, `node`, `status`, `identity` and (when established)
+`capacity_group`. Identity includes `scope`, `evidence`, an opaque profile-local
+`key`, `namespace` for non-root PBS views, `enabled` when config reports it, and
+`reason` for unresolved identity. A missing `enabled` value is unknown, not true.
+Reported `status` is the provider's accessibility state; it is not a separate
+probe or a claim that the storage is enabled.
+
+The additive [`storage_capacity` schema v1](schemas/status-storage-capacity-v1.schema.json)
+contains groups, zero-based indexes into `storage[]` for members/unresolved
+entries, collection-attempt time, source freshness (`unknown`), and the reason a
+physical total is omitted. Group metrics are one consistent reported view,
+never a sum. Keys are scoped to this profile and cannot prove relationships
+across profiles. `status --all` retains its existing compact profile summary.
+
+Storage uses read-only `/cluster/resources` and, for backup/PBS entries,
+`/storage` requests. Config is listed once per snapshot when needed.
+PVE filters resources by the token's permissions; the config listing accepts
+`Datastore.Audit` or `Datastore.AllocateSpace` for each storage. Missing permission
+leaves an unresolved entry instead of failing the entire overview. NodeX does not connect
+directly to PBS or request its credentials to establish these relationships.
 
 ### `nodex cluster`
 

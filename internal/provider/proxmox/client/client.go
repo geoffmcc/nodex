@@ -371,17 +371,30 @@ func (c *Client) GetStorageContentByType(ctx context.Context, node, storage, con
 // GetStorageConfig returns the configuration of a storage, including the backup
 // destination fields that /cluster/resources does not carry.
 //
-// This is a cluster-scoped endpoint: it takes no node.
+// This cluster-scoped endpoint requires Datastore.Allocate. Read-only inventory
+// should use GetStorageConfigs, whose listing supports audit permissions.
 func (c *Client) GetStorageConfig(ctx context.Context, storage string) (*StorageConfig, error) {
 	if storage == "" {
 		return nil, fmt.Errorf("storage name is required")
 	}
 	var resp StorageConfigResponse
-	path := "/storage/" + url.PathEscape(storage) + "/config"
+	path := "/storage/" + url.PathEscape(storage)
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
 	}
 	return &resp.Data, nil
+}
+
+// GetStorageConfigs lists configurations visible with Datastore.Audit or
+// Datastore.AllocateSpace. PVE filters entries by the caller's storage scope.
+func (c *Client) GetStorageConfigs(ctx context.Context) ([]StorageConfig, error) {
+	var resp struct {
+		Data []StorageConfig `json:"data"`
+	}
+	if err := c.get(ctx, "/storage", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
 }
 
 // GetTasks returns all tasks for a specific node.

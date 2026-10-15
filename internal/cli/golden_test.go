@@ -120,7 +120,7 @@ func TestGoldenJSON(t *testing.T) {
 			if err := Run(context.Background(), tt.args, &stdout, &stderr); err != nil {
 				t.Fatalf("Run(%v): %v stderr=%q", tt.args, err, stderr.String())
 			}
-			got := stdout.String()
+			got := normalizeStatusCollectionTime(stdout.String())
 			goldenPath := filepath.Join(goldenDir, tt.name+".json")
 
 			if *updateGolden {
@@ -186,7 +186,7 @@ func TestGoldenYAML(t *testing.T) {
 			if err := Run(context.Background(), tt.args, &stdout, &stderr); err != nil {
 				t.Fatalf("Run(%v): %v stderr=%q", tt.args, err, stderr.String())
 			}
-			got := stdout.String()
+			got := normalizeStatusCollectionTime(stdout.String())
 			goldenPath := filepath.Join(goldenDir, tt.name+".yaml")
 
 			if *updateGolden {
@@ -350,4 +350,14 @@ var durationRE = regexp.MustCompile(`,?\s*"duration":\s*"[^"]*"`)
 
 func stripDurations(s string) string {
 	return durationRE.ReplaceAllString(s, "")
+}
+
+// Only the collection clock is variable; test the actual field and format in
+// status storage tests rather than making golden snapshots depend on wall time.
+var statusJSONTimeRE = regexp.MustCompile(`("collected_at": )"[^"]*"`)
+var statusYAMLTimeRE = regexp.MustCompile(`(?m)^(\s*collected_at: ).*$`)
+
+func normalizeStatusCollectionTime(s string) string {
+	s = statusJSONTimeRE.ReplaceAllString(s, `${1}"2026-10-15T12:00:00Z"`)
+	return statusYAMLTimeRE.ReplaceAllString(s, `${1}"2026-10-15T12:00:00Z"`)
 }
