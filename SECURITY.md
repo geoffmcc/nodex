@@ -12,7 +12,7 @@ Nodex is a local CLI that connects directly over HTTPS to configured Proxmox VE 
 
 ## Supported Versions
 
-Nodex is in early development and has no stable release series. Security fixes are provided on the `main` branch until versioned releases exist.
+Nodex is pre-1.0. Versioned releases are published on [GitHub Releases](https://github.com/geoffmcc/nodex/releases) with signed checksums and SPDX SBOMs. Security fixes are provided on the `main` branch and included in the next release; use the latest release. There is no long-term-support commitment for older releases.
 
 ## Vulnerability Reporting
 

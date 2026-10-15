@@ -54,7 +54,7 @@ nodex <command> <subcommand> --help
 | `--yes` | Confirm reversible operations (Tier 1) |
 | `--force` | Confirm disruptive operations (Tier 2, requires `--yes`) |
 | `--wait` | Wait for provider task to complete before exiting |
-| `--expert` | Enable expert-mode operations (Tier 4: identity, ACL changes) |
+| `--expert` | Enable expert-mode operations (Tier 4: identity, ACL changes); Tier 4 also requires `--yes --force`, plus `--confirm-target <text>` for removals |
 | `--password-stdin` | Read password from stdin instead of interactive prompt |
 | `--confirm-target <text>` | Exact target text for non-interactive destructive confirmation |
 
@@ -72,7 +72,7 @@ Every mutation command is classified into one of these tiers:
 | 1 | Reversible | `--yes` or interactive prompt | `vm start`, `vm shutdown` |
 | 2 | Disruptive | `--yes --force` or double confirmation | `vm reset`, `vm migrate` |
 | 3 | Destructive | `--yes --force` plus exact target confirmation (or equivalent interactive confirmation) | `vm delete`, `storage delete` |
-| 4 | Security Admin | `--expert` flag | `access user create` |
+| 4 | Security Admin | `--yes --force --expert` (removals also require `--confirm-target <text>`) | `access user create` |
 
 Non-interactive sessions fail closed when confirmation is required and flags are not provided.
 
@@ -251,7 +251,7 @@ Subcommands:
 | `profile diagnose-permissions <name>` | Report confirmed, missing, unsupported, and unknown setup/permission checks without exposing credentials |
 | `profile remove <name> [--remove-credential]` | Remove a profile |
 | `profile export <name>` | Export a sanitized profile (no credentials) |
-| `profile import` | Import a profile from stdin |
+| `profile import <name>` | Import a profile from stdin under the given name |
 
 `set-credentials` stores token credentials in the `file` backend by default. Use `--backend keyring` for OS keyring. Use `--credential-name <name>` for a different credential name. This command requires interactive input; rejected with `--non-interactive`.
 
@@ -308,6 +308,7 @@ Inspect and operate virtual machines.
 | `vm shutdown <id>` | Graceful VM shutdown (60s timeout) |
 | `vm suspend <id>` | Suspend a VM in memory |
 | `vm resume <id>` | Resume a suspended VM |
+| `vm console <node>/<vmid>` | Open an interactive VM serial console (text mode) |
 
 The Proxmox QEMU API has no separate VM `pause` or `unpause` action. `vm pause`
 and `vm unpause` return an unsupported-capability error with guidance to use
@@ -321,7 +322,7 @@ memory; it does not save the VM state to disk.
 |---------|-------------|
 | `vm reset <id>` | Hard reset a VM |
 | `vm reboot <id>` | Reboot a VM |
-| `vm migrate <id> --target <node>` | Migrate VM to another node |
+| `vm migrate <node>/<vmid> <target> [online]` | Migrate a VM to another node |
 | `vm create <node> <vmid> [name] [iso] [disk-storage] [--disk-storage ID] [--cores N] [--memory MiB] [--disk-size GiB]` | Create a VM with bounded CPU, RAM, and optional boot-disk size |
 
 VM creation defaults to 1 core and 512 MiB of RAM. Supplying `disk-storage`
@@ -355,8 +356,9 @@ nodex vm create pve-a 100 web local:iso/debian.iso --disk-storage local-lvm \
 | `vm snapshot create <id> <name> [description]` | Create a VM snapshot (`--yes`) |
 | `vm snapshot delete <id> <name>` | Delete a VM snapshot (destructive; `--yes --force --confirm-target <name>`) |
 | `vm snapshot rollback <id> <name>` | Roll back to a VM snapshot (`--yes --force`) |
-| `vm clone <id> --newid <id> --name <name>` | Clone a VM |
-| `vm disk <action> <id> <disk> [args]` | Resize or move VM disks |
+| `vm clone <node>/<vmid> <new-vmid> <name> [storage]` | Clone a VM |
+| `vm disk move <node>/<vmid> <disk> <storage>` | Move a VM disk to another storage (`--yes --force`) |
+| `vm disk resize <node>/<vmid> <disk> <size>` | Resize a VM disk (`--yes --force`) |
 
 ### `nodex container`
 
@@ -381,13 +383,14 @@ Inspect and operate containers.
 | `container shutdown <id>` | Graceful container shutdown |
 | `container suspend <id>` | Suspend a container |
 | `container resume <id>` | Resume a suspended container |
+| `container console <node>/<vmid>` | Open an interactive container console (text mode) |
 
 **Disruptive commands** (Tier 2, requires `--yes --force`):
 
 | Command | Description |
 |---------|-------------|
 | `container reboot <id>` | Reboot a container |
-| `container migrate <id> --target <node>` | Migrate container |
+| `container migrate <node>/<vmid> <target>` | Migrate a container to another node |
 | `container create <node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB]` | Create an unprivileged container with bounded resources |
 | `container restore <node> <vmid> <archive> [storage]` | Restore a container from a backup archive |
 
@@ -426,7 +429,7 @@ nodex container create pve-a 200 local:vztmpl/debian-12.tar.zst app-200 \
 | `container snapshot create <id> <name> [description]` | Create a container snapshot (`--yes`) |
 | `container snapshot delete <id> <name>` | Delete a container snapshot (destructive; `--yes --force --confirm-target <name>`) |
 | `container snapshot rollback <id> <name>` | Roll back to a container snapshot (`--yes --force`) |
-| `container clone <id> --newid <id>` | Clone a container |
+| `container clone <node>/<vmid> <new-vmid> <name> [storage]` | Clone a container |
 
 Taskless VM/container template conversion verifies the config flag with up to seven reads and bounded backoff (250 ms initially, capped at 2 s), honoring cancellation. A persistent readable mismatch returns exit 11. `agent receipt refresh` and `reconcile` can check the bound guest again after a completed conversion, even without a task ID. Earlier errors remain in warnings; a matching current flag does not establish historical causation. These checks never resubmit conversion.
 
@@ -454,9 +457,9 @@ Inspect and operate storage.
 
 | Command | Description |
 |---------|-------------|
-| `storage upload <name> --node <node> <path>` | Upload a file to storage |
-| `storage download <name> --node <node> <volume>` | Download a volume |
-| `storage delete <name> --node <node> <volume>` | Delete a storage volume (destructive) |
+| `storage upload <node> <storage> <local-file>` | Upload a local file to storage (`--yes --force`) |
+| `storage download <node> <storage> <volume-id> <local-path>` | Download a volume to a local path (`--yes`) |
+| `storage delete <node> <storage> <volume-id>` | Delete a storage volume (destructive; `--yes --force --confirm-target <volume-id>`) |
 
 ### `nodex task`
 
@@ -464,7 +467,7 @@ Inspect tasks. Safety: Tier 0.
 
 | Command | Description |
 |---------|-------------|
-| `task list --node <node>` | List all tasks for a node |
+| `task list <node>` | List all tasks for a node |
 | `task show <node> <upid>` | Show task details |
 | `task log <node> <upid>` | Show bounded provider task log lines; supports table, JSON, and YAML |
 
@@ -536,7 +539,7 @@ nodex log <node> [--last <n>] [--grep <regexp>] [--follow]
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--last <n>` | 50 | Show only the `n` most recent entries. `--last 0` removes the cap. |
+| `--last <n>` | 50 | Show only the `n` most recent entries. Proxmox caps one syslog request at 5000 lines, so `0` (or any value above 5000) requests the maximum rather than an uncapped log. |
 | `--grep <regexp>` | none | Show only entries whose text matches this Go regular expression. Matching is case-sensitive. |
 | `--follow` | off | Stream matching entries as they arrive until interrupted. Text output only. |
 
@@ -573,15 +576,15 @@ Inspect and manage backups.
 
 | Command | Description |
 |---------|-------------|
-| `backup list --node <node>` | List backup tasks |
-| `backup content --node <node> --storage <storage>` | List backup content |
+| `backup list <node>` | List backup tasks |
+| `backup content <node> <storage>` | List backup content |
 
 **Mutation commands** (varies by operation):
 
 | Command | Description |
 |---------|-------------|
-| `backup create <vmid> --node <node> --storage <storage>` | Create a manual backup |
-| `backup restore <vmid> --archive <archive> --storage <storage>` | Restore VM from backup |
+| `backup create <node>/<vmid> <storage> <mode>` | Create a manual backup (`--yes --force`) |
+| `backup restore <node> <new-vmid> <archive> [storage]` | Restore a VM from a backup archive (`--yes --force`) |
 | `backup job list` | List backup job schedules |
 | `backup job show <id>` | Show backup job details |
 | `backup job create <params...>` | Create a backup job schedule |
@@ -614,11 +617,12 @@ and `firewall rules` are documented aliases for `firewall cluster-rules`.
 | `firewall ipsets` | List firewall IP sets |
 | `firewall ipset <name>` | Show IP set entries |
 | `firewall security-groups` | List firewall security groups |
+| `firewall groups` | Alias for `firewall security-groups` |
 | `firewall options` | Show firewall options |
 | `firewall node-rules <node>` | List node-level firewall rules |
-| `firewall vm-rules <node> <vmid>` | List VM-level firewall rules |
+| `firewall vm-rules <node>/<vmid>` | List VM-level firewall rules |
 
-**Mutation commands** (varies, may require `--yes`, `--force`, or `--expert`):
+**Mutation commands** (varies, may require `--yes` or `--force`; destructive operations add `--confirm-target`):
 
 | Command | Description |
 |---------|-------------|
@@ -673,14 +677,14 @@ singular noun is always the mutate verb, so every resource has a matching
 
 | Command | Description |
 |---------|-------------|
-| `sdn zone create <type> <zone>` | Create an SDN zone |
-| `sdn zone delete <zone>` | Delete an SDN zone |
-| `sdn vnet create <vnet> --zone <zone>` | Create an SDN VNet |
-| `sdn vnet delete <vnet>` | Delete an SDN VNet |
-| `sdn subnet create <vnet> <cidr> <gateway>` | Create an SDN subnet |
+| `sdn zone create <name> --type=<type>` | Create an SDN zone (`simple`, `vlan`, `qinq`, `vxlan`, or `evpn`) |
+| `sdn zone delete <name>` | Delete an SDN zone |
+| `sdn vnet create <name> --zone=<zone>` | Create an SDN VNet |
+| `sdn vnet delete <name>` | Delete an SDN VNet |
+| `sdn subnet create <vnet> <cidr> --gateway=<gw>` | Create an SDN subnet |
 | `sdn subnet delete <vnet> <subnet>` | Delete an SDN subnet |
-| `sdn controller create <ctrl>` | Create an SDN controller |
-| `sdn controller delete <ctrl>` | Delete an SDN controller |
+| `sdn controller create <name>` | Create an SDN controller |
+| `sdn controller delete <name>` | Delete an SDN controller |
 
 ### `nodex maintenance`
 
@@ -859,9 +863,9 @@ have no singular counterpart by design.
 | `access users` | List users (see [user discovery columns](#access-users-discovery-columns)) |
 | `access groups` | List groups |
 | `access roles` | List roles |
-| `access acl` | List ACL entries |
+| `access acl list` | List ACL entries (`access acl` alone is a dispatch node) |
 | `access domains` | List authentication domains |
-| `access tokens <user>` | List API tokens for a user |
+| `access tokens list <user>` | List API tokens for a user |
 
 #### `access users` discovery columns
 
@@ -889,13 +893,13 @@ A reported `0` and an unreported count are genuinely different states, and the
 output preserves that distinction. If a PVE release rejects `full=1`, the command
 silently falls back to the plain index and those columns show `-` for everyone.
 
-**Mutation commands** (Tier 4 — Security Admin, requires `--expert`):
+**Mutation commands** (Tier 4 — Security Admin, requires `--yes --force --expert`; `access user delete` also requires `--confirm-target <userid>`):
 
 | Command | Description |
 |---------|-------------|
-| `access user create <userid> [--password-stdin]` | Create a user |
+| `access user create <userid> [email=<e>] [firstname=<f>] [lastname=<l>] [comment=<c>]` | Create a user (`--password-stdin` for a password) |
 | `access user delete <userid>` | Delete a user |
-| `access acl add <params...>` | Add an ACL entry |
+| `access acl add <path> --role <role> [--user <id>] [--group <id>] [--propagate]` | Add an ACL entry |
 
 ### `nodex ceph`
 
@@ -905,21 +909,21 @@ Inspect and manage Ceph storage.
 
 | Command | Description |
 |---------|-------------|
-| `ceph status --node <node>` | Show Ceph cluster status |
-| `ceph osd list --node <node>` | List Ceph OSDs |
-| `ceph mon list --node <node>` | List Ceph monitors |
-| `ceph pool list --node <node>` | List Ceph pools |
+| `ceph status <node>` | Show Ceph cluster status |
+| `ceph osd list <node>` | List Ceph OSDs |
+| `ceph mon list <node>` | List Ceph monitors |
+| `ceph pool list <node>` | List Ceph pools |
 
 **Mutation commands** (varies by operation):
 
 | Command | Description |
 |---------|-------------|
-| `ceph osd create --node <node> <dev>` | Create a new OSD |
-| `ceph osd out --node <node> <osdid>` | Mark OSD as out |
-| `ceph osd in --node <node> <osdid>` | Mark OSD as in |
-| `ceph osd destroy --node <node> <osdid>` | Destroy an OSD |
-| `ceph pool create --node <node> <name> <params...>` | Create a Ceph pool |
-| `ceph pool destroy --node <node> <name>` | Destroy a Ceph pool |
+| `ceph osd create <node> <dev>` | Create a new OSD (`--yes --force`) |
+| `ceph osd out <node> <id>` | Mark an OSD out (`--yes --force`) |
+| `ceph osd in <node> <id>` | Mark an OSD in (`--yes`) |
+| `ceph osd destroy <node> <id>` | Destroy an OSD (destructive; `--yes --force --confirm-target <id>`) |
+| `ceph pool create <node> <name> [key=value...]` | Create a Ceph pool (`--yes --force`) |
+| `ceph pool destroy <node> <name>` | Destroy a Ceph pool (destructive; `--yes --force --confirm-target <name>`) |
 
 ### `nodex replication`
 
@@ -929,10 +933,10 @@ Manage replication jobs.
 |---------|-------------|
 | `replication list` | List replication jobs |
 | `replication show <id>` | Show replication job details |
-| `replication create <params...>` | Create a replication job |
-| `replication update <id> <params...>` | Update a replication job |
-| `replication delete <id>` | Delete a replication job |
-| `replication schedule <id> --node <node>` | Schedule replication now |
+| `replication create <id> <guest> <type> <target> [key=value...]` | Create a replication job (`--yes --force`) |
+| `replication update <id> [key=value...]` | Update a replication job (`--yes --force`) |
+| `replication delete <id>` | Delete a replication job (destructive; `--yes --force --confirm-target <id>`) |
+| `replication schedule <node> <id>` | Schedule replication now (`--yes`) |
 
 ## Output Formats
 
@@ -1036,7 +1040,7 @@ See the [configuration reference](configuration.md) for credential backends, env
 | 8 | TLS error |
 | 9 | Incompatibility |
 | 10 | Unsupported capability |
-| 11 | Partial failure (`--all`) |
+| 11 | Partial or indeterminate failure (for example a checked postcondition mismatch, an environment health result that is not healthy, or a multi-profile `--all` run) |
 | 12 | Provider error |
 | 13 | Not found |
 | 14 | Timeout |

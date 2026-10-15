@@ -13,7 +13,7 @@ Nodex is a secure, predictable, all-in-one CLI for understanding and operating s
 
 ## Implemented Scope
 
-Nodex is a local CLI for inspecting and operating Proxmox VE and Proxmox Backup Server infrastructure, with optional explicitly enrolled Linux-host maintenance and one-shot monitoring. The built-in Proxmox VE provider advertises 37 capabilities; the separate PBS provider advertises six inspection and four guarded maintenance capabilities. Nodex has no daemon, no agent installed on managed nodes, no telemetry, and no mandatory server component. Its opt-in `--agent` flag is a structured local CLI interface, not a resident agent or isolation boundary.
+Nodex is a local CLI for inspecting and operating Proxmox VE and Proxmox Backup Server infrastructure, with optional explicitly enrolled Linux-host maintenance and one-shot monitoring. The built-in Proxmox VE provider advertises 36 capabilities; the separate PBS provider advertises six inspection and four guarded maintenance capabilities. Nodex has no daemon, no agent installed on managed nodes, no telemetry, and no mandatory server component. Its opt-in `--agent` flag is a structured local CLI interface, not a resident agent or isolation boundary.
 
 ### Read-only inspection commands
 

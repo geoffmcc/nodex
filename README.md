@@ -19,11 +19,17 @@ For a conceptual walkthrough, read the [Operator Guide](docs/operator-guide.md).
 
 ## Quick start
 
-### Prebuilt binaries
+### Install a release binary
 
-When a release is published, platform archives for Linux, macOS, and Windows on amd64 and arm64 are available from [GitHub Releases](https://github.com/geoffmcc/nodex/releases). No Go toolchain is needed to use a release binary. The release workflow signs the SHA-256 checksum manifest with Sigstore and publishes an SPDX SBOM and build provenance.
+Prebuilt archives for Linux, macOS, and Windows on amd64 and arm64 are published on [GitHub Releases](https://github.com/geoffmcc/nodex/releases). No Go toolchain is needed. Each release provides:
 
-Download the archive for your platform, along with `checksums.txt` and `checksums.txt.sigstore.json`. Verify the archive you actually downloaded:
+- `nodex_<version>_<os>_<arch>.tar.gz` (Linux and macOS) or `nodex_<version>_<os>_<arch>.zip` (Windows)
+- `checksums.txt` and `checksums.txt.sigstore.json` for integrity and Sigstore verification
+- an SPDX SBOM for every archive, plus build provenance for the checksum manifest
+
+Download the archive for your platform, then verify and install it.
+
+**1. Verify the download.** Also download `checksums.txt` and `checksums.txt.sigstore.json`, then check the archive you actually downloaded:
 
 ```bash
 # Linux
@@ -47,15 +53,42 @@ cosign verify-blob \
 
 The identity is pinned to this repository, this workflow file, and a release tag. You can tighten it further by replacing the version pattern with your exact tag. The release workflow also publishes build provenance for the checksum manifest; verify it using GitHub's attestation verification interface when provenance evidence is required.
 
-Every archive also ships a matching SPDX SBOM.
-
-### Install a pinned source version
+**2. Extract the archive.** Each archive contains the `nodex` binary (`nodex.exe` on Windows), `README.md`, and `LICENSE`.
 
 ```bash
-go install github.com/geoffmcc/nodex/cmd/nodex@v0.3.1
+tar -xzf nodex_0.4.2_linux_amd64.tar.gz
 ```
 
-This is a pre-1.0 project and the command surface may change, so pin an exact version if you depend on it. Replace `v0.3.1` with the version you have reviewed.
+On Windows, extract the `.zip` with Explorer, or run `Expand-Archive nodex_0.4.2_windows_amd64.zip -DestinationPath .`.
+
+**3. Put the binary on your `PATH`.**
+
+```bash
+# Linux/macOS, per-user (no elevated privileges required)
+mkdir -p ~/.local/bin
+mv nodex ~/.local/bin/nodex
+
+# Linux/macOS, system-wide (requires an administrator)
+sudo install -m 0755 nodex /usr/local/bin/nodex
+```
+
+Make sure `~/.local/bin` is on your `PATH` if you used the per-user option. On Windows, move `nodex.exe` to a directory such as `%LOCALAPPDATA%\Programs\nodex` and add that directory to `PATH`.
+
+**4. Confirm the install.**
+
+```bash
+nodex version
+```
+
+### Install with Go
+
+If you already have a Go toolchain, you can install directly:
+
+```bash
+go install github.com/geoffmcc/nodex/cmd/nodex@v0.4.2
+```
+
+Go 1.27.0 or newer is required to build from source; CI and release builds use Go 1.27.2. This is a pre-1.0 project and the command surface may change, so pin an exact version if you depend on it. Replace `v0.4.2` with the version you have reviewed.
 
 ### Connect to Proxmox
 
@@ -189,7 +222,7 @@ Fleet-maintenance commands additionally require Ansible and explicitly enrolled
 Linux hosts; neither is needed for normal PVE/PBS CLI usage. Monitoring checks
 require explicit target configuration and are run on demand.
 
-Go 1.27.2 is needed only to build from source. The prebuilt binaries need no toolchain.
+Go 1.27.0 or newer is needed only to build from source (CI and release builds use Go 1.27.2). The prebuilt binaries need no toolchain.
 
 CI builds and tests on Ubuntu, macOS (Apple Silicon and Intel), and Windows.
 
