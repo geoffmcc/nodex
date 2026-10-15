@@ -486,7 +486,46 @@ Show cluster status overview. Safety: Tier 0.
 nodex status
 nodex status --output json
 nodex status --profile homelab
+nodex status --watch --profile homelab
+nodex status --watch --interval 10s
 ```
+
+`--watch` runs a read-only dashboard in an alternate terminal screen. It requires
+terminal stdin/stdout, table output and one profile; it rejects `--all`, `--agent`,
+`--non-interactive`, JSON/YAML, redirected streams and `TERM=dumb`. The selected
+profile configuration is pinned for the session. `q` exits normally; Ctrl+C exits
+with code 130. Both restore the terminal screen, cursor and input mode.
+
+`--interval` requires `--watch`, defaults to `5s`, and accepts `1s` through `5m`.
+Each delay starts after collection finishes, so slow requests never overlap or
+queue refreshes. Failed/incomplete refreshes double the delay up to 60 seconds
+(configured intervals above 60 seconds stay unchanged). Recovery resets it.
+`--timeout` bounds each collection cycle, defaults to 30 seconds and is capped
+at five minutes in watch mode. Terminal dimensions are checked each refresh;
+small screens clip content. Display text uses ASCII with other characters
+replaced by `?`; one-shot structured output preserves full values.
+
+Watch and one-shot status use the same storage and overview collector. Watch also
+requests a task sample: the first eight nodes sorted by name, at most five tasks
+per node, running tasks first then most recently started. Offline nodes are
+skipped with a warning. This is not a cluster-wide task total and does not fetch
+task logs. Every cycle repeats the read-only inventory requests plus up to eight
+task-list requests; choose a longer interval for large or busy installations.
+
+The dashboard distinguishes healthy, degraded, unreachable and unknown states.
+Unavailable sections never appear as successful zero counts. Last successful
+refresh means all core queries and supported optional queries completed (HA is
+not required on standalone hosts); it does not mean the infrastructure is healthy.
+Completely failed refreshes retain the previous snapshot marked stale. Partial
+results show current section failures. Collection time does not establish source
+freshness. Changes in guest counts, node connectivity and storage are highlighted
+for one completed refresh relative to the previous successful refresh.
+
+One-shot JSON/YAML add `sections` with `available`, `unavailable` or `unsupported`
+states and optional `warnings`. Guest counts with other/unknown states appear in
+`vms_unknown` / `cts_unknown` when nonzero, rather than being counted as
+stopped. Consumers must check section availability before interpreting counts.
+`status --all` retains its compact cross-profile format and does not support watch.
 
 Storage capacity is reported with evidence and uncertainty:
 

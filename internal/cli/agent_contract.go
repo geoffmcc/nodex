@@ -412,6 +412,12 @@ func operationFlags(path, usage string, profileRequired bool) []AgentFlag {
 func handlerFlagDefinition(path, name string) AgentFlag {
 	spec := AgentFlag{Name: name, Type: "string", Description: "Validated by the existing operation handler."}
 	switch name {
+	case "--watch":
+		spec.Type, spec.Default = "boolean", false
+		spec.Description = "Interactive terminal only; true is rejected in agent mode."
+	case "--interval":
+		spec.Format, spec.Default = "duration", "5s"
+		spec.ValueSyntax = "Go duration from 1s to 5m; requires --watch (unavailable in agent mode)"
 	case "--check", "--running", "--errors", "--follow", "--remove-credential", "--propagate":
 		spec.Type = "boolean"
 	case "--batch-size", "--vmid":
@@ -544,6 +550,14 @@ func operationInputSchema(op OperationMeta, args []AgentArgument, flags []AgentF
 		}
 	}
 	flagsSchema := map[string]any{"type": "object", "properties": flagProperties, "additionalProperties": false}
+	if op.Path == "status" {
+		// Discovery retains CLI grammar but its agent schema must not advertise
+		// interactive streaming as executable agent JSON.
+		if watch, ok := flagProperties["--watch"].(map[string]any); ok {
+			watch["const"] = false
+		}
+		flagsSchema["not"] = map[string]any{"required": []string{"--interval"}}
+	}
 	if len(requiredFlags) > 0 {
 		flagsSchema["required"] = requiredFlags
 	}

@@ -57,5 +57,14 @@
     "quorum": 1,
     "quorum_known": true,
     "standalone": false
+  },
+  "sections": {
+    "cluster": "available",
+    "containers": "available",
+    "ha": "available",
+    "nodes": "available",
+    "quorum": "available",
+    "storage": "available",
+    "vms": "available"
   }
 }

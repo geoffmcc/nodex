@@ -36,6 +36,7 @@ func (fs flagSet) owns(name string, hasInline bool) bool {
 // "pbs snapshot list") or dispatch sub-operations registered in
 // knownDispatchCommands.
 var handlerFlags = map[string]flagSet{
+	"status": {exact: []string{"--watch", "--interval"}},
 	"setup": {
 		exact: []string{
 			"--provider", "--profile", "--endpoint", "--credential-ref",

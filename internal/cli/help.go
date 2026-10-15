@@ -39,7 +39,7 @@ var leafHelp = map[string]helpEntry{
 	"version parse":                {usage: "<version>", examples: []string{"8.2.4"}},
 	"version compare":              {usage: "<v1> <v2>", examples: []string{"8.2.4 8.2.5"}},
 	"doctor":                       {usage: ""},
-	"status":                       {usage: ""},
+	"status":                       {desc: "Show cluster status; --watch refreshes an interactive terminal (interval 5s, range 1s..5m)", usage: "[--watch] [--interval <duration>]", examples: []string{"--watch", "--watch --interval 5s --profile homelab", "--output json"}},
 	"node list":                    {usage: ""},
 	"node show":                    {usage: "<name>"},
 	"node status":                  {usage: "<name>"},

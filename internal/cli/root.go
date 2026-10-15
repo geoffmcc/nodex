@@ -54,7 +54,8 @@ type Context struct {
 	ErrW   io.Writer // stderr
 	Config io.Reader // optional, for testing
 	Stdin  io.Reader // injectable for testing; defaults to os.Stdin
-	// Interactive streams bypass sanitization only for TTY-gated console sessions.
+	// Interactive streams carry trusted control sequences for TTY-gated console
+	// and status-watch sessions. Watch sanitizes all data before terminal framing.
 	InteractiveIn  io.Reader
 	InteractiveOut io.Writer
 	// AgentConfig is the immutable configuration snapshot selected before

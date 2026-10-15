@@ -168,6 +168,12 @@ Different datastores and local/thin pools can still share physical backing, so
 these capacities must not be summed as physical disk totals. See the
 [status output contract](docs/cli-reference.md#nodex-status).
 
+Use `nodex status --watch --profile homelab` for an interactive, read-only
+dashboard. It refreshes every five seconds after each collection completes;
+`--interval 10s` changes the delay. Press `q` to quit or Ctrl+C to interrupt.
+Watch shows unavailable sections and stale cached readings explicitly and
+requires a terminal with a single profile. Use one-shot JSON/YAML for automation.
+
 ## Commands
 
 ```text
