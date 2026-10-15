@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
+import re
 import subprocess
 import tarfile
 import tempfile
@@ -34,6 +35,57 @@ def require_files(names, required):
     missing = required - names
     if missing:
         raise ValueError(f"Missing archive files: {', '.join(sorted(missing))}")
+
+
+def module_versions_from_vendor(path):
+    modules = {}
+    for line in path.read_text().splitlines():
+        if not line.startswith("# "):
+            continue
+        fields = line[2:].split()
+        if len(fields) != 2 or not fields[1].startswith("v"):
+            continue
+        module, version = fields
+        if module in modules:
+            raise ValueError(f"Duplicate vendored module: {module}")
+        modules[module] = version
+    if not modules:
+        raise ValueError("No modules found in vendor/modules.txt")
+    return modules
+
+
+def module_versions_from_licenses(path):
+    modules = {}
+    for line in path.read_text().splitlines():
+        match = re.fullmatch(r"## (\S+) (v\S+)", line)
+        if not match:
+            continue
+        module, version = match.groups()
+        if module in modules:
+            raise ValueError(f"Duplicate third-party license entry: {module}")
+        modules[module] = version
+    return modules
+
+
+def verify_vendor_license_coverage(vendor_modules, licenses):
+    vendored = module_versions_from_vendor(vendor_modules)
+    licensed = module_versions_from_licenses(licenses)
+    missing = vendored.keys() - licensed.keys()
+    extra = licensed.keys() - vendored.keys()
+    mismatched = {module for module in vendored.keys() & licensed.keys()
+                  if vendored[module] != licensed[module]}
+    if missing or extra or mismatched:
+        details = []
+        if missing:
+            details.append("missing license entries: " + ", ".join(sorted(missing)))
+        if extra:
+            details.append("license entries absent from vendor: " + ", ".join(sorted(extra)))
+        if mismatched:
+            details.append("version mismatch: " + ", ".join(
+                f"{module} (vendor {vendored[module]}, licenses {licensed[module]})"
+                for module in sorted(mismatched)))
+        raise ValueError("Third-party license inventory does not match vendored modules; "
+                         + "; ".join(details))
 
 
 def inspect_binary(path, executable, repository):
@@ -114,6 +166,8 @@ def verify(dist, repository):
     with tempfile.TemporaryDirectory(prefix="nodex-source-check-") as temporary:
         workspace = Path(temporary)
         source = extract_source(source_archive, workspace, repository)
+        verify_vendor_license_coverage(source / "vendor/modules.txt",
+                                      source / "THIRD_PARTY_LICENSES.md")
         for goos, arch in TARGETS:
             env = dict(os.environ, GOOS=goos, GOARCH=arch, CGO_ENABLED="0",
                        GOPROXY="off", GOSUMDB="off", GOTOOLCHAIN="local",

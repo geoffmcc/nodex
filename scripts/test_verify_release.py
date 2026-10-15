@@ -5,7 +5,8 @@ import tempfile
 import unittest
 import zipfile
 
-from verify_release import NOTICES, extract_source, inspect_binary, validate_names
+from verify_release import (NOTICES, extract_source, inspect_binary,
+                            validate_names, verify_vendor_license_coverage)
 
 
 class ReleaseArchiveTests(unittest.TestCase):
@@ -67,6 +68,32 @@ class ReleaseArchiveTests(unittest.TestCase):
                 archive.writestr(name, "outdated")
         with self.assertRaisesRegex(ValueError, "Stale notice"):
             inspect_binary(path, "nodex.exe", self.root)
+
+    def test_vendor_and_license_inventory_must_match(self):
+        vendor = self.root / "modules.txt"
+        licenses = self.root / "THIRD_PARTY_LICENSES.md"
+        vendor.write_text("# example.org/one v1.2.3\n## explicit; go 1.27.0\n"
+                          "# example.org/two v4.5.6\n")
+        licenses.write_text("## Third-Party Licenses\n\n"
+                            "## example.org/one v1.2.3\n\n"
+                            "## example.org/two v4.5.6\n")
+        verify_vendor_license_coverage(vendor, licenses)
+
+    def test_missing_license_entry_fails(self):
+        vendor = self.root / "modules.txt"
+        licenses = self.root / "THIRD_PARTY_LICENSES.md"
+        vendor.write_text("# example.org/module v1.2.3\n")
+        licenses.write_text("## Third-Party Licenses\n")
+        with self.assertRaisesRegex(ValueError, "missing license entries"):
+            verify_vendor_license_coverage(vendor, licenses)
+
+    def test_license_version_mismatch_fails(self):
+        vendor = self.root / "modules.txt"
+        licenses = self.root / "THIRD_PARTY_LICENSES.md"
+        vendor.write_text("# example.org/module v1.2.3\n")
+        licenses.write_text("## example.org/module v1.2.2\n")
+        with self.assertRaisesRegex(ValueError, "version mismatch"):
+            verify_vendor_license_coverage(vendor, licenses)
 
 
 if __name__ == "__main__":
