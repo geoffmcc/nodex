@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -194,11 +195,22 @@ func TestDownloadViaSFTPContextCancellation(t *testing.T) {
 	cancel()
 
 	var buf strings.Builder
+	dialed := false
 	err := downloadViaSFTP(ctx, "host", "root", "/key", 22, "/x.iso", &buf, func(_ context.Context, h, u, k string, p int) (sftpClient, error) {
+		dialed = true
 		return fake, nil
 	})
-	if err == nil {
-		t.Fatal("expected cancellation error")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context cancellation", err)
+	}
+	if dialed {
+		t.Fatal("SFTP dial must not run for an already-cancelled context")
+	}
+	if len(fake.opened) != 0 {
+		t.Fatalf("opened remote files = %v, want none", fake.opened)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("download wrote %q after cancellation", buf.String())
 	}
 }
 

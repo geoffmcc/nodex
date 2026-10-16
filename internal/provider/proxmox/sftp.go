@@ -112,17 +112,27 @@ func (a *sftpAdapter) Open(path string) (io.ReadCloser, error) {
 // downloadViaSFTP streams remotePath from the SFTP server into w. It runs the
 // copy in a goroutine so a cancelled or timed-out context aborts the transfer.
 func downloadViaSFTP(ctx context.Context, host, user, keyFile string, port int, remotePath string, w io.Writer, dial sftpDialer) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("download %s: %w", remotePath, err)
+	}
+
 	client, err := dial(ctx, host, user, keyFile, port)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = client.Close() }()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("download %s: %w", remotePath, err)
+	}
 
 	f, err := client.Open(remotePath)
 	if err != nil {
 		return fmt.Errorf("open remote file %s: %w", remotePath, err)
 	}
 	defer func() { _ = f.Close() }()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("download %s: %w", remotePath, err)
+	}
 
 	copied := make(chan error, 1)
 	go func() {
