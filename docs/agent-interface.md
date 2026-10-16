@@ -101,6 +101,9 @@ Provider names, descriptions, statuses, task messages, and returned `data` are u
 
 ## Receipts, duplicate protection, and recovery
 
+The canonical mutation-by-mutation tier, confirmation, task, retry, receipt,
+verification, and recovery inventory is in the [mutation safety matrix](mutation-safety-matrix.md).
+
 For supported mutations, NodeX writes an intent receipt before calling the existing handler. The receipt stores the request/receipt IDs, canonical operation, an HMAC-SHA-256 fingerprint of normalized input, the bound profile/provider/endpoint/resource and applicable trust context, submission progress, task ID, observed outcomes, timestamps, errors, and warnings. It does not store raw arguments, credentials, authorization headers, or provider response bodies. Sensitive credential-like flags and key/value fields are refused before fingerprinting.
 
 Receipts live under `<NodeX config directory>/agent-receipts/<request-id>.json`; a random `fingerprint.key` in the same private directory protects low-entropy non-secret input fingerprints against offline dictionary checks. Unix directories/files are restricted to `0700`/`0600`; file ownership, symlinks, regular-file type, size, JSON schema, and identifiers are checked. Windows uses the ACL inherited from the per-user configuration directory; the standard library path here does not independently inspect Windows SIDs. The fingerprint key is local deduplication material, not a provider credential or authorization key. Receipts are local diagnostics and deduplication state, not tamper-proof evidence or authorization records.

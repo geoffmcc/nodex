@@ -159,6 +159,26 @@ A checked postcondition mismatch returns exit 11 while preserving the successful
 provider task outcome. Unavailable verification is reported separately.
 Profile test and storage download support JSON and YAML.
 .PP
+status groups verified configured storage capacity identities while retaining
+every storage ID and node view. PBS namespaces share datastore-wide capacity.
+Unknown identities and conflicting or unavailable readings remain explicit.
+Physical disk totals are not established: different logical stores may share
+backing, so do not sum entries or groups. JSON/YAML retain per-entry storage
+metrics and add a versioned storage_capacity object with evidence, group
+membership, collection time and unknown source freshness. Use
+status --output json for a one-shot structured snapshot.
+.PP
+status --watch displays a read-only dashboard for one pinned profile in an
+interactive terminal. --interval requires --watch (default 5s, range 1s to 5m).
+Polling waits after each collection; requests never overlap. Incomplete
+refreshes back off up to 60s (longer configured intervals remain unchanged).
+--timeout bounds a collection cycle, capped at 5m. Unavailable sections and
+stale cached readings are explicit; collection time does not prove source freshness.
+Watch includes a sample of up to five tasks from each of the first eight nodes.
+Press q to quit or Ctrl+C to interrupt; terminal state is restored.
+Watch rejects --all, --agent, --non-interactive, JSON/YAML and redirected streams.
+Small terminals clip content; use one-shot JSON for full inventory values.
+.PP
 Taskless template conversion checks configuration up to seven times with bounded
 backoff and cancellation. Receipt refresh/reconcile can re-observe completed
 template conversions without resubmitting them. Previous errors remain as

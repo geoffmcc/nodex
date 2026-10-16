@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NodeX status storage_capacity v1",
+  "description": "Additive storage_capacity object in single-profile status JSON/YAML. Member indexes refer to the unchanged per-entry storage array. Keys are profile-local; neither entries nor groups are independent physical capacities to sum.",
+  "type": "object",
+  "required": ["schema", "state", "collected_at", "source_freshness", "groups", "unresolved_entries", "physical_total_state", "physical_total_reason"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": 1},
+    "state": {"enum": ["available", "unavailable", "unsupported"]},
+    "collected_at": {"type": "string", "format": "date-time", "description": "Collection attempt completion, not provider metric sample time or proof of freshness."},
+    "source_freshness": {"const": "unknown"},
+    "groups": {"type": "array", "items": {"$ref": "#/$defs/group"}},
+    "unresolved_entries": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+    "physical_total_state": {"const": "not_established"},
+    "physical_total_reason": {"const": "backing_topology_unverified"}
+  },
+  "$defs": {
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scope", "evidence", "members", "metrics_state"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "scope": {"enum": ["pbs_datastore", "shared_storage"]},
+        "evidence": {"enum": ["pve_storage_config_server_port_datastore", "pve_cluster_resources_shared"]},
+        "members": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 0}},
+        "metrics_state": {"enum": ["consistent_views", "conflicting_views", "unavailable_views"]},
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["total", "used", "avail"],
+          "properties": {
+            "total": {"type": "integer", "minimum": 1},
+            "used": {"type": "integer", "minimum": 0},
+            "avail": {"type": "integer", "minimum": 0}
+          }
+        }
+      },
+      "if": {"properties": {"metrics_state": {"const": "consistent_views"}}},
+      "then": {"required": ["metrics"]},
+      "else": {"not": {"required": ["metrics"]}}
+    }
+  }
+}

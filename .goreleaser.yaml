@@ -43,7 +43,17 @@ checksum:
   algorithm: sha256
 
 sboms:
-  - artifacts: archive
+  - artifacts: binary
+    documents:
+      - "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}.spdx.json"
+    args:
+      - "$artifact"
+      - "--select-catalogers"
+      - "+go-module-binary-cataloger"
+      - "--output"
+      - "spdx-json=$document"
+      - "--enrich"
+      - "all"
 
 signs:
   - artifacts: checksum

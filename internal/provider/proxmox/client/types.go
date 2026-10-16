@@ -558,9 +558,9 @@ type StorageContentResponse struct {
 	Data []StorageContentItem `json:"data"`
 }
 
-// StorageConfigResponse is the response from /storage/{storage}/config.
+// StorageConfigResponse is the response from /storage/{storage}.
 //
-// This is the only endpoint that carries a storage's backup destination.
+// The /storage list also carries these configuration fields.
 // /cluster/resources reports a storage row's plugintype and capacity but never
 // server, datastore, or path, so two PBS entries that share a server and
 // datastore are indistinguishable from two that do not.
@@ -583,6 +583,9 @@ type StorageConfig struct {
 	Path      string `json:"path,omitempty"`
 	Shared    *int   `json:"shared,omitempty"`
 	Content   string `json:"content,omitempty"`
+	Port      int    `json:"port,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Disable   *int   `json:"disable,omitempty"`
 }
 
 // StorageContentItem represents a single content item in storage.

@@ -62,20 +62,32 @@ type Container struct {
 
 // Storage represents a storage pool or device.
 type Storage struct {
-	ID          string              `json:"id" yaml:"id"`
-	Name        string              `json:"name" yaml:"name"`
-	Type        string              `json:"type" yaml:"type"`     // pbs, dir, nfs, zfspool, etc.
-	Status      string              `json:"status" yaml:"status"` // active, inactive
-	Node        string              `json:"node,omitempty" yaml:"node,omitempty"`
-	Total       int64               `json:"total" yaml:"total"` // bytes
-	Used        int64               `json:"used" yaml:"used"`   // bytes
-	Avail       int64               `json:"avail" yaml:"avail"` // bytes
-	TotalHuman  string              `json:"total_human,omitempty" yaml:"total_human,omitempty"`
-	UsedHuman   string              `json:"used_human,omitempty" yaml:"used_human,omitempty"`
-	AvailHuman  string              `json:"avail_human,omitempty" yaml:"avail_human,omitempty"`
-	Content     []string            `json:"content,omitempty" yaml:"content,omitempty"` // images, iso, backup, etc.
-	Labels      map[string]string   `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Destination *StorageDestination `json:"destination,omitempty" yaml:"destination,omitempty"`
+	ID               string                   `json:"id" yaml:"id"`
+	Name             string                   `json:"name" yaml:"name"`
+	Type             string                   `json:"type" yaml:"type"`     // pbs, dir, nfs, zfspool, etc.
+	Status           string                   `json:"status" yaml:"status"` // active, inactive
+	Node             string                   `json:"node,omitempty" yaml:"node,omitempty"`
+	Total            int64                    `json:"total" yaml:"total"` // bytes
+	Used             int64                    `json:"used" yaml:"used"`   // bytes
+	Avail            int64                    `json:"avail" yaml:"avail"` // bytes
+	TotalHuman       string                   `json:"total_human,omitempty" yaml:"total_human,omitempty"`
+	UsedHuman        string                   `json:"used_human,omitempty" yaml:"used_human,omitempty"`
+	AvailHuman       string                   `json:"avail_human,omitempty" yaml:"avail_human,omitempty"`
+	Content          []string                 `json:"content,omitempty" yaml:"content,omitempty"` // images, iso, backup, etc.
+	Labels           map[string]string        `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Destination      *StorageDestination      `json:"destination,omitempty" yaml:"destination,omitempty"`
+	CapacityIdentity *StorageCapacityIdentity `json:"capacity_identity,omitempty" yaml:"capacity_identity,omitempty"`
+}
+
+// StorageCapacityIdentity is provider evidence about the scope of reported
+// capacity, never a claim about unique physical disks. Keys are profile-local.
+type StorageCapacityIdentity struct {
+	Key       string `json:"key,omitempty" yaml:"key,omitempty"`
+	Scope     string `json:"scope" yaml:"scope"`
+	Evidence  string `json:"evidence" yaml:"evidence"`
+	Reason    string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Namespace string `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Enabled   *bool  `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 }
 
 // StorageDestination identifies where a backup written to a storage actually

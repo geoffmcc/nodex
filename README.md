@@ -25,7 +25,7 @@ Prebuilt archives for Linux, macOS, and Windows on amd64 and arm64 are published
 
 - `nodex_<version>_<os>_<arch>.tar.gz` (Linux and macOS) or `nodex_<version>_<os>_<arch>.zip` (Windows)
 - `checksums.txt` and `checksums.txt.sigstore.json` for integrity and Sigstore verification
-- an SPDX SBOM for every archive, plus build provenance for the checksum manifest
+- `nodex_<version>_<os>_<arch>.spdx.json` SPDX SBOMs for the six binaries, plus build provenance for the checksum manifest
 
 Download the archive for your platform, then verify and install it.
 
@@ -159,6 +159,20 @@ PVE and PBS API tokens are the supported provider-authentication method. Passwor
 - `--output yaml` — YAML mirroring the JSON shape
 
 Structured output never contains human-readable text mixed in. Empty lists are `[]`.
+
+Use `nodex status` for a quick cluster overview, or `nodex status --output json`
+for a one-shot snapshot. Storage entries with matching verified configured
+capacity identities are grouped in human output; all storage IDs and node views
+remain in structured output. PBS namespaces share datastore-wide capacity.
+Different datastores and local/thin pools can still share physical backing, so
+these capacities must not be summed as physical disk totals. See the
+[status output contract](docs/cli-reference.md#nodex-status).
+
+Use `nodex status --watch --profile homelab` for an interactive, read-only
+dashboard. It refreshes every five seconds after each collection completes;
+`--interval 10s` changes the delay. Press `q` to quit or Ctrl+C to interrupt.
+Watch shows unavailable sections and stale cached readings explicitly and
+requires a terminal with a single profile. Use one-shot JSON/YAML for automation.
 
 ## Commands
 

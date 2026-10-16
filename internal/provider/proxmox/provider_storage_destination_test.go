@@ -56,12 +56,10 @@ func TestStorageReportsBackupDestination(t *testing.T) {
 		switch r.URL.Path {
 		case "/api2/json/cluster/resources":
 			_, _ = fmt.Fprint(w, clusterResourcesBody)
-		case "/api2/json/storage/pbs/config":
-			_, _ = fmt.Fprint(w, `{"data":{"storage":"pbs","type":"pbs","server":"pbs-a.example.invalid","datastore":"main","content":"backup"}}`)
-		case "/api2/json/storage/pbs-nightly/config":
+		case "/api2/json/storage":
 			// Same destination as "pbs": this is the case the report could not
 			// distinguish from a separate datastore.
-			_, _ = fmt.Fprint(w, `{"data":{"storage":"pbs-nightly","type":"pbs","server":"pbs-a.example.invalid","datastore":"main","content":"backup"}}`)
+			_, _ = fmt.Fprint(w, `{"data":[{"storage":"pbs","type":"pbs","server":"pbs-a.example.invalid","datastore":"main","content":"backup"},{"storage":"pbs-nightly","type":"pbs","server":"pbs-a.example.invalid","datastore":"main","content":"backup"}]}`)
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -110,7 +108,7 @@ func TestStorageReportsBackupDestination(t *testing.T) {
 }
 
 // A read-only audit token may be permitted on /cluster/resources but not on
-// /storage/{id}/config. That must not turn a working storage listing into a
+// /storage. That must not turn a working storage listing into a
 // failing one, and the failure must be visible as an unresolved destination
 // rather than silently omitted.
 func TestStorageDestinationFailureDoesNotFailListing(t *testing.T) {
@@ -127,7 +125,7 @@ func TestStorageDestinationFailureDoesNotFailListing(t *testing.T) {
 				switch r.URL.Path {
 				case "/api2/json/cluster/resources":
 					_, _ = fmt.Fprint(w, clusterResourcesBody)
-				case "/api2/json/storage/pbs/config", "/api2/json/storage/pbs-nightly/config":
+				case "/api2/json/storage":
 					w.WriteHeader(tc.status)
 					_, _ = fmt.Fprint(w, `{"errors":"permission check failed"}`)
 				default:
@@ -146,6 +144,9 @@ func TestStorageDestinationFailureDoesNotFailListing(t *testing.T) {
 			for _, s := range storages {
 				if s.Name != "pbs" && s.Name != "pbs-nightly" {
 					continue
+				}
+				if s.CapacityIdentity == nil || s.CapacityIdentity.Key != "" || s.CapacityIdentity.Reason != tc.wantReason {
+					t.Errorf("failed config lookup claimed capacity identity: %+v", s.CapacityIdentity)
 				}
 				if s.Destination == nil {
 					t.Fatalf("%s has no destination field; absence is ambiguous between \"not applicable\" and \"could not determine\"", s.Name)
@@ -170,10 +171,8 @@ func TestStorageDestinationSharedIsTriState(t *testing.T) {
 		switch r.URL.Path {
 		case "/api2/json/cluster/resources":
 			_, _ = fmt.Fprint(w, clusterResourcesBody)
-		case "/api2/json/storage/pbs/config":
-			_, _ = fmt.Fprint(w, `{"data":{"storage":"pbs","type":"pbs","server":"pbs-a","datastore":"main","shared":1}}`)
-		case "/api2/json/storage/pbs-nightly/config":
-			_, _ = fmt.Fprint(w, `{"data":{"storage":"pbs-nightly","type":"pbs","server":"pbs-a","datastore":"main"}}`)
+		case "/api2/json/storage":
+			_, _ = fmt.Fprint(w, `{"data":[{"storage":"pbs","type":"pbs","server":"pbs-a","datastore":"main","shared":1},{"storage":"pbs-nightly","type":"pbs","server":"pbs-a","datastore":"main"}]}`)
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -206,8 +205,8 @@ func TestStorageDestinationWithoutAnyFieldIsUnresolved(t *testing.T) {
 		switch r.URL.Path {
 		case "/api2/json/cluster/resources":
 			_, _ = fmt.Fprint(w, clusterResourcesBody)
-		case "/api2/json/storage/pbs/config", "/api2/json/storage/pbs-nightly/config":
-			_, _ = fmt.Fprint(w, `{"data":{"storage":"pbs","type":"pbs"}}`)
+		case "/api2/json/storage":
+			_, _ = fmt.Fprint(w, `{"data":[{"storage":"pbs","type":"pbs"},{"storage":"pbs-nightly","type":"pbs"}]}`)
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -236,7 +235,7 @@ func TestStorageDestinationWithoutAnyFieldIsUnresolved(t *testing.T) {
 
 func TestGetStorageConfigUsesClusterScopedEndpoint(t *testing.T) {
 	p := connectForStorageTest(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api2/json/storage/pbs/config" {
+		if r.URL.Path != "/api2/json/storage/pbs" || r.Method != http.MethodGet {
 			t.Errorf("unexpected path: %s; the config endpoint is cluster-scoped", r.URL.Path)
 			http.NotFound(w, r)
 			return

@@ -1049,16 +1049,22 @@ type statusOverview struct {
 	QuorumKnown bool   `json:"quorum_known" yaml:"quorum_known"`
 	// Standalone reports that the provider confirmed no cluster exists, so a
 	// zero quorum is expected rather than a fault (nit #36).
-	Standalone  bool            `json:"standalone" yaml:"standalone"`
-	NodesDetail []statusNode    `json:"nodes_detail" yaml:"nodes_detail"`
-	VMs         int             `json:"vms" yaml:"vms"`
-	VMsRunning  int             `json:"vms_running" yaml:"vms_running"`
-	VMsStopped  int             `json:"vms_stopped" yaml:"vms_stopped"`
-	Containers  int             `json:"containers" yaml:"containers"`
-	CTsRunning  int             `json:"cts_running" yaml:"cts_running"`
-	CTsStopped  int             `json:"cts_stopped" yaml:"cts_stopped"`
-	Storage     []statusStorage `json:"storage" yaml:"storage"`
-	HA          *statusHA       `json:"ha,omitempty" yaml:"ha,omitempty"`
+	Standalone      bool                   `json:"standalone" yaml:"standalone"`
+	NodesDetail     []statusNode           `json:"nodes_detail" yaml:"nodes_detail"`
+	VMs             int                    `json:"vms" yaml:"vms"`
+	VMsRunning      int                    `json:"vms_running" yaml:"vms_running"`
+	VMsStopped      int                    `json:"vms_stopped" yaml:"vms_stopped"`
+	Containers      int                    `json:"containers" yaml:"containers"`
+	CTsRunning      int                    `json:"cts_running" yaml:"cts_running"`
+	CTsStopped      int                    `json:"cts_stopped" yaml:"cts_stopped"`
+	Storage         []statusStorage        `json:"storage" yaml:"storage"`
+	StorageCapacity *statusStorageCapacity `json:"storage_capacity,omitempty" yaml:"storage_capacity,omitempty"`
+	HA              *statusHA              `json:"ha,omitempty" yaml:"ha,omitempty"`
+	VMsUnknown      int                    `json:"vms_unknown,omitempty" yaml:"vms_unknown,omitempty"`
+	CTsUnknown      int                    `json:"cts_unknown,omitempty" yaml:"cts_unknown,omitempty"`
+	Sections        map[string]string      `json:"sections,omitempty" yaml:"sections,omitempty"`
+	Warnings        []string               `json:"warnings,omitempty" yaml:"warnings,omitempty"`
+	RecentTasks     []domain.Task          `json:"recent_tasks,omitempty" yaml:"recent_tasks,omitempty"`
 }
 
 type statusHA struct {
@@ -1079,33 +1085,55 @@ type statusNode struct {
 }
 
 type statusStorage struct {
-	Name       string `json:"name" yaml:"name"`
-	Type       string `json:"type" yaml:"type"`
-	Total      int64  `json:"total" yaml:"total"`
-	Used       int64  `json:"used" yaml:"used"`
-	Avail      int64  `json:"avail" yaml:"avail"`
-	TotalHuman string `json:"total_human,omitempty" yaml:"total_human,omitempty"`
-	UsedHuman  string `json:"used_human,omitempty" yaml:"used_human,omitempty"`
-	AvailHuman string `json:"avail_human,omitempty" yaml:"avail_human,omitempty"`
+	Name          string                          `json:"name" yaml:"name"`
+	Type          string                          `json:"type" yaml:"type"`
+	Total         int64                           `json:"total" yaml:"total"`
+	Used          int64                           `json:"used" yaml:"used"`
+	Avail         int64                           `json:"avail" yaml:"avail"`
+	TotalHuman    string                          `json:"total_human,omitempty" yaml:"total_human,omitempty"`
+	UsedHuman     string                          `json:"used_human,omitempty" yaml:"used_human,omitempty"`
+	AvailHuman    string                          `json:"avail_human,omitempty" yaml:"avail_human,omitempty"`
+	ID            string                          `json:"id" yaml:"id"`
+	Node          string                          `json:"node" yaml:"node"`
+	Status        string                          `json:"status" yaml:"status"`
+	Identity      *domain.StorageCapacityIdentity `json:"identity" yaml:"identity"`
+	CapacityGroup string                          `json:"capacity_group,omitempty" yaml:"capacity_group,omitempty"`
 }
 
 func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
-	if cmdCtx.Opts.All {
-		return runStatusAll(ctx, cmdCtx, args)
+	watch, interval, err := parseStatusFlags(args)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
 	}
-	if len(args) != 0 {
-		return app.NewExitError(fmt.Errorf("usage: nodex status"), app.ExitUsage)
+	if watch {
+		return runStatusWatch(ctx, cmdCtx, interval)
+	}
+	if cmdCtx.Opts.All {
+		return runStatusAll(ctx, cmdCtx, nil)
 	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+	overview := collectStatusSnapshot(ctx, prov, false)
+	return writeStatus(cmdCtx, overview)
+}
 
+// collectStatusSnapshot is shared by one-shot output and watch. It only calls
+// inspection capabilities, never mutation or repair methods. Query failures are
+// section states rather than falsely healthy zero counts.
+func collectStatusSnapshot(ctx context.Context, prov domain.Provider, includeTasks bool) *statusOverview {
 	overview := statusOverview{}
+	overview.Sections = map[string]string{}
+	for _, section := range []string{"nodes", "vms", "containers", "storage", "cluster", "quorum", "ha"} {
+		overview.Sections[section] = "unsupported"
+	}
 
 	if ni, ok := prov.(domain.NodeInspector); ok {
+		overview.Sections["nodes"] = "unavailable"
 		if nodes, err := ni.Nodes(ctx); err == nil {
+			overview.Sections["nodes"] = "available"
 			overview.Nodes = len(nodes)
 			for _, n := range nodes {
 				sn := statusNode{Name: n.Name, Status: n.Status}
@@ -1120,51 +1148,46 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	if vi, ok := prov.(domain.VMInspector); ok {
+		overview.Sections["vms"] = "unavailable"
 		if vms, err := vi.VMs(ctx); err == nil {
+			overview.Sections["vms"] = "available"
 			overview.VMs = len(vms)
 			for _, v := range vms {
 				if v.Status == "running" {
 					overview.VMsRunning++
-				} else {
+				} else if v.Status == "stopped" {
 					overview.VMsStopped++
+				} else {
+					overview.VMsUnknown++
 				}
 			}
 		}
 	}
 
 	if ci, ok := prov.(domain.ContainerInspector); ok {
+		overview.Sections["containers"] = "unavailable"
 		if cts, err := ci.Containers(ctx); err == nil {
+			overview.Sections["containers"] = "available"
 			overview.Containers = len(cts)
 			for _, c := range cts {
 				if c.Status == "running" {
 					overview.CTsRunning++
-				} else {
+				} else if c.Status == "stopped" {
 					overview.CTsStopped++
+				} else {
+					overview.CTsUnknown++
 				}
 			}
 		}
 	}
 
-	if si, ok := prov.(domain.StorageInspector); ok {
-		if stors, err := si.Storage(ctx); err == nil {
-			for _, s := range stors {
-				st := statusStorage{
-					Name:  s.Name,
-					Type:  s.Type,
-					Total: s.Total,
-					Used:  s.Used,
-					Avail: s.Avail,
-				}
-				st.TotalHuman = formatBytes(st.Total)
-				st.UsedHuman = formatBytes(st.Used)
-				st.AvailHuman = formatBytes(st.Avail)
-				overview.Storage = append(overview.Storage, st)
-			}
-		}
-	}
+	collectStatusStorage(ctx, prov, &overview)
+	overview.Sections["storage"] = overview.StorageCapacity.State
 
 	if cl, ok := prov.(domain.ClusterInspector); ok {
+		overview.Sections["cluster"] = "unavailable"
 		if cluster, err := cl.Cluster(ctx); err == nil && cluster != nil {
+			overview.Sections["cluster"] = "available"
 			overview.Cluster = cluster.Name
 			overview.Version = cluster.Version
 		}
@@ -1175,10 +1198,18 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 	overview.Quorum = quorum.Quorum
 	overview.QuorumKnown = quorum.Known
 	overview.Standalone = quorum.Standalone
+	if _, ok := prov.(domain.ClusterStatusProvider); ok {
+		overview.Sections["quorum"] = "unavailable"
+		if quorum.Known || quorum.Standalone {
+			overview.Sections["quorum"] = "available"
+		}
+	}
 
 	// Query HA status if available.
 	if hp, ok := prov.(domain.HAProvider); ok {
+		overview.Sections["ha"] = "unavailable"
 		if ha, err := hp.HAStatus(ctx); err == nil && ha != nil {
+			overview.Sections["ha"] = "available"
 			overview.HA = &statusHA{
 				Status:      ha.Status,
 				Quorum:      ha.Quorum,
@@ -1188,7 +1219,18 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 		}
 	}
 
-	return writeStatus(cmdCtx, &overview)
+	if includeTasks {
+		collectStatusTasks(ctx, prov, &overview)
+	}
+	for _, section := range []string{"nodes", "vms", "containers", "storage", "cluster", "quorum", "ha", "tasks"} {
+		if state := overview.Sections[section]; state != "" && state != "available" {
+			if section == "ha" && overview.Standalone {
+				continue
+			}
+			overview.Warnings = append(overview.Warnings, section+": "+state)
+		}
+	}
+	return &overview
 }
 
 func writeStatus(cmdCtx *Context, overview *statusOverview) error {
@@ -1199,7 +1241,12 @@ func writeStatus(cmdCtx *Context, overview *statusOverview) error {
 		return output.WriteYAML(cmdCtx.Writer, overview)
 	default:
 		w := cmdCtx.Writer
-		fmt.Fprintf(w, "Cluster: %s  Version: %s  Nodes: %d", overview.Cluster, overview.Version, overview.Nodes)
+		fmt.Fprintf(w, "Cluster: %s  Version: %s  Nodes: ", overview.Cluster, overview.Version)
+		if state := overview.Sections["nodes"]; state != "" && state != "available" {
+			fmt.Fprint(w, state)
+		} else {
+			fmt.Fprint(w, overview.Nodes)
+		}
 		switch {
 		case overview.QuorumKnown:
 			fmt.Fprintf(w, "  Quorum: %d", overview.Quorum)
@@ -1209,8 +1256,11 @@ func writeStatus(cmdCtx *Context, overview *statusOverview) error {
 			fmt.Fprint(w, "  Quorum: unavailable")
 		}
 		fmt.Fprintln(w)
-		fmt.Fprintf(w, "VMs: %d running, %d stopped\n", overview.VMsRunning, overview.VMsStopped)
-		fmt.Fprintf(w, "Containers: %d running, %d stopped\n", overview.CTsRunning, overview.CTsStopped)
+		writeStatusGuestCounts(w, "VMs", overview.Sections["vms"], overview.VMsRunning, overview.VMsStopped, overview.VMsUnknown)
+		writeStatusGuestCounts(w, "Containers", overview.Sections["containers"], overview.CTsRunning, overview.CTsStopped, overview.CTsUnknown)
+		for _, warning := range overview.Warnings {
+			fmt.Fprintf(w, "Warning: %s\n", warning)
+		}
 		if overview.HA != nil {
 			switch {
 			case overview.HA.QuorumKnown:
@@ -1221,23 +1271,7 @@ func writeStatus(cmdCtx *Context, overview *statusOverview) error {
 				fmt.Fprintf(w, "HA: %s (quorum: unavailable)\n", overview.HA.Status)
 			}
 		}
-		if len(overview.Storage) > 0 {
-			fmt.Fprintln(w, "\nStorage:")
-			for _, s := range overview.Storage {
-				health := ""
-				pct := 0.0
-				if s.Total > 0 {
-					pct = float64(s.Used) / float64(s.Total) * 100
-				}
-				if pct > 90 {
-					health = " [WARN]"
-				} else if pct > 75 {
-					health = " [HIGH]"
-				}
-				fmt.Fprintf(w, "  %-20s %-8s %s / %s (%.1f%%)%s\n", s.Name, s.Type, formatBytes(s.Used), formatBytes(s.Total), pct, health)
-			}
-		}
-		return nil
+		return writeStatusStorage(w, overview)
 	}
 }
 

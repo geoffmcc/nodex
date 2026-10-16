@@ -263,15 +263,38 @@ func (p *Provider) Storage(ctx context.Context) ([]domain.Storage, error) {
 		return nil, fmt.Errorf("list cluster resources: %w", err)
 	}
 	storages := make([]domain.Storage, 0)
+	// Fetch the audit-visible configuration listing at most once per collection.
+	// Do not require allocation privileges just to inspect backup destinations.
+	configs := make(map[string]*client.StorageConfig)
+	var configErr error
+	configLoaded := false
 	for _, r := range resources {
 		if r.Type == "storage" {
 			s := MapStorage(r)
 			// Resolve the backup destination for stores that can hold backups.
-			// A read-only audit token may be permitted on /cluster/resources but
-			// not on /storage/{id}/config, so a failure here must not fail the
+			// A read-only token may see resources but not configuration, so a
+			// failure or permission-filtered missing entry must not fail the
 			// listing. It is reported as an unresolved destination instead.
-			if backupCapable(s.Content) {
-				s.Destination = p.storageDestination(ctx, s)
+			if backupCapable(s.Content) || s.Type == "pbs" {
+				if !configLoaded {
+					var items []client.StorageConfig
+					items, configErr = p.client.GetStorageConfigs(ctx)
+					for i := range items {
+						name := items[i].Storage
+						if _, duplicate := configs[name]; duplicate {
+							// A duplicate ID is ambiguous, even if values match.
+							configs[name] = nil
+							continue
+						}
+						configs[name] = &items[i]
+					}
+					configLoaded = true
+				}
+				cfg := configs[s.Name]
+				s.Destination = storageDestination(s, cfg, configErr)
+				if s.Type == "pbs" {
+					s.CapacityIdentity = pbsCapacityIdentity(cfg, configErr)
+				}
 			}
 			storages = append(storages, s)
 		}
@@ -295,10 +318,12 @@ func backupCapable(content []string) bool {
 // Resolved false with a closed-vocabulary reason, never provider-supplied text,
 // so the caller learns that the destination is undetermined rather than assuming
 // the absence of fields means the storage is not a backup target.
-func (p *Provider) storageDestination(ctx context.Context, s domain.Storage) *domain.StorageDestination {
-	cfg, err := p.client.GetStorageConfig(ctx, s.Name)
+func storageDestination(s domain.Storage, cfg *client.StorageConfig, err error) *domain.StorageDestination {
 	if err != nil {
 		return &domain.StorageDestination{Resolved: false, Reason: destinationFailureReason(err)}
+	}
+	if cfg == nil {
+		return &domain.StorageDestination{Reason: "config_not_visible_or_ambiguous"}
 	}
 	dest := &domain.StorageDestination{Resolved: true}
 	dest.Type = firstNonEmpty(cfg.Type, s.Type)

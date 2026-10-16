@@ -116,7 +116,7 @@ func MapStorage(res client.ClusterResource) domain.Storage {
 	if storageType == "" {
 		storageType = res.Type
 	}
-	return domain.Storage{
+	storage := domain.Storage{
 		ID:      res.ID,
 		Name:    name,
 		Type:    storageType,
@@ -127,6 +127,13 @@ func MapStorage(res client.ClusterResource) domain.Storage {
 		Avail:   res.MaxDisk - res.Disk,
 		Content: splitContent(res.Content),
 	}
+	if res.Shared == 1 && name != "" && storageType != "pbs" {
+		storage.CapacityIdentity = &domain.StorageCapacityIdentity{
+			Key:   capacityKey("pve-shared", storageType, name),
+			Scope: "shared_storage", Evidence: "pve_cluster_resources_shared",
+		}
+	}
+	return storage
 }
 
 // MapCluster converts version data to a domain.Cluster.
