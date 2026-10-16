@@ -143,16 +143,16 @@ func runCertificationCleanup(ctx context.Context, cmdCtx *Context, args []string
 	if err != nil || len(rest) != 0 || !cmdCtx.Opts.Yes {
 		return app.NewExitError(fmt.Errorf("usage: nodex --profile <authorized-profile> --yes --confirm-target <ledger-entry-id> certification cleanup [--ledger <path>]"), app.ExitUsage)
 	}
-	cfg, err := config.Read()
-	if err != nil {
-		return err
-	}
 	loaded, err := certification.Load(ledger)
 	if err != nil {
 		return app.NewExitError(err, app.ExitValidationError)
 	}
 	if loaded.IntegrityStatus() != "verified" {
 		return app.NewExitError(fmt.Errorf("certification cleanup is blocked: ledger integrity status is %s", loaded.IntegrityStatus()), app.ExitValidationError)
+	}
+	cfg, err := config.Read()
+	if err != nil {
+		return err
 	}
 	var target *certification.Entry
 	for i := range loaded.Entries {

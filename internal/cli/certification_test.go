@@ -92,6 +92,7 @@ func TestCertificationReportScopesEntriesToExplicitProfile(t *testing.T) {
 }
 
 func TestCertificationCleanupRejectsLegacyLedgerBeforeConnecting(t *testing.T) {
+	isolateConfigAndHome(t)
 	path := filepath.Join(t.TempDir(), "ledger.json")
 	legacy := `{"schema":1,"entries":[{"id":"legacy-entry","profile":"nodex-test-profile","node":"pve-test","vmid":9005,"name":"nodex-cert-legacy","storage":"local","state":"created","cleanup":"required","created_at":5,"updated_at":5}]}`
 	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
