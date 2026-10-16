@@ -104,6 +104,13 @@ func runCertification(ctx context.Context, cmdCtx *Context, args []string) error
 	if err != nil || environment == "" || suite == "" || node == "" || name == "" || storage == "" || vmid <= 0 {
 		return app.NewExitError(fmt.Errorf("usage: nodex --profile <authorized-profile> certification run --environment <name> --suite <readonly|disposable-mutations> --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage> [--ledger <path>]"), app.ExitUsage)
 	}
+	loaded, err := certification.Load(ledger)
+	if err != nil {
+		return app.NewExitError(err, app.ExitValidationError)
+	}
+	if loaded.IntegrityStatus() != "verified" {
+		return app.NewExitError(fmt.Errorf("certification run is blocked: ledger integrity status is %s", loaded.IntegrityStatus()), app.ExitValidationError)
+	}
 	cfg, err := config.Read()
 	if err != nil {
 		return err
@@ -143,6 +150,9 @@ func runCertificationCleanup(ctx context.Context, cmdCtx *Context, args []string
 	loaded, err := certification.Load(ledger)
 	if err != nil {
 		return app.NewExitError(err, app.ExitValidationError)
+	}
+	if loaded.IntegrityStatus() != "verified" {
+		return app.NewExitError(fmt.Errorf("certification cleanup is blocked: ledger integrity status is %s", loaded.IntegrityStatus()), app.ExitValidationError)
 	}
 	var target *certification.Entry
 	for i := range loaded.Entries {
@@ -186,7 +196,17 @@ func runCertificationReport(_ context.Context, cmdCtx *Context, args []string) e
 		_, err := fmt.Fprintln(cmdCtx.Writer, "No certification runs recorded.")
 		return err
 	}
-	return writeCertification(cmdCtx, l)
+	report := l.Report()
+	if cmdCtx.Opts.Profile != "" {
+		entries := make([]certification.Entry, 0, len(report.Entries))
+		for _, entry := range report.Entries {
+			if entry.Profile == cmdCtx.Opts.Profile {
+				entries = append(entries, entry)
+			}
+		}
+		report.Entries = entries
+	}
+	return writeCertification(cmdCtx, report)
 }
 
 func writeCertification(cmdCtx *Context, value any) error {

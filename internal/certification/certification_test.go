@@ -114,12 +114,65 @@ func TestLoadAcceptsNeverWrittenEmptyLedger(t *testing.T) {
 
 func TestLoadRejectsMissingDigestOnPopulatedLedger(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
-	empty := `{"schema":1,"generation":1,"entries":[]}`
+	empty := `{"schema":2,"generation":1,"entries":[]}`
 	if err := os.WriteFile(path, []byte(empty), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "no digest") {
 		t.Fatalf("Load populated-generation ledger error = %v, want missing-digest error", err)
+	}
+}
+
+func TestLegacyLedgerIsReadableButCannotAuthorizeMutations(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ledger.json")
+	legacy := `{"schema":1,"entries":[{"id":"legacy-entry","profile":"nodex-test-profile","node":"pve-test","vmid":9005,"name":"nodex-cert-legacy","storage":"local","state":"created","cleanup":"required","created_at":5,"updated_at":5}]}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load legacy ledger: %v", err)
+	}
+	if loaded.IntegrityStatus() != "legacy_unverified" || len(loaded.Entries) != 1 {
+		t.Fatalf("legacy ledger status/entries = %q/%d, want legacy_unverified/1", loaded.IntegrityStatus(), len(loaded.Entries))
+	}
+	if got := loaded.Report().IntegrityStatus; got != "legacy_unverified" {
+		t.Fatalf("report integrity status = %q, want legacy_unverified", got)
+	}
+	loaded.Entries[0].Environment = "lab"
+	loaded.Entries[0].EndpointIdentity = "https://pve.example.test"
+	loaded.Entries[0].ProviderIdentity = "proxmox"
+	loaded.Entries[0].Fingerprint = strings.Repeat("a", 64)
+	loaded.Entries[0].CAIdentity = strings.Repeat("b", 64)
+
+	before, err := os.ReadFile(path) // #nosec G304 -- path is created under t.TempDir.
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := NewEntry(testProfile, "pve-test", 9006, "nodex-cert-new", "local", time.Unix(6, 0))
+	if _, err := Reserve(path, entry, 1); err == nil || !strings.Contains(err.Error(), "unauthenticated claims") {
+		t.Fatalf("Reserve legacy ledger error = %v, want unverified-ledger block", err)
+	}
+	if _, err := ClaimCleanup(path, "legacy-entry", cleanupAuthorization(loaded.Entries[0])); err == nil || !strings.Contains(err.Error(), "unauthenticated claims") {
+		t.Fatalf("ClaimCleanup legacy ledger error = %v, want unverified-ledger block", err)
+	}
+	if err := UpdateEntry(path, "legacy-entry", func(e *Entry) { e.State = "cleaned" }); err == nil || !strings.Contains(err.Error(), "unauthenticated claims") {
+		t.Fatalf("UpdateEntry legacy ledger error = %v, want unverified-ledger block", err)
+	}
+	if err := verifyLease(path, "legacy-entry", "lease", 1); err == nil || !strings.Contains(err.Error(), "unauthenticated claims") {
+		t.Fatalf("verifyLease legacy ledger error = %v, want unverified-ledger block", err)
+	}
+	if err := Save(path, loaded); err == nil || !strings.Contains(err.Error(), "unauthenticated claims") {
+		t.Fatalf("Save legacy ledger error = %v, want unverified-ledger block", err)
+	}
+
+	after, err := os.ReadFile(path) // #nosec G304 -- path is created under t.TempDir.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("legacy ledger changed after blocked mutation attempts")
 	}
 }
 
