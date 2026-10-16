@@ -98,7 +98,7 @@ func seedPreservationReceipt(t *testing.T, mutate func(*agent.Receipt)) {
 func refreshPreservationReceipt(t *testing.T) (agent.Receipt, error) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	err := Run(context.Background(), []string{"--profile", "e2e", "agent", "receipt", "refresh", preservationRequestID}, &stdout, &stderr)
+	err := Run(context.Background(), []string{"--profile", "e2e", "--yes", "agent", "receipt", "refresh", preservationRequestID}, &stdout, &stderr)
 	var receipt agent.Receipt
 	if uerr := json.Unmarshal(stdout.Bytes(), &receipt); uerr != nil {
 		t.Fatalf("decode receipt: %v\nstdout: %s\nstderr: %s", uerr, stdout.String(), stderr.String())

@@ -342,7 +342,11 @@ func writeVMs(cmdCtx *Context, vms []domain.VM) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, vms)
 	default:
-		headers := []string{"ID", "NAME", "STATUS", "NODE", "CPU", "MEMORY", "DISK"}
+		if len(vms) == 0 {
+			_, err := fmt.Fprintln(cmdCtx.Writer, "No VMs found.")
+			return err
+		}
+		headers := []string{"ID", "NAME", "STATUS", "NODE", "CPU-LIMIT", "MEMORY-LIMIT", "DISK-LIMIT"}
 		rows := make([][]string, 0, len(vms))
 		for _, v := range vms {
 			rows = append(rows, []string{
@@ -381,7 +385,9 @@ func runContainerList(ctx context.Context, cmdCtx *Context, args []string) error
 		return fmt.Errorf("list containers: %w", err)
 	}
 	sortGuestsByID(containers, func(c domain.Container) string { return c.ID })
-	return writeContainers(cmdCtx, applyLimit(containers, cmdCtx.Opts.Limit))
+	containers = applyLimit(containers, cmdCtx.Opts.Limit)
+	enrichContainerOS(ctx, ci, containers)
+	return writeContainers(cmdCtx, containers)
 }
 
 func runContainerShow(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -419,7 +425,36 @@ func runContainerShow(ctx context.Context, cmdCtx *Context, args []string) error
 			}
 		}
 	}
-	return writeContainer(cmdCtx, container)
+	selected := []domain.Container{container}
+	enrichContainerOS(ctx, ci, selected)
+	return writeContainer(cmdCtx, selected[0])
+}
+
+// Aggregate inventory does not expose ostype. Enrich only returned rows from
+// read-only configuration, with one total budget rather than one timeout per
+// guest. No persistent cache or guest execution is used. Missing/denied reads
+// leave OS absent in structured output and explicitly unknown in human output.
+func enrichContainerOS(ctx context.Context, inspector domain.ContainerInspector, containers []domain.Container) {
+	bounded, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	for i := range containers {
+		if bounded.Err() != nil {
+			return
+		}
+		if containers[i].OS != "" {
+			continue
+		}
+		node, vmid, err := parseNodeVMID(containers[i].ID)
+		if err != nil {
+			continue
+		}
+		cfg, err := inspector.ContainerConfig(bounded, node, vmid)
+		if err == nil {
+			if osType, ok := cfg["ostype"].(string); ok {
+				containers[i].OS = osType
+			}
+		}
+	}
 }
 
 func findContainer(containers []domain.Container, id string) (domain.Container, bool) {
@@ -445,7 +480,7 @@ func writeContainer(cmdCtx *Context, container domain.Container) error {
 			{"STATUS", container.Status},
 			{"NODE", container.Node},
 			{"CPU", fmt.Sprintf("%d", container.CPU)},
-			{"OS", container.OS},
+			{"OS", containerOSLabel(container.OS)},
 			{"MEMORY", formatBytes(container.Memory)},
 			{"DISK", formatBytes(container.Disk)},
 			{"IP", container.IP},
@@ -468,7 +503,11 @@ func writeContainers(cmdCtx *Context, containers []domain.Container) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, containers)
 	default:
-		headers := []string{"ID", "NAME", "STATUS", "NODE", "CPU", "OS", "MEMORY", "DISK", "TEMPLATE"}
+		if len(containers) == 0 {
+			_, err := fmt.Fprintln(cmdCtx.Writer, "No containers found.")
+			return err
+		}
+		headers := []string{"ID", "NAME", "STATUS", "NODE", "CPU-LIMIT", "OS", "MEMORY-LIMIT", "DISK-LIMIT", "TEMPLATE"}
 		rows := make([][]string, 0, len(containers))
 		for _, c := range containers {
 			rows = append(rows, []string{
@@ -477,7 +516,7 @@ func writeContainers(cmdCtx *Context, containers []domain.Container) error {
 				c.Status,
 				c.Node,
 				fmt.Sprintf("%d", c.CPU),
-				c.OS,
+				containerOSLabel(c.OS),
 				formatBytes(c.Memory),
 				formatBytes(c.Disk),
 				yesNo(c.Template),
@@ -599,20 +638,34 @@ func writeStorages(cmdCtx *Context, storages []domain.Storage) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, storages)
 	default:
-		headers := []string{"NAME", "TYPE", "STATUS", "NODE", "TOTAL", "USED", "AVAIL"}
-		rows := make([][]string, 0, len(storages))
-		for _, s := range storages {
-			rows = append(rows, []string{
-				s.Name,
-				s.Type,
-				s.Status,
-				s.Node,
-				formatBytes(s.Total),
-				formatBytes(s.Used),
-				formatBytes(s.Avail),
-			})
+		entries, capacity := buildStatusStorage(storages, "available", time.Now())
+		groups := map[string]string{}
+		for i, group := range capacity.Groups {
+			groups[group.ID] = fmt.Sprintf("%s:%d", group.Scope, i+1)
 		}
-		return output.WriteTable(cmdCtx.Writer, headers, rows)
+		headers := []string{"NAME", "TYPE", "STATUS", "NODE", "TOTAL", "USED", "AVAIL", "NAMESPACE", "CAPACITY-GROUP"}
+		rows := make([][]string, 0, len(entries))
+		for _, s := range entries {
+			namespace, group := "-", "unresolved"
+			if s.Identity != nil && s.Identity.Scope == "pbs_datastore" {
+				namespace = s.Identity.Namespace
+				if namespace == "" {
+					namespace = "(root)"
+				}
+			}
+			if label, ok := groups[s.CapacityGroup]; ok {
+				group = label
+			}
+			rows = append(rows, []string{s.Name, s.Type, s.Status, s.Node, formatBytes(s.Total), formatBytes(s.Used), formatBytes(s.Avail), namespace, group})
+		}
+		if err := output.WriteTable(cmdCtx.Writer, headers, rows); err != nil {
+			return err
+		}
+		if len(entries) > 0 {
+			_, err := fmt.Fprintln(cmdCtx.Writer, "Capacity groups identify configured views, not independent physical pools.\nPer-entry/group capacities may overlap; do not sum.")
+			return err
+		}
+		return nil
 	}
 }
 
@@ -1567,4 +1620,11 @@ func writeSyslog(cmdCtx *Context, entries []domain.SyslogEntry) error {
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
+}
+
+func containerOSLabel(os string) string {
+	if os == "" {
+		return "unknown"
+	}
+	return os
 }

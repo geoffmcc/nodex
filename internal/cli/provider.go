@@ -78,20 +78,24 @@ func runProviderCapabilities(_ context.Context, cmdCtx *Context, args []string) 
 	case output.FormatJSON:
 		type capEntry struct {
 			Capability string `json:"capability"`
+			Scope      string `json:"scope"`
+			Readiness  string `json:"readiness"`
 		}
 		var entries []capEntry
 		for _, c := range caps {
-			entries = append(entries, capEntry{Capability: string(c)})
+			entries = append(entries, capEntry{Capability: string(c), Scope: "implementation", Readiness: "not_assessed"})
 		}
 		return output.WriteJSON(cmdCtx.Writer, entries)
 
 	case output.FormatYAML:
 		type capEntry struct {
 			Capability string `yaml:"capability"`
+			Scope      string `yaml:"scope"`
+			Readiness  string `yaml:"readiness"`
 		}
 		var entries []capEntry
 		for _, c := range caps {
-			entries = append(entries, capEntry{Capability: string(c)})
+			entries = append(entries, capEntry{Capability: string(c), Scope: "implementation", Readiness: "not_assessed"})
 		}
 		return output.WriteYAML(cmdCtx.Writer, entries)
 
@@ -101,7 +105,11 @@ func runProviderCapabilities(_ context.Context, cmdCtx *Context, args []string) 
 		for _, c := range caps {
 			rows = append(rows, []string{string(c)})
 		}
-		return output.WriteTable(cmdCtx.Writer, headers, rows)
+		if err := output.WriteTable(cmdCtx.Writer, headers, rows); err != nil {
+			return err
+		}
+		_, err := fmt.Fprintln(cmdCtx.Writer, "Implementation support only; environment readiness and authorization are not assessed.")
+		return err
 	}
 }
 

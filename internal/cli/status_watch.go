@@ -156,7 +156,6 @@ func watchStatus(parent context.Context, terminal watchTerminal, profile string,
 	failures := 0
 	for ctx.Err() == nil {
 		view.Refreshing = true
-		view.Stale = view.Snapshot != nil
 		view.Changes = ""
 		if err := draw(); err != nil {
 			return err
@@ -321,7 +320,7 @@ func renderStatusWatch(profile string, v statusWatchView, width, height int) str
 	}
 	footer := "q: quit | Ctrl+C: interrupt | read-only"
 	if truncated {
-		footer = "... more: use status --output json | q: quit"
+		footer = "q: quit | more: use status --output json"
 	}
 	lines = append(lines, footer)
 	for i, line := range lines {

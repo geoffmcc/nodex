@@ -19,6 +19,11 @@ For a conceptual walkthrough, read the [Operator Guide](docs/operator-guide.md).
 
 ## Quick start
 
+Operation discovery accepts canonical IDs as well as paths, for example
+`nodex operation describe vm.stop`. Receipt refresh/reconcile require `--yes`
+and the original matching `--profile`; they only observe infrastructure and
+update the local receipt. See the agent interface guide for recovery examples.
+
 ### Install a release binary
 
 Prebuilt archives for Linux, macOS, and Windows on amd64 and arm64 are published on [GitHub Releases](https://github.com/geoffmcc/nodex/releases). No Go toolchain is needed. Each release provides:

@@ -198,6 +198,14 @@ func runOperationDescribe(_ context.Context, cmdCtx *Context, args []string) err
 	}
 	path := strings.Join(args, " ")
 	op := LookupOperation(path)
+	if op == nil && len(args) == 1 {
+		for _, candidate := range Operations() {
+			if strings.ReplaceAll(candidate.Path, " ", ".") == path {
+				op = LookupOperation(candidate.Path)
+				break
+			}
+		}
+	}
 	if op == nil {
 		return app.NewExitError(fmt.Errorf("unknown operation %q", path), app.ExitNotFound)
 	}

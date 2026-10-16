@@ -149,7 +149,7 @@ func init() {
 		&command{name: "disks", short: "List node disks", run: runNodeDisks},
 		&command{name: "certificates", short: "List node certificates", run: runNodeCertificates},
 		&command{name: "subscription", short: "Show node subscription", run: runNodeSubscription},
-		&command{name: "updates", short: "List available updates", run: runNodeUpdates},
+		&command{name: "updates", short: "List updates (may refresh package-status cache; requires --yes, Sys.Modify)", run: runNodeUpdates},
 	)
 	register("vm", "Manage virtual machines", nil,
 		&command{name: "list", short: "List all virtual machines", run: runVMList},

@@ -40,6 +40,7 @@ var e2eCTTemplateCalls int
 // service list so --limit bounding can be exercised. Tests must reset it and
 // run serially.
 var e2eNodeServicesOverride []domain.NodeService
+var e2eNodeUpdatesCalls int
 var e2eVMStartCalls int
 var e2eContainerStartCalls int
 
@@ -441,6 +442,7 @@ func (p *e2eMockProvider) NodeSubscription(_ context.Context, node string) (*dom
 	return &domain.NodeSubscription{Status: "valid"}, nil
 }
 func (p *e2eMockProvider) NodeUpdates(_ context.Context, node string) ([]domain.NodeUpdate, error) {
+	e2eNodeUpdatesCalls++
 	return nil, nil
 }
 func (p *e2eMockProvider) FirewallAliases(_ context.Context) ([]domain.FirewallAlias, error) {

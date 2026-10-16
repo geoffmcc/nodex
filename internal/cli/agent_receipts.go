@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/agent"
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/output"
+	"github.com/geoffmcc/nodex/internal/safety"
 )
 
 // receiptListEntry is the summary row emitted by `agent receipt list`.
@@ -153,7 +155,7 @@ func runAgentReceiptShow(_ context.Context, cmdCtx *Context, args []string) erro
 	}
 	receipt, err := store.Get(args[0])
 	if err != nil {
-		return app.NewExitError(err, app.ExitNotFound)
+		return receiptReadError(args[0], err)
 	}
 	return output.WriteJSON(cmdCtx.Writer, receipt)
 }
@@ -202,6 +204,14 @@ func reconcileAgentReceipt(ctx context.Context, cmdCtx *Context, args []string, 
 	if len(args) != 1 || !agent.ValidRequestID(args[0]) {
 		return app.NewExitError(fmt.Errorf("usage: nodex %s <request-id>", operation), app.ExitUsage)
 	}
+	policy := safety.ConfirmationPolicy{Tier: safety.TierReversible, ResourceDescription: "local receipt " + args[0]}
+	confirmation := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
+	if confirmation.ConfirmationRequired {
+		if cmdCtx.Opts.NonInteractive {
+			return app.NewExitError(fmt.Errorf("confirmation required: %s", confirmation.Message), app.ExitUsage)
+		}
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, confirmation.Message)
+	}
 	store, err := agent.DefaultStore()
 	if err != nil {
 		return app.NewExitError(err, app.ExitConfig)
@@ -213,7 +223,7 @@ func reconcileAgentReceipt(ctx context.Context, cmdCtx *Context, args []string, 
 	defer func() { _ = lease.Close() }()
 	receipt, err := lease.Load()
 	if err != nil {
-		return app.NewExitError(err, app.ExitNotFound)
+		return receiptReadError(args[0], err)
 	}
 	if cmdCtx.Opts.Profile == "" {
 		return app.NewExitError(errors.New("receipt refresh requires an explicit --profile"), app.ExitConfig)
@@ -306,4 +316,11 @@ func sameExecutionIdentity(receipt, current agent.ExecutionContext) bool {
 		receipt.SSHHost == current.SSHHost && receipt.SSHUser == current.SSHUser &&
 		receipt.SSHKeyFile == current.SSHKeyFile && receipt.SSHKnownHosts == current.SSHKnownHosts &&
 		receipt.SSHInventoryHost == current.SSHInventoryHost && receipt.SSHPort == current.SSHPort
+}
+
+func receiptReadError(id string, err error) error {
+	if errors.Is(err, os.ErrNotExist) {
+		return app.NewExitError(fmt.Errorf("receipt %q: not found", id), app.ExitNotFound)
+	}
+	return app.NewExitError(err, app.ExitConfig)
 }
