@@ -851,7 +851,13 @@ func runVMClone(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("clone VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm clone", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	target := fmt.Sprintf("%s/%d", node, newVmid)
+	requested := map[string]string{}
+	if name != "" {
+		requested["name"] = name
+	}
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm clone", target, "disruptive",
+		createdConfigVerifier(prov, "vm", node, newVmid, "VM "+target, requested, nil))
 }
 
 // --- VM Create (Tier 2: disruptive) ---
@@ -1049,7 +1055,17 @@ func runCTClone(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("clone container %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container clone", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	target := fmt.Sprintf("%s/%d", node, newVmid)
+	requested := map[string]string{}
+	if hostname != "" {
+		requested["hostname"] = hostname
+	}
+	var volume *createdVolumeExpectation
+	if storage != "" {
+		volume = &createdVolumeExpectation{key: "rootfs", storage: storage}
+	}
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container clone", target, "disruptive",
+		createdConfigVerifier(prov, "container", node, newVmid, "container "+target, requested, volume))
 }
 
 // --- Container Create (Tier 2: disruptive) ---
