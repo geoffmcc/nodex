@@ -703,7 +703,7 @@ func (c *Client) GetNodeUpdates(ctx context.Context, node string) ([]NodeUpdateI
 	}
 	var resp NodeUpdatesResponse
 	path := "/nodes/" + url.PathEscape(node) + "/apt/update"
-	if err := c.get(ctx, path, &resp); err != nil {
+	if err := c.sendMutation(ctx, http.MethodGet, path, nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Data, nil
