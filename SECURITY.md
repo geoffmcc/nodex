@@ -87,6 +87,13 @@ Nodex's only external-process surface is the Ansible execution boundary
 
 ## Safety Gates
 
+`node updates` has a Tier 1 confirmation gate before provider connection:
+Proxmox's GET can rewrite its package-status cache. NodeX uses single-attempt
+mutation transport for this endpoint despite its HTTP method. Lost responses
+must not cause automatic repetition. Receipt refresh/reconcile also enforce
+their declared Tier 1 acknowledgement for local receipt writes; their provider
+observations remain read-only and never resubmit an infrastructure request.
+
 All mutation commands are protected by a five-tier safety model:
 
 | Tier | Name | Gate |

@@ -166,6 +166,7 @@ capability metadata does not check live permissions or readiness.
 ```bash
 nodex operation list --output json
 nodex operation describe "vm migrate" --output json
+nodex operation describe vm.migrate --output json
 ```
 
 `list` returns the canonical operation paths and concise metadata. `describe`
@@ -182,8 +183,8 @@ operation. It wraps existing handlers and does not bypass safety checks.
 nodex agent contract --output json
 nodex agent receipt list --output json
 nodex agent receipt show <request-id> --output json
-nodex --profile lab agent receipt refresh <request-id> --output json
-nodex --profile lab agent receipt reconcile <request-id> --output json
+nodex --profile lab --yes agent receipt refresh <request-id> --output json
+nodex --profile lab --yes agent receipt reconcile <request-id> --output json
 ```
 
 For executing an operation, use `nodex --agent --profile <name>
@@ -282,12 +283,25 @@ Nodex treats the command as Tier 1 and requires confirmation:
 nodex --yes node updates <name>
 ```
 
+The confirmation gate runs before provider connection. This side-effecting GET
+uses single-attempt transport: a lost response or server error is never retried
+automatically. It does not run `apt-get update` or install packages.
+
 An audit-only API token cannot run this command; grant `Sys.Modify` only if that
 additional node-level privilege is acceptable for the token.
 
 ### `nodex vm`
 
 Inspect and operate virtual machines.
+
+VM and container inventory tables label CPU, memory and disk allocation limits
+explicitly. An empty list has an explicit human message; JSON remains `[]`.
+Container list/show enrich missing OS values from the configured `ostype` using
+read-only config requests, limited to returned rows and a one-second total
+budget per profile. The OS denotes the configured family, not an independently
+verified release/version. Denied, missing or timed-out values remain `unknown`
+in tables and omitted in JSON/YAML. Use `container config <node>/<vmid>` for
+an explicit config inspection. Status/watch do not perform this enrichment.
 
 **Read-only commands** (Tier 0):
 
@@ -449,9 +463,16 @@ Inspect and operate storage.
 
 | Command | Description |
 |---------|-------------|
-| `storage list` | List all storage pools |
+| `storage list` | List configured storage entries with capacity-group and namespace context |
 | `storage show <name>` | Show storage details |
 | `storage content <node> <storage>` | List storage content |
+
+The human storage list preserves each configured entry and labels its namespace
+and capacity group using the same evidence as status. Group labels are local to
+that output and are not persistent identifiers. Equal capacity numbers never
+establish a relationship. Configured views can overlap; do not sum their
+capacities or treat different datastores as verified independent physical pools.
+JSON/YAML storage entries retain their existing capacity identity fields.
 
 **Mutation commands** (varies by operation):
 

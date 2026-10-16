@@ -14,6 +14,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
+	"github.com/geoffmcc/nodex/internal/safety"
 )
 
 func runNodeServices(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -349,6 +350,14 @@ func writeNodeSubscription(cmdCtx *Context, sub *domain.NodeSubscription) error 
 func runNodeUpdates(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) != 1 {
 		return app.NewExitError(fmt.Errorf("usage: nodex node updates <node>"), app.ExitUsage)
+	}
+	policy := safety.ConfirmationPolicy{Tier: safety.TierReversible, ResourceDescription: "package-status cache on node " + args[0]}
+	confirmation := policy.Check(cmdCtx.Opts.Yes, cmdCtx.Opts.Force, cmdCtx.Opts.NonInteractive)
+	if confirmation.ConfirmationRequired {
+		if cmdCtx.Opts.NonInteractive {
+			return app.NewExitError(fmt.Errorf("confirmation required: %s", confirmation.Message), app.ExitUsage)
+		}
+		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, confirmation.Message)
 	}
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {

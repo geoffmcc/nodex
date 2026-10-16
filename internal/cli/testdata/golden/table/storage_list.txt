@@ -1,2 +1,4 @@
-NAME   TYPE  STATUS     NODE      TOTAL    USED     AVAIL
-local  dir   available  e2e-node  4.0 KiB  1.0 KiB  3.0 KiB
+NAME   TYPE  STATUS     NODE      TOTAL    USED     AVAIL    NAMESPACE  CAPACITY-GROUP
+local  dir   available  e2e-node  4.0 KiB  1.0 KiB  3.0 KiB  -          unresolved
+Capacity groups identify configured views, not independent physical pools.
+Per-entry/group capacities may overlap; do not sum.

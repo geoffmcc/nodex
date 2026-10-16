@@ -193,6 +193,29 @@ Backup job create/update accepts schedule=<calendar> or the legacy
 starttime=<HH:MM> with optional dow. Job inspection includes schedule and next
 run when supplied by the provider. Node certificate validity is represented as
 Unix timestamps in structured output.
+.SH REPORTING AND RECOVERY NOTES
+.PP
+operation describe accepts a spaced operation path or its canonical dotted ID
+(for example vm.stop). Provider capabilities describe implementation support;
+environment readiness and authorization are not assessed.
+.PP
+node updates <node> --yes may refresh Proxmox's package-status cache and requires
+Sys.Modify. Confirmation is checked before connection. Its side-effecting GET
+is attempted once; it does not install packages or run apt-get update.
+.PP
+agent receipt refresh/reconcile <request-id> --yes updates a local receipt and
+requires an explicit matching --profile. It never resubmits an infrastructure
+mutation. Missing receipts return NOT_FOUND; unsafe receipts fail closed.
+.PP
+Inventory tables label allocation limits. Container list/show read configured
+OS families with a one-second enrichment budget per profile, only for returned
+rows; unavailable values remain unknown. No guest execution is used. Empty VM and
+container lists have explicit human messages; machine lists remain arrays.
+Storage list shows namespaces and configured capacity groups. Groups are not
+independent physical pools; per-entry/group capacities may overlap: do not sum.
+.PP
+Watch distinguishes a routine refresh in progress from cached readings after a
+failed refresh. Small terminals retain the quit hint before the detail hint.
 .SH CONFIGURATION AND CREDENTIALS
 .PP
 Configuration is a YAML file under the platform's standard Nodex configuration

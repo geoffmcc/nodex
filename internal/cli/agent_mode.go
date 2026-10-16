@@ -1132,7 +1132,7 @@ func mutationOutcome(result agent.Result, operation OperationMeta, captured []by
 			} else if app.ExitCodeFromError(runErr) == app.ExitUsage || app.ExitCodeFromError(runErr) == app.ExitConfig || app.ExitCodeFromError(runErr) == app.ExitCredential || app.ExitCodeFromError(runErr) == app.ExitUnsupportedCap || app.ExitCodeFromError(runErr) == app.ExitValidationError {
 				result.Submission = agent.SubmissionNotAttempted
 				result.Execution = agent.ExecutionNotStarted
-				result.Retry = agent.RetrySafe
+				result.Retry = agent.RetryDoNotAutomatic
 			}
 		}
 	}
@@ -1168,6 +1168,12 @@ func emitAgentFailureWithContext(w io.Writer, requestID, operation string, execu
 	if !agent.ValidRequestID(requestID) {
 		requestID = "invalid_request"
 	}
+	// Deterministic input/configuration errors need correction before another attempt.
+	switch exit {
+	case app.ExitUsage, app.ExitConflict, app.ExitConfig, app.ExitUnsupportedCap, app.ExitNotFound:
+		retry = agent.RetryDoNotAutomatic
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if operation == "" {
 		operation = "unknown"

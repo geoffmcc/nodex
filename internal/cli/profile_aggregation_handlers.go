@@ -367,7 +367,7 @@ func writeVMsAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.VM]) er
 		decorateVMResults(&out)
 		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
-		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "CPU", "MEMORY", "DISK"}
+		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "CPU-LIMIT", "MEMORY-LIMIT", "DISK-LIMIT"}
 		var rows [][]string
 		for _, r := range out.Results {
 			if !r.Success {
@@ -420,7 +420,9 @@ func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 				out.AddFailure(profileName, err, time.Since(start))
 				continue
 			}
-			out.AddSuccess(profileName, applyLimitN(cts, cmdCtx.Opts.Limit), time.Since(start))
+			cts = applyLimitN(cts, cmdCtx.Opts.Limit)
+			enrichContainerOS(ctx, ci, cts)
+			out.AddSuccess(profileName, cts, time.Since(start))
 		} else {
 			err := fmt.Errorf("provider %q does not support container inspection", prov.Name())
 			fmt.Fprintf(cmdCtx.ErrW, "profile %q containers: %v\n", profileName, err)
@@ -445,7 +447,7 @@ func writeContainersAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.
 		decorateContainerResults(&out)
 		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
-		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "CPU", "OS", "MEMORY", "DISK", "TEMPLATE"}
+		headers := []string{"PROFILE", "ID", "NAME", "STATUS", "NODE", "CPU-LIMIT", "OS", "MEMORY-LIMIT", "DISK-LIMIT", "TEMPLATE"}
 		var rows [][]string
 		for _, r := range out.Results {
 			if !r.Success {
@@ -459,7 +461,7 @@ func writeContainersAll(cmdCtx *Context, out output.MultiProfileOutput[[]domain.
 			sort.Slice(r.Data, func(i, j int) bool { return r.Data[i].Name < r.Data[j].Name })
 			for _, c := range r.Data {
 				rows = append(rows, []string{r.Profile, c.ID, c.Name, c.Status, c.Node,
-					fmt.Sprintf("%d", c.CPU), c.OS, formatBytes(c.Memory), formatBytes(c.Disk), yesNo(c.Template)})
+					fmt.Sprintf("%d", c.CPU), containerOSLabel(c.OS), formatBytes(c.Memory), formatBytes(c.Disk), yesNo(c.Template)})
 			}
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)

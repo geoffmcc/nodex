@@ -471,7 +471,7 @@ func TestAgentMutationRequiresProfileAndExistingConfirmation(t *testing.T) {
 		t.Fatalf("confirmationless request should be refused without provider mutation; err=%v calls=%v", err, pbsE2ERunCalls)
 	}
 	refused := decodeAgentResult(t, stdout.Bytes())
-	if refused.Submission != agent.SubmissionNotAttempted || refused.Execution != agent.ExecutionNotStarted || refused.Retry != agent.RetrySafe {
+	if refused.Submission != agent.SubmissionNotAttempted || refused.Execution != agent.ExecutionNotStarted || refused.Retry != agent.RetryDoNotAutomatic {
 		t.Fatalf("confirmation refusal outcome is not explicit: %+v", refused)
 	}
 	store, _ := agent.DefaultStore()
@@ -583,7 +583,7 @@ func TestAgentPVEVMMutationUsesBoundProviderAndWritesReceipt(t *testing.T) {
 		t.Fatalf("PVE receipt missing exact target/task context: %+v err=%v", receipt, err)
 	}
 	stdout.Reset()
-	if err := Run(context.Background(), []string{"--profile", "e2e", "agent", "receipt", "refresh", "req_vm_stop"}, &stdout, &stderr); app.ExitCodeFromError(err) != app.ExitPartialFailure {
+	if err := Run(context.Background(), []string{"--profile", "e2e", "--yes", "agent", "receipt", "refresh", "req_vm_stop"}, &stdout, &stderr); app.ExitCodeFromError(err) != app.ExitPartialFailure {
 		t.Fatalf("refresh with mismatched postcondition must return partial failure: %v\n%s", err, stdout.String())
 	}
 	var refreshed agent.Receipt
@@ -611,7 +611,7 @@ func TestAgentLifecyclePostconditionPassIsSeparateFromTaskSuccess(t *testing.T) 
 	}
 	e2eVMStatusOverride = "stopped"
 	stdout.Reset()
-	if err := Run(context.Background(), []string{"--profile", "e2e", "agent", "receipt", "refresh", "req_vm_stop_verified"}, &stdout, &stderr); err != nil {
+	if err := Run(context.Background(), []string{"--profile", "e2e", "--yes", "agent", "receipt", "refresh", "req_vm_stop_verified"}, &stdout, &stderr); err != nil {
 		t.Fatalf("refresh VM task: %v\n%s", err, stdout.String())
 	}
 	var refreshed agent.Receipt
@@ -650,7 +650,7 @@ func TestAgentReceiptRefreshRejectsProviderTaskFromWrongNode(t *testing.T) {
 		t.Fatalf("submit VM stop: %v", err)
 	}
 	stdout.Reset()
-	err := Run(context.Background(), []string{"--profile", "e2e", "agent", "receipt", "refresh", "req_wrong_task_node"}, &stdout, &stderr)
+	err := Run(context.Background(), []string{"--profile", "e2e", "--yes", "agent", "receipt", "refresh", "req_wrong_task_node"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("provider task from a different node must not reconcile the receipt")
 	}
@@ -702,7 +702,7 @@ func TestAgentLostMutationResponseRemainsUnknownAndIsNotRetried(t *testing.T) {
 		t.Fatalf("ambiguous receipt was resubmitted: result=%+v calls=%v", prior, pbsE2ERunCalls)
 	}
 	stdout.Reset()
-	reconcileErr := Run(context.Background(), []string{"--agent", "--profile", "pbs-e2e", "agent", "receipt", "reconcile", "req_lost_response"}, &stdout, &stderr)
+	reconcileErr := Run(context.Background(), []string{"--agent", "--profile", "pbs-e2e", "--yes", "agent", "receipt", "reconcile", "req_lost_response"}, &stdout, &stderr)
 	if reconcileErr == nil {
 		t.Fatal("receipt without an authoritative task ID must remain explicitly unreconciled")
 	}
@@ -737,7 +737,7 @@ func TestAgentReceiptRefreshDoesNotFollowChangedProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	stdout.Reset()
-	err = Run(context.Background(), []string{"--profile", "pbs-e2e", "agent", "receipt", "refresh", "req_bound_profile", "--output", "json"}, &stdout, &stderr)
+	err = Run(context.Background(), []string{"--profile", "pbs-e2e", "--yes", "agent", "receipt", "refresh", "req_bound_profile", "--output", "json"}, &stdout, &stderr)
 	if err == nil || app.ExitCodeFromError(err) != app.ExitConflict {
 		t.Fatalf("refresh after endpoint change = %v, want conflict", err)
 	}
@@ -754,7 +754,7 @@ func TestAgentReceiptRefreshReadsTaskButDoesNotClaimPostcondition(t *testing.T) 
 		t.Fatalf("submit: %v", err)
 	}
 	stdout.Reset()
-	if err := Run(context.Background(), []string{"--profile", "pbs-e2e", "agent", "receipt", "refresh", "req_refresh_task"}, &stdout, &stderr); err != nil {
+	if err := Run(context.Background(), []string{"--profile", "pbs-e2e", "--yes", "agent", "receipt", "refresh", "req_refresh_task"}, &stdout, &stderr); err != nil {
 		t.Fatalf("refresh: %v (%s)", err, stdout.String())
 	}
 	var receipt agent.Receipt
@@ -797,7 +797,7 @@ func TestAgentReceiptRefreshTreatsWarningExitStatusAsSuccess(t *testing.T) {
 				t.Fatalf("submit: %v", err)
 			}
 			stdout.Reset()
-			refreshErr := Run(context.Background(), []string{"--profile", "pbs-e2e", "agent", "receipt", "refresh", "req_warn_exit"}, &stdout, &stderr)
+			refreshErr := Run(context.Background(), []string{"--profile", "pbs-e2e", "--yes", "agent", "receipt", "refresh", "req_warn_exit"}, &stdout, &stderr)
 
 			var receipt agent.Receipt
 			if err := json.Unmarshal(stdout.Bytes(), &receipt); err != nil {
@@ -862,7 +862,7 @@ func TestAgentReceiptRefreshTreatsWarningTaskStatusAsSuccess(t *testing.T) {
 			stdout.Reset()
 			e2eGuestStatusOverride = "stopped"
 			t.Cleanup(func() { e2eGuestStatusOverride = "" })
-			refreshErr := Run(context.Background(), []string{"--profile", "e2e", "agent", "receipt", "refresh", "req_warn_status"}, &stdout, &stderr)
+			refreshErr := Run(context.Background(), []string{"--profile", "e2e", "--yes", "agent", "receipt", "refresh", "req_warn_status"}, &stdout, &stderr)
 
 			var receipt agent.Receipt
 			if err := json.Unmarshal(stdout.Bytes(), &receipt); err != nil {

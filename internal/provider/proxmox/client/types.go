@@ -279,6 +279,8 @@ type ClusterStatusItem struct {
 	Maxmem    int64  `json:"maxmem,omitempty"`
 	Localdisk int64  `json:"localdisk,omitempty"`
 	Maxdisk   int64  `json:"maxdisk,omitempty"`
+	// Online preserves absence so a missing node-health value is not offline.
+	Online *int `json:"online,omitempty"`
 	// Quorate is a pointer because Proxmox omits the field on hosts that have
 	// no cluster entry. A plain int cannot tell "not quorate" from "no such
 	// concept", and the difference decides whether absence should be reported.
@@ -299,6 +301,7 @@ func (i *ClusterStatusItem) UnmarshalJSON(data []byte) error {
 		Maxmem    int64           `json:"maxmem,omitempty"`
 		Localdisk int64           `json:"localdisk,omitempty"`
 		Maxdisk   int64           `json:"maxdisk,omitempty"`
+		Online    json.RawMessage `json:"online,omitempty"`
 		Quorate   json.RawMessage `json:"quorate,omitempty"`
 		Version   json.RawMessage `json:"version,omitempty"`
 		Commit    string          `json:"commit,omitempty"`
@@ -318,6 +321,7 @@ func (i *ClusterStatusItem) UnmarshalJSON(data []byte) error {
 		Maxmem:    raw.Maxmem,
 		Localdisk: raw.Localdisk,
 		Maxdisk:   raw.Maxdisk,
+		Online:    decodeIntPtr(raw.Online),
 		Quorate:   decodeIntPtr(raw.Quorate),
 		Version:   decodeInt(raw.Version),
 		Commit:    raw.Commit,
@@ -766,16 +770,17 @@ type BackupStatusResponse struct {
 
 // BackupStatusItem represents a backup task.
 type BackupStatusItem struct {
-	UPID      string `json:"upid"`
-	Type      string `json:"type"`
-	State     string `json:"state"`
-	StartTime int    `json:"starttime"`
-	EndTime   int    `json:"endtime,omitempty"`
-	Status    string `json:"status,omitempty"`
-	PID       int    `json:"pid,omitempty"`
-	Worker    string `json:"worker,omitempty"`
-	Node      string `json:"node,omitempty"`
-	Storage   string `json:"storage,omitempty"`
+	UPID       string `json:"upid"`
+	Type       string `json:"type"`
+	State      string `json:"state"`
+	StartTime  int    `json:"starttime"`
+	EndTime    int    `json:"endtime,omitempty"`
+	Status     string `json:"status,omitempty"`
+	ExitStatus string `json:"exitstatus,omitempty"`
+	PID        int    `json:"pid,omitempty"`
+	Worker     string `json:"worker,omitempty"`
+	Node       string `json:"node,omitempty"`
+	Storage    string `json:"storage,omitempty"`
 }
 
 // FirewallRuleResponse is the response from /cluster/firewall/rules.

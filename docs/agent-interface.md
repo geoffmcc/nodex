@@ -13,7 +13,7 @@ nodex operation describe "vm stop" --output json
 nodex operation describe "pbs verify run" --output json
 ```
 
-`operation list` is intentionally compact. `operation describe` includes the existing CLI grammar, argument/flag metadata, constraints, target requirements, safety tier, risks, confirmations, provider interface, task behavior, verification/recovery notes, output schemas, and the agent-mode support decision. Canonical IDs use the operation path with periods (for example `vm.stop`); aliases resolve to that canonical operation.
+`operation list` is intentionally compact. `operation describe` includes the existing CLI grammar, argument/flag metadata, constraints, target requirements, safety tier, risks, confirmations, provider interface, task behavior, verification/recovery notes, output schemas, and the agent-mode support decision. Canonical IDs use the operation path with periods (for example `vm.stop`); describe accepts both `vm.stop` and `vm stop`. Aliases resolve to that canonical operation. Provider capability rows describe implementation support (`scope: implementation`, `readiness: not_assessed`), not current authorization or environment readiness.
 
 Schema files are in [`docs/agent/schemas`](agent/schemas/):
 
@@ -54,6 +54,12 @@ The result distinguishes:
 - `verification`: `not_requested`, `passed`, `failed`, `unknown`, or `unsupported`.
 - `changed`: `true`, `false`, or `null` when the provider cannot establish a change.
 - `retry`: `safe`, `reconcile_first`, or `do_not_retry_automatically`.
+
+Invalid input, missing configuration, unsupported operations and missing receipt
+lookups require correction before another attempt. Their early failure envelopes
+use `do_not_retry_automatically`; absence of a submitted mutation does not imply
+that repeating unchanged invalid input is useful. Successful reads remain safe
+to repeat for a new observation.
 
 An accepted request is not completed work. A completed task is not automatically a verified resource postcondition. For lifecycle tasks, a refresh can separately inspect the current guest state. `verification: passed` there means the target currently reports the desired state; it does not prove that this request caused the state, and providers that expose no stable guest UUID cannot rule out ID reuse.
 
@@ -114,8 +120,8 @@ Request IDs are identifiers, not secrets: they appear in results and receipt fil
 nodex agent receipt list --output json --limit 20
 nodex agent receipt list --output json --request-prefix nxeval-20261004-114406-
 nodex agent receipt show req-start-vm-100 --output json
-nodex --profile lab agent receipt refresh req-start-vm-100 --output json
-nodex --profile lab agent receipt reconcile req-start-vm-100 --output json
+nodex --profile lab --yes agent receipt refresh req-start-vm-100 --output json
+nodex --profile lab --yes agent receipt reconcile req-start-vm-100 --output json
 ```
 
 Receipt listing returns summaries (20 by default, at most 100) and reports whether older entries were omitted. The store is shared by NodeX runs under the same local account; use `--request-prefix` to scope a list to a run's chosen request-ID prefix. Prefix filtering is applied before the limit, and the returned `request_prefix` identifies the selected scope. Refresh/reconcile checks the receipt's profile, provider, normalized endpoint, TLS CA identity, and SSH trust fields against the explicit current profile before connecting. A changed profile identity is refused. For outstanding tasks, it performs provider task inspection only. It never resubmits, cancels, rolls back, or follows a changed profile. It reports unknown when the provider cannot identify the task or the task identifier was not received. Task records may expire at the provider; absence is not proof that the mutation did not happen.
@@ -125,6 +131,12 @@ For accepted, successfully executed VM/container template conversions, refresh/r
 The same request ID and normalized operation/input/target returns the stored result and never resubmits. A replayed result includes `replayed: true` as a top-level machine-readable signal and retains the `DUPLICATE_REQUEST_ID` warning for clients that already inspect warnings. Reusing the ID with different inputs, safety acknowledgements, or context conflicts. If a receipt says the operation was definitely not attempted and the caller wants to try again, use a new request ID after addressing the cause. For `unknown` or `running`, inspect/reconcile first; do not blindly retry. A crash just before provider invocation can conservatively leave an unknown receipt, because a crash at that boundary cannot prove the request was not sent.
 
 Stopping local observation does not cancel a remote task. NodeX does not promise exactly-once execution where the provider has no idempotency key. No automatic receipt pruning is performed. Retain unresolved receipts, request-ID history, and `fingerprint.key` together; remove terminal history only when the operator accepts that deleting it permits that ID to be reused and changes the fingerprint key will make older IDs conflict rather than resume.
+
+Refresh/reconcile updates the local receipt and enforces its advertised Tier 1
+`--yes` acknowledgement before opening the receipt store. This acknowledgement
+does not authorize another infrastructure mutation. Receipt show/list require
+no confirmation. A missing receipt returns a receipt-specific `NOT_FOUND`;
+unreadable, malformed or unsafe receipts are configuration failures.
 
 ## Support matrix
 

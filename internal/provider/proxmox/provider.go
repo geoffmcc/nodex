@@ -778,7 +778,9 @@ func mapTask(item client.TaskListItem, node string) domain.Task {
 	if item.ExitStatus != "" {
 		// /nodes/{node}/tasks/{upid}/status uses status for running/stopped
 		// state and exitstatus for the final OK/error value.
-		state = item.Status
+		if item.Status == "running" || item.Status == "stopped" {
+			state = item.Status
+		}
 		status = item.ExitStatus
 	}
 	return domain.Task{
@@ -926,16 +928,10 @@ func (p *Provider) Backups(ctx context.Context, node string) ([]domain.Backup, e
 	}
 	result := make([]domain.Backup, 0, len(items))
 	for _, item := range items {
-		result = append(result, domain.Backup{
-			UPID:      item.UPID,
-			Type:      item.Type,
-			State:     item.State,
-			StartTime: item.StartTime,
-			EndTime:   item.EndTime,
-			Status:    item.Status,
-			Node:      item.Node,
-			Storage:   item.Storage,
-		})
+		task := mapTask(client.TaskListItem{UPID: item.UPID, Type: item.Type, State: item.State,
+			StartTime: item.StartTime, EndTime: item.EndTime, Status: item.Status, ExitStatus: item.ExitStatus}, node)
+		result = append(result, domain.Backup{UPID: task.UPID, Type: task.Type, State: task.State,
+			StartTime: task.StartTime, EndTime: task.EndTime, Status: task.Status, Node: task.Node, Storage: item.Storage})
 	}
 	return result, nil
 }
@@ -1465,7 +1461,7 @@ func (p *Provider) HACurrent(ctx context.Context) ([]domain.HACurrent, error) {
 		result = append(result, domain.HACurrent{
 			ID:     item.ID,
 			Type:   item.Type,
-			State:  item.State,
+			State:  haResourceState(item.State),
 			Node:   item.Node,
 			Status: item.Status,
 		})
@@ -1598,6 +1594,10 @@ func (p *Provider) CephStatus(ctx context.Context, node string) (*domain.CephSta
 	}
 	health, err := p.client.GetCephStatus(ctx, node)
 	if err != nil {
+		var providerErr *app.ProviderError
+		if errors.As(err, &providerErr) && providerErr.StatusCode == 500 && strings.HasSuffix(strings.TrimSpace(providerErr.Detail), "binary not installed: /usr/bin/ceph-mon") {
+			return nil, app.NewExitError(fmt.Errorf("%w: Ceph is not installed on node %q", app.ErrUnsupportedCap, node), app.ExitUnsupportedCap)
+		}
 		return nil, fmt.Errorf("get ceph status: %w", err)
 	}
 	return &domain.CephStatus{Health: health}, nil
@@ -2010,7 +2010,7 @@ func (p *Provider) ClusterStatuses(ctx context.Context) ([]domain.ClusterStatusD
 			Type:    item.Type,
 			ID:      item.ID,
 			Name:    item.Name,
-			Status:  item.Status,
+			Status:  clusterItemStatus(item),
 			Level:   item.Level,
 			IP:      item.IP,
 			Quorate: quorate,
@@ -2942,4 +2942,12 @@ func mapToValues(m map[string]string) url.Values {
 		v.Set(key, val)
 	}
 	return v
+}
+
+// HA quorum/fencing rows expose status text, not a resource lifecycle state.
+func haResourceState(state string) string {
+	if state == "" {
+		return "unknown"
+	}
+	return state
 }

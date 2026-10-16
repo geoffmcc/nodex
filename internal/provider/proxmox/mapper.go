@@ -168,7 +168,7 @@ func MapClusterStatus(items []client.ClusterStatusItem) *domain.Cluster {
 				Type:    item.Type,
 				ID:      item.ID,
 				Name:    item.Name,
-				Status:  item.Status,
+				Status:  clusterItemStatus(item),
 				Level:   item.Level,
 				IP:      item.IP,
 				Version: item.Version,
@@ -240,4 +240,22 @@ func MapNodeStatus(status *client.NodeStatusData) domain.Node {
 		Version:  status.PVEVersion,
 		Uptime:   uptime,
 	}
+}
+
+func clusterItemStatus(item client.ClusterStatusItem) string {
+	if item.Status != "" {
+		return item.Status
+	}
+	if item.Type == "node" {
+		if item.Online != nil {
+			switch *item.Online {
+			case 1:
+				return "online"
+			case 0:
+				return "offline"
+			}
+		}
+		return "unknown"
+	}
+	return item.Status
 }

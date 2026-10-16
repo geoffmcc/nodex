@@ -1,2 +1,2 @@
-ID            NAME    STATUS   NODE      CPU  MEMORY   DISK
-e2e-node/100  e2e-vm  running  e2e-node  2    1.0 KiB  2.0 KiB
+ID            NAME    STATUS   NODE      CPU-LIMIT  MEMORY-LIMIT  DISK-LIMIT
+e2e-node/100  e2e-vm  running  e2e-node  2          1.0 KiB       2.0 KiB

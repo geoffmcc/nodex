@@ -150,6 +150,17 @@ func TestStatusWatchStaleRecoveryAndNoOverlap(t *testing.T) {
 			t.Fatal("queued/overlapping polling cycle")
 		}
 	}
+	// A normal refresh retains the last successful observation without
+	// labelling it failed/stale; a retry after an outage keeps the warning.
+	refreshFrames := []string{}
+	for _, frame := range terminal.frames {
+		if strings.Contains(frame, "refreshing") {
+			refreshFrames = append(refreshFrames, frame)
+		}
+	}
+	if len(refreshFrames) != 4 || strings.Contains(refreshFrames[1], "STALE") || !strings.Contains(refreshFrames[2], "STALE") {
+		t.Fatalf("refresh freshness: %v", refreshFrames)
+	}
 	var completedFrames []string
 	for _, f := range terminal.frames {
 		if !strings.Contains(f, "refreshing") {
@@ -233,12 +244,15 @@ func TestStatusWatchBoundedSanitizedFrames(t *testing.T) {
 	s := healthyWatchSnapshot()
 	s.Cluster = "bad \x1b[2Jpassword=secret"
 	s.NodesDetail[0].Name = "node\nINJECT\x1b]0;owned\a"
-	for _, size := range [][2]int{{120, 40}, {40, 10}, {10, 4}, {1, 1}, {5000, 5000}} {
+	for _, size := range [][2]int{{80, 24}, {120, 40}, {40, 10}, {10, 4}, {1, 1}, {5000, 5000}} {
 		frame := renderStatusWatch("lab\nprofile", statusWatchView{Snapshot: s, Health: "healthy"}, size[0], size[1])
 		if strings.Contains(frame, "secret") || strings.Contains(frame, "owned") || strings.Contains(frame, "\x1b[2J") {
 			t.Fatal("unsafe frame", frame)
 		}
 		plain := output.SanitizeTerminal(frame)
+		if size[0] >= 10 && !strings.Contains(plain, "q: quit") {
+			t.Fatal("quit hint clipped", plain)
+		}
 		lines := strings.Split(plain, "\n")
 		if len(lines) > size[1] {
 			t.Fatal("frame exceeds terminal height")

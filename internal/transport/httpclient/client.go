@@ -504,6 +504,28 @@ func (c *Client) jitteredDelay(attempt int) time.Duration {
 // State-changing operations (POST, PUT, DELETE) must use this method
 // to prevent unsafe automatic retries.
 func (c *Client) DoMutation(ctx context.Context, req *http.Request) (*http.Response, error) {
+	if req.Method == http.MethodGet || req.Method == http.MethodHead {
+		// Some provider GETs write state. Bypassing our retry loop alone is
+		// insufficient: net/http may replay GET on a failed reused connection.
+		// A private transport cannot reuse an earlier connection, and redirect
+		// responses must reach the caller without another side-effecting read.
+		transport, ok := c.httpClient.Transport.(*http.Transport)
+		if !ok {
+			return nil, errors.New("side-effecting GET/HEAD requires an isolatable HTTP transport")
+		}
+		isolatedTransport := transport.Clone()
+		isolatedTransport.DisableKeepAlives = true
+		defer isolatedTransport.CloseIdleConnections()
+		isolatedClient := *c.httpClient
+		isolatedClient.Transport = isolatedTransport
+		isolatedClient.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+			if err := c.checkRedirect(next, via); err != nil {
+				return err
+			}
+			return http.ErrUseLastResponse
+		}
+		return isolatedClient.Do(req.WithContext(ctx)) // #nosec G704 -- callers validate configured endpoints before constructing requests.
+	}
 	return c.httpClient.Do(req.WithContext(ctx)) // #nosec G704 -- callers validate configured endpoints before constructing requests.
 }
 
