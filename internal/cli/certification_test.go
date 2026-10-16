@@ -8,6 +8,17 @@ import (
 	"testing"
 )
 
+func TestRequireCertificationProfileRequiresExplicitSelection(t *testing.T) {
+	cmdCtx := &Context{}
+	if err := requireCertificationProfile(cmdCtx); err == nil {
+		t.Fatal("missing explicit profile was accepted")
+	}
+	cmdCtx.Opts.Profile = "nodex-test-profile"
+	if err := requireCertificationProfile(cmdCtx); err != nil {
+		t.Fatalf("explicit lab profile rejected: %v", err)
+	}
+}
+
 func TestCertificationReportShowsEmptyLedgerAsNoRuns(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
 	if err := os.WriteFile(path, []byte(`{"schema":1,"entries":[]}`), 0o600); err != nil {

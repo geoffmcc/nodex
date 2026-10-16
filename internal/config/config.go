@@ -318,9 +318,6 @@ func validateCertifications(cfg *Config) error {
 		if !ProfileRegex.MatchString(name) || env.Profile == "" || !ProfileRegex.MatchString(env.Profile) {
 			return fail("invalid environment or profile name")
 		}
-		if env.Profile != "nodex-test-admin" {
-			return fail("profile must be nodex-test-admin")
-		}
 		p, ok := cfg.Profiles[env.Profile]
 		if !ok {
 			return fail("profile %q is not configured", env.Profile)

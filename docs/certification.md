@@ -2,8 +2,8 @@
 
 Certification is an explicit, disposable-environment transaction for validating
 Nodex against a real configured Proxmox test environment. It never selects a
-profile implicitly and refuses every profile except `nodex-test-admin`. The
-environment must be declared in the configuration with its exact endpoint,
+profile implicitly; the explicit `--profile` must match the profile bound to
+the named certification environment. The environment must be declared in the configuration with its exact endpoint,
 provider, allowed node/storage/VMID range, expiry, expected leaf certificate
 fingerprint, and trusted-CA identity.
 
@@ -18,11 +18,11 @@ workers from overlapping cleanup recovery. Failed or interrupted runs leave a
 pending ledger entry for recovery.
 
 ```bash
-nodex --profile nodex-test-admin --yes \
+nodex --profile nodex-test-profile --yes \
   --confirm-target nodex-cert-smoke certification run \
   --environment test-lab --suite disposable-mutations \
   --node pve-test --vmid 9000 --name nodex-cert-smoke --storage local
-nodex --profile nodex-test-admin --yes \
+nodex --profile nodex-test-profile --yes \
   --confirm-target <ledger-entry-id> certification cleanup
 nodex certification report
 ```

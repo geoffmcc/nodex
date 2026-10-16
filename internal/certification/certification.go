@@ -18,8 +18,6 @@ import (
 	"github.com/geoffmcc/nodex/internal/task"
 )
 
-const RequiredProfile = "nodex-test-admin"
-
 // Authorization is the exact environment binding required for mutation
 // suites. It is intentionally independent of profile names and resource
 // prefixes.
@@ -82,8 +80,8 @@ func validateRequest(r Request) error {
 	if !r.OptIn {
 		return fmt.Errorf("certification is opt-in; pass --yes")
 	}
-	if r.Profile != RequiredProfile {
-		return fmt.Errorf("certification requires explicit profile %q", RequiredProfile)
+	if r.Profile == "" {
+		return fmt.Errorf("certification requires an explicit profile matching the authorized environment")
 	}
 	if r.Node == "" || r.Storage == "" || r.VMID <= 0 {
 		return fmt.Errorf("node, positive vmid, and storage are required")
@@ -111,7 +109,7 @@ func ValidateAuthorization(r Request) error {
 	if err := validateAuthorizationBinding(a); err != nil {
 		return err
 	}
-	if a.Environment == "" || a.Profile != RequiredProfile || r.Environment != a.Environment || r.Profile != a.Profile || r.Endpoint != a.Endpoint {
+	if a.Environment == "" || a.Profile == "" || r.Environment != a.Environment || r.Profile != a.Profile || r.Endpoint != a.Endpoint {
 		return fmt.Errorf("certification target does not match the authorized environment")
 	}
 	if r.VMID < a.VMIDMin || r.VMID > a.VMIDMax || a.MaxResources <= 0 {
@@ -136,7 +134,7 @@ func validateAuthorizationBinding(a *Authorization) error {
 	if a == nil {
 		return fmt.Errorf("certification requires an explicit authorization binding")
 	}
-	if a.Environment == "" || a.Profile != RequiredProfile || a.Provider == "" {
+	if a.Environment == "" || a.Profile == "" || a.Provider == "" {
 		return fmt.Errorf("certification authorization binding is incomplete")
 	}
 	u, err := url.Parse(a.Endpoint)

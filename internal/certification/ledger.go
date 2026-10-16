@@ -243,7 +243,7 @@ func claimCleanup(path, id string, auth *Authorization) (Entry, error) {
 		if e.Cleanup == "complete" {
 			return Entry{}, fmt.Errorf("no pending ledger entry matched exact confirmation")
 		}
-		if e.Profile != RequiredProfile || !strings.HasPrefix(e.Name, NamePrefix) {
+		if e.Profile == "" || !strings.HasPrefix(e.Name, NamePrefix) {
 			return Entry{}, fmt.Errorf("ledger entry is outside certification safety boundary")
 		}
 		if e.Environment != auth.Environment || e.Profile != auth.Profile || e.EndpointIdentity != auth.Endpoint || !strings.EqualFold(e.ProviderIdentity, auth.Provider) || e.Fingerprint != auth.ExpectedFingerprint || e.CAIdentity != auth.TrustedCAIdentity {
