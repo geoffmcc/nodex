@@ -20,14 +20,14 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestValidateCertificationEnvironment(t *testing.T) {
 	cfg := &Config{Version: CurrentSchemaVersion, Profiles: map[string]Profile{
-		"nodex-test-admin": {Provider: "proxmox", Endpoint: "https://pve.example.test"},
+		"nodex-test-profile": {Provider: "proxmox", Endpoint: "https://pve.example.test"},
 	}, Certifications: map[string]CertificationEnvironment{
-		"lab": {Profile: "nodex-test-admin", Endpoint: "https://pve.example.test", Provider: "proxmox", Nodes: []string{"pve1"}, Storage: []string{"local"}, VMIDMin: 9000, VMIDMax: 9099, Suites: []string{"readonly"}, MaxResources: 1, ExpiresAt: 4102444800, ExpectedFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", TrustedCAIdentity: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+		"lab": {Profile: "nodex-test-profile", Endpoint: "https://pve.example.test", Provider: "proxmox", Nodes: []string{"pve1"}, Storage: []string{"local"}, VMIDMin: 9000, VMIDMax: 9099, Suites: []string{"readonly"}, MaxResources: 1, ExpiresAt: 4102444800, ExpectedFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", TrustedCAIdentity: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
 	}}
 	if err := Validate(cfg); err != nil {
 		t.Fatalf("valid certification environment rejected: %v", err)
 	}
-	cfg.Certifications["lab"] = CertificationEnvironment{Profile: "nodex-test-admin", Endpoint: "https://other.example.test", Provider: "proxmox", Nodes: []string{"pve1"}, Storage: []string{"local"}, VMIDMin: 9000, VMIDMax: 9099, Suites: []string{"readonly"}, MaxResources: 1, ExpiresAt: 4102444800, ExpectedFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", TrustedCAIdentity: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+	cfg.Certifications["lab"] = CertificationEnvironment{Profile: "nodex-test-profile", Endpoint: "https://other.example.test", Provider: "proxmox", Nodes: []string{"pve1"}, Storage: []string{"local"}, VMIDMin: 9000, VMIDMax: 9099, Suites: []string{"readonly"}, MaxResources: 1, ExpiresAt: 4102444800, ExpectedFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", TrustedCAIdentity: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
 	if err := Validate(cfg); err == nil {
 		t.Fatal("environment endpoint mismatch was accepted")
 	}

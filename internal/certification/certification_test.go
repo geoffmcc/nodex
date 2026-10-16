@@ -8,15 +8,17 @@ import (
 	"time"
 )
 
+const testProfile = "nodex-test-profile"
+
 func TestValidateRequestIsFailClosed(t *testing.T) {
-	base := Request{Profile: RequiredProfile, Node: "pve-test", VMID: 9000, Name: "nodex-cert-smoke", Storage: "local", ConfirmTarget: "nodex-cert-smoke", OptIn: true}
+	base := Request{Profile: testProfile, Node: "pve-test", VMID: 9000, Name: "nodex-cert-smoke", Storage: "local", ConfirmTarget: "nodex-cert-smoke", OptIn: true}
 	tests := []struct {
 		name   string
 		change func(*Request)
 		want   string
 	}{
 		{"requires opt in", func(r *Request) { r.OptIn = false }, "opt-in"},
-		{"requires test profile", func(r *Request) { r.Profile = "production" }, "nodex-test-admin"},
+		{"requires explicit profile", func(r *Request) { r.Profile = "" }, "explicit profile"},
 		{"requires prefix", func(r *Request) { r.Name = "smoke" }, NamePrefix},
 		{"requires exact confirmation", func(r *Request) { r.ConfirmTarget = "nodex-cert-other" }, "exactly"},
 	}
@@ -32,10 +34,15 @@ func TestValidateRequestIsFailClosed(t *testing.T) {
 }
 
 func TestValidateAuthorizationRequiresExactBinding(t *testing.T) {
-	r := Request{Profile: RequiredProfile, Environment: "lab", Suite: "readonly", Endpoint: "https://pve.example.test", Node: "pve1", VMID: 9001, Storage: "local", Authorization: &Authorization{Environment: "lab", Profile: RequiredProfile, Endpoint: "https://pve.example.test", Provider: "proxmox", ExpectedFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", TrustedCAIdentity: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Nodes: []string{"pve1"}, Storage: []string{"local"}, VMIDMin: 9000, VMIDMax: 9099, Suites: []string{"readonly"}, MaxResources: 1, ExpiresAt: time.Now().Add(time.Hour).Unix()}}
+	r := Request{Profile: testProfile, Environment: "lab", Suite: "readonly", Endpoint: "https://pve.example.test", Node: "pve1", VMID: 9001, Storage: "local", Authorization: &Authorization{Environment: "lab", Profile: testProfile, Endpoint: "https://pve.example.test", Provider: "proxmox", ExpectedFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", TrustedCAIdentity: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Nodes: []string{"pve1"}, Storage: []string{"local"}, VMIDMin: 9000, VMIDMax: 9099, Suites: []string{"readonly"}, MaxResources: 1, ExpiresAt: time.Now().Add(time.Hour).Unix()}}
 	if err := ValidateAuthorization(r); err != nil {
 		t.Fatalf("valid authorization rejected: %v", err)
 	}
+	r.Profile = "nodex-test-other"
+	if err := ValidateAuthorization(r); err == nil {
+		t.Fatal("profile that differs from the authorization was accepted")
+	}
+	r.Profile = testProfile
 	r.Node = "other-node"
 	if err := ValidateAuthorization(r); err == nil {
 		t.Fatal("unauthorized node accepted")
@@ -50,7 +57,7 @@ func TestValidateAuthorizationRequiresExactBinding(t *testing.T) {
 func cleanupAuthorization(entry Entry) *Authorization {
 	return &Authorization{
 		Environment:         entry.Environment,
-		Profile:             RequiredProfile,
+		Profile:             testProfile,
 		Endpoint:            entry.EndpointIdentity,
 		Provider:            entry.ProviderIdentity,
 		ExpectedFingerprint: entry.Fingerprint,
@@ -69,8 +76,8 @@ func TestLedgerRoundTripIsSanitizedAndSorted(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
 	l := New(path)
 	l.Entries = append(l.Entries,
-		NewEntry(RequiredProfile, "pve-test", 9002, "nodex-cert-b", "local", time.Unix(2, 0)),
-		NewEntry(RequiredProfile, "pve-test", 9001, "nodex-cert-a", "local", time.Unix(1, 0)),
+		NewEntry(testProfile, "pve-test", 9002, "nodex-cert-b", "local", time.Unix(2, 0)),
+		NewEntry(testProfile, "pve-test", 9001, "nodex-cert-a", "local", time.Unix(1, 0)),
 	)
 	if err := Save(path, l); err != nil {
 		t.Fatal(err)
@@ -117,7 +124,7 @@ func TestLoadRejectsMissingDigestOnPopulatedLedger(t *testing.T) {
 }
 
 func TestReserveRequiresCleanupIntent(t *testing.T) {
-	entry := NewEntry(RequiredProfile, "pve-test", 9003, "nodex-cert-intent", "local", time.Unix(3, 0))
+	entry := NewEntry(testProfile, "pve-test", 9003, "nodex-cert-intent", "local", time.Unix(3, 0))
 	entry.State = "creating"
 	if _, err := Reserve(filepath.Join(t.TempDir(), "ledger.json"), entry, 1); err == nil {
 		t.Fatal("entry without initial reservation state was accepted")
@@ -126,7 +133,7 @@ func TestReserveRequiresCleanupIntent(t *testing.T) {
 
 func TestClaimCleanupResumesCheckpointedDelete(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
-	entry := NewEntry(RequiredProfile, "pve-test", 9004, "nodex-cert-resume", "local", time.Unix(4, 0))
+	entry := NewEntry(testProfile, "pve-test", 9004, "nodex-cert-resume", "local", time.Unix(4, 0))
 	entry.State = "created"
 	entry.Environment = "lab"
 	entry.EndpointIdentity = "https://pve.example.test"
@@ -164,7 +171,7 @@ func TestClaimCleanupResumesCheckpointedDelete(t *testing.T) {
 
 func TestClaimCleanupRejectsCreationInProgress(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
-	entry := NewEntry(RequiredProfile, "pve-test", 9005, "nodex-cert-creating", "local", time.Now())
+	entry := NewEntry(testProfile, "pve-test", 9005, "nodex-cert-creating", "local", time.Now())
 	entry.State = "creating"
 	entry.Environment = "lab"
 	entry.EndpointIdentity = "https://pve.example.test"
@@ -182,7 +189,7 @@ func TestClaimCleanupRejectsCreationInProgress(t *testing.T) {
 
 func TestClaimCleanupRecoversExpiredCreationLease(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
-	entry := NewEntry(RequiredProfile, "pve-test", 9007, "nodex-cert-expired-create", "local", time.Now())
+	entry := NewEntry(testProfile, "pve-test", 9007, "nodex-cert-expired-create", "local", time.Now())
 	entry.State = "creating"
 	entry.Environment = "lab"
 	entry.EndpointIdentity = "https://pve.example.test"
@@ -205,7 +212,7 @@ func TestClaimCleanupRecoversExpiredCreationLease(t *testing.T) {
 
 func TestVerifyLeaseRejectsExpiredLease(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
-	entry := NewEntry(RequiredProfile, "pve-test", 9008, "nodex-cert-expired-lease", "local", time.Now())
+	entry := NewEntry(testProfile, "pve-test", 9008, "nodex-cert-expired-lease", "local", time.Now())
 	entry.State = "deleting"
 	entry.Cleanup = "in_progress"
 	entry.Environment = "lab"
@@ -225,7 +232,7 @@ func TestVerifyLeaseRejectsExpiredLease(t *testing.T) {
 
 func TestLeaseFencesStaleWorkerUpdate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ledger.json")
-	entry := NewEntry(RequiredProfile, "pve-test", 9006, "nodex-cert-fenced", "local", time.Now())
+	entry := NewEntry(testProfile, "pve-test", 9006, "nodex-cert-fenced", "local", time.Now())
 	entry.Environment = "lab"
 	entry.EndpointIdentity = "https://pve.example.test"
 	entry.ProviderIdentity = "proxmox"

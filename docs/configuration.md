@@ -455,7 +455,7 @@ mutation must match a declared environment exactly. See
 version: 2
 certifications:
   test-lab:
-    profile: nodex-test-admin
+    profile: nodex-test-profile
     endpoint: https://pve-test.example.invalid:8006
     provider: proxmox
     nodes: [pve-test]
@@ -472,7 +472,7 @@ certifications:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `profile` | yes | Must be `nodex-test-admin`; certification never falls back to the current profile. |
+| `profile` | yes | Must identify a configured profile whose endpoint and provider exactly match this authorization; commands must pass it explicitly and certification never falls back to the current profile. |
 | `endpoint` | yes | HTTPS endpoint; must match the referenced profile's endpoint exactly. |
 | `provider` | yes | Must match the referenced profile's provider (`proxmox` or `pbs`). |
 | `nodes` | yes | Allowed node names for the suite. |

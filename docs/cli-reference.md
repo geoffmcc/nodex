@@ -125,14 +125,15 @@ not modify the configuration. Use `--force` to replace an existing profile.
 ### `nodex certification`
 
 Run an explicitly selected disposable-environment certification transaction.
-Certification is restricted to the configured `nodex-test-admin` profile and
-never falls back to the current profile.
+Certification requires an explicit profile that matches the profile bound to
+the configured certification environment. It never falls back to the current
+profile.
 
 ```bash
-nodex --profile nodex-test-admin --yes --confirm-target nodex-cert-smoke \
+nodex --profile nodex-test-profile --yes --confirm-target nodex-cert-smoke \
   certification run --environment <environment> --suite <readonly|disposable-mutations> \
   --node <node> --vmid <vmid> --name nodex-cert-smoke --storage <storage>
-nodex --profile nodex-test-admin --yes --confirm-target <ledger-entry-id> certification cleanup
+nodex --profile nodex-test-profile --yes --confirm-target <ledger-entry-id> certification cleanup
 nodex certification report [--ledger <path>]
 ```
 

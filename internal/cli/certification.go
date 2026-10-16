@@ -78,8 +78,8 @@ func certificationArgs(args []string) (environment, suite, node, name, storage, 
 }
 
 func requireCertificationProfile(cmdCtx *Context) error {
-	if cmdCtx.Opts.Profile != certification.RequiredProfile {
-		return app.NewExitError(fmt.Errorf("certification requires explicit --profile %s", certification.RequiredProfile), app.ExitUsage)
+	if cmdCtx.Opts.Profile == "" {
+		return app.NewExitError(fmt.Errorf("certification requires an explicit --profile matching the configured environment"), app.ExitUsage)
 	}
 	return nil
 }
@@ -102,7 +102,7 @@ func runCertification(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 	environment, suite, node, name, storage, ledger, vmid, err := certificationArgs(args)
 	if err != nil || environment == "" || suite == "" || node == "" || name == "" || storage == "" || vmid <= 0 {
-		return app.NewExitError(fmt.Errorf("usage: nodex --profile %s certification run --environment <name> --suite <readonly|disposable-mutations> --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage> [--ledger <path>]", certification.RequiredProfile), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex --profile <authorized-profile> certification run --environment <name> --suite <readonly|disposable-mutations> --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage> [--ledger <path>]"), app.ExitUsage)
 	}
 	cfg, err := config.Read()
 	if err != nil {
@@ -112,12 +112,15 @@ func runCertification(ctx context.Context, cmdCtx *Context, args []string) error
 	if err != nil {
 		return app.NewExitError(err, app.ExitValidationError)
 	}
-	prov, cleanup, err := connectProfileWithOptions(ctx, cmdCtx, certification.RequiredProfile, httpclient.WithLeafCertificateFingerprint(auth.ExpectedFingerprint))
+	if cmdCtx.Opts.Profile != auth.Profile {
+		return app.NewExitError(fmt.Errorf("explicit profile %q does not match certification environment profile %q", cmdCtx.Opts.Profile, auth.Profile), app.ExitValidationError)
+	}
+	prov, cleanup, err := connectProfileWithOptions(ctx, cmdCtx, auth.Profile, httpclient.WithLeafCertificateFingerprint(auth.ExpectedFingerprint))
 	if err != nil {
 		return err
 	}
 	defer cleanup()
-	request := certification.Request{Profile: certification.RequiredProfile, Environment: environment, Suite: suite, Endpoint: auth.Endpoint, CAFile: caFile, Node: node, VMID: vmid, Name: name, Storage: storage, ConfirmTarget: cmdCtx.Opts.ConfirmTarget, OptIn: cmdCtx.Opts.Yes, Authorization: auth}
+	request := certification.Request{Profile: auth.Profile, Environment: environment, Suite: suite, Endpoint: auth.Endpoint, CAFile: caFile, Node: node, VMID: vmid, Name: name, Storage: storage, ConfirmTarget: cmdCtx.Opts.ConfirmTarget, OptIn: cmdCtx.Opts.Yes, Authorization: auth}
 	res, err := certification.Run(ctx, prov, request, ledger, now())
 	if err != nil {
 		return app.NewExitError(err, app.ExitValidationError)
@@ -131,7 +134,7 @@ func runCertificationCleanup(ctx context.Context, cmdCtx *Context, args []string
 	}
 	ledger, rest, err := certificationLedgerPath(args)
 	if err != nil || len(rest) != 0 || !cmdCtx.Opts.Yes {
-		return app.NewExitError(fmt.Errorf("usage: nodex --profile %s --yes --confirm-target <ledger-entry-id> certification cleanup [--ledger <path>]", certification.RequiredProfile), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex --profile <authorized-profile> --yes --confirm-target <ledger-entry-id> certification cleanup [--ledger <path>]"), app.ExitUsage)
 	}
 	cfg, err := config.Read()
 	if err != nil {
@@ -155,10 +158,10 @@ func runCertificationCleanup(ctx context.Context, cmdCtx *Context, args []string
 	if err != nil {
 		return app.NewExitError(err, app.ExitValidationError)
 	}
-	if auth.Profile != certification.RequiredProfile {
-		return app.NewExitError(fmt.Errorf("certification environment must use explicit profile %s", certification.RequiredProfile), app.ExitValidationError)
+	if auth.Profile != cmdCtx.Opts.Profile {
+		return app.NewExitError(fmt.Errorf("explicit profile %q does not match certification environment profile %q", cmdCtx.Opts.Profile, auth.Profile), app.ExitValidationError)
 	}
-	prov, cleanup, err := connectProfileWithOptions(ctx, cmdCtx, certification.RequiredProfile, httpclient.WithLeafCertificateFingerprint(auth.ExpectedFingerprint))
+	prov, cleanup, err := connectProfileWithOptions(ctx, cmdCtx, auth.Profile, httpclient.WithLeafCertificateFingerprint(auth.ExpectedFingerprint))
 	if err != nil {
 		return err
 	}
