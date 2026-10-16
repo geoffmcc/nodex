@@ -28,6 +28,7 @@ func TestFindPVEInventoryHost(t *testing.T) {
 	cfg := &config.Config{Inventory: &config.Inventory{Hosts: map[string]config.InventoryHost{
 		"pve":   {Role: config.RolePVE, PVENode: "node-a", PVEProfile: "production", Address: "pve.example"},
 		"other": {Role: config.RoleGeneric, PVEProfile: "production", Address: "other.example"},
+		"mixed": {Role: config.RolePVE, PVENode: "node-b", PVEProfile: "production", PBSProfile: "other-profile", Address: "mixed.example"},
 	}}}
 	name, host, err := findPVEInventoryHost(cfg, "production", "node-a")
 	if err != nil {
@@ -42,6 +43,18 @@ func TestFindPVEInventoryHost(t *testing.T) {
 		t.Fatal("ambiguous PVE hosts accepted")
 	}
 	if _, _, err := findPVEInventoryHost(cfg, "production", "node-b"); err == nil {
+		t.Fatal("host with a conflicting PBS profile was accepted")
+	}
+	cfg.Environments = map[string]config.Environment{
+		"mixed-env": {PVEProfile: "production", PBSProfile: "other-profile"},
+	}
+	cfg.Inventory.Hosts["mixed-env"] = config.InventoryHost{
+		Role: config.RolePVE, PVENode: "node-c", PVEProfile: "production", Environment: "mixed-env", Address: "mixed-env.example",
+	}
+	if _, _, err := findPVEInventoryHost(cfg, "production", "node-c"); err == nil {
+		t.Fatal("host with a conflicting environment profile was accepted")
+	}
+	if _, _, err := findPVEInventoryHost(cfg, "production", "node-d"); err == nil {
 		t.Fatal("unmapped PVE node accepted")
 	}
 }

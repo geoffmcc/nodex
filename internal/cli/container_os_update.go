@@ -92,6 +92,9 @@ func findPVEInventoryHost(cfg *config.Config, profileName, node string) (string,
 	}
 	for name, host := range cfg.Inventory.Hosts {
 		if host.Role == config.RolePVE && host.PVEProfile == profileName && host.PVENode == node {
+			if !inventoryHostBoundToProfile(cfg, host, profileName) {
+				continue
+			}
 			matches = append(matches, struct {
 				name string
 				host config.InventoryHost

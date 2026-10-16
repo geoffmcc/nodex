@@ -97,7 +97,7 @@ func parseMaintenanceFilters(args []string) (maintenanceFilters, []string, error
 }
 
 // selectInventoryHosts applies filters to the configured inventory.
-func selectInventoryHosts(cfg *config.Config, f maintenanceFilters) (map[string]config.InventoryHost, error) {
+func selectInventoryHosts(cfg *config.Config, f maintenanceFilters, selectedProfile ...string) (map[string]config.InventoryHost, error) {
 	if cfg.Inventory == nil || len(cfg.Inventory.Hosts) == 0 {
 		return nil, app.NewExitError(
 			fmt.Errorf("no inventory hosts configured; add an \"inventory\" section (schema version 2)"),
@@ -109,7 +109,14 @@ func selectInventoryHosts(cfg *config.Config, f maintenanceFilters) (map[string]
 		wantHost[h] = true
 	}
 	selected := map[string]config.InventoryHost{}
+	profile := ""
+	if len(selectedProfile) > 0 {
+		profile = selectedProfile[0]
+	}
 	for name, h := range cfg.Inventory.Hosts {
+		if !inventoryHostBoundToProfile(cfg, h, profile) {
+			continue
+		}
 		if f.environment != "" && h.Environment != f.environment {
 			continue
 		}
@@ -125,10 +132,17 @@ func selectInventoryHosts(cfg *config.Config, f maintenanceFilters) (map[string]
 		selected[name] = h
 	}
 	for h := range wantHost {
-		if _, ok := cfg.Inventory.Hosts[h]; !ok {
+		inventoryHost, ok := cfg.Inventory.Hosts[h]
+		if !ok {
 			return nil, app.NewExitError(
 				fmt.Errorf("host %q is not enrolled in the inventory", h),
 				app.ExitNotFound,
+			)
+		}
+		if !inventoryHostBoundToProfile(cfg, inventoryHost, profile) {
+			return nil, app.NewExitError(
+				fmt.Errorf("host %q is not bound to the selected profile", h),
+				app.ExitConflict,
 			)
 		}
 	}
@@ -139,6 +153,55 @@ func selectInventoryHosts(cfg *config.Config, f maintenanceFilters) (map[string]
 		)
 	}
 	return selected, nil
+}
+
+// inventoryHostBoundToProfile makes the selected NodeX profile an actual
+// allowlist boundary for fleet SSH operations. Hosts can bind directly or via
+// their declared environment; an unbound host is never selected implicitly.
+func inventoryHostBoundToProfile(cfg *config.Config, host config.InventoryHost, profile string) bool {
+	if profile == "" {
+		return true
+	}
+	profiles := []string{host.PVEProfile, host.PBSProfile}
+	if cfg != nil && host.Environment != "" {
+		if environment, ok := cfg.Environments[host.Environment]; ok {
+			profiles = append(profiles, environment.PVEProfile, environment.PBSProfile)
+		}
+	}
+	return profileReferencesExclusivelyMatch(profile, profiles...)
+}
+
+func requirePlanProfileBinding(cfg *config.Config, planHost maintenance.PlanHost, profile string) error {
+	profiles := []string{planHost.PVEProfile, planHost.PBSProfile}
+	if cfg != nil && planHost.Environment != "" {
+		if environment, ok := cfg.Environments[planHost.Environment]; ok {
+			profiles = append(profiles, environment.PVEProfile, environment.PBSProfile)
+		}
+	}
+	if !profileReferencesExclusivelyMatch(profile, profiles...) {
+		return app.NewExitError(fmt.Errorf("planned host %q is not bound to the selected profile", planHost.Name), app.ExitConflict)
+	}
+	return nil
+}
+
+// profileReferencesExclusivelyMatch requires at least one profile binding and
+// rejects mixed PVE/PBS references. A match on one provider must not authorize
+// a host or plan that is also associated with a different profile.
+func profileReferencesExclusivelyMatch(selected string, references ...string) bool {
+	if selected == "" {
+		return true
+	}
+	matched := false
+	for _, reference := range references {
+		if reference == "" {
+			continue
+		}
+		if reference != selected {
+			return false
+		}
+		matched = true
+	}
+	return matched
 }
 
 func hostSpecs(selected map[string]config.InventoryHost) []ansible.HostSpec {
@@ -176,7 +239,7 @@ func runMaintenanceInventory(_ context.Context, cmdCtx *Context, args []string) 
 	if err != nil {
 		return err
 	}
-	selected, err := selectInventoryHosts(cfg, f)
+	selected, err := selectInventoryHosts(cfg, f, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
 	}
@@ -241,7 +304,7 @@ func runMaintenanceStatus(ctx context.Context, cmdCtx *Context, args []string) e
 	if err != nil {
 		return err
 	}
-	selected, err := selectInventoryHosts(cfg, f)
+	selected, err := selectInventoryHosts(cfg, f, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
 	}
@@ -372,7 +435,7 @@ func runMaintenancePlan(ctx context.Context, cmdCtx *Context, args []string) err
 	if err != nil {
 		return err
 	}
-	selected, err := selectInventoryHosts(cfg, f)
+	selected, err := selectInventoryHosts(cfg, f, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
 	}
@@ -718,11 +781,14 @@ func runMaintenanceApply(ctx context.Context, cmdCtx *Context, args []string) er
 	}
 	selected := map[string]config.InventoryHost{}
 	for _, ph := range plan.Hosts {
+		if err := requirePlanProfileBinding(cfg, ph, cmdCtx.Opts.Profile); err != nil {
+			return err
+		}
 		if cfg.Inventory == nil {
 			return app.NewExitError(fmt.Errorf("inventory is not configured; create a new plan"), app.ExitConflict)
 		}
 		h, ok := cfg.Inventory.Hosts[ph.Name]
-		if !ok || !inventoryHostMatchesPlan(ph, h) {
+		if !ok || !inventoryHostBoundToProfile(cfg, h, cmdCtx.Opts.Profile) || !inventoryHostMatchesPlan(ph, h) {
 			return app.NewExitError(fmt.Errorf("inventory changed for planned host %q; create a new plan", ph.Name), app.ExitConflict)
 		}
 		selected[ph.Name] = h
@@ -1224,11 +1290,14 @@ func runMaintenanceVerify(ctx context.Context, cmdCtx *Context, args []string) e
 	}
 	selected := map[string]config.InventoryHost{}
 	for _, ph := range plan.Hosts {
+		if err := requirePlanProfileBinding(cfg, ph, cmdCtx.Opts.Profile); err != nil {
+			return err
+		}
 		if cfg.Inventory == nil {
 			return app.NewExitError(fmt.Errorf("inventory is not configured"), app.ExitConfig)
 		}
 		h, ok := cfg.Inventory.Hosts[ph.Name]
-		if !ok || !inventoryHostMatchesPlan(ph, h) {
+		if !ok || !inventoryHostBoundToProfile(cfg, h, cmdCtx.Opts.Profile) || !inventoryHostMatchesPlan(ph, h) {
 			return app.NewExitError(fmt.Errorf("inventory changed for planned host %q", ph.Name), app.ExitConflict)
 		}
 		selected[ph.Name] = h
@@ -1330,11 +1399,14 @@ func runMaintenanceReconcile(ctx context.Context, cmdCtx *Context, args []string
 	}
 	selected := map[string]config.InventoryHost{}
 	for _, ph := range plan.Hosts {
+		if err := requirePlanProfileBinding(cfg, ph, cmdCtx.Opts.Profile); err != nil {
+			return err
+		}
 		if cfg.Inventory == nil {
 			return app.NewExitError(fmt.Errorf("inventory is not configured"), app.ExitConfig)
 		}
 		h, ok := cfg.Inventory.Hosts[ph.Name]
-		if !ok || !inventoryHostMatchesPlan(ph, h) {
+		if !ok || !inventoryHostBoundToProfile(cfg, h, cmdCtx.Opts.Profile) || !inventoryHostMatchesPlan(ph, h) {
 			return app.NewExitError(fmt.Errorf("inventory changed for planned host %q", ph.Name), app.ExitConflict)
 		}
 		selected[ph.Name] = h

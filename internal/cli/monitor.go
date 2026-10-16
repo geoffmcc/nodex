@@ -45,6 +45,7 @@ func runMonitorTargets(_ context.Context, cmdCtx *Context, args []string) error 
 	if cfg.Monitoring != nil {
 		targets = cfg.Monitoring.Targets
 	}
+	targets = monitorTargetsForProfile(cfg, targets, cmdCtx.Opts.Profile)
 	names := make([]string, 0, len(targets))
 	for name := range targets {
 		names = append(names, name)
@@ -121,6 +122,10 @@ func runMonitorCheck(ctx context.Context, cmdCtx *Context, args []string) error 
 		}
 		targets = map[string]config.MonitorTarget{targetName: t}
 	}
+	targets = monitorTargetsForProfile(cfg, targets, cmdCtx.Opts.Profile)
+	if targetName != "" && len(targets) == 0 {
+		return app.NewExitError(fmt.Errorf("monitor target %q is not bound to the selected profile", targetName), app.ExitConflict)
+	}
 	if environment != "" {
 		filtered := make(map[string]config.MonitorTarget)
 		for name, target := range targets {
@@ -159,12 +164,48 @@ func runMonitorCheck(ctx context.Context, cmdCtx *Context, args []string) error 
 	return nil
 }
 
+// monitorTargetsForProfile limits monitoring to targets owned by the selected
+// NodeX profile. Provider-backed checks use an environment; service checks use
+// an enrolled inventory host. With a profile explicitly selected, unbound or
+// cross-profile targets are excluded before any network or SSH operation.
+func monitorTargetsForProfile(cfg *config.Config, targets map[string]config.MonitorTarget, profile string) map[string]config.MonitorTarget {
+	if profile == "" {
+		return targets
+	}
+	filtered := make(map[string]config.MonitorTarget)
+	for name, target := range targets {
+		environmentBound := false
+		if target.Environment != "" && cfg != nil {
+			if env, ok := cfg.Environments[target.Environment]; ok {
+				environmentBound = (env.PVEProfile != "" || env.PBSProfile != "") &&
+					(env.PVEProfile == "" || env.PVEProfile == profile) &&
+					(env.PBSProfile == "" || env.PBSProfile == profile)
+			}
+		}
+		bound := environmentBound
+		if target.Type == "service" {
+			bound = false
+			if cfg != nil && cfg.Inventory != nil {
+				if host, ok := cfg.Inventory.Hosts[target.Address]; ok &&
+					(target.Environment == "" || target.Environment == host.Environment) &&
+					inventoryHostBoundToProfile(cfg, host, profile) {
+					bound = target.Environment == "" || environmentBound
+				}
+			}
+		}
+		if bound {
+			filtered[name] = target
+		}
+	}
+	return filtered
+}
+
 func providerMonitorResults(ctx context.Context, cmdCtx *Context, cfg *config.Config, targets map[string]config.MonitorTarget) map[string]monitor.Result {
 	results := make(map[string]monitor.Result)
 	environmentResults := make(map[string]*backuphealth.Result)
 	for name, target := range targets {
 		if target.Type == "service" {
-			results[name] = checkMonitorService(ctx, cfg, name, target)
+			results[name] = checkMonitorService(ctx, cfg, name, target, cmdCtx.Opts.Profile)
 			continue
 		}
 		if !providerMonitorType(target.Type) {
@@ -217,7 +258,7 @@ func providerMonitorResults(ctx context.Context, cmdCtx *Context, cfg *config.Co
 	return results
 }
 
-func checkMonitorService(ctx context.Context, cfg *config.Config, name string, target config.MonitorTarget) monitor.Result {
+func checkMonitorService(ctx context.Context, cfg *config.Config, name string, target config.MonitorTarget, selectedProfile ...string) monitor.Result {
 	result := monitor.Result{Name: name, Type: target.Type, Address: monitor.SafeAddress(target.Address), State: monitor.Unknown}
 	if cfg.Inventory == nil {
 		result.State, result.Detail = monitor.Blocked, "service checks require an explicitly enrolled inventory host"
@@ -230,6 +271,14 @@ func checkMonitorService(ctx context.Context, cfg *config.Config, name string, t
 	}
 	if target.Environment != "" && target.Environment != host.Environment {
 		result.State, result.Detail = monitor.Blocked, "service target environment does not match its inventory host"
+		return result
+	}
+	profile := ""
+	if len(selectedProfile) > 0 {
+		profile = selectedProfile[0]
+	}
+	if !inventoryHostBoundToProfile(cfg, host, profile) {
+		result.State, result.Detail = monitor.Blocked, "service inventory host is not exclusively bound to the selected profile"
 		return result
 	}
 	timeout := monitor.DefaultTimeout

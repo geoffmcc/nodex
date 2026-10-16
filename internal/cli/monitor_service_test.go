@@ -57,6 +57,28 @@ func TestCheckMonitorServiceDoesNotInferHealthyWhenEvidenceMissing(t *testing.T)
 	}
 }
 
+func TestCheckMonitorServiceRefusesMixedProfileHostBeforeSSH(t *testing.T) {
+	previous := runMonitorServiceCheck
+	t.Cleanup(func() { runMonitorServiceCheck = previous })
+	called := false
+	runMonitorServiceCheck = func(context.Context, ansible.HostSpec, string) (*ansible.RunResult, error) {
+		called = true
+		return nil, nil
+	}
+	cfg := &config.Config{Inventory: &config.Inventory{Hosts: map[string]config.InventoryHost{
+		"fileserver": {Address: "192.0.2.4", Role: config.RoleGeneric, SSHUser: "automation", PVEProfile: "nodex-test-lab", PBSProfile: "other-profile"},
+	}}}
+	result := checkMonitorService(context.Background(), cfg, "samba", config.MonitorTarget{
+		Type: "service", Address: "fileserver", Service: "smbd.service",
+	}, "nodex-test-lab")
+	if called {
+		t.Fatal("service check connected to a host with a conflicting provider profile")
+	}
+	if result.State != monitor.Blocked {
+		t.Fatalf("service result = %+v, want blocked", result)
+	}
+}
+
 func TestMonitorCheckRunsAnsibleServiceTargetFromInventory(t *testing.T) {
 	_, cfgDir := isolatedConfigDir(t)
 	body := `version: 2
