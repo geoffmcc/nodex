@@ -266,31 +266,30 @@ func (p *Provider) Storage(ctx context.Context) ([]domain.Storage, error) {
 	// Fetch the audit-visible configuration listing at most once per collection.
 	// Do not require allocation privileges just to inspect backup destinations.
 	configs := make(map[string]*client.StorageConfig)
-	var configErr error
-	configLoaded := false
+	items, configErr := p.client.GetStorageConfigs(ctx)
+	if configErr == nil {
+		for i := range items {
+			name := items[i].Storage
+			if _, duplicate := configs[name]; duplicate {
+				// A duplicate ID is ambiguous, even if values match.
+				configs[name] = nil
+				continue
+			}
+			configs[name] = &items[i]
+		}
+	}
 	for _, r := range resources {
 		if r.Type == "storage" {
 			s := MapStorage(r)
+			cfg := configs[s.Name]
+			if cfg != nil {
+				s.Backing = storageBacking(cfg, s.Type)
+			}
 			// Resolve the backup destination for stores that can hold backups.
 			// A read-only token may see resources but not configuration, so a
 			// failure or permission-filtered missing entry must not fail the
 			// listing. It is reported as an unresolved destination instead.
 			if backupCapable(s.Content) || s.Type == "pbs" {
-				if !configLoaded {
-					var items []client.StorageConfig
-					items, configErr = p.client.GetStorageConfigs(ctx)
-					for i := range items {
-						name := items[i].Storage
-						if _, duplicate := configs[name]; duplicate {
-							// A duplicate ID is ambiguous, even if values match.
-							configs[name] = nil
-							continue
-						}
-						configs[name] = &items[i]
-					}
-					configLoaded = true
-				}
-				cfg := configs[s.Name]
 				s.Destination = storageDestination(s, cfg, configErr)
 				if s.Type == "pbs" {
 					s.CapacityIdentity = pbsCapacityIdentity(cfg, configErr)
@@ -1594,13 +1593,17 @@ func (p *Provider) CephStatus(ctx context.Context, node string) (*domain.CephSta
 	}
 	health, err := p.client.GetCephStatus(ctx, node)
 	if err != nil {
-		var providerErr *app.ProviderError
-		if errors.As(err, &providerErr) && providerErr.StatusCode == 500 && strings.HasSuffix(strings.TrimSpace(providerErr.Detail), "binary not installed: /usr/bin/ceph-mon") {
-			return nil, app.NewExitError(fmt.Errorf("%w: Ceph is not installed on node %q", app.ErrUnsupportedCap, node), app.ExitUnsupportedCap)
-		}
-		return nil, fmt.Errorf("get ceph status: %w", err)
+		return nil, fmt.Errorf("get ceph status: %w", cephInstallError(node, err))
 	}
 	return &domain.CephStatus{Health: health}, nil
+}
+
+func cephInstallError(node string, err error) error {
+	var providerErr *app.ProviderError
+	if errors.As(err, &providerErr) && providerErr.StatusCode == 500 && strings.HasSuffix(strings.TrimSpace(providerErr.Detail), "binary not installed: /usr/bin/ceph-mon") {
+		return app.NewExitError(fmt.Errorf("%w: Ceph is not installed on node %q", app.ErrUnsupportedCap, node), app.ExitUnsupportedCap)
+	}
+	return err
 }
 
 // CephOSDs returns Ceph OSD inventory.
@@ -1610,7 +1613,7 @@ func (p *Provider) CephOSDs(ctx context.Context, node string) ([]domain.CephOSD,
 	}
 	resp, err := p.client.GetCephOSDs(ctx, node)
 	if err != nil {
-		return nil, fmt.Errorf("get ceph osds: %w", err)
+		return nil, fmt.Errorf("get ceph osds: %w", cephInstallError(node, err))
 	}
 	return flattenOSDs(resp.Data.Root.Children), nil
 }
@@ -1650,7 +1653,7 @@ func (p *Provider) CephMONs(ctx context.Context, node string) ([]domain.CephMON,
 	}
 	items, err := p.client.GetCephMONs(ctx, node)
 	if err != nil {
-		return nil, fmt.Errorf("get ceph mons: %w", err)
+		return nil, fmt.Errorf("get ceph mons: %w", cephInstallError(node, err))
 	}
 	result := make([]domain.CephMON, 0, len(items))
 	for _, item := range items {
@@ -1673,7 +1676,7 @@ func (p *Provider) CephPools(ctx context.Context, node string) ([]domain.CephPoo
 	}
 	items, err := p.client.GetCephPools(ctx, node)
 	if err != nil {
-		return nil, fmt.Errorf("get ceph pools: %w", err)
+		return nil, fmt.Errorf("get ceph pools: %w", cephInstallError(node, err))
 	}
 	result := make([]domain.CephPool, 0, len(items))
 	for _, item := range items {

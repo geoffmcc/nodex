@@ -386,6 +386,9 @@ func runNormal(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	if err != nil {
 		return app.NewExitError(err, app.ExitUsage)
 	}
+	if opts.All && opts.Profile != "" {
+		return app.NewExitError(fmt.Errorf("--all cannot be combined with --profile because --all selects across profiles"), app.ExitUsage)
+	}
 	safeStdout := output.NewSanitizingWriter(stdout)
 	safeStderr := output.NewSanitizingWriter(stderr)
 

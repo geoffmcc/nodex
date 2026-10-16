@@ -31,6 +31,18 @@ func TestRun_NoArgs(t *testing.T) {
 	}
 }
 
+func TestRunRejectsAllWithExplicitProfileBeforeDispatch(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--profile", "nodex-test-lab", "--all", "status"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("--all must not override an explicit profile boundary")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitUsage {
+		t.Fatalf("error = %v, want ExitUsage", err)
+	}
+}
+
 func TestRunVersionFlagAliasesVersionCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if err := Run(context.Background(), []string{"--version"}, &stdout, &stderr); err != nil {
@@ -1515,11 +1527,13 @@ func TestPasswordArgumentRejected(t *testing.T) {
 // TestPasswordStdinFlagAccepted verifies that --password-stdin is recognized
 // as a valid global flag.
 func TestPasswordStdinFlagAccepted(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
 	var stdout, stderr bytes.Buffer
 	// Without --password-stdin and in non-interactive mode, command should
 	// proceed (with empty password) and fail at provider stage.
 	err := Run(context.Background(), []string{
-		"--non-interactive", "--yes", "--force", "--expert",
+		"--profile", "e2e", "--non-interactive", "--yes", "--force", "--expert",
 		"access", "user", "create", "testuser@pve",
 	}, &stdout, &stderr)
 	if err == nil {

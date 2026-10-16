@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -120,5 +123,60 @@ func TestRun_MonitorTargetsEmptyIsList(t *testing.T) {
 				t.Errorf("missing empty-result note on stderr, got %q", stderr.String())
 			}
 		})
+	}
+}
+
+func TestMonitorTargetsForProfileExcludesUnboundAndCrossProfileTargets(t *testing.T) {
+	cfg := &config.Config{Environments: map[string]config.Environment{
+		"lab":     {PVEProfile: "nodex-test-lab"},
+		"mixed":   {PVEProfile: "nodex-test-lab", PBSProfile: "other"},
+		"other":   {PVEProfile: "other"},
+		"unbound": {},
+	}}
+	targets := map[string]config.MonitorTarget{
+		"lab":     {Type: "pve-api", Environment: "lab"},
+		"mixed":   {Type: "pve-api", Environment: "mixed"},
+		"other":   {Type: "pve-api", Environment: "other"},
+		"unbound": {Type: "https", Address: "https://unbound.invalid"},
+	}
+	got := monitorTargetsForProfile(cfg, targets, "nodex-test-lab")
+	if len(got) != 1 || got["lab"].Environment != "lab" {
+		t.Fatalf("profile-filtered targets = %#v, want only lab target", got)
+	}
+}
+
+func TestMonitorServiceTargetsRequireHostAndEnvironmentProfileAgreement(t *testing.T) {
+	cfg := &config.Config{
+		Environments: map[string]config.Environment{
+			"lab": {PVEProfile: "nodex-test-lab"},
+		},
+		Inventory: &config.Inventory{Hosts: map[string]config.InventoryHost{
+			"valid": {PVEProfile: "nodex-test-lab", Environment: "lab"},
+			"mixed": {PVEProfile: "nodex-test-lab", PBSProfile: "other-profile", Environment: "lab"},
+		}},
+	}
+	targets := map[string]config.MonitorTarget{
+		"valid": {Type: "service", Address: "valid", Environment: "lab", Service: "sshd.service"},
+		"mixed": {Type: "service", Address: "mixed", Environment: "lab", Service: "sshd.service"},
+	}
+	got := monitorTargetsForProfile(cfg, targets, "nodex-test-lab")
+	if len(got) != 1 || got["valid"].Address != "valid" {
+		t.Fatalf("profile-filtered service targets = %#v, want only valid host", got)
+	}
+}
+
+func TestMonitorCheckRefusesUnboundTargetBeforeNetwork(t *testing.T) {
+	_, cfgDir := isolatedConfigDir(t)
+	writeMonitorConfig(t, cfgDir, map[string]map[string]string{
+		"external": {"type": "https", "address": "https://external.invalid"},
+	})
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"--profile", "nodex-test-lab", "monitor", "check", "--target", "external"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("monitor check must refuse an unbound target when a profile is explicit")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitConflict {
+		t.Fatalf("error = %v, want ExitConflict", err)
 	}
 }

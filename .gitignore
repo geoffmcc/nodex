@@ -19,6 +19,7 @@
 /build/
 /dist/
 /.release-source/
+/.audit-dev/
 
 # Go build, test, coverage, and profiling
 *.test

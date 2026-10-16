@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	SchemaVersion        = 1
+	SchemaVersion        = 2
+	legacySchemaVersion  = 1
 	NamePrefix           = "nodex-cert-"
 	CleanupLeaseDuration = 15 * time.Minute
 )
@@ -59,6 +60,33 @@ type Ledger struct {
 	Generation uint64  `json:"generation,omitempty"`
 	Entries    []Entry `json:"entries"`
 	Digest     string  `json:"digest"`
+	// LegacyUnverified marks a pre-digest ledger. Its entries may be inspected,
+	// but no code may use them to authorize or checkpoint a provider mutation.
+	LegacyUnverified bool `json:"-"`
+}
+
+// IntegrityStatus reports whether ledger entries carry the current integrity
+// check. Legacy ledgers remain readable for reports but are mutation-ineligible.
+func (l *Ledger) IntegrityStatus() string {
+	if l != nil && l.LegacyUnverified {
+		return "legacy_unverified"
+	}
+	return "verified"
+}
+
+// Report is the sanitized, read-only representation returned by the report
+// command. The integrity status is computed at load time and is not part of
+// the persisted ledger or its digest.
+type Report struct {
+	Schema          int     `json:"schema" yaml:"schema"`
+	Generation      uint64  `json:"generation,omitempty" yaml:"generation,omitempty"`
+	Entries         []Entry `json:"entries" yaml:"entries"`
+	Digest          string  `json:"digest,omitempty" yaml:"digest,omitempty"`
+	IntegrityStatus string  `json:"integrity_status" yaml:"integrity_status"`
+}
+
+func (l *Ledger) Report() Report {
+	return Report{Schema: l.Schema, Generation: l.Generation, Entries: l.Entries, Digest: l.Digest, IntegrityStatus: l.IntegrityStatus()}
 }
 
 func New(path string) *Ledger {
@@ -94,7 +122,7 @@ func loadUnlocked(path string) (*Ledger, error) {
 	if err := dec.Decode(&extra); err != io.EOF {
 		return nil, fmt.Errorf("certification ledger contains multiple JSON values")
 	}
-	if l.Schema != SchemaVersion {
+	if l.Schema != SchemaVersion && l.Schema != legacySchemaVersion {
 		return nil, fmt.Errorf("unsupported certification ledger schema %d", l.Schema)
 	}
 	seen := map[string]bool{}
@@ -106,10 +134,16 @@ func loadUnlocked(path string) (*Ledger, error) {
 	}
 	sort.Slice(l.Entries, func(i, j int) bool { return l.Entries[i].ID < l.Entries[j].ID })
 	if l.Digest == "" {
-		// A schema-valid, never-written empty ledger has no protected claims to
-		// authenticate. Accept this first-run representation, but continue to
-		// reject a missing digest once it has a generation or any entries.
+		// Schema 1 predates ledger digests. Preserve populated legacy claims for
+		// read-only reporting, but never treat their contents as authority for a
+		// provider mutation. A first-run empty ledger carries no claims and can
+		// be safely upgraded in memory.
+		if l.Schema == legacySchemaVersion && (l.Generation != 0 || len(l.Entries) != 0) {
+			l.LegacyUnverified = true
+			return &l, nil
+		}
 		if l.Generation == 0 && l.Entries != nil && len(l.Entries) == 0 {
+			l.Schema = SchemaVersion
 			l.Digest, err = ledgerDigest(l)
 			if err != nil {
 				return nil, fmt.Errorf("digest empty certification ledger: %w", err)
@@ -135,7 +169,19 @@ func Save(path string, l *Ledger) error {
 }
 
 func saveUnlocked(path string, l *Ledger) error {
-	if l == nil || l.Schema != SchemaVersion {
+	if l == nil {
+		return fmt.Errorf("invalid certification ledger")
+	}
+	if err := requireVerifiedLedger(l); err != nil {
+		return err
+	}
+	if l.Schema == legacySchemaVersion {
+		if l.Digest == "" && len(l.Entries) != 0 {
+			return legacyLedgerMutationError()
+		}
+		l.Schema = SchemaVersion
+	}
+	if l.Schema != SchemaVersion {
 		return fmt.Errorf("invalid certification ledger")
 	}
 	sort.Slice(l.Entries, func(i, j int) bool { return l.Entries[i].ID < l.Entries[j].ID })
@@ -180,6 +226,9 @@ func Reserve(path string, entry Entry, maxResources int) (*Ledger, error) {
 	defer func() { _ = config.Unlock(lock) }()
 	l, err := loadUnlocked(path)
 	if err != nil {
+		return nil, err
+	}
+	if err := requireVerifiedLedger(l); err != nil {
 		return nil, err
 	}
 	active := 0
@@ -233,6 +282,9 @@ func claimCleanup(path, id string, auth *Authorization) (Entry, error) {
 	defer func() { _ = config.Unlock(lock) }()
 	l, err := loadUnlocked(path)
 	if err != nil {
+		return Entry{}, err
+	}
+	if err := requireVerifiedLedger(l); err != nil {
 		return Entry{}, err
 	}
 	for i := range l.Entries {
@@ -290,6 +342,9 @@ func verifyLease(path, id, leaseID string, expectedRevision uint64) error {
 	if err != nil {
 		return err
 	}
+	if err := requireVerifiedLedger(l); err != nil {
+		return err
+	}
 	for _, entry := range l.Entries {
 		if entry.ID != id {
 			continue
@@ -316,6 +371,9 @@ func UpdateEntry(path, id string, update func(*Entry)) error {
 	defer func() { _ = config.Unlock(lock) }()
 	l, err := loadUnlocked(path)
 	if err != nil {
+		return err
+	}
+	if err := requireVerifiedLedger(l); err != nil {
 		return err
 	}
 	for i := range l.Entries {
@@ -378,6 +436,17 @@ func RenewLease(path, id, leaseID string, expectedRevision uint64, now time.Time
 		e.LeaseExpiresAt = now.Add(CleanupLeaseDuration).Unix()
 		e.UpdatedAt = now.Unix()
 	})
+}
+
+func requireVerifiedLedger(l *Ledger) error {
+	if l != nil && l.LegacyUnverified {
+		return legacyLedgerMutationError()
+	}
+	return nil
+}
+
+func legacyLedgerMutationError() error {
+	return fmt.Errorf("legacy certification ledger has unauthenticated claims; mutations are blocked until it is restored or reconciled from a trusted source")
 }
 
 func newLeaseID() (string, error) {

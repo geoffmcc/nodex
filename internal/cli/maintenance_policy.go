@@ -90,7 +90,7 @@ func runMaintenancePolicyPlan(ctx context.Context, cmdCtx *Context, args []strin
 	if err != nil {
 		return err
 	}
-	selected, err := selectInventoryHosts(cfg, filters)
+	selected, err := selectInventoryHosts(cfg, filters, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
 	}
@@ -545,7 +545,7 @@ func runMaintenancePolicyMutation(ctx context.Context, cmdCtx *Context, args []s
 			return app.NewExitError(fmt.Errorf("inventory is not configured"), app.ExitConfig)
 		}
 		host, ok := cfg.Inventory.Hosts[planned.Name]
-		if !ok || !securityPolicyHostsMatchInventory(planned, host, action == "apply") {
+		if !ok || !inventoryHostBoundToProfile(cfg, host, cmdCtx.Opts.Profile) || !securityPolicyHostsMatchInventory(planned, host, action == "apply") {
 			return app.NewExitError(fmt.Errorf("inventory changed for policy host %q; create a new plan", planned.Name), app.ExitConflict)
 		}
 		selected[planned.Name] = host

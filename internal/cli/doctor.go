@@ -44,7 +44,14 @@ func runDoctor(ctx context.Context, cmdCtx *Context, args []string) error {
 	// Run profile connectivity checks.
 	cfg, err := config.Read()
 	if err == nil {
-		for name, p := range cfg.Profiles {
+		for _, name := range doctorProfileNames(cfg, cmdCtx.Opts.Profile) {
+			p, ok := cfg.Profiles[name]
+			if !ok {
+				mu.Lock()
+				results = append(results, checkResult{Name: "profile " + name, Status: "fail", Message: "selected profile not found"})
+				mu.Unlock()
+				continue
+			}
 			name, p := name, p
 			wg.Add(1)
 			go func() {
@@ -141,6 +148,13 @@ func runDoctor(ctx context.Context, cmdCtx *Context, args []string) error {
 		fmt.Fprintf(cmdCtx.Writer, "\n%d passed, %d failed, %d warnings\n", pass, fail, warn)
 		return doctorExitError(fail)
 	}
+}
+
+func doctorProfileNames(cfg *config.Config, selected string) []string {
+	if selected != "" {
+		return []string{selected}
+	}
+	return config.ProfileNames(cfg)
 }
 
 func doctorExitError(fail int) error {

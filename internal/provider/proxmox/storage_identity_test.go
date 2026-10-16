@@ -87,12 +87,15 @@ func TestStorageCapacityEvidenceHTTP(t *testing.T) {
 			{"type":"storage","storage":"shared","node":"a","plugintype":"nfs","shared":1},
 			{"type":"storage","storage":"shared","node":"b","plugintype":"nfs","shared":1},
 			{"type":"storage","storage":"local","node":"a","plugintype":"dir"},
-			{"type":"storage","storage":"local","node":"b","plugintype":"dir"}]}`)
+			{"type":"storage","storage":"local","node":"b","plugintype":"dir"},
+			{"type":"storage","storage":"local-lvm","node":"a","plugintype":"lvmthin"}]}`)
 		case "/api2/json/storage":
 			fmt.Fprint(w, `{"data":[
 			{"storage":"pbs","type":"pbs","server":"pbs.example.invalid","datastore":"main","username":"user@pbs!private","password":"not-for-output","encryption-key":"not-for-output","disable":0},
 			{"storage":"nightly","type":"pbs","server":"pbs.example.invalid","datastore":"main","namespace":"nightly"},
-			{"storage":"shutdown","type":"pbs","server":"pbs.example.invalid","datastore":"main"}]}`)
+			{"storage":"shutdown","type":"pbs","server":"pbs.example.invalid","datastore":"main"},
+			{"storage":"local","type":"dir","path":"/var/lib/vz"},
+			{"storage":"local-lvm","type":"lvmthin","vgname":"pve","thinpool":"data"}]}`)
 		default:
 			t.Errorf("unexpected API path %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -102,7 +105,7 @@ func TestStorageCapacityEvidenceHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 9 {
+	if len(rows) != 10 {
 		t.Fatalf("rows=%d", len(rows))
 	}
 	for i := 0; i < 4; i++ {
@@ -119,8 +122,11 @@ func TestStorageCapacityEvidenceHTTP(t *testing.T) {
 	if !reflect.DeepEqual(rows[5].CapacityIdentity, rows[6].CapacityIdentity) || rows[5].CapacityIdentity.Key == "" {
 		t.Fatal("shared node views not identified")
 	}
-	if rows[7].CapacityIdentity != nil || rows[8].CapacityIdentity != nil {
+	if rows[7].CapacityIdentity != nil || rows[8].CapacityIdentity != nil || rows[9].CapacityIdentity != nil {
 		t.Fatal("local capacities inferred")
+	}
+	if rows[7].Backing == nil || rows[7].Backing.Path != "/var/lib/vz" || rows[8].Backing == nil || rows[8].Backing.Path != "/var/lib/vz" || rows[9].Backing == nil || rows[9].Backing.VolumeGroup != "pve" || rows[9].Backing.ThinPool != "data" {
+		t.Fatalf("configured local backends not reported: local=%+v local-lvm=%+v", rows[7].Backing, rows[8].Backing)
 	}
 	if calls["/api2/json/storage"] != 1 {
 		t.Fatal("config list not fetched exactly once")
@@ -129,6 +135,43 @@ func TestStorageCapacityEvidenceHTTP(t *testing.T) {
 	for _, secret := range []string{"user@pbs", "not-for-output", "password", "encryption-key"} {
 		if strings.Contains(string(data), secret) {
 			t.Fatalf("secret field leaked: %s", secret)
+		}
+	}
+}
+
+func TestStorageBackingOmitsUnknownAndSecrets(t *testing.T) {
+	if storageBacking(nil, "dir") != nil {
+		t.Fatal("nil config produced a backing claim")
+	}
+	cfg := &client.StorageConfig{Type: "dir", Path: "/safe", Server: "hidden.example", Datastore: "hidden"}
+	got := storageBacking(cfg, "")
+	if got == nil || got.Path != "/safe" {
+		t.Fatalf("unsafe/unexpected backing fields: %+v", got)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil || strings.Contains(string(encoded), "hidden") {
+		t.Fatalf("endpoint details leaked in backing: %s, err=%v", encoded, err)
+	}
+	if storageBacking(&client.StorageConfig{Type: "unknown", Path: "/ignored"}, "") != nil {
+		t.Fatal("unknown backend configuration was guessed")
+	}
+	if storageBacking(&client.StorageConfig{Type: "nfs", Server: "backup.example", Export: "/export"}, "") != nil || storageBacking(&client.StorageConfig{Type: "pbs", Server: "backup.example", Datastore: "store"}, "") != nil {
+		t.Fatal("remote endpoints must not be copied into storage backing metadata")
+	}
+	for _, tc := range []struct {
+		cfg  client.StorageConfig
+		want string
+	}{{client.StorageConfig{Type: "lvmthin", VGName: "pve", Thinpool: "data"}, "pve/data"}, {client.StorageConfig{Type: "zfspool", Pool: "tank/vmdata"}, "tank/vmdata"}} {
+		got := storageBacking(&tc.cfg, "")
+		if got == nil {
+			t.Fatalf("missing backing for %+v", tc.cfg)
+		}
+		actual := got.ZFSPool
+		if got.Type == "lvmthin" {
+			actual = got.VolumeGroup + "/" + got.ThinPool
+		}
+		if actual != tc.want {
+			t.Fatalf("backing=%+v, want %q", got, tc.want)
 		}
 	}
 }

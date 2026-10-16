@@ -149,13 +149,26 @@ func implicitEnvironment(cfg *config.Config, name string) (config.Environment, e
 // health commands are not a dead end on a profile-only configuration.
 func resolveEnvironment(cmdCtx *Context, cfg *config.Config, name string) (config.Environment, error) {
 	if env, ok := cfg.Environments[name]; ok {
+		// The explicit profile is an isolation boundary. A paired environment
+		// that references another profile must not silently open that second
+		// connection.
+		if err := environmentBoundToProfile(env, cmdCtx.Opts.Profile); err != nil {
+			return config.Environment{}, err
+		}
 		return env, nil
 	}
 	if len(cfg.Environments) == 0 {
 		implicitName, err := implicitEnvironmentName(cmdCtx, cfg)
 		if err == nil && implicitName != "" {
 			if implicitName == name {
-				return implicitEnvironment(cfg, implicitName)
+				env, err := implicitEnvironment(cfg, implicitName)
+				if err != nil {
+					return config.Environment{}, err
+				}
+				if err := environmentBoundToProfile(env, cmdCtx.Opts.Profile); err != nil {
+					return config.Environment{}, err
+				}
+				return env, nil
 			}
 			return config.Environment{}, app.NewExitError(
 				fmt.Errorf("environment %q not found; no environments are configured (current profile derives %q)", name, implicitName),
@@ -171,6 +184,17 @@ func resolveEnvironment(cmdCtx *Context, cfg *config.Config, name string) (confi
 		fmt.Errorf("environment %q not found in configuration", name),
 		app.ExitConfig,
 	)
+}
+
+func environmentBoundToProfile(env config.Environment, profile string) error {
+	if profile == "" {
+		return nil
+	}
+	bound := env.PVEProfile == profile || env.PBSProfile == profile
+	if !bound || (env.PVEProfile != "" && env.PVEProfile != profile) || (env.PBSProfile != "" && env.PBSProfile != profile) {
+		return app.NewExitError(fmt.Errorf("environment is not exclusively bound to the selected profile"), app.ExitConflict)
+	}
+	return nil
 }
 
 func runEnvironmentHealth(ctx context.Context, cmdCtx *Context, args []string) error {

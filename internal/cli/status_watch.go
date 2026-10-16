@@ -88,8 +88,9 @@ func runStatusWatch(ctx context.Context, cmdCtx *Context, interval time.Duration
 	}
 	defer cleanup()
 	terminal := &statusTerminal{in: in.(*os.File), out: out.(*os.File)}
-	return watchStatus(ctx, terminal, name, interval, timeout, func(ctx context.Context) *statusOverview {
-		return collectStatusSnapshot(ctx, prov, true)
+	taskWarningCache := newStatusTaskWarningCache()
+	return watchStatus(ctx, terminal, name, statusColorEnabled(cmdCtx), interval, timeout, func(ctx context.Context) *statusOverview {
+		return collectStatusSnapshotWithTaskWarningCache(ctx, prov, true, taskWarningCache)
 	})
 }
 
@@ -111,12 +112,13 @@ type statusWatchView struct {
 	Refreshing  bool
 	Changes     string
 	NextDelay   time.Duration
+	Color       bool
 }
 
 // A single collector runs synchronously. A separate cancellable input reader
 // handles q/Ctrl+C even during a slow request; it is joined before restoring the
 // terminal. There is no ticker backlog, overlapping refresh, or unbounded history.
-func watchStatus(parent context.Context, terminal watchTerminal, profile string, interval, timeout time.Duration, collect func(context.Context) *statusOverview) (result error) {
+func watchStatus(parent context.Context, terminal watchTerminal, profile string, color bool, interval, timeout time.Duration, collect func(context.Context) *statusOverview) (result error) {
 	defer func() { result = errors.Join(result, terminal.End()) }()
 	if err := terminal.Begin(); err != nil {
 		return err
@@ -145,7 +147,7 @@ func watchStatus(parent context.Context, terminal watchTerminal, profile string,
 		}
 	}()
 	defer func() { cancel(); result = errors.Join(result, <-inputResult) }()
-	view := statusWatchView{Health: "unknown", NextDelay: interval}
+	view := statusWatchView{Health: "unknown", NextDelay: interval, Color: color}
 	draw := func() error {
 		width, height, err := terminal.Size()
 		if err != nil {
@@ -231,9 +233,13 @@ func statusChanges(previous, next *statusOverview) string {
 	var changes []string
 	if previous.VMsRunning != next.VMsRunning || previous.VMsStopped != next.VMsStopped || previous.VMsUnknown != next.VMsUnknown {
 		changes = append(changes, "VM counts")
+	} else if !reflect.DeepEqual(guestStates(previous.VMDetails), guestStates(next.VMDetails)) {
+		changes = append(changes, "VM identity/state")
 	}
 	if previous.CTsRunning != next.CTsRunning || previous.CTsStopped != next.CTsStopped || previous.CTsUnknown != next.CTsUnknown {
 		changes = append(changes, "container counts")
+	} else if !reflect.DeepEqual(guestStates(previous.ContainerDetails), guestStates(next.ContainerDetails)) {
+		changes = append(changes, "container identity/state")
 	}
 	nodeStates := func(s *statusOverview) map[string]string {
 		states := map[string]string{}
@@ -249,6 +255,14 @@ func statusChanges(previous, next *statusOverview) string {
 		changes = append(changes, "storage")
 	}
 	return strings.Join(changes, ", ")
+}
+
+func guestStates(guests []statusGuest) map[string]string {
+	states := make(map[string]string, len(guests))
+	for _, guest := range guests {
+		states[guest.ID] = guest.Name + "\x00" + guest.Node + "\x00" + guest.Status
+	}
+	return states
 }
 
 // A bounded buffer prevents large inventories from generating an unbounded
@@ -308,7 +322,15 @@ func renderStatusWatch(profile string, v statusWatchView, width, height int) str
 		if s.Sections["tasks"] != "" {
 			fmt.Fprintln(&buf, "\nActive/recent tasks (sample, up to 5 per node):")
 			for _, task := range s.RecentTasks {
-				fmt.Fprintf(&buf, "  %s  %s  %s  %s\n", watchText(task.Node), watchText(task.Type), watchText(task.State), watchText(task.Status))
+				state := task.State
+				if strings.EqualFold(state, "stopped") && strings.EqualFold(task.Status, "OK") {
+					state = "completed"
+				}
+				guest := statusTaskGuestLabel(task, s)
+				fmt.Fprintf(&buf, "  %s  %s  %s  %s  %s\n", watchText(task.Node), watchText(task.Type), watchText(guest), watchText(state), watchText(task.Status))
+				if detail := s.TaskWarningDetails[task.UPID]; detail != "" {
+					fmt.Fprintf(&buf, "    %s\n", watchText(detail))
+				}
 			}
 		}
 	}
@@ -325,6 +347,7 @@ func renderStatusWatch(profile string, v statusWatchView, width, height int) str
 	lines = append(lines, footer)
 	for i, line := range lines {
 		line = watchText(line)
+		line = statusColorText(line, v.Color)
 		if len(line) > width-1 {
 			line = line[:width-1]
 		}
@@ -355,6 +378,20 @@ func statusWatchSnapshot(original *statusOverview) *statusOverview {
 		s.NodesDetail[i].Name = watchText(s.NodesDetail[i].Name)
 		s.NodesDetail[i].Status = watchText(s.NodesDetail[i].Status)
 	}
+	s.VMDetails = append([]statusGuest(nil), s.VMDetails...)
+	for i := range s.VMDetails {
+		s.VMDetails[i].ID = watchText(s.VMDetails[i].ID)
+		s.VMDetails[i].Name = watchText(s.VMDetails[i].Name)
+		s.VMDetails[i].Node = watchText(s.VMDetails[i].Node)
+		s.VMDetails[i].Status = watchText(s.VMDetails[i].Status)
+	}
+	s.ContainerDetails = append([]statusGuest(nil), s.ContainerDetails...)
+	for i := range s.ContainerDetails {
+		s.ContainerDetails[i].ID = watchText(s.ContainerDetails[i].ID)
+		s.ContainerDetails[i].Name = watchText(s.ContainerDetails[i].Name)
+		s.ContainerDetails[i].Node = watchText(s.ContainerDetails[i].Node)
+		s.ContainerDetails[i].Status = watchText(s.ContainerDetails[i].Status)
+	}
 	s.Storage = append([]statusStorage(nil), s.Storage...)
 	for i := range s.Storage {
 		e := &s.Storage[i]
@@ -363,6 +400,12 @@ func statusWatchSnapshot(original *statusOverview) *statusOverview {
 			id := *e.Identity
 			id.Namespace, id.Reason = watchText(id.Namespace), watchText(id.Reason)
 			e.Identity = &id
+		}
+	}
+	if original.TaskWarningDetails != nil {
+		s.TaskWarningDetails = make(map[string]string, len(original.TaskWarningDetails))
+		for upid, detail := range original.TaskWarningDetails {
+			s.TaskWarningDetails[watchText(upid)] = watchText(detail)
 		}
 	}
 	if s.HA != nil {

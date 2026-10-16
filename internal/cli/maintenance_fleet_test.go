@@ -191,6 +191,102 @@ func TestMaintenanceStatusHappyPath(t *testing.T) {
 	}
 }
 
+func TestMaintenanceStatusRestrictsHostsToSelectedProfile(t *testing.T) {
+	seedMaintenanceConfig(t)
+	// This check selects only the PVE profile. Keep the fixture environment
+	// single-profile so the test verifies host filtering without asking the
+	// status command to accept a paired PVE/PBS environment.
+	path, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("config path: %v", err)
+	}
+	cfg, err := config.ReadFrom(path)
+	if err != nil {
+		t.Fatalf("read maintenance config: %v", err)
+	}
+	cfg.Environments["e2e-env"] = config.Environment{PVEProfile: "pve"}
+	if err := config.WriteTo(cfg, path); err != nil {
+		t.Fatalf("write single-profile test environment: %v", err)
+	}
+	called := false
+	withCannedCheckUpdates(t, func(_ context.Context, hosts []ansible.HostSpec) (*ansible.RunResult, error) {
+		called = true
+		if len(hosts) != 1 || hosts[0].Name != "web1" {
+			t.Fatalf("preflight hosts = %+v, want only profile-bound web1", hosts)
+		}
+		return cannedHealthyResult(hosts), nil
+	})
+
+	_, _, err = runPBSCommand(t, "--profile", "pve", "--output", "json", "maintenance", "status", "--host", "web1")
+	if err != nil {
+		t.Fatalf("profile-bound maintenance status: %v", err)
+	}
+	if !called {
+		t.Fatal("preflight was not called for profile-bound host")
+	}
+}
+
+func TestMaintenanceStatusRefusesHostOutsideSelectedProfileBeforeConnecting(t *testing.T) {
+	seedMaintenanceConfig(t)
+	called := false
+	withCannedCheckUpdates(t, func(_ context.Context, _ []ansible.HostSpec) (*ansible.RunResult, error) {
+		called = true
+		return nil, nil
+	})
+
+	_, _, err := runPBSCommand(t, "--profile", "pve", "maintenance", "status", "--host", "standalone")
+	if err == nil {
+		t.Fatal("host without selected-profile binding must be refused")
+	}
+	var exitCode *app.ExitCoder
+	if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitConflict {
+		t.Fatalf("error = %v, want ExitConflict", err)
+	}
+	if called {
+		t.Fatal("preflight ran despite profile-binding refusal")
+	}
+}
+
+func TestInventoryProfileBindingRejectsMixedProviderProfiles(t *testing.T) {
+	cfg := &config.Config{Environments: map[string]config.Environment{
+		"lab":   {PVEProfile: "nodex-test-lab"},
+		"mixed": {PVEProfile: "nodex-test-lab", PBSProfile: "other-profile"},
+	}}
+	cases := []struct {
+		name string
+		host config.InventoryHost
+		want bool
+	}{
+		{"direct lab binding", config.InventoryHost{PVEProfile: "nodex-test-lab"}, true},
+		{"direct mixed binding", config.InventoryHost{PVEProfile: "nodex-test-lab", PBSProfile: "other-profile"}, false},
+		{"environment lab binding", config.InventoryHost{Environment: "lab"}, true},
+		{"environment mixed binding", config.InventoryHost{Environment: "mixed"}, false},
+		{"direct lab with mixed environment", config.InventoryHost{PVEProfile: "nodex-test-lab", Environment: "mixed"}, false},
+		{"unbound host", config.InventoryHost{}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := inventoryHostBoundToProfile(cfg, tc.host, "nodex-test-lab"); got != tc.want {
+				t.Fatalf("inventoryHostBoundToProfile() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMaintenancePlanBindingRejectsMixedProviderProfiles(t *testing.T) {
+	cfg := &config.Config{Environments: map[string]config.Environment{
+		"mixed": {PVEProfile: "nodex-test-lab", PBSProfile: "other-profile"},
+	}}
+	planHost := maintenance.PlanHost{Name: "mixed", PVEProfile: "nodex-test-lab", PBSProfile: "other-profile"}
+	if err := requirePlanProfileBinding(cfg, planHost, "nodex-test-lab"); err == nil {
+		t.Fatal("plan host bound to a second provider profile must be refused")
+	}
+	planHost = maintenance.PlanHost{Name: "lab", Environment: "mixed", PVEProfile: "nodex-test-lab"}
+	if err := requirePlanProfileBinding(cfg, planHost, "nodex-test-lab"); err == nil {
+		t.Fatal("plan host with a mixed environment must be refused")
+	}
+}
+
 func TestMaintenanceStatusPartialFailureExits11(t *testing.T) {
 	seedMaintenanceConfig(t)
 	withCannedCheckUpdates(t, func(_ context.Context, hosts []ansible.HostSpec) (*ansible.RunResult, error) {

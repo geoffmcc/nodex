@@ -86,7 +86,7 @@ func buildStatusStorage(storages []domain.Storage, state string, collected time.
 			Name: s.Name, Type: s.Type, ID: s.ID, Node: s.Node, Status: s.Status,
 			Total: s.Total, Used: s.Used, Avail: s.Avail,
 			TotalHuman: formatBytes(s.Total), UsedHuman: formatBytes(s.Used), AvailHuman: formatBytes(s.Avail),
-			Identity: &identity,
+			Identity: &identity, Backing: s.Backing,
 		}
 		index := len(entries)
 		if identity.Key == "" || identity.Evidence == "none" || identity.Scope == "unknown" {
@@ -190,7 +190,10 @@ func writeStatusStorage(w io.Writer, overview *statusOverview) error {
 			return err
 		}
 	}
-	_, err := fmt.Fprintln(w, "  Physical disk totals: not established (backing topology unverified).\n  Per-entry/group capacities may overlap; do not sum.")
+	if err := writeStatusDiskInventory(w, overview.DiskInventory); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(w, "  Storage capacities may overlap; do not add them.")
 	return err
 }
 
@@ -219,14 +222,117 @@ func writeStatusStorageEntry(w io.Writer, s statusStorage, indent string, metric
 			return err
 		}
 	}
-	if s.CapacityGroup == "" {
-		reason := "identity_not_established"
-		if s.Identity != nil && s.Identity.Reason != "" {
-			reason = s.Identity.Reason
-		}
-		if _, err := fmt.Fprintf(w, "%s  relationship unresolved: %s\n", indent, reason); err != nil {
+	if label := storageBackingLabel(s.Backing); label != "" {
+		if _, err := fmt.Fprintf(w, "%s  Configured backend: %s\n", indent, label); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func storageBackingLabel(b *domain.StorageBacking) string {
+	if b == nil {
+		return ""
+	}
+	switch b.Type {
+	case "dir":
+		if b.Path != "" {
+			return "directory " + b.Path
+		}
+	case "lvmthin":
+		if b.VolumeGroup != "" && b.ThinPool != "" {
+			return "LVM thinpool " + b.VolumeGroup + "/" + b.ThinPool
+		}
+		if b.VolumeGroup != "" {
+			return "LVM volume group " + b.VolumeGroup
+		}
+	case "zfspool":
+		if b.ZFSPool != "" {
+			return "ZFS pool " + b.ZFSPool
+		}
+	}
+	return ""
+}
+
+func collectStatusDiskInventory(ctx context.Context, prov domain.Provider, overview *statusOverview) {
+	inventory := &statusDiskInventory{State: "unsupported", Devices: []statusNodeDisk{}}
+	detail, ok := prov.(domain.NodeDetailProvider)
+	if !ok {
+		overview.DiskInventory = inventory
+		return
+	}
+	if overview.Sections["nodes"] != "available" {
+		inventory.State = "unavailable"
+		overview.DiskInventory = inventory
+		return
+	}
+	nodes := append([]statusNode(nil), overview.NodesDetail...)
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
+	if len(nodes) == 0 {
+		inventory.State = "unavailable"
+		overview.DiskInventory = inventory
+		return
+	}
+	inventory.Nodes = len(nodes)
+	for _, node := range nodes {
+		if node.Status != "online" || ctx.Err() != nil {
+			continue
+		}
+		disks, err := detail.NodeDisks(ctx, node.Name)
+		if err != nil {
+			continue
+		}
+		inventory.NodesReported++
+		for _, disk := range disks {
+			name := disk.Name
+			if name == "" {
+				name = disk.Path
+			}
+			inventory.Devices = append(inventory.Devices, statusNodeDisk{
+				Node: node.Name, Name: name, Path: disk.Path, Size: disk.Size,
+				Type: disk.Type, Model: disk.Model, Health: disk.Health,
+			})
+			if disk.Size > 0 {
+				inventory.TotalBytes += disk.Size
+			}
+		}
+	}
+	inventory.DeviceCount = len(inventory.Devices)
+	if inventory.DeviceCount > 0 {
+		inventory.TotalHuman = formatBytes(inventory.TotalBytes)
+	}
+	switch {
+	case inventory.NodesReported == 0:
+		inventory.State = "unavailable"
+	case inventory.NodesReported < inventory.Nodes:
+		inventory.State = "partial"
+	default:
+		inventory.State = "available"
+	}
+	overview.DiskInventory = inventory
+}
+
+func writeStatusDiskInventory(w io.Writer, inventory *statusDiskInventory) error {
+	if inventory == nil {
+		_, err := fmt.Fprintln(w, "  Disk inventory: unavailable")
+		return err
+	}
+	if inventory.State != "available" && inventory.State != "partial" {
+		_, err := fmt.Fprintf(w, "  Disk inventory: %s\n", inventory.State)
+		return err
+	}
+	if inventory.DeviceCount == 0 {
+		_, err := fmt.Fprintf(w, "  Disk inventory: no devices reported (%s)\n", inventory.State)
+		return err
+	}
+	deviceLabel := "device"
+	if inventory.DeviceCount != 1 {
+		deviceLabel = "devices"
+	}
+	partial := ""
+	if inventory.State == "partial" {
+		partial = "partial; "
+	}
+	_, err := fmt.Fprintf(w, "  Disk inventory: %d %s, %s (%spools unmapped)\n", inventory.DeviceCount, deviceLabel, inventory.TotalHuman, partial)
+	return err
 }

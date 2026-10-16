@@ -13,6 +13,17 @@ import (
 	"github.com/geoffmcc/nodex/internal/domain"
 )
 
+func TestDoctorProfileSelectionHonorsExplicitProfile(t *testing.T) {
+	cfg := &config.Config{Profiles: map[string]config.Profile{
+		"nodex-test-lab": {Provider: config.ProviderProxmox},
+		"other":          {Provider: config.ProviderProxmox},
+	}}
+	got := doctorProfileNames(cfg, "nodex-test-lab")
+	if len(got) != 1 || got[0] != "nodex-test-lab" {
+		t.Fatalf("doctor profiles = %v, want only nodex-test-lab", got)
+	}
+}
+
 // storeSecureCredentialFixture creates a credential file through the real file
 // backend so it carries the platform-appropriate protections (0600 on Unix, a
 // protected owner-only DACL on Windows) that a raw os.WriteFile would not.

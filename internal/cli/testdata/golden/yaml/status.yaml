@@ -13,9 +13,19 @@ nodes_detail:
 vms: 1
 vms_running: 1
 vms_stopped: 0
+vm_details:
+    - id: e2e-node/100
+      name: e2e-vm
+      node: e2e-node
+      status: running
 containers: 1
 cts_running: 1
 cts_stopped: 0
+container_details:
+    - id: e2e-node/200
+      name: e2e-ct
+      node: e2e-node
+      status: running
 storage:
     - name: local
       type: dir
@@ -42,6 +52,13 @@ storage_capacity:
         - 0
     physical_total_state: not_established
     physical_total_reason: backing_topology_unverified
+disk_inventory:
+    state: available
+    nodes: 1
+    nodes_reported: 1
+    device_count: 0
+    total_bytes: 0
+    devices: []
 ha:
     status: online
     quorum: 1

@@ -36,6 +36,26 @@ func seedEnvironmentE2EConfig(t *testing.T) {
 	}
 }
 
+func TestResolveEnvironmentRefusesProfilesOutsideExplicitSelection(t *testing.T) {
+	cmdCtx := &Context{Opts: Options{Profile: "nodex-test-lab"}}
+	cfg := &config.Config{Environments: map[string]config.Environment{
+		"mixed": {PVEProfile: "nodex-test-lab", PBSProfile: "other-profile"},
+	}}
+	if _, err := resolveEnvironment(cmdCtx, cfg, "mixed"); err == nil {
+		t.Fatal("environment referencing a second profile must be refused")
+	} else {
+		var exitCode *app.ExitCoder
+		if !stderrors.As(err, &exitCode) || exitCode.ExitCode != app.ExitConflict {
+			t.Fatalf("error = %v, want ExitConflict", err)
+		}
+	}
+
+	cfg.Environments["lab"] = config.Environment{PVEProfile: "nodex-test-lab"}
+	if env, err := resolveEnvironment(cmdCtx, cfg, "lab"); err != nil || env.PVEProfile != "nodex-test-lab" {
+		t.Fatalf("lab-only environment = %+v, %v; want profile-bound environment", env, err)
+	}
+}
+
 func TestEnvironmentE2E_List(t *testing.T) {
 	seedEnvironmentE2EConfig(t)
 	stdout, _, err := runPBSCommand(t, "--output", "json", "environment", "list")

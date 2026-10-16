@@ -174,6 +174,7 @@ func (p *e2eMockProvider) Capabilities() []domain.Capability {
 		domain.CapabilityConfig, domain.CapabilitySnapshotMutation,
 		domain.CapabilityDelete, domain.CapabilityTemplate,
 		domain.CapabilityCloudInit, domain.CapabilityVMCreate, domain.CapabilityContainerCreate,
+		domain.CapabilityClone,
 	}
 }
 func (p *e2eMockProvider) Connect(_ context.Context, endpoint string, creds *domain.Credentials) error {
@@ -273,6 +274,49 @@ func (p *e2eMockProvider) VMConfig(_ context.Context, node string, vmid int) (ma
 		config["template"] = 1
 	}
 	return config, nil
+}
+
+func (p *e2eMockProvider) VMClone(_ context.Context, node string, vmid, newVmid int, name, _ string) (string, error) {
+	source, err := p.VMConfig(context.Background(), node, vmid)
+	if err != nil {
+		return "", err
+	}
+	clone := make(map[string]interface{}, len(source)+1)
+	for key, value := range source {
+		clone[key] = value
+	}
+	clone["vmid"] = newVmid
+	if name != "" {
+		clone["name"] = name
+	}
+	if p.createdVMConfigs == nil {
+		p.createdVMConfigs = make(map[int]map[string]interface{})
+	}
+	p.createdVMConfigs[newVmid] = clone
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12375, 1700000000), nil
+}
+
+func (p *e2eMockProvider) CTClone(_ context.Context, node string, vmid, newVmid int, hostname, storage string) (string, error) {
+	source, err := p.ContainerConfig(context.Background(), node, vmid)
+	if err != nil {
+		return "", err
+	}
+	clone := make(map[string]interface{}, len(source)+1)
+	for key, value := range source {
+		clone[key] = value
+	}
+	clone["vmid"] = newVmid
+	if hostname != "" {
+		clone["hostname"] = hostname
+	}
+	if storage != "" {
+		clone["rootfs"] = fmt.Sprintf("%s:vm-%d-disk-0,size=8G", storage, newVmid)
+	}
+	if p.createdCTConfigs == nil {
+		p.createdCTConfigs = make(map[int]map[string]interface{})
+	}
+	p.createdCTConfigs[newVmid] = clone
+	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12376, 1700000000), nil
 }
 func (p *e2eMockProvider) ContainerConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
 	if p.guestGone("container", vmid) {
@@ -791,6 +835,48 @@ func TestRunE2EWithMockProvider(t *testing.T) {
 			for _, want := range tt.want {
 				if !strings.Contains(out, want) {
 					t.Fatalf("Run(%v) output missing %q:\n%s", tt.args, want, out)
+				}
+			}
+		})
+	}
+}
+
+func TestCloneCommandsReportAndVerifyDestination(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	priorFailure, priorStatus, priorNode := e2eTaskFailure, e2eTaskStatusOverride, e2eTaskNodeOverride
+	e2eTaskFailure, e2eTaskStatusOverride, e2eTaskNodeOverride = false, "", ""
+	defer func() {
+		e2eTaskFailure, e2eTaskStatusOverride, e2eTaskNodeOverride = priorFailure, priorStatus, priorNode
+	}()
+
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "VM clone",
+			args: []string{"--yes", "--force", "--wait", "--output", "json", "vm", "clone", "e2e-node/100", "9501", "nodex-qa-vm-clone", "local-lvm"},
+			want: []string{`"operation": "vm clone"`, `"target": "e2e-node/9501"`, `"verification": "verified"`},
+		},
+		{
+			name: "container clone",
+			args: []string{"--yes", "--force", "--wait", "--output", "json", "container", "clone", "e2e-node/200", "9502", "nodex-qa-ct-clone", "local-lvm"},
+			want: []string{`"operation": "container clone"`, `"target": "e2e-node/9502"`, `"verification": "verified"`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if err := Run(context.Background(), tt.args, &stdout, &stderr); err != nil {
+				t.Fatalf("Run(%v): %v stderr=%q", tt.args, err, stderr.String())
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(stdout.String(), want) {
+					t.Fatalf("output missing %q:\n%s", want, stdout.String())
 				}
 			}
 		})
