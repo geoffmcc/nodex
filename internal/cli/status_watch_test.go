@@ -48,6 +48,14 @@ func TestStatusWatchFlagsAndGates(t *testing.T) {
 			t.Fatalf("unsafe gate for %v: %v %q", args, err, out.String())
 		}
 	}
+	var stdout, stderr bytes.Buffer
+	err = Run(t.Context(), []string{"--profile", "nodex-test-lab", "--output", "table", "status", "--watch"}, &stdout, &stderr)
+	if app.ExitCodeFromError(err) != app.ExitUsage || !strings.Contains(err.Error(), "requires an interactive terminal on stdin and stdout") {
+		t.Fatalf("non-TTY watch = %v, want actionable TTY usage error", err)
+	}
+	if strings.Contains(stdout.String()+stderr.String(), "\x1b[") {
+		t.Fatal("non-TTY watch emitted terminal control sequences")
+	}
 	if err := runStatusWatch(t.Context(), &Context{Opts: Options{Agent: true, Output: output.FormatTable}}, time.Second); app.ExitCodeFromError(err) != app.ExitUsage {
 		t.Fatal("agent watch allowed", err)
 	}
@@ -122,7 +130,7 @@ func TestStatusWatchStaleRecoveryAndNoOverlap(t *testing.T) {
 	}
 	calls, active := 0, 0
 	var starts, ends []time.Time
-	err := watchStatus(ctx, terminal, "lab", 5*time.Millisecond, time.Second, func(context.Context) *statusOverview {
+	err := watchStatus(ctx, terminal, "lab", false, 5*time.Millisecond, time.Second, func(context.Context) *statusOverview {
 		active++
 		if active != 1 {
 			t.Error("overlapping refresh")
@@ -197,7 +205,7 @@ func TestStatusWatchAlwaysRestores(t *testing.T) {
 			tc.setup(f)
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			err := watchStatus(ctx, f, "lab", time.Millisecond, time.Second, func(ctx context.Context) *statusOverview { <-ctx.Done(); return nil })
+			err := watchStatus(ctx, f, "lab", false, time.Millisecond, time.Second, func(ctx context.Context) *statusOverview { <-ctx.Done(); return nil })
 			if !errors.Is(err, tc.want) || f.end != 1 {
 				t.Fatalf("end=%d err=%v", f.end, err)
 			}
@@ -205,7 +213,7 @@ func TestStatusWatchAlwaysRestores(t *testing.T) {
 	}
 	for _, key := range []byte{'q', 3} {
 		f := &fakeWatchTerminal{keys: make(chan byte, 1)}
-		err := watchStatus(t.Context(), f, "lab", time.Second, time.Second, func(ctx context.Context) *statusOverview { f.keys <- key; <-ctx.Done(); return nil })
+		err := watchStatus(t.Context(), f, "lab", false, time.Second, time.Second, func(ctx context.Context) *statusOverview { f.keys <- key; <-ctx.Done(); return nil })
 		if key == 3 && app.ExitCodeFromError(err) != app.ExitInterrupted {
 			t.Fatal("Ctrl+C exit", err)
 		}
@@ -225,13 +233,13 @@ func TestStatusWatchTimeoutAndParentCancellation(t *testing.T) {
 			f.keys <- 'q'
 		}
 	}
-	err := watchStatus(t.Context(), f, "lab", time.Millisecond, 10*time.Millisecond, func(ctx context.Context) *statusOverview { <-ctx.Done(); return nil })
+	err := watchStatus(t.Context(), f, "lab", false, time.Millisecond, 10*time.Millisecond, func(ctx context.Context) *statusOverview { <-ctx.Done(); return nil })
 	if err != nil || f.end != 1 {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	f = &fakeWatchTerminal{keys: make(chan byte, 1)}
-	err = watchStatus(ctx, f, "lab", time.Second, time.Second, func(ctx context.Context) *statusOverview { cancel(); <-ctx.Done(); return nil })
+	err = watchStatus(ctx, f, "lab", false, time.Second, time.Second, func(ctx context.Context) *statusOverview { cancel(); <-ctx.Done(); return nil })
 	if !errors.Is(err, context.Canceled) || f.end != 1 {
 		t.Fatal("parent cancellation", err)
 	}
@@ -244,6 +252,7 @@ func TestStatusWatchBoundedSanitizedFrames(t *testing.T) {
 	s := healthyWatchSnapshot()
 	s.Cluster = "bad \x1b[2Jpassword=secret"
 	s.NodesDetail[0].Name = "node\nINJECT\x1b]0;owned\a"
+	s.VMDetails = []statusGuest{{ID: "node/1", Name: "vm\nINJECT\x1b[2J", Node: "node", Status: "running"}}
 	for _, size := range [][2]int{{80, 24}, {120, 40}, {40, 10}, {10, 4}, {1, 1}, {5000, 5000}} {
 		frame := renderStatusWatch("lab\nprofile", statusWatchView{Snapshot: s, Health: "healthy"}, size[0], size[1])
 		if strings.Contains(frame, "secret") || strings.Contains(frame, "owned") || strings.Contains(frame, "\x1b[2J") {
@@ -268,6 +277,40 @@ func TestStatusWatchBoundedSanitizedFrames(t *testing.T) {
 	_, _ = b.Write([]byte(strings.Repeat("b", 100000)))
 	if b.Len() != 64*1024 {
 		t.Fatal("unbounded frame buffer", b.Len())
+	}
+}
+
+func TestStatusWatchShowsBoundedGuestInventory(t *testing.T) {
+	s := healthyWatchSnapshot()
+	s.VMs = 12
+	s.VMsRunning = 12
+	for i := 0; i < 12; i++ {
+		s.VMDetails = append(s.VMDetails, statusGuest{ID: fmt.Sprintf("node/%d", i+1), Name: fmt.Sprintf("vm-%02d", i+1), Node: "node", Status: "running"})
+	}
+	frame := output.SanitizeTerminal(renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: "healthy"}, 120, 40))
+	for _, want := range []string{"VMs (showing 10 of 12)", "  1  vm-01  running", "... 2 more"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("watch frame missing %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "vm-11") {
+		t.Fatalf("watch frame exceeded the guest row limit:\n%s", frame)
+	}
+	colorFrame := renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: "healthy", Color: true}, 120, 40)
+	if !strings.Contains(colorFrame, "\x1b[32mrunning\x1b[0m") || !strings.Contains(colorFrame, "\x1b[32mHEALTHY\x1b[0m") {
+		t.Fatalf("watch frame did not color state cues:\n%q", colorFrame)
+	}
+}
+
+func TestStatusChangesDetectGuestReplacementWithStableCounts(t *testing.T) {
+	previous := healthyWatchSnapshot()
+	previous.VMs, previous.VMsRunning = 1, 1
+	previous.VMDetails = []statusGuest{{ID: "node/1", Name: "old", Node: "node", Status: "running"}}
+	next := healthyWatchSnapshot()
+	next.VMs, next.VMsRunning = 1, 1
+	next.VMDetails = []statusGuest{{ID: "node/2", Name: "new", Node: "node", Status: "running"}}
+	if got := statusChanges(previous, next); got != "VM identity/state" {
+		t.Fatalf("statusChanges = %q, want VM identity/state", got)
 	}
 }
 
@@ -298,7 +341,7 @@ func TestStatusSharedSnapshotUnknownStatesAndTasks(t *testing.T) {
 		t.Fatalf("unknown states counted stopped: %+v", one)
 	}
 	watch := collectStatusSnapshot(t.Context(), p, true)
-	if p.taskCalls != 1 || len(watch.RecentTasks) != 1 || !reflect.DeepEqual(one.Storage, watch.Storage) {
+	if p.taskCalls != 1 || len(watch.RecentTasks) != 1 || len(watch.VMDetails) != 3 || len(watch.ContainerDetails) != 2 || !reflect.DeepEqual(one.VMDetails, watch.VMDetails) || !reflect.DeepEqual(one.ContainerDetails, watch.ContainerDetails) || !reflect.DeepEqual(one.Storage, watch.Storage) {
 		t.Fatal("watch used different storage semantics")
 	}
 	one.StorageCapacity.CollectedAt = ""
@@ -317,6 +360,133 @@ func TestStatusSharedSnapshotUnknownStatesAndTasks(t *testing.T) {
 	}
 	if statusHealth(collectStatusSnapshot(t.Context(), &bareProvider{}, false)) != "unknown" {
 		t.Fatal("unsupported provider marked healthy")
+	}
+}
+
+func TestStatusGuestInventoryShowsNameNumberAndState(t *testing.T) {
+	s := &statusOverview{
+		Sections: map[string]string{"vms": "available", "containers": "available", "storage": "available", "tasks": "available"}, Nodes: 2,
+		StorageCapacity: &statusStorageCapacity{State: "available"},
+		VMs:             2, VMsRunning: 1, VMsStopped: 1, VMDetails: []statusGuest{
+			{ID: "node-a/101", Name: "api-vm", Node: "node-a", Status: "running"},
+			{ID: "node-b/102", Name: "db-vm", Node: "node-b", Status: "stopped"},
+		},
+		Containers: 1, CTsRunning: 1, ContainerDetails: []statusGuest{{ID: "node-a/201", Name: "web-ct", Node: "node-a", Status: "running"}},
+	}
+	var buf bytes.Buffer
+	if err := writeStatusTable(&buf, s); err != nil {
+		t.Fatal(err)
+	}
+	text := buf.String()
+	storageAt, guestsAt := strings.Index(text, "Storage:"), strings.Index(text, "Guests:")
+	if storageAt < 0 || guestsAt < storageAt {
+		t.Fatalf("guest inventory is missing or misplaced:\n%s", text)
+	}
+	for _, want := range []string{"VMs (showing 2 of 2):", "101  api-vm  running  [node-a]", "102  db-vm  stopped  [node-b]", "201  web-ct  running  [node-a]"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q:\n%s", want, text)
+		}
+	}
+	s.RecentTasks = []domain.Task{{Node: "node-a", Type: "qmstart", State: "running"}}
+	frame := renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: "healthy", Color: true}, 120, 80)
+	storageAt = strings.Index(frame, "Storage:")
+	guestsAt = strings.Index(frame, "Guests:")
+	tasksAt := strings.Index(frame, "Active/recent tasks")
+	if storageAt < 0 || guestsAt <= storageAt || tasksAt <= guestsAt {
+		t.Fatalf("watch guest inventory is not between storage and tasks:\n%s", frame)
+	}
+	styled := statusColorText(text, true)
+	if !strings.Contains(styled, "\x1b[32mrunning\x1b[0m") || !strings.Contains(styled, "\x1b[31mstopped\x1b[0m") {
+		t.Fatalf("guest states are not colored:\n%q", styled)
+	}
+	var failed errorWriter
+	if err := writeStatusGuestInventory(failed, "", "VMs", "available", 1, s.VMDetails, false); err == nil {
+		t.Fatal("guest inventory write failure swallowed")
+	}
+}
+
+func TestStatusWatchTaskRowsIncludeGuestIdentity(t *testing.T) {
+	s := healthyWatchSnapshot()
+	s.Nodes = 2
+	s.VMDetails = []statusGuest{{ID: "node-a/101", Name: "api-vm", Node: "node-a", Status: "running"}}
+	s.ContainerDetails = []statusGuest{{ID: "node-b/201", Name: "web-ct", Node: "node-b", Status: "stopped"}}
+	s.Sections["tasks"] = "available"
+	s.RecentTasks = []domain.Task{
+		{UPID: "UPID:node-a:00000001:00000002:00000003:qmstart:101:root@pam:", Node: "node-a", Type: "qmstart", State: "running"},
+		{UPID: "UPID:node-b:00000001:00000002:00000003:vzstop:201:root@pam:", Node: "node-b", Type: "vzstop", State: "stopped", Status: "OK"},
+		{UPID: "UPID:node-a:00000001:00000002:00000003:qmdestroy:999:root@pam:", Node: "node-a", Type: "qmdestroy", State: "stopped", Status: "OK"},
+		{UPID: "UPID:node-a:00000001:00000002:00000003:aptupdate:0:root@pam:", Node: "node-a", Type: "aptupdate", State: "stopped", Status: "OK"},
+	}
+	frame := output.SanitizeTerminal(renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: "healthy"}, 160, 80))
+	for _, want := range []string{
+		"node-a  qmstart  VM 101 api-vm  running",
+		"node-b  vzstop  CT 201 web-ct  completed",
+		"node-a  qmdestroy  VM 999  completed",
+		"node-a  aptupdate  -  completed",
+	} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("task row missing guest identity %q:\n%s", want, frame)
+		}
+	}
+	wrongNode := domain.Task{UPID: "UPID:node-b:00000001:00000002:00000003:qmstart:101:root@pam:", Node: "node-a", Type: "qmstart", State: "running"}
+	if got := statusTaskGuestLabel(wrongNode, s); got != "-" {
+		t.Fatalf("mismatched task node was associated with guest %q", got)
+	}
+}
+
+type warningTaskProvider struct {
+	*e2eMockProvider
+	logCalls int
+}
+
+func (p *warningTaskProvider) Tasks(context.Context, string) ([]domain.Task, error) {
+	return []domain.Task{{UPID: "UPID:node-a:1:2:3:vzstart:9911:root@pam:", Type: "vzstart", State: "stopped", Status: "WARNINGS: 1", Node: "node-a"}}, nil
+}
+
+func (p *warningTaskProvider) TaskLog(context.Context, string, string, int) ([]domain.TaskLogLine, error) {
+	p.logCalls++
+	return []domain.TaskLogLine{
+		{LineNumber: 1, Text: "normal task output"},
+		{LineNumber: 2, Text: "WARN: Systemd 259 detected. You may need to enable nesting."},
+		{LineNumber: 3, Text: "TASK WARNINGS: 1"},
+	}, nil
+}
+
+func TestStatusWatchIncludesCachedTaskWarningDetail(t *testing.T) {
+	p := &warningTaskProvider{e2eMockProvider: &e2eMockProvider{}}
+	cache := newStatusTaskWarningCache()
+	first := healthyWatchSnapshot()
+	collectStatusTasksWithWarnings(t.Context(), p, first, cache)
+	second := healthyWatchSnapshot()
+	collectStatusTasksWithWarnings(t.Context(), p, second, cache)
+	if p.logCalls != 1 {
+		t.Fatalf("TaskLog called %d times for the same warning task, want once per watch session", p.logCalls)
+	}
+	const want = "WARN: Systemd 259 detected. You may need to enable nesting."
+	if got := second.TaskWarningDetails[second.RecentTasks[0].UPID]; got != want {
+		t.Fatalf("task warning detail = %q, want %q", got, want)
+	}
+	frame := output.SanitizeTerminal(renderStatusWatch("lab", statusWatchView{Snapshot: second, Health: "healthy"}, 180, 80))
+	if !strings.Contains(frame, "WARNINGS: 1") || !strings.Contains(frame, "    "+want) {
+		t.Fatalf("watch task row does not include warning detail:\n%s", frame)
+	}
+}
+
+func TestStatusWatchKeepsGuestRowsVisibleAtStandardHeight(t *testing.T) {
+	s := healthyWatchSnapshot()
+	s.StorageCapacity = &statusStorageCapacity{State: "available"}
+	s.Storage = []statusStorage{
+		{Name: "local", Type: "dir", Node: "node", Status: "available", Total: 100, Used: 25, Avail: 75, TotalHuman: "100 B", UsedHuman: "25 B", AvailHuman: "75 B", Backing: &domain.StorageBacking{Type: "dir", Path: "/var/lib/vz"}},
+		{Name: "local-lvm", Type: "lvmthin", Node: "node", Status: "available", Total: 100, Used: 25, Avail: 75, TotalHuman: "100 B", UsedHuman: "25 B", AvailHuman: "75 B", Backing: &domain.StorageBacking{Type: "lvmthin", VolumeGroup: "pve", ThinPool: "data"}},
+	}
+	s.DiskInventory = &statusDiskInventory{State: "available", Nodes: 1, NodesReported: 1, DeviceCount: 1, TotalBytes: 68719476736, TotalHuman: "64.0 GiB"}
+	s.Containers = 1
+	s.ContainerDetails = []statusGuest{{ID: "node/100", Name: "CT100", Node: "node", Status: "running"}}
+	frame := output.SanitizeTerminal(renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: "healthy"}, 80, 24))
+	for _, want := range []string{"Guests:", "VMs: none", "Containers (showing 1 of 1):", "100  CT100  running"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("standard-height watch hid %q:\n%s", want, frame)
+		}
 	}
 }
 

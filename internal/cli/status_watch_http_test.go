@@ -48,6 +48,8 @@ func TestStatusWatchHTTPSReadOnlyRecovery(t *testing.T) {
 			data = `[{"storage":"pbs","type":"pbs","server":"backup.example.test","datastore":"store"},{"storage":"nightly","type":"pbs","server":"backup.example.test","datastore":"store","namespace":"nightly"}]`
 		case "/api2/json/nodes/node/tasks":
 			data = `[{"node":"node","type":"vzdump","status":"running","starttime":1}]`
+		case "/api2/json/nodes/node/disks/list":
+			data = `[{"devpath":"/dev/sda","size":68719476736,"type":"unknown","model":"QEMU_HARDDISK","health":"OK"}]`
 		default:
 			t.Errorf("unexpected request: %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -81,12 +83,12 @@ func TestStatusWatchHTTPSReadOnlyRecovery(t *testing.T) {
 	cycles := 0
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	err = watchStatus(ctx, terminal, "fixture", time.Millisecond, time.Second, func(ctx context.Context) *statusOverview {
+	err = watchStatus(ctx, terminal, "fixture", false, time.Millisecond, time.Second, func(ctx context.Context) *statusOverview {
 		cycles++
 		unavailable.Store(cycles == 2)
 		s := collectStatusSnapshot(ctx, p, true)
 		if cycles != 2 {
-			if !statusRefreshComplete(s) || len(s.Storage) != 2 || len(s.StorageCapacity.Groups) != 1 || len(s.RecentTasks) != 1 {
+			if !statusRefreshComplete(s) || len(s.Storage) != 2 || len(s.StorageCapacity.Groups) != 1 || len(s.RecentTasks) != 1 || s.DiskInventory == nil || s.DiskInventory.DeviceCount != 1 {
 				t.Errorf("incomplete or inconsistent recovered snapshot: %+v", s)
 			}
 		}

@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"strconv"
@@ -1102,22 +1104,26 @@ type statusOverview struct {
 	QuorumKnown bool   `json:"quorum_known" yaml:"quorum_known"`
 	// Standalone reports that the provider confirmed no cluster exists, so a
 	// zero quorum is expected rather than a fault (nit #36).
-	Standalone      bool                   `json:"standalone" yaml:"standalone"`
-	NodesDetail     []statusNode           `json:"nodes_detail" yaml:"nodes_detail"`
-	VMs             int                    `json:"vms" yaml:"vms"`
-	VMsRunning      int                    `json:"vms_running" yaml:"vms_running"`
-	VMsStopped      int                    `json:"vms_stopped" yaml:"vms_stopped"`
-	Containers      int                    `json:"containers" yaml:"containers"`
-	CTsRunning      int                    `json:"cts_running" yaml:"cts_running"`
-	CTsStopped      int                    `json:"cts_stopped" yaml:"cts_stopped"`
-	Storage         []statusStorage        `json:"storage" yaml:"storage"`
-	StorageCapacity *statusStorageCapacity `json:"storage_capacity,omitempty" yaml:"storage_capacity,omitempty"`
-	HA              *statusHA              `json:"ha,omitempty" yaml:"ha,omitempty"`
-	VMsUnknown      int                    `json:"vms_unknown,omitempty" yaml:"vms_unknown,omitempty"`
-	CTsUnknown      int                    `json:"cts_unknown,omitempty" yaml:"cts_unknown,omitempty"`
-	Sections        map[string]string      `json:"sections,omitempty" yaml:"sections,omitempty"`
-	Warnings        []string               `json:"warnings,omitempty" yaml:"warnings,omitempty"`
-	RecentTasks     []domain.Task          `json:"recent_tasks,omitempty" yaml:"recent_tasks,omitempty"`
+	Standalone         bool                   `json:"standalone" yaml:"standalone"`
+	NodesDetail        []statusNode           `json:"nodes_detail" yaml:"nodes_detail"`
+	VMs                int                    `json:"vms" yaml:"vms"`
+	VMsRunning         int                    `json:"vms_running" yaml:"vms_running"`
+	VMsStopped         int                    `json:"vms_stopped" yaml:"vms_stopped"`
+	VMDetails          []statusGuest          `json:"vm_details,omitempty" yaml:"vm_details,omitempty"`
+	Containers         int                    `json:"containers" yaml:"containers"`
+	CTsRunning         int                    `json:"cts_running" yaml:"cts_running"`
+	CTsStopped         int                    `json:"cts_stopped" yaml:"cts_stopped"`
+	ContainerDetails   []statusGuest          `json:"container_details,omitempty" yaml:"container_details,omitempty"`
+	Storage            []statusStorage        `json:"storage" yaml:"storage"`
+	StorageCapacity    *statusStorageCapacity `json:"storage_capacity,omitempty" yaml:"storage_capacity,omitempty"`
+	DiskInventory      *statusDiskInventory   `json:"disk_inventory,omitempty" yaml:"disk_inventory,omitempty"`
+	HA                 *statusHA              `json:"ha,omitempty" yaml:"ha,omitempty"`
+	VMsUnknown         int                    `json:"vms_unknown,omitempty" yaml:"vms_unknown,omitempty"`
+	CTsUnknown         int                    `json:"cts_unknown,omitempty" yaml:"cts_unknown,omitempty"`
+	Sections           map[string]string      `json:"sections,omitempty" yaml:"sections,omitempty"`
+	Warnings           []string               `json:"warnings,omitempty" yaml:"warnings,omitempty"`
+	RecentTasks        []domain.Task          `json:"recent_tasks,omitempty" yaml:"recent_tasks,omitempty"`
+	TaskWarningDetails map[string]string      `json:"task_warning_details,omitempty" yaml:"task_warning_details,omitempty"`
 }
 
 type statusHA struct {
@@ -1137,6 +1143,13 @@ type statusNode struct {
 	UptimeHuman   string `json:"uptime_human,omitempty" yaml:"uptime_human,omitempty"`
 }
 
+type statusGuest struct {
+	ID     string `json:"id" yaml:"id"`
+	Name   string `json:"name" yaml:"name"`
+	Node   string `json:"node" yaml:"node"`
+	Status string `json:"status" yaml:"status"`
+}
+
 type statusStorage struct {
 	Name          string                          `json:"name" yaml:"name"`
 	Type          string                          `json:"type" yaml:"type"`
@@ -1150,7 +1163,28 @@ type statusStorage struct {
 	Node          string                          `json:"node" yaml:"node"`
 	Status        string                          `json:"status" yaml:"status"`
 	Identity      *domain.StorageCapacityIdentity `json:"identity" yaml:"identity"`
+	Backing       *domain.StorageBacking          `json:"backing,omitempty" yaml:"backing,omitempty"`
 	CapacityGroup string                          `json:"capacity_group,omitempty" yaml:"capacity_group,omitempty"`
+}
+
+type statusDiskInventory struct {
+	State         string           `json:"state" yaml:"state"`
+	Nodes         int              `json:"nodes" yaml:"nodes"`
+	NodesReported int              `json:"nodes_reported" yaml:"nodes_reported"`
+	DeviceCount   int              `json:"device_count" yaml:"device_count"`
+	TotalBytes    int64            `json:"total_bytes" yaml:"total_bytes"`
+	TotalHuman    string           `json:"total_human,omitempty" yaml:"total_human,omitempty"`
+	Devices       []statusNodeDisk `json:"devices" yaml:"devices"`
+}
+
+type statusNodeDisk struct {
+	Node   string `json:"node" yaml:"node"`
+	Name   string `json:"name" yaml:"name"`
+	Path   string `json:"path,omitempty" yaml:"path,omitempty"`
+	Size   int64  `json:"size" yaml:"size"`
+	Type   string `json:"type,omitempty" yaml:"type,omitempty"`
+	Model  string `json:"model,omitempty" yaml:"model,omitempty"`
+	Health string `json:"health,omitempty" yaml:"health,omitempty"`
 }
 
 func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -1177,6 +1211,10 @@ func runStatus(ctx context.Context, cmdCtx *Context, args []string) error {
 // inspection capabilities, never mutation or repair methods. Query failures are
 // section states rather than falsely healthy zero counts.
 func collectStatusSnapshot(ctx context.Context, prov domain.Provider, includeTasks bool) *statusOverview {
+	return collectStatusSnapshotWithTaskWarningCache(ctx, prov, includeTasks, nil)
+}
+
+func collectStatusSnapshotWithTaskWarningCache(ctx context.Context, prov domain.Provider, includeTasks bool, warningCache *statusTaskWarningCache) *statusOverview {
 	overview := statusOverview{}
 	overview.Sections = map[string]string{}
 	for _, section := range []string{"nodes", "vms", "containers", "storage", "cluster", "quorum", "ha"} {
@@ -1205,6 +1243,10 @@ func collectStatusSnapshot(ctx context.Context, prov domain.Provider, includeTas
 		if vms, err := vi.VMs(ctx); err == nil {
 			overview.Sections["vms"] = "available"
 			overview.VMs = len(vms)
+			sort.Slice(vms, func(i, j int) bool { return vms[i].ID < vms[j].ID })
+			for _, v := range vms {
+				overview.VMDetails = append(overview.VMDetails, statusGuest{ID: v.ID, Name: v.Name, Node: v.Node, Status: v.Status})
+			}
 			for _, v := range vms {
 				if v.Status == "running" {
 					overview.VMsRunning++
@@ -1222,6 +1264,10 @@ func collectStatusSnapshot(ctx context.Context, prov domain.Provider, includeTas
 		if cts, err := ci.Containers(ctx); err == nil {
 			overview.Sections["containers"] = "available"
 			overview.Containers = len(cts)
+			sort.Slice(cts, func(i, j int) bool { return cts[i].ID < cts[j].ID })
+			for _, c := range cts {
+				overview.ContainerDetails = append(overview.ContainerDetails, statusGuest{ID: c.ID, Name: c.Name, Node: c.Node, Status: c.Status})
+			}
 			for _, c := range cts {
 				if c.Status == "running" {
 					overview.CTsRunning++
@@ -1236,6 +1282,7 @@ func collectStatusSnapshot(ctx context.Context, prov domain.Provider, includeTas
 
 	collectStatusStorage(ctx, prov, &overview)
 	overview.Sections["storage"] = overview.StorageCapacity.State
+	collectStatusDiskInventory(ctx, prov, &overview)
 
 	if cl, ok := prov.(domain.ClusterInspector); ok {
 		overview.Sections["cluster"] = "unavailable"
@@ -1273,7 +1320,7 @@ func collectStatusSnapshot(ctx context.Context, prov domain.Provider, includeTas
 	}
 
 	if includeTasks {
-		collectStatusTasks(ctx, prov, &overview)
+		collectStatusTasksWithWarnings(ctx, prov, &overview, warningCache)
 	}
 	for _, section := range []string{"nodes", "vms", "containers", "storage", "cluster", "quorum", "ha", "tasks"} {
 		if state := overview.Sections[section]; state != "" && state != "available" {
@@ -1293,39 +1340,62 @@ func writeStatus(cmdCtx *Context, overview *statusOverview) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, overview)
 	default:
-		w := cmdCtx.Writer
-		fmt.Fprintf(w, "Cluster: %s  Version: %s  Nodes: ", overview.Cluster, overview.Version)
-		if state := overview.Sections["nodes"]; state != "" && state != "available" {
-			fmt.Fprint(w, state)
-		} else {
-			fmt.Fprint(w, overview.Nodes)
-		}
-		switch {
-		case overview.QuorumKnown:
-			fmt.Fprintf(w, "  Quorum: %d", overview.Quorum)
-		case overview.Standalone:
-			fmt.Fprint(w, "  Quorum: n/a (standalone host)")
-		default:
-			fmt.Fprint(w, "  Quorum: unavailable")
-		}
-		fmt.Fprintln(w)
-		writeStatusGuestCounts(w, "VMs", overview.Sections["vms"], overview.VMsRunning, overview.VMsStopped, overview.VMsUnknown)
-		writeStatusGuestCounts(w, "Containers", overview.Sections["containers"], overview.CTsRunning, overview.CTsStopped, overview.CTsUnknown)
-		for _, warning := range overview.Warnings {
-			fmt.Fprintf(w, "Warning: %s\n", warning)
-		}
-		if overview.HA != nil {
-			switch {
-			case overview.HA.QuorumKnown:
-				fmt.Fprintf(w, "HA: %s (quorum: %d)\n", overview.HA.Status, overview.HA.Quorum)
-			case overview.HA.Standalone:
-				fmt.Fprintf(w, "HA: %s (quorum: n/a — standalone host)\n", overview.HA.Status)
-			default:
-				fmt.Fprintf(w, "HA: %s (quorum: unavailable)\n", overview.HA.Status)
+		if statusColorEnabled(cmdCtx) {
+			var plain bytes.Buffer
+			if err := writeStatusTable(output.NewSanitizingWriter(&plain), overview); err != nil {
+				return err
 			}
+			_, err := io.WriteString(cmdCtx.InteractiveOut, statusColorText(plain.String(), true))
+			return err
 		}
-		return writeStatusStorage(w, overview)
+		return writeStatusTable(cmdCtx.Writer, overview)
 	}
+}
+
+func writeStatusTable(w io.Writer, overview *statusOverview) error {
+	fmt.Fprintf(w, "Cluster: %s  Version: %s  Nodes: ", overview.Cluster, overview.Version)
+	if state := overview.Sections["nodes"]; state != "" && state != "available" {
+		fmt.Fprint(w, state)
+	} else {
+		fmt.Fprint(w, overview.Nodes)
+	}
+	switch {
+	case overview.QuorumKnown:
+		fmt.Fprintf(w, "  Quorum: %d", overview.Quorum)
+	case overview.Standalone:
+		fmt.Fprint(w, "  Quorum: n/a (standalone host)")
+	default:
+		fmt.Fprint(w, "  Quorum: unavailable")
+	}
+	fmt.Fprintln(w)
+	writeStatusGuestCounts(w, "VMs", overview.Sections["vms"], overview.VMsRunning, overview.VMsStopped, overview.VMsUnknown)
+	writeStatusGuestCounts(w, "Containers", overview.Sections["containers"], overview.CTsRunning, overview.CTsStopped, overview.CTsUnknown)
+	for _, warning := range overview.Warnings {
+		fmt.Fprintf(w, "Warning: %s\n", warning)
+	}
+	if overview.HA != nil {
+		switch {
+		case overview.HA.QuorumKnown:
+			fmt.Fprintf(w, "HA: %s (quorum: %d)\n", overview.HA.Status, overview.HA.Quorum)
+		case overview.HA.Standalone:
+			fmt.Fprintf(w, "HA: %s (quorum: n/a — standalone host)\n", overview.HA.Status)
+		default:
+			fmt.Fprintf(w, "HA: %s (quorum: unavailable)\n", overview.HA.Status)
+		}
+	}
+	if err := writeStatusStorage(w, overview); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "\nGuests:"); err != nil {
+		return err
+	}
+	if err := writeStatusGuestInventory(w, "  ", "VMs", overview.Sections["vms"], overview.VMs, overview.VMDetails, overview.Nodes > 1); err != nil {
+		return err
+	}
+	if err := writeStatusGuestInventory(w, "  ", "Containers", overview.Sections["containers"], overview.Containers, overview.ContainerDetails, overview.Nodes > 1); err != nil {
+		return err
+	}
+	return nil
 }
 
 func runEventList(ctx context.Context, cmdCtx *Context, args []string) error {

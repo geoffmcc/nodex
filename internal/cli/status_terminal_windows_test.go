@@ -5,10 +5,13 @@ package cli
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
 
+	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/output"
 	"golang.org/x/sys/windows"
 )
 
@@ -28,6 +31,24 @@ func TestStatusTerminalWindowsConsole(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer out.Close()
+	t.Setenv("TERM", "xterm-256color")
+	if value, ok := os.LookupEnv("NO_COLOR"); ok {
+		if err := os.Unsetenv("NO_COLOR"); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Setenv("NO_COLOR", value) })
+	}
+	colorCtx := &Context{Opts: Options{Output: output.FormatTable}, InteractiveOut: out}
+	if !statusColorEnabled(colorCtx) {
+		t.Fatal("interactive Windows console should enable table colors")
+	}
+	watchCtx := &Context{Opts: Options{Output: output.FormatTable}, InteractiveIn: in, InteractiveOut: out}
+	t.Setenv("TERM", "dumb")
+	err = runStatusWatch(t.Context(), watchCtx, time.Second)
+	if app.ExitCodeFromError(err) != app.ExitUsage || !strings.Contains(err.Error(), "requires an interactive terminal") {
+		t.Fatalf("TERM=dumb watch gate = %v, want actionable usage error", err)
+	}
+	t.Setenv("TERM", "xterm-256color")
 	var inputBefore, outputBefore uint32
 	if err := windows.GetConsoleMode(windows.Handle(in.Fd()), &inputBefore); err != nil {
 		t.Fatal(err)

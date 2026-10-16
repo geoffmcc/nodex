@@ -574,17 +574,21 @@ type StorageConfigResponse struct {
 
 // StorageConfig describes where a storage actually stores data.
 //
-// Only the fields relevant to locating a backup are modelled. Proxmox returns
-// different subsets per storage type: a PBS entry carries server and datastore,
-// a directory storage carries path, and an NFS entry carries both server and
-// path. Shared is a pointer because Proxmox omits it rather than sending false,
-// and "not stated" must not be read as "not shared".
+// Only fields consumed by NodeX are modelled. Proxmox returns different subsets
+// per storage type: a PBS entry carries server and datastore, a directory
+// storage carries path, and an LVM thinpool carries vgname and thinpool. Shared
+// is a pointer because Proxmox omits it rather than sending false, and "not
+// stated" must not be read as "not shared".
 type StorageConfig struct {
 	Storage   string `json:"storage,omitempty"`
 	Type      string `json:"type,omitempty"`
 	Server    string `json:"server,omitempty"`
 	Datastore string `json:"datastore,omitempty"`
 	Path      string `json:"path,omitempty"`
+	Export    string `json:"export,omitempty"`
+	VGName    string `json:"vgname,omitempty"`
+	Thinpool  string `json:"thinpool,omitempty"`
+	Pool      string `json:"pool,omitempty"`
 	Shared    *int   `json:"shared,omitempty"`
 	Content   string `json:"content,omitempty"`
 	Port      int    `json:"port,omitempty"`

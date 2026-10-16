@@ -27,7 +27,9 @@ func TestStatusStorageGrouping(t *testing.T) {
 	rows := []domain.Storage{capacityFixture("pbs-shutdown", "same"), capacityFixture("pbs", "same"), capacityFixture("pbs-nightly", "same"), capacityFixture("different-store", "different"), capacityFixture("local", ""), capacityFixture("local-lvm", "")}
 	rows[2].CapacityIdentity.Namespace = "nightly"
 	rows[4].Type = "dir"
+	rows[4].Backing = &domain.StorageBacking{Type: "dir", Path: "/var/lib/vz"}
 	rows[5].Type = "lvmthin"
+	rows[5].Backing = &domain.StorageBacking{Type: "lvmthin", VolumeGroup: "pve", ThinPool: "data"}
 	when := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
 	entries, capacity := buildStatusStorage(rows, "available", when)
 	if rows[0].Name != "pbs-shutdown" {
@@ -50,12 +52,18 @@ func TestStatusStorageGrouping(t *testing.T) {
 	}
 	var human bytes.Buffer
 	overview := &statusOverview{Storage: entries, StorageCapacity: capacity}
+	overview.DiskInventory = &statusDiskInventory{State: "available", Nodes: 1, NodesReported: 1, DeviceCount: 1, TotalBytes: 68719476736, TotalHuman: "64.0 GiB", Devices: []statusNodeDisk{{Node: "node", Name: "/dev/sda", Size: 68719476736}}}
 	if err := writeStatusStorage(&human, overview); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"pbs-shutdown", "pbs-nightly", "node/pbs ", "namespace: nightly", "verified configured aliases/views", "Physical disk totals: not established", "relationship unresolved"} {
+	for _, want := range []string{"pbs-shutdown", "pbs-nightly", "node/pbs ", "namespace: nightly", "verified configured aliases/views", "Configured backend: directory /var/lib/vz", "Configured backend: LVM thinpool pve/data", "Disk inventory: 1 device, 64.0 GiB (pools unmapped)", "Storage capacities may overlap; do not add them"} {
 		if !strings.Contains(human.String(), want) {
 			t.Fatalf("missing %q:\n%s", want, human.String())
+		}
+	}
+	for _, jargon := range []string{"relationship unresolved", "identity_not_established", "backing topology unverified", "Per-entry/group capacities", "Physical disk totals: unavailable"} {
+		if strings.Contains(human.String(), jargon) {
+			t.Fatalf("human output contains internal wording %q:\n%s", jargon, human.String())
 		}
 	}
 	// The three aliases display capacity once; the other three entries once each.

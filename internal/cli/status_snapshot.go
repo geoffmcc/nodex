@@ -5,9 +5,28 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/output"
+	"github.com/geoffmcc/nodex/internal/redact"
 )
+
+const (
+	statusTaskWarningLogLimit   = 100
+	statusTaskWarningCacheLimit = 128
+	statusTaskWarningQueryLimit = 5
+)
+
+type statusTaskWarningCache struct {
+	details map[string]string
+	seen    map[string]bool
+	order   []string
+}
+
+func newStatusTaskWarningCache() *statusTaskWarningCache {
+	return &statusTaskWarningCache{details: map[string]string{}, seen: map[string]bool{}}
+}
 
 func writeStatusGuestCounts(w io.Writer, label, state string, running, stopped, unknown int) {
 	if state != "" && state != "available" {
@@ -24,6 +43,10 @@ func writeStatusGuestCounts(w io.Writer, label, state string, running, stopped, 
 // Tasks are an explicitly bounded sample, not a cluster-wide count. Limit the
 // number of node queries and retained results; never call task details/logs.
 func collectStatusTasks(ctx context.Context, prov domain.Provider, snapshot *statusOverview) {
+	collectStatusTasksWithWarnings(ctx, prov, snapshot, nil)
+}
+
+func collectStatusTasksWithWarnings(ctx context.Context, prov domain.Provider, snapshot *statusOverview, warningCache *statusTaskWarningCache) {
 	snapshot.Sections["tasks"] = "unsupported"
 	tp, ok := prov.(domain.TaskInspector)
 	if !ok {
@@ -62,6 +85,75 @@ func collectStatusTasks(ctx context.Context, prov domain.Provider, snapshot *sta
 		}
 		snapshot.RecentTasks = append(snapshot.RecentTasks, tasks...)
 	}
+	if warningCache != nil {
+		collectStatusTaskWarningDetails(ctx, prov, snapshot, warningCache)
+	}
+}
+
+func collectStatusTaskWarningDetails(ctx context.Context, prov domain.Provider, snapshot *statusOverview, cache *statusTaskWarningCache) {
+	logInspector, ok := prov.(domain.TaskLogInspector)
+	if !ok || cache == nil {
+		return
+	}
+	if snapshot.TaskWarningDetails == nil {
+		snapshot.TaskWarningDetails = map[string]string{}
+	}
+	queries := 0
+	for _, task := range snapshot.RecentTasks {
+		if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(task.Status)), "WARNINGS:") || task.UPID == "" {
+			continue
+		}
+		if detail, found := cache.details[task.UPID]; found {
+			snapshot.TaskWarningDetails[task.UPID] = detail
+			continue
+		}
+		if cache.seen[task.UPID] || queries >= statusTaskWarningQueryLimit || ctx.Err() != nil {
+			continue
+		}
+		cache.seen[task.UPID] = true
+		cache.order = append(cache.order, task.UPID)
+		queries++
+		lines, err := logInspector.TaskLog(ctx, task.Node, task.UPID, statusTaskWarningLogLimit)
+		if err != nil {
+			continue
+		}
+		detail := summarizeTaskWarningLines(lines)
+		if detail == "" {
+			continue
+		}
+		cache.details[task.UPID] = detail
+		snapshot.TaskWarningDetails[task.UPID] = detail
+	}
+	for len(cache.order) > statusTaskWarningCacheLimit {
+		oldest := cache.order[0]
+		cache.order = cache.order[1:]
+		delete(cache.details, oldest)
+		delete(cache.seen, oldest)
+	}
+}
+
+func summarizeTaskWarningLines(lines []domain.TaskLogLine) string {
+	var warnings []string
+	for _, line := range lines {
+		text := strings.TrimSpace(line.Text)
+		upper := strings.ToUpper(text)
+		if !strings.HasPrefix(upper, "WARN:") && !strings.HasPrefix(upper, "WARNING:") && !strings.HasPrefix(upper, "WARNING ") {
+			continue
+		}
+		text = redact.String(output.SanitizeTerminal(text))
+		text = strings.Join(strings.Fields(text), " ")
+		if text == "" {
+			continue
+		}
+		if len(text) > 180 {
+			text = text[:177] + "..."
+		}
+		warnings = append(warnings, text)
+		if len(warnings) == 2 {
+			break
+		}
+	}
+	return strings.Join(warnings, "; ")
 }
 
 func statusHealth(s *statusOverview) string {

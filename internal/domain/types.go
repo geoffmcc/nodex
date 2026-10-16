@@ -77,6 +77,18 @@ type Storage struct {
 	Labels           map[string]string        `json:"labels,omitempty" yaml:"labels,omitempty"`
 	Destination      *StorageDestination      `json:"destination,omitempty" yaml:"destination,omitempty"`
 	CapacityIdentity *StorageCapacityIdentity `json:"capacity_identity,omitempty" yaml:"capacity_identity,omitempty"`
+	Backing          *StorageBacking          `json:"backing,omitempty" yaml:"backing,omitempty"`
+}
+
+// StorageBacking contains non-secret Proxmox configuration fields that identify
+// a storage's configured backend. It does not claim which physical device backs
+// that backend.
+type StorageBacking struct {
+	Type        string `json:"type" yaml:"type"`
+	Path        string `json:"path,omitempty" yaml:"path,omitempty"`
+	VolumeGroup string `json:"volume_group,omitempty" yaml:"volume_group,omitempty"`
+	ThinPool    string `json:"thin_pool,omitempty" yaml:"thin_pool,omitempty"`
+	ZFSPool     string `json:"zfs_pool,omitempty" yaml:"zfs_pool,omitempty"`
 }
 
 // StorageCapacityIdentity is provider evidence about the scope of reported
