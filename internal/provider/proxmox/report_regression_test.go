@@ -64,7 +64,10 @@ func TestReportCephMissingBinaryIsUnsupported(t *testing.T) {
 			}
 			if !tc.unsupported {
 				var pe *app.ProviderError
-				if !errors.As(err, &pe) || (pe.StatusCode != tc.status && !(tc.status == 500 && pe.StatusCode == 0)) {
+				if !errors.As(err, &pe) {
+					t.Fatal(err)
+				}
+				if pe.StatusCode != tc.status && (tc.status != 500 || pe.StatusCode != 0) {
 					t.Fatal(err)
 				}
 			}
