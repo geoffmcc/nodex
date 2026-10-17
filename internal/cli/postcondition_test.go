@@ -82,6 +82,56 @@ func TestProbeVMRecognisesRealProxmoxAbsenceShape(t *testing.T) {
 	}
 }
 
+type staticVMConfigProvider struct {
+	bareProvider
+	configs map[string]map[string]interface{}
+}
+
+func (p *staticVMConfigProvider) VMs(context.Context) ([]domain.VM, error) { return nil, nil }
+
+func (p *staticVMConfigProvider) VMConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
+	if config, ok := p.configs[fmt.Sprintf("%s/%d", node, vmid)]; ok {
+		return config, nil
+	}
+	return nil, app.NewExitError(fmt.Errorf("%w", app.ErrNotFound), app.ExitNotFound)
+}
+
+func TestVMMigrationVerifierRequiresSourceAbsentAndTargetPresent(t *testing.T) {
+	prov := &staticVMConfigProvider{configs: map[string]map[string]interface{}{
+		"target/9925": {"vmid": 9925},
+	}}
+	outcome := vmMigrationVerifier(prov, 9925, "source", "target")(context.Background())
+	if !outcome.Verified || outcome.Unverifiable || outcome.Changed == nil || !*outcome.Changed {
+		t.Fatalf("migration readback = %+v, want verified move with changed=true", outcome)
+	}
+}
+
+type staticCTConfigProvider struct {
+	bareProvider
+	configs map[string]map[string]interface{}
+}
+
+func (p *staticCTConfigProvider) Containers(context.Context) ([]domain.Container, error) {
+	return nil, nil
+}
+
+func (p *staticCTConfigProvider) ContainerConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
+	if config, ok := p.configs[fmt.Sprintf("%s/%d", node, vmid)]; ok {
+		return config, nil
+	}
+	return nil, app.NewExitError(fmt.Errorf("%w", app.ErrNotFound), app.ExitNotFound)
+}
+
+func TestContainerMigrationVerifierRequiresSourceAbsentAndTargetPresent(t *testing.T) {
+	prov := &staticCTConfigProvider{configs: map[string]map[string]interface{}{
+		"target/9928": {"vmid": 9928},
+	}}
+	outcome := containerMigrationVerifier(prov, 9928, "source", "target")(context.Background())
+	if !outcome.Verified || outcome.Unverifiable || outcome.Changed == nil || !*outcome.Changed {
+		t.Fatalf("migration readback = %+v, want verified move with changed=true", outcome)
+	}
+}
+
 type readErrVMProvider struct {
 	bareProvider
 	err error
@@ -258,6 +308,9 @@ func (p *scriptedSnapshotProvider) ContainerSnapshots(_ context.Context, _ strin
 	}
 	state := p.steps[p.calls]
 	p.calls++
+	if state == presenceUnknown {
+		return nil, errors.New("listing failed")
+	}
 	if state == presencePresent {
 		return []domain.Snapshot{{Name: "nx4fu-snap1"}}, nil
 	}
@@ -281,6 +334,57 @@ func TestProbeContainerSnapshotIgnoresOtherSnapshots(t *testing.T) {
 	probe := probeContainerSnapshot(prov, "proxmox", 9610, "nx4fu-snap1")
 	if got, err := probe(context.Background()); err != nil || got != presenceAbsent {
 		t.Fatalf("a different snapshot name must not count as the target, got %v err=%v", got, err)
+	}
+}
+
+func TestPresenceVerifierConfirmsCreatedSnapshotAndChange(t *testing.T) {
+	prov := &scriptedSnapshotProvider{steps: []presenceState{presenceAbsent, presencePresent}}
+	probe := probeContainerSnapshot(prov, "proxmox", 9610, "nx4fu-snap1")
+	prior, err := observePresence(context.Background(), probe)
+	if err != nil || prior != presenceAbsent {
+		t.Fatalf("expected snapshot absent before create, got %v err=%v", prior, err)
+	}
+
+	outcome := presenceVerifier(probe, "snapshot nx4fu-snap1", prior)(context.Background())
+	if !outcome.Verified {
+		t.Fatalf("expected created snapshot to be verified, got %+v", outcome)
+	}
+	if outcome.Changed == nil || !*outcome.Changed {
+		t.Fatalf("expected changed=true after observing absence then presence, got %v", outcome.Changed)
+	}
+}
+
+func TestPresenceVerifierDoesNotClaimChangeWithoutPriorAbsence(t *testing.T) {
+	prov := &scriptedSnapshotProvider{steps: []presenceState{presenceUnknown, presencePresent}}
+	probe := probeContainerSnapshot(prov, "proxmox", 9610, "nx4fu-snap1")
+	prior, err := observePresence(context.Background(), probe)
+	if err == nil || prior != presenceUnknown {
+		t.Fatalf("expected prior state unknown, got %v err=%v", prior, err)
+	}
+
+	outcome := presenceVerifier(probe, "snapshot nx4fu-snap1", prior)(context.Background())
+	if !outcome.Verified {
+		t.Fatalf("a positive read should verify presence, got %+v", outcome)
+	}
+	if outcome.Changed != nil {
+		t.Fatalf("changed must remain unknown without known prior absence, got %v", *outcome.Changed)
+	}
+}
+
+func TestPresenceVerifierReportsNoChangeWhenSnapshotAlreadyExisted(t *testing.T) {
+	prov := &scriptedSnapshotProvider{steps: []presenceState{presencePresent, presencePresent}}
+	probe := probeContainerSnapshot(prov, "proxmox", 9610, "nx4fu-snap1")
+	prior, err := observePresence(context.Background(), probe)
+	if err != nil || prior != presencePresent {
+		t.Fatalf("expected snapshot present before create, got %v err=%v", prior, err)
+	}
+
+	outcome := presenceVerifier(probe, "snapshot nx4fu-snap1", prior)(context.Background())
+	if !outcome.Verified {
+		t.Fatalf("expected the requested state to be present, got %+v", outcome)
+	}
+	if outcome.Changed == nil || *outcome.Changed {
+		t.Fatalf("expected changed=false when snapshot pre-existed, got %v", outcome.Changed)
 	}
 }
 

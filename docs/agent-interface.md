@@ -63,9 +63,11 @@ to repeat for a new observation.
 
 An accepted request is not completed work. A completed task is not automatically a verified resource postcondition. For lifecycle tasks, a refresh can separately inspect the current guest state. `verification: passed` there means the target currently reports the desired state; it does not prove that this request caused the state, and providers that expose no stable guest UUID cannot rule out ID reuse.
 
+When a handler reports a structured synchronous completion, the receipt records `submission: accepted` and `execution: succeeded` without requiring a provider task ID. Postcondition verification remains separate and may still be `unsupported`.
+
 Definitive provider rejections (for example, a validation/authorization 4xx response) are reported as `rejected`. Transport loss, request timeouts, and provider server errors are retained as `unknown` unless an attributable task identifier or other authoritative evidence is available; a 5xx is not assumed to mean that no mutation occurred.
 
-For other operations, postcondition verification is `unsupported` unless the existing handler already supplied trustworthy verification (for example, container OS-update's existing before/apply/after checks). `changed` stays unknown unless evidence establishes it.
+Some operations now provide direct readback evidence. With `--wait`, VM disk resize checks the selected disk's configured size against the request; relative sizes use the pre-operation config as their baseline. VM and container restores check that the restored guest config is readable, and receipt reconciliation repeats that check without resubmitting. VM and container deletion receipts confirm the guest config is absent when refreshed. Storage-volume backup IDs are checked for the matching VM or LXC subtype before restore submission. Other operations report `verification: unsupported` unless their handler supplies a postcondition; `changed` stays unknown unless evidence establishes it.
 
 For bounded multi-resource actions such as migration, cloning, disk movement, and backup create/restore, `context` includes the primary resource plus `related_targets` for each explicit source/destination or subresource known before submission.
 
@@ -151,7 +153,7 @@ Visible exclusions preserve existing specialized safety behavior:
 | `storage download` | Unsupported | Writes an arbitrary local destination file. |
 | maintenance inventory/status/plan/apply/verify/resume/reconcile/abandon | Unsupported | Uses multi-host inventory, immutable plans, and its existing per-host receipt/recovery workflow. `maintenance report` is read-only and available. |
 | certification run/cleanup | Unsupported | Uses its dedicated authorization, disposable-resource controls, and ledger. `certification report` remains read-only. |
-| `cluster join` | Unsupported | The existing handler performs a preflight and refuses execution without a safe peer credential. |
+| `cluster join` | Supported with existing safety gates | Requires expert mode, exact target confirmation, profile SSH configuration, a pinned host key, and an operator-loaded SSH agent for peer authentication. |
 | `doctor` | Unsupported | Checks every configured profile and fans out across multiple provider endpoints. |
 | environment health/backup-health | Unsupported | Can fan out across multiple configured provider profiles rather than one immutable execution context. |
 | `monitor check` | Supported for inspection only with one `--target` | The selected target and full monitor configuration are bound from one config snapshot; environment fan-out is refused. |

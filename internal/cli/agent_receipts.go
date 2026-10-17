@@ -250,7 +250,7 @@ func reconcileAgentReceipt(ctx context.Context, cmdCtx *Context, args []string, 
 	cmdCtx.AgentConfig = cfg
 	if receipt.Submission == agent.SubmissionNotAttempted || receipt.Submission == agent.SubmissionRejected ||
 		receipt.Submission == agent.SubmissionAccepted && receipt.Execution == agent.ExecutionFailed ||
-		receipt.Submission == agent.SubmissionAccepted && receipt.Execution == agent.ExecutionSucceeded && receipt.Verification != agent.VerificationUnknown && !lifecyclePath(receipt.Operation) && !templateReceiptReobservable(&receipt) {
+		receipt.Submission == agent.SubmissionAccepted && receipt.Execution == agent.ExecutionSucceeded && receipt.Verification != agent.VerificationUnknown && !lifecyclePath(receipt.Operation) && !guestDeletePath(receipt.Operation) && !restorePath(receipt.Operation) && !templateReceiptReobservable(&receipt) {
 		receipt.NextActions = nil
 		if err := lease.Save(receipt); err != nil {
 			return app.NewExitError(fmt.Errorf("save refreshed receipt: %w", err), app.ExitConfig)
@@ -308,6 +308,10 @@ func reconcileAgentReceipt(ctx context.Context, cmdCtx *Context, args []string, 
 		return app.MarkEmitted(app.NewExitError(errors.New(receipt.Error.Message), receipt.Error.Exit))
 	}
 	return nil
+}
+
+func restorePath(operation string) bool {
+	return operation == "backup restore" || operation == "container restore"
 }
 
 func sameExecutionIdentity(receipt, current agent.ExecutionContext) bool {

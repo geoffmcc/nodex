@@ -195,6 +195,18 @@ func verifyConfigReadback(observed map[string]interface{}, requested map[string]
 				continue
 			}
 		}
+		if key == "net0" && present {
+			requestedProperties, requestedIsList := parseConfigProperties(wantCanonical)
+			observedProperties, observedIsList := parseConfigProperties(got)
+			if requestedIsList && observedIsList && propertiesSatisfied(observedProperties, requestedProperties) {
+				continue
+			}
+			if qemuNetworkInterfaceMatches(got, wantCanonical) {
+				continue
+			}
+			mismatches = append(mismatches, configFieldMismatch{Key: key, Request: wantCanonical, Observed: got})
+			continue
+		}
 		// Compare a property list by the properties asked for, so a
 		// provider-normalised element does not read as a change.
 		if requestedProperties, isList := parseConfigProperties(wantCanonical); isList && present {
@@ -219,6 +231,51 @@ func verifyConfigReadback(observed map[string]interface{}, requested map[string]
 		}
 	}
 	return len(mismatches) == 0, mismatches
+}
+
+// qemuNetworkInterfaceMatches allows Proxmox's readback to include the
+// automatically assigned MAC address after a model name such as "virtio".
+// Explicitly requested MACs and all remaining requested properties must
+// still match exactly.
+func qemuNetworkInterfaceMatches(observed, requested string) bool {
+	observedParts := strings.Split(observed, ",")
+	requestedParts := strings.Split(requested, ",")
+	if len(observedParts) == 0 || len(requestedParts) == 0 {
+		return false
+	}
+	observedModel, observedMAC, observedHasMAC := strings.Cut(strings.TrimSpace(observedParts[0]), "=")
+	requestedModel, requestedMAC, requestedHasMAC := strings.Cut(strings.TrimSpace(requestedParts[0]), "=")
+	if observedModel != requestedModel {
+		return false
+	}
+	if requestedHasMAC && (!observedHasMAC || observedMAC != requestedMAC) {
+		return false
+	}
+	if len(requestedParts) == 1 {
+		return true
+	}
+	observedProperties, ok := parseNetworkProperties(strings.Join(observedParts[1:], ","))
+	if !ok {
+		return false
+	}
+	requestedProperties, ok := parseNetworkProperties(strings.Join(requestedParts[1:], ","))
+	return ok && propertiesSatisfied(observedProperties, requestedProperties)
+}
+
+func parseNetworkProperties(value string) ([]configProperty, bool) {
+	if value == "" {
+		return nil, true
+	}
+	parts := strings.Split(value, ",")
+	properties := make([]configProperty, 0, len(parts))
+	for _, part := range parts {
+		key, propertyValue, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok || strings.TrimSpace(key) == "" || strings.TrimSpace(propertyValue) == "" {
+			return nil, false
+		}
+		properties = append(properties, configProperty{key: strings.TrimSpace(key), value: strings.TrimSpace(propertyValue)})
+	}
+	return properties, true
 }
 
 type createdVolumeExpectation struct {
@@ -422,6 +479,47 @@ func readbackContainerConfig(ctx context.Context, prov domain.Provider, node str
 		)
 	}
 	return ci.ContainerConfig(ctx, node, vmid)
+}
+
+// readbackVMConfig reads the current VM config for comparison.
+func readbackVMConfig(ctx context.Context, prov domain.Provider, node string, vmid int) (map[string]interface{}, error) {
+	vi, ok := prov.(domain.VMInspector)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: VM configuration readback not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return vi.VMConfig(ctx, node, vmid)
+}
+
+// guestConfigUpdateVerifier checks requested VM/CT fields after an asynchronous
+// config task completes. The prior read is used only to report whether the
+// requested values differed before submission.
+func guestConfigUpdateVerifier(prov domain.Provider, resourceType, node string, vmid int, requested map[string]string, before map[string]interface{}, beforeErr error) postconditionVerifier {
+	return func(ctx context.Context) postconditionOutcome {
+		var observed map[string]interface{}
+		var err error
+		if resourceType == "vm" {
+			observed, err = readbackVMConfig(ctx, prov, node, vmid)
+		} else {
+			observed, err = readbackContainerConfig(ctx, prov, node, vmid)
+		}
+		if err != nil {
+			return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s configuration could not be read after the update: %v", resourceType, err)}
+		}
+		matched, mismatches := verifyConfigReadback(observed, requested)
+		outcome := postconditionOutcome{Verified: matched}
+		if !matched {
+			outcome.Detail = fmt.Sprintf("%d of %d requested %s configuration fields did not read back as requested: %s", len(mismatches), len(requested), resourceType, joinMismatches(mismatches))
+		}
+		if beforeErr == nil {
+			priorMatched, _ := verifyConfigReadback(before, requested)
+			changed := !priorMatched
+			outcome.Changed = &changed
+		}
+		return outcome
+	}
 }
 
 // runSynchronousConfigUpdate models a config endpoint that applies inline and

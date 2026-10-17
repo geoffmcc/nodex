@@ -265,15 +265,57 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 	}
 	switch op.Path {
 	case "vm create":
-		verification = []string{"after task success, VM config is read back and CPU, memory, and any requested disk storage/size are compared with the request"}
+		verification = []string{"after task success, VM config is read back and CPU, memory, requested disk storage/size/network interface, serial0 socket, and standard VGA display are verified so the VM supports Nodex serial access and Proxmox graphical noVNC access"}
 	case "container create":
-		verification = []string{"after task success, container config is read back and requested CPU, memory, swap, unprivileged status, and any requested rootfs storage/size are compared with the request"}
+		verification = []string{"after task success, container config is read back and cmode=console, requested CPU, memory, swap, unprivileged status, rootfs storage/size, network interface, DNS, search domain, and nesting setting are compared with the request", "configuration readback does not prove guest networking works; start the container and verify address, default route, and DNS; if systemd-networkd fails in an unprivileged LXC, nesting=1 may be required"}
+	case "access acl add":
+		verification = []string{"after the ACL update, the ACL list is read back and the requested path, role, principal, and propagation setting are confirmed"}
+	case "access acl remove":
+		verification = []string{"after the ACL update, the ACL list is read back and the exact path, role, and principal grant is confirmed absent"}
+	case "access user delete":
+		verification = []string{"after the user deletion, the user list is read back and the exact user ID is confirmed absent"}
+	case "vm snapshot create", "container snapshot create":
+		verification = []string{"after waited task success, the snapshot list is read back to confirm the named snapshot exists; changed is true only when it was observed absent before the request", "receipt reconciliation also reads back the snapshot name recorded in the receipt after task completion"}
+	case "vm snapshot delete", "container snapshot delete":
+		verification = []string{"after waited task success, the snapshot list is read back to confirm the named snapshot is absent", "receipt reconciliation also reads back the snapshot name recorded in the receipt after task completion"}
+	case "vm update":
+		verification = []string{"with --wait, after task success, current VM config is read back and compared with the requested fields; without --wait, receipt reconciliation establishes task status only"}
+	case "vm migrate":
+		verification = []string{"with --wait, after task success, VM config on both nodes is read back to confirm absence on the source and presence on the target; without --wait, receipt reconciliation establishes task status only"}
+	case "container migrate":
+		verification = []string{"with --wait, after task success, container config on both nodes is read back to confirm absence on the source and presence on the target; without --wait, receipt reconciliation establishes task status only"}
 	case "container update":
-		verification = []string{"after synchronous application, current container config is read back and compared with the requested fields; asynchronous provider updates expose task completion only"}
+		verification = []string{"after synchronous application or, with --wait, task success, current container config is read back and compared with the requested fields; without --wait, receipt reconciliation establishes task status only"}
+	case "vm disk resize":
+		verification = []string{"with --wait, after task success, VM config is read back and the selected disk is checked against the requested size; relative sizes are compared with the pre-operation config; receipt reconciliation establishes task status only"}
+	case "backup restore":
+		verification = []string{"with --wait, after task success, VM config is read back to confirm the restored VM exists; receipt reconciliation repeats the existence check"}
+	case "container restore":
+		verification = []string{"with --wait, after task success, container config is read back to confirm the restored container exists; receipt reconciliation repeats the existence check"}
+	case "firewall rule create":
+		verification = []string{"after synchronous creation, the rule inventory for the selected scope is read back to confirm the returned position and requested fields; explicit enable=0 is verified as disabled"}
+	case "firewall rule update":
+		verification = []string{"after synchronous update, the selected scope's rule inventory is read back to confirm the requested fields at the target position"}
+	case "firewall rule delete":
+		verification = []string{"after synchronous deletion, the selected scope's rule inventory is read back to confirm the exact rule at the target position is absent"}
+	case "firewall alias create":
+		verification = []string{"after synchronous creation, the firewall alias inventory is read back to confirm the alias exists"}
+	case "firewall alias delete":
+		verification = []string{"after synchronous deletion, the firewall alias inventory is read back to confirm the alias is absent"}
+	case "firewall group create":
+		verification = []string{"after synchronous creation, the firewall security-group inventory is read back to confirm the group exists"}
+	case "firewall group delete":
+		verification = []string{"after synchronous deletion, the firewall security-group inventory is read back to confirm the group is absent"}
+	case "firewall ipset create":
+		verification = []string{"after synchronous creation, the firewall IP-set inventory is read back to confirm the set exists"}
+	case "firewall ipset delete":
+		verification = []string{"after synchronous deletion, the firewall IP-set inventory is read back to confirm the set is absent"}
+	case "firewall ipset entry add":
+		verification = []string{"after synchronous addition, the selected firewall IP set is read back to confirm the CIDR entry exists"}
+	case "firewall ipset entry remove":
+		verification = []string{"after synchronous removal, the selected firewall IP set is read back to confirm the CIDR entry is absent"}
 	case "vm template", "container template":
 		verification = []string{"after synchronous application or waited task success, current guest config is inspected for template:1"}
-	case "vm snapshot delete", "container snapshot delete":
-		verification = []string{"after waited task success, the snapshot list is read back to confirm the named snapshot is absent"}
 	case "vm delete":
 		verification = []string{"with --wait, after task success the receipt-bound VM config endpoint is read to confirm the VM is absent"}
 	case "container delete":
@@ -281,6 +323,8 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 	}
 	var recovery []string
 	switch {
+	case op.Path == "vm snapshot create" || op.Path == "container snapshot create" || op.Path == "vm snapshot delete" || op.Path == "container snapshot delete":
+		recovery = []string{"agent receipt show", "agent receipt reconcile refreshes the task and reads back the receipt-bound snapshot name; it never resubmits"}
 	case op.Path == "vm cloud-init":
 		recovery = []string{"agent receipt show", "if the provider call outcome is unknown, inspect the VM's cloud-init state in Proxmox; this synchronous endpoint returns no task ID, so receipt reconciliation cannot verify or resubmit it"}
 	case strings.HasPrefix(op.Path, "maintenance "):
@@ -454,6 +498,9 @@ func handlerFlagDefinition(path, name string) AgentFlag {
 		spec.Type, spec.Minimum, spec.Maximum = "integer", 16, domain.MaxCreateMemoryMiB
 		spec.ValueSyntax = "memory in MiB"
 		spec.Default = domain.DefaultVMCreateMemoryMiB
+		if path == "container create" {
+			spec.Default = domain.DefaultContainerCreateMemoryMiB
+		}
 	case "--swap":
 		spec.Type, spec.Minimum, spec.Maximum = "integer", 0, domain.MaxCreateMemoryMiB
 		spec.ValueSyntax = "swap in MiB"
@@ -475,6 +522,19 @@ func handlerFlagDefinition(path, name string) AgentFlag {
 		spec.Description = "Container rootfs storage; cannot be combined with the positional storage argument."
 	case "--enable":
 		spec.Type, spec.Choices = "integer", []string{"0", "1"}
+	case "--nesting":
+		spec.Type, spec.Choices = "integer", []string{"0", "1"}
+		spec.Description = "Optional Proxmox container nesting feature; 1 allows nested features and expands guest access to procfs/sysfs. It may be required for newer systemd-networkd in unprivileged LXC."
+	case "--net0":
+		if path == "vm create" {
+			spec.ValueSyntax = "Proxmox QEMU network interface config, such as virtio,bridge=vmbr0"
+		} else {
+			spec.ValueSyntax = "Proxmox LXC network interface config, such as name=eth0,bridge=vmbr0,ip=dhcp,ip6=auto"
+		}
+	case "--nameserver":
+		spec.ValueSyntax = "DNS resolver IP address"
+	case "--searchdomain":
+		spec.ValueSyntax = "DNS search domain"
 	}
 	if strings.Contains(path, "firewall rule") && name == "--action" {
 		spec.Choices = []string{"accept", "deny", "reject"}
@@ -533,6 +593,12 @@ func operationInputSchema(op OperationMeta, args []AgentArgument, flags []AgentF
 		argsSchema["minItems"] = 0
 		argsSchema["maxItems"] = 1
 	}
+	if op.Path == "container install" {
+		// The target plus at least one package are required; the CLI accepts up
+		// to 32 packages after the target.
+		argsSchema["minItems"] = 2
+		argsSchema["maxItems"] = 33
+	}
 	flagProperties := make(map[string]any, len(flags))
 	var requiredFlags []string
 	for _, flag := range flags {
@@ -571,6 +637,14 @@ func operationInputSchema(op OperationMeta, args []AgentArgument, flags []AgentF
 			watch["const"] = false
 		}
 		flagsSchema["not"] = map[string]any{"required": []string{"--interval"}}
+	}
+	if op.Path == "access acl remove" {
+		// An ACL removal targets exactly one principal. Keep both alternatives
+		// optional individually, while requiring one and rejecting both here.
+		flagsSchema["oneOf"] = []any{
+			map[string]any{"required": []string{"--user"}},
+			map[string]any{"required": []string{"--group"}},
+		}
 	}
 	if len(requiredFlags) > 0 {
 		flagsSchema["required"] = requiredFlags
@@ -616,7 +690,13 @@ func parseArgumentSyntax(operation, usage string) []AgentArgument {
 	tokens := strings.Fields(usage)
 	for i := 0; i < len(tokens); i++ {
 		token := tokens[i]
-		if token == "|" || token == "..." {
+		if token == "|" {
+			continue
+		}
+		if strings.Trim(token, "[]") == "..." {
+			if len(result) > 0 && !strings.Contains(result[len(result)-1].Syntax, "...") {
+				result[len(result)-1].Syntax = strings.TrimSuffix(result[len(result)-1].Syntax, "]") + " ...]"
+			}
 			continue
 		}
 		if strings.HasPrefix(token, "--") || strings.Contains(token, "--") {
@@ -730,7 +810,7 @@ func sideEffects(op OperationMeta) ([]string, []string) {
 	case "storage upload":
 		return []string{"local_file_read"}, []string{"remote_mutation"}
 	case "cluster join":
-		return []string{}, []string{"remote_read"}
+		return []string{"local_agent_receipt_write"}, []string{"remote_mutation"}
 	case "agent receipt refresh", "agent receipt reconcile":
 		return []string{"local_agent_receipt_write"}, []string{"remote_read"}
 	case "agent receipt show", "agent receipt list":
@@ -785,6 +865,9 @@ func operationConstraints(op OperationMeta) []string {
 		constraints = append(constraints, "cluster scope uses a position; node scope requires node and position; VM scope requires node/VMID and position; scope-target is omitted only for cluster scope")
 	case "access acl add":
 		constraints = append(constraints, "--role is required and at least one of --user or --group is required")
+	case "access acl remove":
+		constraints = append(constraints, "--role is required with exactly one of --user or --group")
+		constraints = append(constraints, "--confirm-target must equal the exact ACL path, principal, and role after --yes --force --expert")
 	case "monitor check":
 		constraints = append(constraints, "agent mode requires one --target and rejects unbounded target/environment fan-out")
 	case "maintenance apply", "maintenance resume", "maintenance reconcile":
@@ -799,6 +882,11 @@ func operationConstraints(op OperationMeta) []string {
 func lifecyclePath(path string) bool {
 	words := strings.Fields(path)
 	return len(words) == 2 && (words[0] == "vm" || words[0] == "container") && lifecycleDesiredState(words[0], words[1]) != ""
+}
+
+func guestDeletePath(path string) bool {
+	words := strings.Fields(path)
+	return len(words) == 2 && (words[0] == "vm" || words[0] == "container") && words[1] == "delete"
 }
 
 func agentModeSupport(op OperationMeta) (bool, string, bool) {
@@ -817,8 +905,6 @@ func agentModeSupport(op OperationMeta) (bool, string, bool) {
 		return false, "local configuration/credential or local-file side effects are intentionally excluded from agent execution", false
 	case "certification run", "certification cleanup":
 		return false, "uses the dedicated certification authorization and recovery ledger; use its existing workflow", false
-	case "cluster join":
-		return false, "the existing handler performs a preflight and refuses execution without a safe peer credential", false
 	case "environment health", "environment backup-health":
 		return false, "may fan out across multiple configured provider profiles; agent mode requires one immutable explicit target context", false
 	case "doctor":
