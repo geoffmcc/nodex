@@ -197,8 +197,15 @@ func parseFirewallRuleArgs(args []string) (domain.FirewallRuleCreateInput, error
 		case "macro":
 			input.Macro = val
 		case "enable":
-			if val == "1" || val == "true" {
+			enabled, err := strconv.ParseBool(val)
+			if err != nil {
+				return input, fmt.Errorf("invalid enable value %q (use 0, 1, false, or true)", val)
+			}
+			input.EnableSet = true
+			if enabled {
 				input.Enable = 1
+			} else {
+				input.Enable = 0
 			}
 		case "pos":
 			v, err := strconv.Atoi(val)
@@ -299,8 +306,13 @@ func runFirewallRuleCreate(ctx context.Context, cmdCtx *Context, args []string) 
 	if err != nil {
 		return fmt.Errorf("create firewall rule: %w", err)
 	}
-
-	return writeFirewallRules(cmdCtx, []domain.FirewallRule{*rule})
+	if rule == nil {
+		return app.NewExitError(fmt.Errorf("firewall rule creation returned no rule for read-back"), app.ExitPartialFailure)
+	}
+	probe := probeFirewallRule(prov, scope, node, vmid, rule.Pos, input)
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall rule create",
+		firewallRuleTarget(scope, node, vmid, rule.Pos), "disruptive",
+		presenceVerifier(probe, fmt.Sprintf("firewall rule %s at position %d", scope, rule.Pos), presenceAbsent))
 }
 
 // runFirewallRuleUpdate updates a firewall rule.
@@ -386,6 +398,11 @@ func runFirewallRuleUpdate(ctx context.Context, cmdCtx *Context, args []string) 
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
 	}
+	prior, err := firewallRuleAt(ctx, prov, scope, node, vmid, pos)
+	if err != nil {
+		return err
+	}
+	changed := !firewallRuleMatchesInput(prior, input)
 
 	switch scope {
 	case "cluster":
@@ -398,9 +415,10 @@ func runFirewallRuleUpdate(ctx context.Context, cmdCtx *Context, args []string) 
 	if err != nil {
 		return fmt.Errorf("update firewall rule: %w", err)
 	}
-
-	fmt.Fprintf(cmdCtx.Writer, "Firewall rule at position %d updated\n", pos)
-	return nil
+	probe := probeFirewallRule(prov, scope, node, vmid, pos, input)
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall rule update",
+		firewallRuleTarget(scope, node, vmid, pos), "disruptive",
+		overrideVerifiedChanged(presenceVerifier(probe, fmt.Sprintf("firewall rule at position %d", pos), presenceUnknown), changed))
 }
 
 // runFirewallRuleDelete deletes a firewall rule.
@@ -464,22 +482,25 @@ func runFirewallRuleDelete(ctx context.Context, cmdCtx *Context, args []string) 
 		return err
 	}
 
-	var desc, target string
+	var desc string
 	switch scope {
 	case "cluster":
 		desc = fmt.Sprintf("firewall rule pos %d (cluster)", pos)
-		target = fmt.Sprintf("cluster-rule-%d", pos)
 	case "node":
 		desc = fmt.Sprintf("firewall rule pos %d (node %s)", pos, node)
-		target = fmt.Sprintf("%s-rule-%d", node, pos)
 	case "vm":
 		desc = fmt.Sprintf("firewall rule pos %d (VM %s/%d)", pos, node, vmid)
-		target = fmt.Sprintf("%s-%d-rule-%d", node, vmid, pos)
 	}
+	target := firewallRuleTarget(scope, node, vmid, pos)
 
 	if err := checkDestructive(cmdCtx, desc, target); err != nil {
 		return err
 	}
+	prior, err := firewallRuleAt(ctx, prov, scope, node, vmid, pos)
+	if err != nil {
+		return err
+	}
+	expected := firewallRuleInputFrom(prior)
 
 	switch scope {
 	case "cluster":
@@ -492,9 +513,9 @@ func runFirewallRuleDelete(ctx context.Context, cmdCtx *Context, args []string) 
 	if err != nil {
 		return fmt.Errorf("delete firewall rule: %w", err)
 	}
-
-	fmt.Fprintf(cmdCtx.Writer, "Firewall rule at position %d deleted\n", pos)
-	return nil
+	probe := probeFirewallRule(prov, scope, node, vmid, pos, expected)
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall rule delete", target, "destructive",
+		absenceVerifier(probe, fmt.Sprintf("firewall rule at position %d", pos), presencePresent))
 }
 
 // --- Firewall alias mutation handlers ---
@@ -533,13 +554,14 @@ func runFirewallAliasCreate(ctx context.Context, cmdCtx *Context, args []string)
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
 	}
+	probe := probeFirewallAlias(prov, name)
+	priorState, _ := probe(ctx)
 
 	if err := fm.CreateFirewallAlias(ctx, name, cidr, comment); err != nil {
 		return fmt.Errorf("create firewall alias: %w", err)
 	}
-
-	fmt.Fprintf(cmdCtx.Writer, "Firewall alias %s created\n", name)
-	return nil
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall alias create", name, "disruptive",
+		presenceVerifier(probe, fmt.Sprintf("firewall alias %q", name), priorState))
 }
 
 func runFirewallAliasDelete(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -567,13 +589,14 @@ func runFirewallAliasDelete(ctx context.Context, cmdCtx *Context, args []string)
 	if err := checkDestructive(cmdCtx, desc, name); err != nil {
 		return err
 	}
+	probe := probeFirewallAlias(prov, name)
+	priorState, _ := probe(ctx)
 
 	if err := fm.DeleteFirewallAlias(ctx, name); err != nil {
 		return fmt.Errorf("delete firewall alias: %w", err)
 	}
-
-	fmt.Fprintf(cmdCtx.Writer, "Firewall alias %s deleted\n", name)
-	return nil
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall alias delete", name, "destructive",
+		absenceVerifier(probe, fmt.Sprintf("firewall alias %q", name), priorState))
 }
 
 // --- Firewall IP set mutation handlers ---
@@ -611,13 +634,14 @@ func runFirewallIPSetCreate(ctx context.Context, cmdCtx *Context, args []string)
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
 	}
+	probe := probeFirewallIPSet(prov, name)
+	priorState, _ := probe(ctx)
 
 	if err := fm.CreateFirewallIPSet(ctx, name, comment); err != nil {
 		return fmt.Errorf("create firewall IP set: %w", err)
 	}
-
-	fmt.Fprintf(cmdCtx.Writer, "Firewall IP set %s created\n", name)
-	return nil
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall ipset create", name, "disruptive",
+		presenceVerifier(probe, fmt.Sprintf("firewall IP set %q", name), priorState))
 }
 
 func runFirewallIPSetEntryAdd(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -654,13 +678,14 @@ func runFirewallIPSetEntryAdd(ctx context.Context, cmdCtx *Context, args []strin
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
 	}
+	probe := probeFirewallIPSetEntry(prov, name, cidr)
+	priorState, _ := probe(ctx)
 
 	if err := fm.AddFirewallIPSetEntry(ctx, name, cidr, comment); err != nil {
 		return fmt.Errorf("add IP set entry: %w", err)
 	}
-
-	fmt.Fprintf(cmdCtx.Writer, "Entry %s added to IP set %s\n", cidr, name)
-	return nil
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall ipset entry add", name+"/"+cidr, "disruptive",
+		presenceVerifier(probe, fmt.Sprintf("IP set entry %q in %q", cidr, name), priorState))
 }
 
 func runFirewallIPSetEntryRemove(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -690,13 +715,14 @@ func runFirewallIPSetEntryRemove(ctx context.Context, cmdCtx *Context, args []st
 	if err := checkDestructive(cmdCtx, desc, target); err != nil {
 		return err
 	}
+	probe := probeFirewallIPSetEntry(prov, name, cidr)
+	priorState, _ := probe(ctx)
 
 	if err := fm.RemoveFirewallIPSetEntry(ctx, name, cidr); err != nil {
 		return fmt.Errorf("remove IP set entry: %w", err)
 	}
-
-	fmt.Fprintf(cmdCtx.Writer, "Entry %s removed from IP set %s\n", cidr, name)
-	return nil
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall ipset entry remove", name+"/"+cidr, "destructive",
+		absenceVerifier(probe, fmt.Sprintf("IP set entry %q in %q", cidr, name), priorState))
 }
 
 // firewallIPSetEntryConfirmationTarget keeps the confirmation target safe to
@@ -730,13 +756,14 @@ func runFirewallIPSetDelete(ctx context.Context, cmdCtx *Context, args []string)
 	if err := checkDestructive(cmdCtx, desc, name); err != nil {
 		return err
 	}
+	probe := probeFirewallIPSet(prov, name)
+	priorState, _ := probe(ctx)
 
 	if err := fm.DeleteFirewallIPSet(ctx, name); err != nil {
 		return fmt.Errorf("delete firewall IP set: %w", err)
 	}
-
-	fmt.Fprintf(cmdCtx.Writer, "Firewall IP set %s deleted\n", name)
-	return nil
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall ipset delete", name, "destructive",
+		absenceVerifier(probe, fmt.Sprintf("firewall IP set %q", name), priorState))
 }
 
 // --- Firewall security group mutation handlers ---
@@ -777,13 +804,14 @@ func runFirewallGroupCreate(ctx context.Context, cmdCtx *Context, args []string)
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
 	}
+	probe := probeFirewallGroup(prov, name)
+	priorState, _ := probe(ctx)
 
 	if err := fm.CreateFirewallGroup(ctx, name, comment); err != nil {
 		return fmt.Errorf("create firewall group: %w", err)
 	}
-
-	fmt.Fprintf(cmdCtx.Writer, "Firewall group %s created\n", name)
-	return nil
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall group create", name, "disruptive",
+		presenceVerifier(probe, fmt.Sprintf("firewall security group %q", name), priorState))
 }
 
 func runFirewallGroupDelete(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -814,13 +842,15 @@ func runFirewallGroupDelete(ctx context.Context, cmdCtx *Context, args []string)
 	if err := checkDestructive(cmdCtx, desc, name); err != nil {
 		return err
 	}
+	probe := probeFirewallGroup(prov, name)
+	priorState, _ := probe(ctx)
 
 	if err := fm.DeleteFirewallGroup(ctx, name); err != nil {
 		return fmt.Errorf("delete firewall group: %w", err)
 	}
 
-	fmt.Fprintf(cmdCtx.Writer, "Firewall group %s deleted\n", name)
-	return nil
+	return runSynchronousMutationWithPostcondition(ctx, cmdCtx, prov, "firewall group delete", name, "destructive",
+		absenceVerifier(probe, fmt.Sprintf("firewall security group %q", name), priorState))
 }
 
 // --- Firewall options update handler ---
@@ -1196,9 +1226,16 @@ func runAccessUserDelete(ctx context.Context, cmdCtx *Context, args []string) er
 	if err := ap.DeleteUser(ctx, userid); err != nil {
 		return fmt.Errorf("delete user %s: %w", userid, err)
 	}
-
-	fmt.Fprintf(cmdCtx.Writer, "User %s deleted\n", userid)
-	return nil
+	users, err := ap.Users(ctx)
+	if err != nil {
+		return fmt.Errorf("user deletion submitted but could not verify read-back: %w", err)
+	}
+	for _, user := range users {
+		if user.UserID == userid {
+			return app.NewExitError(fmt.Errorf("user deletion submitted but %s remains on read-back", userid), app.ExitPartialFailure)
+		}
+	}
+	return writeAccessMutationResult(cmdCtx, prov.Name(), "access user delete", userid, true)
 }
 
 func runAccessACLAdd(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -1210,7 +1247,9 @@ func runAccessACLAdd(ctx context.Context, cmdCtx *Context, args []string) error 
 
 	path := args[0]
 	var role, user, group string
-	propagate := 0
+	// Proxmox ACLs propagate by default; send the default explicitly so the
+	// command's read-back check validates the effective setting.
+	propagate := 1
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "--role":
@@ -1260,13 +1299,127 @@ func runAccessACLAdd(ctx context.Context, cmdCtx *Context, args []string) error 
 	if err != nil {
 		return err
 	}
+	before, err := ap.ACL(ctx)
+	if err != nil {
+		return fmt.Errorf("read ACL before add: %w", err)
+	}
+	changed := true
+	for _, entry := range before {
+		if entry.Path == path && entry.RoleID == role && entry.UserID == user && entry.GroupID == group && entry.Propagate == propagate {
+			changed = false
+			break
+		}
+	}
 
 	if err := ap.AddACL(ctx, path, role, user, group, propagate); err != nil {
 		return fmt.Errorf("add ACL: %w", err)
 	}
+	entries, err := ap.ACL(ctx)
+	if err != nil {
+		return fmt.Errorf("ACL added but could not verify read-back: %w", err)
+	}
+	verified := false
+	for _, entry := range entries {
+		if entry.Path == path && entry.RoleID == role && entry.UserID == user && entry.GroupID == group && entry.Propagate == propagate {
+			verified = true
+			break
+		}
+	}
+	if !verified {
+		return app.NewExitError(fmt.Errorf("ACL add submitted but the matching entry was not found on read-back"), app.ExitPartialFailure)
+	}
+	return writeAccessMutationResult(cmdCtx, prov.Name(), "access acl add", fmt.Sprintf("path=%s role=%s user=%s group=%s", path, role, user, group), changed)
+}
 
-	fmt.Fprintf(cmdCtx.Writer, "ACL added: path=%s role=%s\n", path, role)
-	return nil
+func runAccessACLRemove(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) < 1 {
+		return app.NewExitError(fmt.Errorf(
+			"usage: nodex access acl remove <path> --role <role> (--user <id> | --group <id>)"), app.ExitUsage)
+	}
+	path := args[0]
+	var role, user, group string
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--role":
+			if i+1 >= len(args) || role != "" {
+				return app.NewExitError(fmt.Errorf("--role requires exactly one value"), app.ExitUsage)
+			}
+			role = args[i+1]
+			i++
+		case "--user":
+			if i+1 >= len(args) || user != "" {
+				return app.NewExitError(fmt.Errorf("--user requires exactly one value"), app.ExitUsage)
+			}
+			user = args[i+1]
+			i++
+		case "--group":
+			if i+1 >= len(args) || group != "" {
+				return app.NewExitError(fmt.Errorf("--group requires exactly one value"), app.ExitUsage)
+			}
+			group = args[i+1]
+			i++
+		default:
+			return app.NewExitError(fmt.Errorf("unknown ACL remove argument: %s", args[i]), app.ExitUsage)
+		}
+	}
+	if path == "" || role == "" || (user == "") == (group == "") {
+		return app.NewExitError(fmt.Errorf(
+			"ACL path and role are required, with exactly one of --user or --group"), app.ExitUsage)
+	}
+	principal := "user=" + user
+	if group != "" {
+		principal = "group=" + group
+	}
+	target := fmt.Sprintf("path=%s %s role=%s", path, principal, role)
+	if err := checkSecurityAdmin(cmdCtx, "ACL remove "+target, target); err != nil {
+		return err
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	ap, err := requireAccess(prov)
+	if err != nil {
+		return err
+	}
+	before, err := ap.ACL(ctx)
+	if err != nil {
+		return fmt.Errorf("read ACL before removal: %w", err)
+	}
+	changed := false
+	for _, entry := range before {
+		if entry.Path == path && entry.RoleID == role && entry.UserID == user && entry.GroupID == group {
+			changed = true
+			break
+		}
+	}
+	if err := ap.RemoveACL(ctx, path, role, user, group); err != nil {
+		return fmt.Errorf("remove ACL: %w", err)
+	}
+	entries, err := ap.ACL(ctx)
+	if err != nil {
+		return fmt.Errorf("ACL removal submitted but could not verify read-back: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.Path == path && entry.RoleID == role && entry.UserID == user && entry.GroupID == group {
+			return app.NewExitError(fmt.Errorf("ACL removal submitted but the matching entry remains"), app.ExitPartialFailure)
+		}
+	}
+	return writeAccessMutationResult(cmdCtx, prov.Name(), "access acl remove", target, changed)
+}
+
+func writeAccessMutationResult(cmdCtx *Context, provider, operation, target string, changed bool) error {
+	result := output.NewOperationResult(operation, provider, cmdCtx.Opts.Profile)
+	result.Target = target
+	result.Safety = safety.TierSecurityAdmin.String()
+	result.Submitted = true
+	result.Synchronous = true
+	result.Success = true
+	result.Status = "verified"
+	result.Verification = "verified"
+	result.Changed = &changed
+	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 }
 
 // --- Access output formatters ---
@@ -1583,7 +1736,7 @@ func runAccessRolesDispatch(ctx context.Context, cmdCtx *Context, args []string)
 
 func runAccessACLDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) == 0 {
-		fmt.Fprintln(cmdCtx.Writer, "Usage: nodex access acl <list|add> [args]")
+		fmt.Fprintln(cmdCtx.Writer, "Usage: nodex access acl <list|add|remove> [args]")
 		fmt.Fprintln(cmdCtx.Writer, "  list            List all ACL entries")
 		fmt.Fprintln(cmdCtx.Writer, "  add <path> --role <role> [--user <id>] [--group <id>] [--propagate]")
 		return nil
@@ -1593,9 +1746,11 @@ func runAccessACLDispatch(ctx context.Context, cmdCtx *Context, args []string) e
 		return runAccessACLList(ctx, cmdCtx, args[1:])
 	case "add":
 		return runAccessACLAdd(ctx, cmdCtx, args[1:])
+	case "remove":
+		return runAccessACLRemove(ctx, cmdCtx, args[1:])
 	default:
 		return app.NewExitError(
-			fmt.Errorf("unknown access acl subcommand: %s (use list or add)", args[0]),
+			fmt.Errorf("unknown access acl subcommand: %s (use list, add, or remove)", args[0]),
 			app.ExitUsage,
 		)
 	}
