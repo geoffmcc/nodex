@@ -20,7 +20,9 @@ import (
 
 func TestVMConsoleUsesTermProxyAndRelaysWebsocket(t *testing.T) {
 	const ticket = "ticket-that-must-not-leak"
+	const user = "root@pam!nodex"
 	var gotParams url.Values
+	var gotAuth string
 	upgrader := websocket.Upgrader{}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -30,7 +32,7 @@ func TestVMConsoleUsesTermProxyAndRelaysWebsocket(t *testing.T) {
 			}
 			gotParams = r.Form
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"data":{"port":"5900","ticket":%q}}`, ticket)
+			fmt.Fprintf(w, `{"data":{"user":%q,"port":"5900","ticket":%q}}`, user, ticket)
 		case "/api2/json/nodes/node1/qemu/100/vncwebsocket":
 			if r.URL.Query().Get("vncticket") != ticket {
 				t.Errorf("vncticket = %q, want ticket", r.URL.Query().Get("vncticket"))
@@ -41,6 +43,30 @@ func TestVMConsoleUsesTermProxyAndRelaysWebsocket(t *testing.T) {
 				return
 			}
 			defer conn.Close()
+			messageType, auth, err := conn.ReadMessage()
+			if err != nil {
+				t.Errorf("read console auth: %v", err)
+				return
+			}
+			if messageType != websocket.TextMessage {
+				t.Errorf("auth message type = %d, want text", messageType)
+			}
+			gotAuth = string(auth)
+			if err := conn.WriteMessage(websocket.BinaryMessage, []byte("OK")); err != nil {
+				t.Errorf("write console ready acknowledgement: %v", err)
+				return
+			}
+			inputType, input, err := conn.ReadMessage()
+			if err != nil {
+				t.Errorf("read console input: %v", err)
+				return
+			}
+			if inputType != websocket.TextMessage {
+				t.Errorf("input message type = %d, want text", inputType)
+			}
+			if string(input) != "0:5:input" {
+				t.Errorf("console input packet = %q, want %q", input, "0:5:input")
+			}
 			_ = conn.WriteMessage(websocket.BinaryMessage, []byte("welcome"))
 			_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 			// Read until the client's close response arrives (or the connection
@@ -82,6 +108,9 @@ func TestVMConsoleUsesTermProxyAndRelaysWebsocket(t *testing.T) {
 	if gotParams.Get("serial") != "serial0" || gotParams.Get("websocket") != "" {
 		t.Fatalf("termproxy params = %v, want serial=serial0 without websocket", gotParams)
 	}
+	if gotAuth != user+":"+ticket+"\n" {
+		t.Fatalf("console authentication = %q, want user and ticket line", gotAuth)
+	}
 }
 
 func TestConsoleRejectsInvalidArguments(t *testing.T) {
@@ -108,6 +137,17 @@ func TestConsoleRejectsInvalidArguments(t *testing.T) {
 func TestConsoleTreatsWriteAfterPeerCloseAsNormalShutdown(t *testing.T) {
 	if !isNormalConsoleClose(websocket.ErrCloseSent) {
 		t.Fatal("write after the peer's close frame should be treated as normal shutdown")
+	}
+}
+
+func TestConsoleInputBeforeEscape(t *testing.T) {
+	input, disconnect := consoleInputBeforeEscape([]byte("root\x1dignored"))
+	if string(input) != "root" || !disconnect {
+		t.Fatalf("consoleInputBeforeEscape() = (%q, %v), want (%q, true)", input, disconnect, "root")
+	}
+	input, disconnect = consoleInputBeforeEscape([]byte("root"))
+	if string(input) != "root" || disconnect {
+		t.Fatalf("consoleInputBeforeEscape() = (%q, %v), want (%q, false)", input, disconnect, "root")
 	}
 }
 
