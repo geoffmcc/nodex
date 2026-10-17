@@ -199,6 +199,7 @@ func (p *Provider) clusterInitSSH(ctx context.Context, params domain.ClusterInit
 	if err != nil {
 		return fmt.Errorf("cluster init requires the OpenSSH client: %w", err)
 	}
+	// #nosec G204 -- OpenSSH is resolved with LookPath; operands are validated and the remote command is shell-quoted.
 	cmd := exec.CommandContext(ctx, sshPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -254,6 +255,7 @@ func (p *Provider) ClusterJoin(ctx context.Context, params domain.ClusterJoinPar
 	if err != nil {
 		return "", fmt.Errorf("cluster join requires the OpenSSH client: %w", err)
 	}
+	// #nosec G204 -- OpenSSH is resolved with LookPath; operands are validated and the remote command is shell-quoted.
 	cmd := exec.CommandContext(ctx, sshPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -287,7 +289,9 @@ func safeSSHHost(host string) bool {
 		return false
 	}
 	for _, r := range host {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-') {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-':
+		default:
 			return false
 		}
 	}
@@ -301,7 +305,10 @@ func safeSSHUser(user string) bool {
 		return false
 	}
 	for i, r := range user {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == '_' || i > 0 && (r >= '0' && r <= '9' || r == '-')) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_':
+		case i > 0 && (r >= '0' && r <= '9' || r == '-'):
+		default:
 			return false
 		}
 	}

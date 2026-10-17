@@ -193,7 +193,7 @@ func maintenanceTaskFailureDetail(outcome ansible.TaskOutcome) string {
 		}
 	}
 	lower := strings.ToLower(message)
-	if message == "" || !(strings.Contains(lower, "failed") || strings.Contains(lower, "error") || strings.Contains(lower, "unauthorized") || strings.Contains(lower, "denied")) {
+	if message == "" || (!strings.Contains(lower, "failed") && !strings.Contains(lower, "error") && !strings.Contains(lower, "unauthorized") && !strings.Contains(lower, "denied")) {
 		return ""
 	}
 	detail := "task diagnostic: " + outcome.Task

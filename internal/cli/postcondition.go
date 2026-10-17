@@ -386,10 +386,11 @@ func presenceVerifier(probe resourceProbe, target string, priorState presenceSta
 				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s could not be read after the operation: %v", target, err)}
 			case state == presencePresent:
 				out := postconditionOutcome{Verified: true}
-				if priorState == presenceAbsent {
+				switch priorState {
+				case presenceAbsent:
 					changed := true
 					out.Changed = &changed
-				} else if priorState == presencePresent {
+				case presencePresent:
 					changed := false
 					out.Changed = &changed
 				}

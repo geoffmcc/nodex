@@ -211,7 +211,7 @@ func writeHAGroups(cmdCtx *Context, groups []domain.HAGroup) error {
 
 func runHAResourceDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) == 0 {
-		return app.NewExitError(fmt.Errorf("usage: nodex ha resource <add|state|remove> ..."), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex ha resource <add|state|remove>"), app.ExitUsage)
 	}
 	switch args[0] {
 	case "add":
@@ -221,7 +221,7 @@ func runHAResourceDispatch(ctx context.Context, cmdCtx *Context, args []string) 
 	case "remove":
 		return runHAResourceRemove(ctx, cmdCtx, args[1:])
 	default:
-		return app.NewExitError(fmt.Errorf("usage: nodex ha resource <add|state|remove> ..."), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex ha resource <add|state|remove>"), app.ExitUsage)
 	}
 }
 

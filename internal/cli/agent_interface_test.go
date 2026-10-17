@@ -818,7 +818,8 @@ func TestAgentGuestConfigUpdatesVerifyAfterTaskCompletion(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			args := []string{"--agent", "--profile", "e2e", "--request-id", "req_config_" + tc.name, "--yes", "--wait"}
+			args := make([]string, 0, 9+len(strings.Fields(tc.operation)))
+			args = append(args, "--agent", "--profile", "e2e", "--request-id", "req_config_"+tc.name, "--yes", "--wait")
 			args = append(args, strings.Fields(tc.operation)...)
 			args = append(args, tc.target, tc.setting)
 			if err := Run(context.Background(), args, &stdout, &stderr); err != nil {

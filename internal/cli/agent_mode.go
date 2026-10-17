@@ -1524,9 +1524,10 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 				addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_UNKNOWN", Message: "delete task succeeded, but the receipt lacks a usable node or guest ID for readback"})
 			} else {
 				var probe resourceProbe
-				if parts[0] == "vm" {
+				switch parts[0] {
+				case "vm":
 					probe = probeVM(prov, r.Context.Node, vmid)
-				} else {
+				default:
 					probe = probeContainer(prov, r.Context.Node, vmid)
 				}
 				outcome := absenceVerifier(probe, fmt.Sprintf("%s %s/%d", parts[0], r.Context.Node, vmid), presenceUnknown)(ctx)
@@ -1549,9 +1550,10 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 				addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_UNKNOWN", Message: "snapshot task succeeded, but the receipt lacks a usable node, resource ID, or snapshot name for readback"})
 			} else {
 				var probe resourceProbe
-				if parts[0] == "vm" {
+				switch parts[0] {
+				case "vm":
 					probe = probeVMSnapshot(prov, r.Context.Node, vmid, r.Context.TargetName)
-				} else if parts[0] == "container" {
+				case "container":
 					probe = probeContainerSnapshot(prov, r.Context.Node, vmid, r.Context.TargetName)
 				}
 				if probe == nil {

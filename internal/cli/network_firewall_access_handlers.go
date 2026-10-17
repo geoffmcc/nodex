@@ -1337,29 +1337,41 @@ func runAccessACLRemove(ctx context.Context, cmdCtx *Context, args []string) err
 			"usage: nodex access acl remove <path> --role <role> (--user <id> | --group <id>)"), app.ExitUsage)
 	}
 	path := args[0]
+	args = args[1:]
 	var role, user, group string
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
+		switch arg {
 		case "--role":
-			if i+1 >= len(args) || role != "" {
+			if len(args) == 0 {
 				return app.NewExitError(fmt.Errorf("--role requires exactly one value"), app.ExitUsage)
 			}
-			role = args[i+1]
-			i++
+			if role != "" {
+				return app.NewExitError(fmt.Errorf("--role requires exactly one value"), app.ExitUsage)
+			}
+			role = args[0]
+			args = args[1:]
 		case "--user":
-			if i+1 >= len(args) || user != "" {
+			if len(args) == 0 {
 				return app.NewExitError(fmt.Errorf("--user requires exactly one value"), app.ExitUsage)
 			}
-			user = args[i+1]
-			i++
+			if user != "" {
+				return app.NewExitError(fmt.Errorf("--user requires exactly one value"), app.ExitUsage)
+			}
+			user = args[0]
+			args = args[1:]
 		case "--group":
-			if i+1 >= len(args) || group != "" {
+			if len(args) == 0 {
 				return app.NewExitError(fmt.Errorf("--group requires exactly one value"), app.ExitUsage)
 			}
-			group = args[i+1]
-			i++
+			if group != "" {
+				return app.NewExitError(fmt.Errorf("--group requires exactly one value"), app.ExitUsage)
+			}
+			group = args[0]
+			args = args[1:]
 		default:
-			return app.NewExitError(fmt.Errorf("unknown ACL remove argument: %s", args[i]), app.ExitUsage)
+			return app.NewExitError(fmt.Errorf("unknown ACL remove argument: %s", arg), app.ExitUsage)
 		}
 	}
 	if path == "" || role == "" || (user == "") == (group == "") {
