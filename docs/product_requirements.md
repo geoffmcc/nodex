@@ -98,9 +98,10 @@ All mutations are gated by the five-tier safety model:
 - **Ceph** OSD create/destroy/in/out and pool create/destroy
 - **Replication** job create, update, delete, schedule
 - **Access** user create and delete, ACL add (expert mode)
-- **Cluster administration:** guarded cluster initialization. Cluster join is
-  preflight-only and refuses execution because the required peer credential is
-  not safely available to Nodex.
+- **Cluster administration:** guarded cluster initialization and join. Join
+  runs `pvecm add` on the joining node over its profile's pinned SSH connection
+  and forwards an operator-loaded SSH agent to authenticate to the peer. Nodex
+  never collects or copies the peer root password or private key.
 - **Linux guest OS updates:** `container os-update` supports only the fixed
   `approved-full-upgrade` procedure on a running, explicitly identified,
   enrolled LXC; it does not reboot the guest.

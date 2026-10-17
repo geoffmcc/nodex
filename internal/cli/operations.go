@@ -270,6 +270,7 @@ func buildRegistry() []OperationMeta {
 		{Path: "node services", Description: "List node services", Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeServices"},
 		{Path: "node network", Description: "Show node network interfaces", Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeNetwork"},
 		{Path: "node dns", Description: "Show node DNS configuration", Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeDNS"},
+		{Path: "node dns set", Description: "Set a node’s primary DNS resolver and verify readback", Inspection: false, Scope: ScopeNode, SafetyTier: safety.TierDisruptive, RiskDimensions: []RiskDimension{RiskNetworkLock}, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDNSUpdater", HandlerFunc: "runNodeDNSSet", UsesOperationResult: true},
 		{Path: "node time", Description: "Show node time configuration", Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeTime"},
 		{Path: "node disks", Description: "List node disks", Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeDisks"},
 		{Path: "node certificates", Description: "List node certificates", Inspection: true, Scope: ScopeNode, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "NodeDetailProvider", HandlerFunc: "runNodeCertificates"},
@@ -400,7 +401,7 @@ func buildRegistry() []OperationMeta {
 		{"vm template", "Convert VM to template", "TemplateProvider", "runVMTemplate", []RiskDimension{RiskDataLoss}},
 		{"vm migrate", "Migrate VM to another node", "MigrationProvider", "runVMMigrate", []RiskDimension{RiskServiceDown}},
 		{"vm clone", "Clone a VM", "CloneProvider", "runVMClone", nil},
-		{"vm create", "Create a VM (defaults: 1 core, 512 MiB RAM, 4 GiB disk when storage is set)", "VMCreateProvider", "runVMCreate", nil},
+		{"vm create", "Create a VM with standard VGA for Proxmox noVNC and serial0 for Nodex serial console; optionally configure net0 (defaults: 1 core, 2048 MiB RAM, 4 GiB disk when storage is set)", "VMCreateProvider", "runVMCreate", nil},
 		{"vm disk resize", "Resize VM disk", "DiskProvider", "runVMDiskResize", []RiskDimension{RiskDataLoss}},
 		{"vm disk move", "Move VM disk to another storage", "DiskProvider", "runVMDiskMove", []RiskDimension{RiskServiceDown}},
 	}
@@ -415,7 +416,7 @@ func buildRegistry() []OperationMeta {
 		})
 	}
 	ops = append(ops, OperationMeta{
-		Path: "vm console", Description: "Open VM serial console",
+		Path: "vm console", Description: "Open VM serial console (Ctrl+] disconnects)",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
 		RiskDimensions: []RiskDimension{RiskServiceDown},
 		OutputModes:    []string{"table"}, CapabilityInterface: "ConsoleProvider", HandlerFunc: "runVMConsole",
@@ -463,7 +464,7 @@ func buildRegistry() []OperationMeta {
 		{"container start", "Start a container"},
 		{"container stop", "Stop a container (force)"},
 		{"container shutdown", "Graceful container shutdown"},
-		{"container suspend", "Suspend a container"},
+		{"container suspend", "Suspend a container (Proxmox LXC checkpoint support is experimental)"},
 		{"container resume", "Resume a suspended container"},
 	}
 	for _, v := range ctLifecycleReversible {
@@ -507,6 +508,14 @@ func buildRegistry() []OperationMeta {
 		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "AnsiblePctExecutor", HandlerFunc: "runContainerOSUpdate",
 	})
+	ops = append(ops, OperationMeta{
+		Path: "container install", Description: "Install explicitly requested APT packages in a running LXC guest",
+		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierDisruptive,
+		RiskDimensions: []RiskDimension{RiskServiceDown, RiskPrivEsc},
+		Waitable:       true, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
+		CapabilityInterface: "AnsiblePctExecutor", HandlerFunc: "runContainerPackageInstall",
+	})
 
 	// --- container (destructive mutations) ---
 	ops = append(ops, OperationMeta{
@@ -528,7 +537,7 @@ func buildRegistry() []OperationMeta {
 		{"container template", "Convert container to template", "TemplateProvider", "runCTTemplate", []RiskDimension{RiskDataLoss}},
 		{"container migrate", "Migrate container to another node", "MigrationProvider", "runCTMigrate", []RiskDimension{RiskServiceDown}},
 		{"container clone", "Clone a container", "CloneProvider", "runCTClone", nil},
-		{"container create", "Create an unprivileged container (defaults: 512 MiB RAM and swap, Proxmox CPU allocation)", "ContainerCreateProvider", "runCTCreate", nil},
+		{"container create", "Create an unprivileged container with a login-ready /dev/console; networking is optional via --net0 and nesting can be enabled for guests that require it", "ContainerCreateProvider", "runCTCreate", nil},
 		{"container restore", "Restore a container from a backup archive", "ContainerRestoreProvider", "runCTRestore", nil},
 	}
 	for _, v := range ctDisruptive {
@@ -628,7 +637,7 @@ func buildRegistry() []OperationMeta {
 	})
 	ops = append(ops,
 		OperationMeta{Path: "cluster init", Description: "Initialize a Proxmox cluster (destructive)", Inspection: false, Scope: ScopeCluster, SafetyTier: safety.TierSecurityAdmin, RiskDimensions: []RiskDimension{RiskDataLoss, RiskServiceDown, RiskNetworkLock}, RequiresTypeConfirm: true, ConfirmTargetFormat: "the cluster name argument", RequiresExpert: true, ProducesUPID: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterAdministrationProvider", HandlerFunc: "runClusterInit"},
-		OperationMeta{Path: "cluster join", Description: "Preflight a Proxmox cluster join (execution refused without safe peer credential)", Inspection: false, Scope: ScopeCluster, SafetyTier: safety.TierSecurityAdmin, RiskDimensions: []RiskDimension{RiskServiceDown, RiskNetworkLock}, RequiresTypeConfirm: true, ConfirmTargetFormat: "the node address argument used to join the cluster", RequiresExpert: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterAdministrationProvider", HandlerFunc: "runClusterJoin"},
+		OperationMeta{Path: "cluster join", Description: "Join the cluster over the profile's pinned SSH connection with an operator-loaded agent", Inspection: false, Scope: ScopeCluster, SafetyTier: safety.TierSecurityAdmin, RiskDimensions: []RiskDimension{RiskServiceDown, RiskNetworkLock}, RequiresTypeConfirm: true, ConfirmTargetFormat: "the node address argument used to join the cluster", RequiresExpert: true, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "ClusterAdministrationProvider", HandlerFunc: "runClusterJoin"},
 	)
 
 	// --- event ---
@@ -795,6 +804,9 @@ func buildRegistry() []OperationMeta {
 
 	// --- ha ---
 	haOps := []OperationMeta{
+		{Path: "ha resource add", Description: "Add a VM or container to HA management", Inspection: false, Scope: ScopeHA, SafetyTier: safety.TierDestructive, RiskDimensions: []RiskDimension{RiskServiceDown}, RequiresTypeConfirm: true, ConfirmTargetFormat: "the HA resource ID (vm:<id> or ct:<id>)", OutputModes: []string{"table"}, CapabilityInterface: "HAResourceMutator", HandlerFunc: "runHAResourceAdd"},
+		{Path: "ha resource state", Description: "Change the requested state of an HA resource", Inspection: false, Scope: ScopeHA, SafetyTier: safety.TierDestructive, RiskDimensions: []RiskDimension{RiskServiceDown}, RequiresTypeConfirm: true, ConfirmTargetFormat: "the HA resource ID (vm:<id> or ct:<id>)", OutputModes: []string{"table"}, CapabilityInterface: "HAResourceMutator", HandlerFunc: "runHAResourceState"},
+		{Path: "ha resource remove", Description: "Remove a guest from HA management", Inspection: false, Scope: ScopeHA, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the HA resource ID (vm:<id> or ct:<id>)", OutputModes: []string{"table"}, CapabilityInterface: "HAResourceMutator", HandlerFunc: "runHAResourceRemove"},
 		{Path: "ha list", Description: "List HA resources", Inspection: true, Scope: ScopeHA, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "HAInspector", HandlerFunc: "runHAList"},
 		{Path: "ha groups", Description: "List HA groups", Inspection: true, Scope: ScopeHA, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "HAInspector", HandlerFunc: "runHAGroups"},
 		{Path: "ha status", Description: "Show HA status", Inspection: true, Scope: ScopeHA, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "HAProvider", HandlerFunc: "runHAStatus"},
@@ -897,8 +909,9 @@ func buildRegistry() []OperationMeta {
 
 	accessMutations := []OperationMeta{
 		{Path: "access user create", Description: "Create a user", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresExpert: true, SecuritySensitivity: SecIdentity, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessUserCreate"},
-		{Path: "access user delete", Description: "Delete a user", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresTypeConfirm: true, ConfirmTargetFormat: "the user ID being deleted", RequiresExpert: true, SecuritySensitivity: SecIdentity, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessUserDelete"},
-		{Path: "access acl add", Description: "Add an ACL entry", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresExpert: true, SecuritySensitivity: SecAccess, OutputModes: []string{"table"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessACLAdd"},
+		{Path: "access user delete", Description: "Delete a user", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresTypeConfirm: true, ConfirmTargetFormat: "the user ID being deleted", RequiresExpert: true, SecuritySensitivity: SecIdentity, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessUserDelete"},
+		{Path: "access acl add", Description: "Add an ACL entry", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresExpert: true, SecuritySensitivity: SecAccess, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessACLAdd"},
+		{Path: "access acl remove", Description: "Remove an ACL grant", Inspection: false, Scope: ScopeAccess, SafetyTier: safety.TierSecurityAdmin, RequiresTypeConfirm: true, ConfirmTargetFormat: "the exact ACL path, principal, and role", RequiresExpert: true, SecuritySensitivity: SecAccess, UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "AccessProvider", HandlerFunc: "runAccessACLRemove"},
 	}
 	ops = append(ops, accessMutations...)
 
@@ -938,6 +951,7 @@ func buildRegistry() []OperationMeta {
 	// the dispatch itself does not mutate state; the sub-commands handle safety.
 	dispatchOps := []OperationMeta{
 		{Path: "maintenance policy", Description: "Manage unattended security-update policy (routing)", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runMaintenancePolicyDispatch"},
+		{Path: "ha resource", Description: "Manage HA resources (routing)", Inspection: true, Scope: ScopeHA, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runHAResourceDispatch"},
 		{Path: "vm snapshot", Description: "Manage VM snapshots (routing)", Inspection: true, Scope: ScopeGuest, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runVMSnapshotDispatch"},
 		{Path: "vm disk", Description: "Manage VM disks (routing)", Inspection: true, Scope: ScopeGuest, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runVMDiskDispatch"},
 		{Path: "container snapshot", Description: "Manage container snapshots (routing)", Inspection: true, Scope: ScopeGuest, SafetyTier: safety.TierObservation, OutputModes: []string{"table"}, HandlerFunc: "runCTSnapshotDispatch"},
@@ -1366,6 +1380,7 @@ func collectCommandPaths(cmds map[string]*command, prefix string) []string {
 // These are commands that have a handler (run) but internally route to sub-ops.
 // The registry includes entries for both the dispatch and its sub-ops.
 var knownDispatchCommands = map[string][]string{
+	"ha resource":        {"ha resource add", "ha resource state", "ha resource remove"},
 	"maintenance policy": {"maintenance policy plan", "maintenance policy apply", "maintenance policy restore"},
 	"agent receipt":      {"agent receipt list", "agent receipt show", "agent receipt refresh", "agent receipt reconcile"},
 	"vm snapshot":        {"vm snapshot create", "vm snapshot delete", "vm snapshot rollback"},
@@ -1388,7 +1403,7 @@ var knownDispatchCommands = map[string][]string{
 	"access users":       {"access users list"},
 	"access groups":      {"access groups list"},
 	"access roles":       {"access roles list"},
-	"access acl":         {"access acl list", "access acl add"},
+	"access acl":         {"access acl list", "access acl add", "access acl remove"},
 	"access domains":     {"access domains list"},
 	"access tokens":      {"access tokens list"},
 

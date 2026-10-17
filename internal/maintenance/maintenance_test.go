@@ -312,6 +312,33 @@ func TestInterpretCheckUpdatesRequiresCompleteSuccessfulEvidence(t *testing.T) {
 	}
 }
 
+func TestInterpretCheckUpdatesIncludesSafeFailureDetail(t *testing.T) {
+	testPassword := "x" + strings.Repeat("0", 8)
+	res := &ansible.RunResult{
+		Hosts: []ansible.HostResult{{Host: "pve1", Failures: 1, Failed: true}},
+		TaskOutcomes: map[string][]ansible.TaskOutcome{
+			"pve1": {{
+				EvidenceID: ansible.HostEvidenceRefresh,
+				Task:       "Refresh package metadata",
+				Failed:     false,
+				Message:    "Failed to update apt cache; password: " + testPassword,
+			}},
+		},
+	}
+
+	statuses := InterpretCheckUpdates(res)
+	if len(statuses) != 1 {
+		t.Fatalf("got %d host statuses, want 1", len(statuses))
+	}
+	joined := strings.Join(statuses[0].Warnings, "\n")
+	if !strings.Contains(joined, "task diagnostic: Refresh package metadata") {
+		t.Fatalf("failure task missing from warnings: %s", joined)
+	}
+	if !strings.Contains(joined, "password: [REDACTED]") || strings.Contains(joined, testPassword) {
+		t.Fatalf("failure details were not safely redacted: %s", joined)
+	}
+}
+
 func TestInterpretCheckUpdatesRejectsUnsuccessfulRun(t *testing.T) {
 	res := &ansible.RunResult{
 		Success:          false,

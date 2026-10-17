@@ -1,12 +1,29 @@
 package cli
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/geoffmcc/nodex/internal/ansible"
 	"github.com/geoffmcc/nodex/internal/config"
 )
+
+func TestContainerOSUpdateStatusPrefersAuthoritativeGuestStatus(t *testing.T) {
+	e2eContainerListStatusOverride = "stopped"
+	e2eContainerStatusOverride = "running"
+	t.Cleanup(func() {
+		e2eContainerListStatusOverride = ""
+		e2eContainerStatusOverride = ""
+	})
+	status, err := containerStatusForOSUpdate(context.Background(), &e2eMockProvider{}, "e2e-node", 200)
+	if err != nil {
+		t.Fatalf("containerStatusForOSUpdate: %v", err)
+	}
+	if status != "running" {
+		t.Fatalf("status = %q, want authoritative running status despite stale inventory", status)
+	}
+}
 
 func TestParseContainerOSUpdateArgs(t *testing.T) {
 	if err := parseContainerOSUpdateArgs([]string{"--policy", "approved-full-upgrade"}); err != nil {
@@ -20,6 +37,19 @@ func TestParseContainerOSUpdateArgs(t *testing.T) {
 	} {
 		if err := parseContainerOSUpdateArgs(args); err == nil {
 			t.Errorf("invalid args accepted: %v", args)
+		}
+	}
+}
+
+func TestValidateContainerPackageNames(t *testing.T) {
+	for _, packages := range [][]string{{"curl"}, {"python3-venv", "libssl3:amd64"}} {
+		if err := validateContainerPackageNames(packages); err != nil {
+			t.Errorf("valid package names rejected %v: %v", packages, err)
+		}
+	}
+	for _, packages := range [][]string{{}, {"curl", "curl"}, {"--option"}, {"curl;id"}, {"foo=1.2"}, {strings.Repeat("a", 129)}} {
+		if err := validateContainerPackageNames(packages); err == nil {
+			t.Errorf("invalid package names accepted: %v", packages)
 		}
 	}
 }
@@ -70,7 +100,8 @@ func TestInterpretContainerOSUpdate(t *testing.T) {
 				{EvidenceID: containerAPTTask, Task: "renamed apt task", RC: intPtrCLI(0)},
 				{EvidenceID: containerRefreshTask, Task: "renamed refresh task", RC: intPtrCLI(0)},
 				{EvidenceID: containerPackagesTask, Task: "renamed package task", RC: intPtrCLI(0), StdoutLines: []string{"Listing...", "openssl/stable 3.0 amd64 [upgradable from: 2.9]"}},
-				{EvidenceID: containerSimTask, Task: "renamed simulation task", RC: intPtrCLI(0)},
+				{EvidenceID: containerSimTask, Task: "renamed simulation task", RC: intPtrCLI(0), StdoutLines: []string{"0 upgraded, 0 newly installed, 0 to remove and 1 not upgraded."}},
+				{EvidenceID: containerHoldTask, Task: "renamed hold task", RC: intPtrCLI(0), StdoutLines: []string{"python3-distupgrade"}},
 				{EvidenceID: containerDpkgTask, Task: "renamed dpkg task", RC: intPtrCLI(0)},
 				{EvidenceID: containerRebootTask, Task: "renamed reboot task", RC: intPtrCLI(1)},
 				{EvidenceID: containerRootTask, Task: "renamed root task", RC: intPtrCLI(0), StdoutLines: []string{"Filesystem 1024-blocks Used Available Capacity Mounted on", "/dev/root 100 91 9 91% /"}},
@@ -83,6 +114,22 @@ func TestInterpretContainerOSUpdate(t *testing.T) {
 	}
 	if state.RootUsage != "91%" || state.DpkgIssues || state.RebootRequired {
 		t.Fatalf("unexpected health state: %+v", state)
+	}
+	if state.UpgradePlan != "0 upgraded, 0 newly installed, 0 to remove and 1 not upgraded." {
+		t.Fatalf("upgrade plan = %q", state.UpgradePlan)
+	}
+	if len(state.HeldPackages) != 1 || state.HeldPackages[0] != "python3-distupgrade" {
+		t.Fatalf("held packages = %v", state.HeldPackages)
+	}
+}
+
+func TestParseContainerUpgradePlan(t *testing.T) {
+	want := "2 upgraded, 1 newly installed, 0 to remove and 0 not upgraded."
+	if got := parseContainerUpgradePlan([]string{"Reading package lists...", want}); got != want {
+		t.Fatalf("parseContainerUpgradePlan() = %q, want %q", got, want)
+	}
+	if got := parseContainerUpgradePlan([]string{"Reading package lists..."}); got != "" {
+		t.Fatalf("parseContainerUpgradePlan() = %q, want empty", got)
 	}
 }
 
@@ -98,6 +145,7 @@ func TestInterpretContainerOSUpdateRejectsIncompleteCommandEvidence(t *testing.T
 				{EvidenceID: containerRefreshTask, RC: zero},
 				{EvidenceID: containerPackagesTask, RC: zero},
 				{EvidenceID: containerSimTask, RC: zero},
+				{EvidenceID: containerHoldTask, RC: zero},
 				{EvidenceID: containerDpkgTask, RC: zero},
 				{EvidenceID: containerRebootTask, RC: intPtrCLI(1)},
 				{EvidenceID: containerRootTask, RC: zero},

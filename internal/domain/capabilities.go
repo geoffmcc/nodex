@@ -127,6 +127,13 @@ type HAInspector interface {
 	HAGroups(ctx context.Context) ([]HAGroup, error)
 }
 
+// HAResourceMutator adds a guest to HA management.
+type HAResourceMutator interface {
+	HAResourceAdd(ctx context.Context, id, state string) error
+	HAResourceSetState(ctx context.Context, id, state string) error
+	HAResourceRemove(ctx context.Context, id string) error
+}
+
 // --- Optional capability interfaces (inspection detail and mutation) ---
 
 // NodeDetailProvider exposes detailed per-node information.
@@ -140,6 +147,11 @@ type NodeDetailProvider interface {
 	NodeCertificates(ctx context.Context, node string) ([]NodeCertificate, error)
 	NodeSubscription(ctx context.Context, node string) (*NodeSubscription, error)
 	NodeUpdates(ctx context.Context, node string) ([]NodeUpdate, error)
+}
+
+// NodeDNSUpdater exposes node resolver configuration updates.
+type NodeDNSUpdater interface {
+	SetNodeDNS(ctx context.Context, node string, dns *NodeDNS) error
 }
 
 // FirewallProvider exposes firewall management beyond basic rules.
@@ -191,8 +203,9 @@ type ClusterStatusProvider interface {
 }
 
 // ClusterAdministrationProvider exposes guarded cluster initialization and
-// join operations. Join implementations must refuse when the provider cannot
-// safely obtain the peer's required credential.
+// join operations. Join implementations use the selected profile's pinned SSH
+// identity and forward an operator-loaded SSH agent to the joining node; they
+// never collect or transport a peer root password.
 type ClusterAdministrationProvider interface {
 	ClusterInit(ctx context.Context, params ClusterInitParams) (string, error)
 	ClusterJoin(ctx context.Context, params ClusterJoinParams) (string, error)
@@ -272,12 +285,12 @@ const (
 	// Defaults used when creating a VM. Disk size applies when disk storage is
 	// selected; without a storage no VM disk is added.
 	DefaultVMCreateCores       = 1
-	DefaultVMCreateMemoryMiB   = 512
+	DefaultVMCreateMemoryMiB   = 2048
 	DefaultVMCreateDiskSizeGiB = 4
 
-	// Proxmox's LXC creation defaults. Cores stays unset to retain the
+	// Nodex's LXC creation defaults. Cores stays unset to retain the
 	// provider's allocation across available host CPUs.
-	DefaultContainerCreateMemoryMiB = 512
+	DefaultContainerCreateMemoryMiB = 2048
 	DefaultContainerCreateSwapMiB   = 512
 
 	MaxCreateCores       = 8192
@@ -291,6 +304,7 @@ type VMCreateOptions struct {
 	Name        string
 	ISO         string
 	DiskStorage string
+	Net0        string
 	Cores       *int
 	MemoryMiB   *int
 	DiskSizeGiB *int
@@ -303,6 +317,10 @@ type ContainerCreateOptions struct {
 	OSTemplate    string
 	Hostname      string
 	Storage       string
+	Net0          string
+	Nameserver    string
+	SearchDomain  string
+	Nesting       *bool
 	Cores         *int
 	MemoryMiB     *int
 	SwapMiB       *int
@@ -690,6 +708,7 @@ const (
 	CapabilityNodeDetail       Capability = "node_detail"
 	CapabilityFirewallAdvanced Capability = "firewall_advanced"
 	CapabilityHAStatus         Capability = "ha_status"
+	CapabilityHAMutations      Capability = "ha_mutations"
 	CapabilityBackupContent    Capability = "backup_content"
 	CapabilitySDN              Capability = "sdn"
 	CapabilitySnapshotDetail   Capability = "snapshot_detail"
@@ -773,20 +792,21 @@ type FirewallMutationProvider interface {
 
 // FirewallRuleCreateInput holds the fields for creating or updating a firewall rule.
 type FirewallRuleCreateInput struct {
-	Type     string
-	Action   string
-	Enable   int
-	Pos      int
-	Proto    string
-	Dest     string
-	Dport    string
-	Source   string
-	Sport    string
-	ICMPType string
-	Log      string
-	Comment  string
-	IFace    string
-	Macro    string
+	Type      string
+	Action    string
+	Enable    int
+	EnableSet bool
+	Pos       int
+	Proto     string
+	Dest      string
+	Dport     string
+	Source    string
+	Sport     string
+	ICMPType  string
+	Log       string
+	Comment   string
+	IFace     string
+	Macro     string
 }
 
 // FirewallOptionsUpdateInput holds the fields for updating firewall options.
@@ -814,6 +834,7 @@ type AccessProvider interface {
 	CreateUser(ctx context.Context, userid, password, email, firstname, lastname, comment string) error
 	DeleteUser(ctx context.Context, userid string) error
 	AddACL(ctx context.Context, path, role, user, group string, propagate int) error
+	RemoveACL(ctx context.Context, path, role, user, group string) error
 }
 
 // --- Identity domain types ---
@@ -949,6 +970,10 @@ func CapabilityMetadata() map[Capability]CapabilityMeta {
 		CapabilityHAStatus: {
 			Name: "HA Status", Category: CapInspection, Safety: TierObservation,
 			Interfaces: []string{"HAProvider"},
+		},
+		CapabilityHAMutations: {
+			Name: "HA Resource Management", Category: CapMutation, Safety: TierDestructive,
+			Interfaces: []string{"HAResourceMutator"},
 		},
 		CapabilityBackupContent: {
 			Name: "Backup Content", Category: CapInspection, Safety: TierObservation,

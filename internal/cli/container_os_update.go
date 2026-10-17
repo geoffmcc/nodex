@@ -23,6 +23,7 @@ const (
 	containerPackagesTask = ansible.ContainerEvidencePackages
 	containerSimTask      = ansible.ContainerEvidenceSimulation
 	containerDpkgTask     = ansible.ContainerEvidenceDpkg
+	containerHoldTask     = ansible.ContainerEvidenceHold
 	containerRebootTask   = ansible.ContainerEvidenceReboot
 	containerRootTask     = ansible.ContainerEvidenceRoot
 )
@@ -44,9 +45,11 @@ var runContainerOSAnsible = func(ctx context.Context, operation string, host ans
 
 type containerUpdateState struct {
 	PendingUpdates   []string
+	HeldPackages     []string
 	DpkgIssues       bool
 	RebootRequired   bool
 	RootUsage        string
+	UpgradePlan      string
 	EvidenceComplete bool
 }
 
@@ -123,6 +126,10 @@ func interpretContainerOSUpdate(result *ansible.RunResult, hostName string) cont
 		switch outcome.EvidenceID {
 		case containerPackagesTask:
 			state.PendingUpdates = parseContainerPackages(outcome.StdoutLines)
+		case containerHoldTask:
+			state.HeldPackages = nonEmptyLines(outcome.StdoutLines)
+		case containerSimTask:
+			state.UpgradePlan = parseContainerUpgradePlan(outcome.StdoutLines)
 		case containerDpkgTask:
 			state.DpkgIssues = (outcome.RC != nil && *outcome.RC != 0) || len(nonEmptyLines(outcome.StdoutLines)) > 0
 		case containerRebootTask:
@@ -146,6 +153,16 @@ func interpretContainerOSUpdate(result *ansible.RunResult, hostName string) cont
 		state.EvidenceComplete = false
 	}
 	return state
+}
+
+func parseContainerUpgradePlan(lines []string) string {
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "upgraded") && strings.Contains(line, "not upgraded") {
+			return line
+		}
+	}
+	return ""
 }
 
 func containerTaskUsable(outcome ansible.TaskOutcome) bool {
@@ -182,7 +199,7 @@ func containerRequiredEvidence(result *ansible.RunResult) []string {
 	if result != nil && len(result.RequiredEvidence) > 0 {
 		return append([]string(nil), result.RequiredEvidence...)
 	}
-	return []string{containerStatusTask, containerAPTTask, containerRefreshTask, containerPackagesTask, containerSimTask, containerDpkgTask, containerRebootTask, containerRootTask}
+	return []string{containerStatusTask, containerAPTTask, containerRefreshTask, containerPackagesTask, containerSimTask, containerHoldTask, containerDpkgTask, containerRebootTask, containerRootTask}
 }
 
 func parseContainerPackages(lines []string) []string {
@@ -253,21 +270,13 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 		return err
 	}
 	defer cleanup()
-	ci, err := requireContainerInspector(prov)
+	status, err := containerStatusForOSUpdate(ctx, prov, node, vmid)
 	if err != nil {
 		return err
 	}
-	containers, err := ci.Containers(ctx)
-	if err != nil {
-		return fmt.Errorf("list containers: %w", err)
-	}
 	target := fmt.Sprintf("%s/%d", node, vmid)
-	container, ok := findContainer(containers, target)
-	if !ok {
-		return app.NotFoundError("container %q", target)
-	}
-	if container.Status != "running" {
-		return app.NewExitError(fmt.Errorf("container %s is %s; it must be running for pct OS update", target, container.Status), app.ExitValidationError)
+	if !strings.EqualFold(status, "running") {
+		return app.NewExitError(fmt.Errorf("container %s is %s; it must be running for pct OS update", target, status), app.ExitValidationError)
 	}
 
 	host := ansible.HostSpec{
@@ -324,6 +333,33 @@ func runContainerOSUpdate(ctx context.Context, cmdCtx *Context, args []string) e
 	return nil
 }
 
+// containerStatusForOSUpdate prefers Proxmox's single-guest status endpoint.
+// The cluster-wide guest inventory can briefly lag a successful start task
+// and incorrectly reject an update for a running container.
+func containerStatusForOSUpdate(ctx context.Context, prov domain.Provider, node string, vmid int) (string, error) {
+	if inspector, ok := prov.(domain.GuestStatusInspector); ok {
+		status, err := inspector.GuestStatus(ctx, node, "container", vmid)
+		if err != nil {
+			return "", fmt.Errorf("inspect container %s/%d status: %w", node, vmid, err)
+		}
+		return status, nil
+	}
+	ci, err := requireContainerInspector(prov)
+	if err != nil {
+		return "", err
+	}
+	containers, err := ci.Containers(ctx)
+	if err != nil {
+		return "", fmt.Errorf("list containers: %w", err)
+	}
+	target := fmt.Sprintf("%s/%d", node, vmid)
+	container, ok := findContainer(containers, target)
+	if !ok {
+		return "", app.NotFoundError("container %q", target)
+	}
+	return container.Status, nil
+}
+
 func writeContainerUpdateResult(cmdCtx *Context, prov domain.Provider, profileName, target string, submitted, verified bool, before, after containerUpdateState) error {
 	result := output.NewOperationResult("container os-update", prov.Name(), profileName)
 	result.Target = target
@@ -345,6 +381,27 @@ func writeContainerUpdateResult(cmdCtx *Context, prov domain.Provider, profileNa
 	}
 	if after.RebootRequired {
 		result.Warnings = append(result.Warnings, "guest reports reboot-required; Nodex did not reboot it")
+	}
+	if submitted && !verified {
+		if !after.EvidenceComplete {
+			result.Warnings = append(result.Warnings, "verification evidence is incomplete")
+		}
+		if len(after.PendingUpdates) > 0 {
+			packages := after.PendingUpdates
+			if len(packages) > 10 {
+				packages = packages[:10]
+			}
+			result.Warnings = append(result.Warnings, fmt.Sprintf("remaining upgradable packages (%d): %s", len(after.PendingUpdates), strings.Join(packages, ", ")))
+		}
+		if len(after.HeldPackages) > 0 {
+			result.Warnings = append(result.Warnings, "APT-held packages: "+strings.Join(after.HeldPackages, ", "))
+		}
+		if after.DpkgIssues {
+			result.Warnings = append(result.Warnings, "guest package database reports outstanding dpkg issues")
+		}
+		if after.UpgradePlan != "" {
+			result.Warnings = append(result.Warnings, "upgrade simulation: "+after.UpgradePlan)
+		}
 	}
 	if after.RootUsage != "" {
 		if usage, parseErr := strconv.Atoi(strings.TrimSuffix(after.RootUsage, "%")); parseErr == nil && usage >= 90 {

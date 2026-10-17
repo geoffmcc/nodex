@@ -207,7 +207,6 @@ func runBackupCreate(ctx context.Context, cmdCtx *Context, args []string) error 
 	if err != nil {
 		return err
 	}
-
 	desc := fmt.Sprintf("backup VM %s/%d to storage %s (mode: %s)", node, vmid, storage, mode)
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
@@ -255,6 +254,9 @@ func runBackupRestore(ctx context.Context, cmdCtx *Context, args []string) error
 	if err != nil {
 		return err
 	}
+	if err := validateRestoreArchiveType(ctx, prov, node, archive, "qemu"); err != nil {
+		return err
+	}
 
 	desc := fmt.Sprintf("restore VM %d from archive %s on node %s", vmid, archive, node)
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
@@ -266,7 +268,8 @@ func runBackupRestore(ctx context.Context, cmdCtx *Context, args []string) error
 		return fmt.Errorf("restore VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "backup restore", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "backup restore", fmt.Sprintf("%s/%d", node, vmid), "disruptive",
+		presenceVerifier(probeVM(prov, node, vmid), fmt.Sprintf("VM %s/%d", node, vmid), presenceUnknown))
 }
 
 // --- Backup Job List (Tier 0: read) ---
@@ -846,7 +849,7 @@ func runVMMigrate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("migrate VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm migrate", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm migrate", fmt.Sprintf("%s/%d", node, vmid), "disruptive", vmMigrationVerifier(prov, vmid, node, target))
 }
 
 // --- Container Migrate (Tier 2: disruptive) ---
@@ -891,7 +894,7 @@ func runCTMigrate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("migrate container %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container migrate", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container migrate", fmt.Sprintf("%s/%d", node, vmid), "disruptive", containerMigrationVerifier(prov, vmid, node, target))
 }
 
 // --- VM Clone (Tier 2: disruptive) ---
@@ -999,12 +1002,12 @@ func parseCreateInt(values map[string]string, name string, min, max int) (*int, 
 }
 
 func runVMCreate(ctx context.Context, cmdCtx *Context, args []string) error {
-	positionals, flags, err := parseCreateInvocation(args, "--cores", "--memory", "--disk-size", "--disk-storage")
+	positionals, flags, err := parseCreateInvocation(args, "--cores", "--memory", "--disk-size", "--disk-storage", "--net0")
 	if err != nil {
 		return app.NewExitError(fmt.Errorf("invalid VM creation options: %w", err), app.ExitUsage)
 	}
 	if len(positionals) < 2 || len(positionals) > 5 {
-		return app.NewExitError(fmt.Errorf("usage: nodex vm create <node> <vmid> [name] [iso] [disk-storage] [--disk-storage ID] [--cores N] [--memory MiB] [--disk-size GiB]"), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex vm create <node> <vmid> [name] [iso] [disk-storage] [--disk-storage ID] [--cores N] [--memory MiB] [--disk-size GiB] [--net0 CONFIG]"), app.ExitUsage)
 	}
 	node := positionals[0]
 	if node == "" {
@@ -1045,6 +1048,7 @@ func runVMCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 	if diskSize != nil && diskStorage == "" {
 		return app.NewExitError(fmt.Errorf("disk storage must be supplied positionally or with --disk-storage when --disk-size is specified"), app.ExitUsage)
 	}
+	net0 := flags["--net0"]
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -1059,7 +1063,7 @@ func runVMCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return err
 	}
 	createOptions := domain.VMCreateOptions{
-		Name: name, ISO: iso, DiskStorage: diskStorage,
+		Name: name, ISO: iso, DiskStorage: diskStorage, Net0: net0,
 		Cores: cores, MemoryMiB: memory, DiskSizeGiB: diskSize,
 	}
 	upid, err := cp.VMCreate(ctx, node, vmid, createOptions)
@@ -1067,8 +1071,10 @@ func runVMCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("create VM %s/%d: %w", node, vmid, err)
 	}
 	requested := map[string]string{
-		"vmid":   strconv.Itoa(vmid),
-		"ostype": "l26",
+		"vmid":    strconv.Itoa(vmid),
+		"ostype":  "l26",
+		"serial0": "socket",
+		"vga":     "std",
 	}
 	requested["cores"] = strconv.Itoa(domain.DefaultVMCreateCores)
 	if cores != nil {
@@ -1083,6 +1089,9 @@ func runVMCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	if iso != "" {
 		requested["ide2"] = iso + ",media=cdrom"
+	}
+	if net0 != "" {
+		requested["net0"] = net0
 	}
 	var volume *createdVolumeExpectation
 	if diskStorage != "" {
@@ -1160,12 +1169,12 @@ func runCTClone(ctx context.Context, cmdCtx *Context, args []string) error {
 // nodex container create <node> <vmid> <ostemplate> [hostname] [storage] [resource flags]
 
 func runCTCreate(ctx context.Context, cmdCtx *Context, args []string) error {
-	positionals, flags, err := parseCreateInvocation(args, "--cores", "--memory", "--swap", "--rootfs-size", "--rootfs-storage")
+	positionals, flags, err := parseCreateInvocation(args, "--cores", "--memory", "--swap", "--rootfs-size", "--rootfs-storage", "--net0", "--nameserver", "--searchdomain", "--nesting")
 	if err != nil {
 		return app.NewExitError(fmt.Errorf("invalid container creation options: %w", err), app.ExitUsage)
 	}
 	if len(positionals) < 3 || len(positionals) > 5 {
-		return app.NewExitError(fmt.Errorf("usage: nodex container create <node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB]"), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex container create <node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB] [--net0 CONFIG] [--nameserver IP] [--searchdomain DOMAIN] [--nesting 0|1]"), app.ExitUsage)
 	}
 	node := positionals[0]
 	if node == "" {
@@ -1208,6 +1217,14 @@ func runCTCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 	if rootfsSize != nil && storage == "" {
 		return app.NewExitError(fmt.Errorf("rootfs storage must be supplied positionally or with --rootfs-storage when --rootfs-size is specified"), app.ExitUsage)
 	}
+	var nesting *bool
+	if value, ok := flags["--nesting"]; ok {
+		if value != "0" && value != "1" {
+			return app.NewExitError(fmt.Errorf("--nesting must be 0 or 1"), app.ExitUsage)
+		}
+		enabled := value == "1"
+		nesting = &enabled
+	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
@@ -1224,6 +1241,7 @@ func runCTCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	createOptions := domain.ContainerCreateOptions{
 		OSTemplate: ostemplate, Hostname: hostname, Storage: storage,
+		Net0: flags["--net0"], Nameserver: flags["--nameserver"], SearchDomain: flags["--searchdomain"], Nesting: nesting,
 		Cores: cores, MemoryMiB: memory, SwapMiB: swap, RootFSSizeGiB: rootfsSize,
 	}
 	upid, err := cp.CTCreate(ctx, node, vmid, createOptions)
@@ -1232,6 +1250,7 @@ func runCTCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	requested := map[string]string{
 		"vmid":         strconv.Itoa(vmid),
+		"cmode":        "console",
 		"memory":       strconv.Itoa(domain.DefaultContainerCreateMemoryMiB),
 		"swap":         strconv.Itoa(domain.DefaultContainerCreateSwapMiB),
 		"unprivileged": "1",
@@ -1247,6 +1266,18 @@ func runCTCreate(ctx context.Context, cmdCtx *Context, args []string) error {
 	}
 	if hostname != "" {
 		requested["hostname"] = hostname
+	}
+	for flag, key := range map[string]string{"--net0": "net0", "--nameserver": "nameserver", "--searchdomain": "searchdomain"} {
+		if value := flags[flag]; value != "" {
+			requested[key] = value
+		}
+	}
+	if nesting != nil {
+		if *nesting {
+			requested["features"] = "nesting=1"
+		} else {
+			requested["features"] = "nesting=0"
+		}
 	}
 	var volume *createdVolumeExpectation
 	if storage != "" {
@@ -1282,6 +1313,9 @@ func runCTRestore(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateRestoreArchiveType(ctx, prov, node, args[2], "lxc"); err != nil {
+		return err
+	}
 	desc := fmt.Sprintf("restore container %s/%d from %s", node, vmid, args[2])
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
@@ -1290,7 +1324,45 @@ func runCTRestore(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("restore container %s/%d: %w", node, vmid, err)
 	}
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container restore", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container restore", fmt.Sprintf("%s/%d", node, vmid), "disruptive",
+		presenceVerifier(probeContainer(prov, node, vmid), fmt.Sprintf("container %s/%d", node, vmid), presenceUnknown))
+}
+
+// validateRestoreArchiveType checks backup metadata before submitting a
+// restore. Proxmox can leave a partial guest behind when the wrong restore API
+// receives an archive, so reject known archive mismatches before mutation.
+func validateRestoreArchiveType(ctx context.Context, prov domain.Provider, node, archive, expected string) error {
+	storage, _, hasStorage := strings.Cut(archive, ":")
+	if !hasStorage || storage == "" {
+		return nil // The provider may accept a path rather than a storage volume ID.
+	}
+	backupProvider, ok := prov.(domain.BackupProvider)
+	if !ok {
+		return nil
+	}
+	items, err := backupProvider.BackupContent(ctx, node, storage)
+	if err != nil {
+		return fmt.Errorf("inspect restore archive %q: %w", archive, err)
+	}
+	for _, item := range items {
+		if item.Volid != archive {
+			continue
+		}
+		kind := item.Subtype
+		if kind == "" {
+			switch item.Format {
+			case "vma":
+				kind = "qemu"
+			case "tar":
+				kind = "lxc"
+			}
+		}
+		if kind != "" && kind != expected {
+			return app.NewExitError(fmt.Errorf("archive %q is a %q backup; use the matching restore command", archive, kind), app.ExitUsage)
+		}
+		return nil
+	}
+	return app.NewExitError(fmt.Errorf("backup archive %q was not found on storage %q", archive, storage), app.ExitUsage)
 }
 
 // --- VM Disk Resize (Tier 2: disruptive) ---
@@ -1328,13 +1400,15 @@ func runVMDiskResize(ctx context.Context, cmdCtx *Context, args []string) error 
 	if err := checkDisruptive(cmdCtx, desc); err != nil {
 		return err
 	}
+	before, beforeErr := readbackVMConfig(ctx, prov, node, vmid)
 
 	upid, err := dp.VMDiskResize(ctx, node, vmid, disk, size)
 	if err != nil {
 		return fmt.Errorf("resize disk VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm disk resize", fmt.Sprintf("%s/%d", node, vmid), "disruptive")
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm disk resize", fmt.Sprintf("%s/%d", node, vmid), "disruptive",
+		vmDiskResizeVerifier(prov, node, vmid, disk, size, before, beforeErr))
 }
 
 // --- VM Disk Move (Tier 2: disruptive) ---

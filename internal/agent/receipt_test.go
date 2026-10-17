@@ -63,6 +63,22 @@ func TestResultValidateAllowsDocumentedOutcomeCombinations(t *testing.T) {
 	}
 }
 
+func TestResultValidateBoundsTargetNameUsedForPostconditionReadback(t *testing.T) {
+	r := validTestReceipt("req_target_name")
+	r.Context.TargetName = "pre-upgrade"
+	if err := r.Validate(); err != nil {
+		t.Fatalf("valid target name rejected: %v", err)
+	}
+	r.Context.TargetName = strings.Repeat("x", 257)
+	if err := r.Validate(); err == nil {
+		t.Fatal("oversized target name accepted")
+	}
+	r.Context.TargetName = "unsafe\nname"
+	if err := r.Validate(); err == nil {
+		t.Fatal("control character in target name accepted")
+	}
+}
+
 func TestFingerprintSeparatesIdenticalResourceIDsOnDifferentEndpoints(t *testing.T) {
 	store := NewStore(filepath.Join(canonicalTestDir(t), "ledger"))
 	first := ExecutionContext{Profile: "one", Provider: "proxmox", Endpoint: "https://pve-a.example:8006", ResourceType: "vm", ResourceID: "100", Node: "pve1"}

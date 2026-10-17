@@ -530,7 +530,7 @@ func TestGetContainerConfigInjectsVMIDFromParameter(t *testing.T) {
 
 func TestGetVMConfigPreservesUnknownKeysAndDigest(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprint(w, `{"data":{"vmid":100,"name":"test-vm","serial0":"socket","vga":"serial0","digest":"abcdef123456","protection":1}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"vmid":100,"name":"test-vm","serial0":"socket","vga":"std","digest":"abcdef123456","protection":1}}`)
 	}))
 	defer s.Close()
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
@@ -544,7 +544,7 @@ func TestGetVMConfigPreservesUnknownKeysAndDigest(t *testing.T) {
 	if config.Protection != 1 {
 		t.Errorf("Protection = %d, want 1", config.Protection)
 	}
-	if config.Raw["serial0"] != "socket" || config.Raw["vga"] != "serial0" {
+	if config.Raw["serial0"] != "socket" || config.Raw["vga"] != "std" {
 		t.Errorf("Raw = %#v, want serial0/vga preserved", config.Raw)
 	}
 }
@@ -699,6 +699,90 @@ func TestGetHACurrentUsesStatusCurrentPath(t *testing.T) {
 	if len(items) != 1 || items[0].State != "started" || items[0].Node != "proxmox" {
 		t.Fatalf("HA current = %+v", items)
 	}
+}
+
+func TestAddHAResourcePostsSelectedStateOnce(t *testing.T) {
+	calls := 0
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != "/cluster/ha/resources" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if r.Form.Get("sid") != "ct:9928" || r.Form.Get("state") != "stopped" {
+			t.Fatalf("form = %v", r.Form)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"data":null}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	if err := c.AddHAResource(context.Background(), "ct:9928", "stopped"); err != nil {
+		t.Fatalf("AddHAResource: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("POST calls = %d, want 1", calls)
+	}
+}
+
+func TestAddHAResourceRejectsInvalidInputWithoutRequest(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	for _, tc := range []struct{ id, state string }{{"../1", "started"}, {"vm:1", "migrate"}} {
+		if err := c.AddHAResource(context.Background(), tc.id, tc.state); err == nil {
+			t.Errorf("AddHAResource(%q, %q) succeeded", tc.id, tc.state)
+		}
+	}
+}
+
+func TestSetAndRemoveHAResourceUseSingleMutations(t *testing.T) {
+	t.Run("state", func(t *testing.T) {
+		calls := 0
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if r.Method != http.MethodPut || r.URL.Path != "/cluster/ha/resources/ct:9928" {
+				t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+			}
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			if r.Form.Get("state") != "stopped" {
+				t.Fatalf("form = %v", r.Form)
+			}
+			_, _ = fmt.Fprint(w, `{"data":null}`)
+		}))
+		defer s.Close()
+		c := &Client{baseURL: s.URL, client: httpclient.New()}
+		if err := c.SetHAResourceState(context.Background(), "ct:9928", "stopped"); err != nil {
+			t.Fatalf("SetHAResourceState: %v", err)
+		}
+		if calls != 1 {
+			t.Fatalf("PUT calls = %d, want 1", calls)
+		}
+	})
+	t.Run("remove", func(t *testing.T) {
+		calls := 0
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if r.Method != http.MethodDelete || r.URL.Path != "/cluster/ha/resources/ct:9928" {
+				t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+			}
+			_, _ = fmt.Fprint(w, `{"data":null}`)
+		}))
+		defer s.Close()
+		c := &Client{baseURL: s.URL, client: httpclient.New()}
+		if err := c.RemoveHAResource(context.Background(), "ct:9928"); err != nil {
+			t.Fatalf("RemoveHAResource: %v", err)
+		}
+		if calls != 1 {
+			t.Fatalf("DELETE calls = %d, want 1", calls)
+		}
+	})
 }
 
 func TestGetHAGroupsFallsBackToRulesAfterMigration(t *testing.T) {

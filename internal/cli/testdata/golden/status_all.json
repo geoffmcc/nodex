@@ -6,6 +6,7 @@
       "success": true,
       "data": {
         "endpoint": "https://e2e.example.invalid",
+        "provider": "nodex-e2e-mock",
         "version": "test",
         "nodes": 1,
         "vms": 1
@@ -17,6 +18,7 @@
       "success": true,
       "data": {
         "endpoint": "https://e2e.example.invalid",
+        "provider": "nodex-e2e-mock",
         "version": "test",
         "nodes": 1,
         "vms": 1

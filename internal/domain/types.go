@@ -249,6 +249,8 @@ type FirewallRule struct {
 	ICMPType string `json:"icmp_type,omitempty" yaml:"icmp_type,omitempty"`
 	Log      string `json:"log,omitempty" yaml:"log,omitempty"`
 	Comment  string `json:"comment,omitempty" yaml:"comment,omitempty"`
+	IFace    string `json:"iface,omitempty" yaml:"iface,omitempty"`
+	Macro    string `json:"macro,omitempty" yaml:"macro,omitempty"`
 }
 
 // HAResource represents an HA resource.

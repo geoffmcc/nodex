@@ -151,10 +151,11 @@ func runProfileImport(_ context.Context, cmdCtx *Context, args []string) error {
 // The Error field has been removed; per-profile errors are carried in the
 // MultiProfileOutput envelope via ProfileResult.Error.
 type aggregatedStatus struct {
-	Endpoint string `json:"endpoint" yaml:"endpoint"`
-	Version  string `json:"version" yaml:"version"`
-	Nodes    int    `json:"nodes" yaml:"nodes"`
-	VMs      int    `json:"vms" yaml:"vms"`
+	Endpoint string  `json:"endpoint" yaml:"endpoint"`
+	Provider string  `json:"provider" yaml:"provider"`
+	Version  *string `json:"version" yaml:"version"`
+	Nodes    *int    `json:"nodes" yaml:"nodes"`
+	VMs      *int    `json:"vms" yaml:"vms"`
 }
 
 func runStatusAll(ctx context.Context, cmdCtx *Context, _ []string) error {
@@ -182,20 +183,23 @@ func runStatusAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 
 		as := aggregatedStatus{
 			Endpoint: p.Endpoint,
+			Provider: prov.Name(),
 		}
 
 		// Get cluster info.
 		if cl, ok := prov.(domain.ClusterInspector); ok {
 			if cluster, err := cl.Cluster(ctx); err == nil && cluster != nil {
-				as.Version = cluster.Version
-				as.Nodes = cluster.Nodes
+				version, nodes := cluster.Version, cluster.Nodes
+				as.Version = &version
+				as.Nodes = &nodes
 			}
 		}
 
 		// Count VMs.
 		if vi, ok := prov.(domain.VMInspector); ok {
 			if vms, err := vi.VMs(ctx); err == nil {
-				as.VMs = len(vms)
+				count := len(vms)
+				as.VMs = &count
 			}
 		}
 
@@ -215,18 +219,32 @@ func writeAggregatedStatus(cmdCtx *Context, out output.MultiProfileOutput[aggreg
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, out)
 	default:
-		headers := []string{"PROFILE", "ENDPOINT", "VERSION", "NODES", "VMS"}
+		headers := []string{"PROFILE", "PROVIDER", "ENDPOINT", "VERSION", "NODES", "VMS"}
 		rows := make([][]string, 0, len(out.Results))
 		for _, r := range out.Results {
 			if !r.Success && r.Error != nil {
-				rows = append(rows, []string{r.Profile, r.Data.Endpoint, "", "", fmt.Sprintf("ERROR: %s", r.Error.Detail)})
+				rows = append(rows, []string{r.Profile, r.Data.Provider, r.Data.Endpoint, "", "", fmt.Sprintf("ERROR: %s", r.Error.Detail)})
 				continue
 			}
-			rows = append(rows, []string{r.Profile, r.Data.Endpoint, r.Data.Version,
-				fmt.Sprintf("%d", r.Data.Nodes), fmt.Sprintf("%d", r.Data.VMs)})
+			rows = append(rows, []string{r.Profile, r.Data.Provider, r.Data.Endpoint,
+				stringOrNA(r.Data.Version), intOrNA(r.Data.Nodes), intOrNA(r.Data.VMs)})
 		}
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
+}
+
+func stringOrNA(value *string) string {
+	if value == nil {
+		return "-"
+	}
+	return *value
+}
+
+func intOrNA(value *int) string {
+	if value == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%d", *value)
 }
 
 // === Nodes --all ===

@@ -181,7 +181,7 @@ func TestOperationDescribeExposesInputAndSafetySchema(t *testing.T) {
 		}
 	}
 	assertJSONSchemaRepresentative(t, filepath.Join("..", "..", "docs", "agent", "schemas", "operation-contract-v1.schema.json"), stdout.Bytes())
-	for _, path := range []string{"vm console", "profile set-credentials", "access user create", "cluster join", "environment health", "maintenance inventory", "maintenance apply", "certification run"} {
+	for _, path := range []string{"vm console", "profile set-credentials", "access user create", "environment health", "maintenance inventory", "maintenance apply", "certification run"} {
 		meta := LookupOperation(path)
 		if meta == nil {
 			t.Fatalf("missing operation %q", path)
@@ -194,6 +194,13 @@ func TestOperationDescribeExposesInputAndSafetySchema(t *testing.T) {
 	vmUpdate := describeOperation(*LookupOperation("vm update"), true)
 	if len(vmUpdate.Arguments) != 2 || vmUpdate.Arguments[0].Name != "target" || vmUpdate.Arguments[1].Name != "key=value" {
 		t.Errorf("VM update positional schema does not match its help grammar: %+v", vmUpdate.Arguments)
+	}
+	if !strings.Contains(strings.Join(vmUpdate.Verification, " "), "current VM config is read back") {
+		t.Errorf("VM update verification contract omits waited config readback: %v", vmUpdate.Verification)
+	}
+	ctUpdate := describeOperation(*LookupOperation("container update"), true)
+	if !strings.Contains(strings.Join(ctUpdate.Verification, " "), "with --wait, task success") {
+		t.Errorf("container update verification contract omits waited config readback: %v", ctUpdate.Verification)
 	}
 	pbsVerify := describeOperation(*LookupOperation("pbs verify run"), true)
 	if len(pbsVerify.Arguments) != 1 || pbsVerify.Arguments[0].Name != "job-id" || !strings.Contains(strings.Join(pbsVerify.Constraints, ";"), "exactly one") {
@@ -220,13 +227,75 @@ func TestOperationDescribeExposesInputAndSafetySchema(t *testing.T) {
 	if err := validateSchemaValue(invalidPBSInput, pbsVerify.InputSchema, inputSchemaDoc, "$", 0); err == nil {
 		t.Error("PBS verify schema allowed both mutually exclusive target forms")
 	}
+	aclRemove := describeOperation(*LookupOperation("access acl remove"), true)
+	aclSchemaDoc := schemaDocument{path: "", root: aclRemove.InputSchema}
+	for _, args := range []map[string]any{
+		{"--user": "nodex-test@pve"},
+		{"--group": "nodex-test"},
+	} {
+		flags := map[string]any{
+			"--agent": true, "--profile": "lab", "--yes": true, "--force": true,
+			"--expert": true, "--confirm-target": "path=/nodes/pve1 user=nodex-test@pve role=NoAccess",
+			"--role": "NoAccess",
+		}
+		for name, value := range args {
+			flags[name] = value
+		}
+		payload := map[string]any{"arguments": []any{"/nodes/pve1"}, "flags": flags}
+		if err := validateSchemaValue(payload, aclRemove.InputSchema, aclSchemaDoc, "$", 0); err != nil {
+			t.Errorf("valid ACL removal principal form rejected (%v): %v", args, err)
+		}
+	}
+	for _, principals := range []map[string]any{
+		{},
+		{"--user": "nodex-test@pve", "--group": "nodex-test"},
+	} {
+		flags := map[string]any{
+			"--agent": true, "--profile": "lab", "--yes": true, "--force": true,
+			"--expert": true, "--confirm-target": "path=/nodes/pve1 user=nodex-test@pve role=NoAccess",
+			"--role": "NoAccess",
+		}
+		for name, value := range principals {
+			flags[name] = value
+		}
+		payload := map[string]any{"arguments": []any{"/nodes/pve1"}, "flags": flags}
+		if err := validateSchemaValue(payload, aclRemove.InputSchema, aclSchemaDoc, "$", 0); err == nil {
+			t.Errorf("invalid ACL removal principal form was accepted: %v", principals)
+		}
+	}
+	for _, flag := range aclRemove.Flags {
+		if (flag.Name == "--user" || flag.Name == "--group") && flag.Required {
+			t.Errorf("ACL removal principal flag %s must be optional in isolation", flag.Name)
+		}
+	}
 	vmDelete := describeOperation(*LookupOperation("vm delete"), true)
 	if !strings.Contains(strings.Join(vmDelete.Verification, " "), "VM config endpoint") || !strings.Contains(strings.Join(vmDelete.Verification, " "), "--wait") {
 		t.Errorf("VM delete verification contract does not describe waited absence readback: %v", vmDelete.Verification)
 	}
+	for _, path := range []string{"vm snapshot create", "container snapshot create"} {
+		contract := describeOperation(*LookupOperation(path), true)
+		if !strings.Contains(strings.Join(contract.Verification, " "), "snapshot list") || !strings.Contains(strings.Join(contract.Verification, " "), "changed is true only") {
+			t.Errorf("%s verification contract does not describe snapshot readback and changed semantics: %v", path, contract.Verification)
+		}
+	}
+	for _, path := range []string{"vm migrate", "container migrate"} {
+		contract := describeOperation(*LookupOperation(path), true)
+		verification := strings.Join(contract.Verification, " ")
+		if !strings.Contains(verification, "--wait") || !strings.Contains(verification, "absence") || !strings.Contains(verification, "presence") {
+			t.Errorf("%s verification contract does not describe source/target readback: %v", path, contract.Verification)
+		}
+	}
 	cloudInit := describeOperation(*LookupOperation("vm cloud-init"), true)
 	if !strings.Contains(strings.Join(cloudInit.Recovery, " "), "cannot verify or resubmit") {
 		t.Errorf("cloud-init recovery contract suggests an unavailable task reconciliation: %v", cloudInit.Recovery)
+	}
+	install := describeOperation(*LookupOperation("container install"), true)
+	if len(install.Arguments) != 3 || !install.Arguments[0].Required || !install.Arguments[1].Required || install.Arguments[2].Required || install.Arguments[2].Syntax != "[package ...]" {
+		t.Errorf("container install variadic package arguments are malformed: %+v", install.Arguments)
+	}
+	installArgs, ok := install.InputSchema["properties"].(map[string]any)["arguments"].(map[string]any)
+	if !ok || installArgs["minItems"] != 2 || installArgs["maxItems"] != 33 {
+		t.Errorf("container install schema must require target plus one package and allow 32 packages: %+v", installArgs)
 	}
 	firewall := describeOperation(*LookupOperation("firewall rule create"), true)
 	actionFlag, typeFlag := false, false
@@ -242,6 +311,10 @@ func TestOperationDescribeExposesInputAndSafetySchema(t *testing.T) {
 		t.Errorf("firewall flag schema misses required enum fields: %+v", firewall.Flags)
 	}
 	migrate := targetContext(*LookupOperation("vm migrate"), []string{"pve1/100", "pve2"}, nil, "lab", "proxmox", "https://pve.example:8006", config.Profile{})
+	snapshot := targetContext(*LookupOperation("container snapshot create"), []string{"pve1/200", "pre-upgrade", "Before change"}, nil, "lab", "proxmox", "https://pve.example:8006", config.Profile{})
+	if snapshot.TargetName != "pre-upgrade" {
+		t.Errorf("snapshot receipt target name = %q, want %q", snapshot.TargetName, "pre-upgrade")
+	}
 	if migrate.Node != "pve1" || migrate.ResourceID != "100" || len(migrate.RelatedTargets) != 1 || migrate.RelatedTargets[0].ResourceType != "node" || migrate.RelatedTargets[0].ResourceID != "pve2" {
 		t.Errorf("migration context omits one side of its exact target set: %+v", migrate)
 	}
@@ -250,7 +323,6 @@ func TestOperationDescribeExposesInputAndSafetySchema(t *testing.T) {
 func TestRemoteProviderMutationsHaveAgentReceiptCoverageOrSpecificExclusion(t *testing.T) {
 	excluded := map[string]bool{
 		"access user create": true, // collects a password interactively
-		"cluster join":       true, // performs preflight only and refuses execution without peer credentials
 		"container console":  true, // requires an interactive terminal
 		"storage download":   true, // writes an arbitrary local file
 		"vm console":         true, // requires an interactive terminal
@@ -272,8 +344,8 @@ func TestRemoteProviderMutationsHaveAgentReceiptCoverageOrSpecificExclusion(t *t
 	}
 	for _, path := range []string{
 		"vm start", "vm update", "vm snapshot create", "vm delete", "container create", "storage upload",
-		"backup create", "backup job create", "firewall rule create", "sdn zone create", "access acl add",
-		"ceph osd create", "replication create", "pbs verify run", "pbs sync run", "pbs prune run", "pbs garbage-collection run",
+		"backup create", "backup job create", "firewall rule create", "sdn zone create", "access acl add", "access acl remove",
+		"ceph osd create", "replication create", "cluster join", "pbs verify run", "pbs sync run", "pbs prune run", "pbs garbage-collection run",
 	} {
 		meta := LookupOperation(path)
 		if meta == nil || !describeOperation(*meta, true).AgentSupported {
@@ -369,6 +441,30 @@ func TestAgentMapsOperationSpecificVerificationWithoutChangingLegacyResult(t *te
 	result = mutationOutcome(base, OperationMeta{Path: "container os-update"}, raw, nil)
 	if result.Submission != agent.SubmissionNotAttempted || result.Execution != agent.ExecutionSucceeded || result.Verification != agent.VerificationPassed || result.Changed == nil || *result.Changed {
 		t.Fatalf("no-update inspection was not reported as an unchanged verified result: %+v", result)
+	}
+}
+
+func TestAgentReportsSynchronousClusterJoinCompletion(t *testing.T) {
+	now := "2026-10-17T19:00:00Z"
+	changed := true
+	base := agent.Result{
+		SchemaVersion: agent.ResultSchemaVersion, RequestID: "req_cluster_join_sync", ReceiptID: "req_cluster_join_sync",
+		Operation: "cluster join", Context: agent.ExecutionContext{Profile: "pve-join", Provider: "proxmox", Endpoint: "https://pve-join.example:8006", EndpointIdentity: "proxmox@https://pve-join.example:8006", ResourceType: "cluster", ResourceID: "pve-seed.example"},
+		Submission: agent.SubmissionUnknown, Execution: agent.ExecutionUnknown, Verification: agent.VerificationUnsupported,
+		Retry: agent.RetryReconcileFirst, StartedAt: now, ObservedAt: now,
+	}
+	legacy := output.NewOperationResult("cluster join", "proxmox", "pve-join")
+	legacy.Submitted, legacy.Synchronous, legacy.Success, legacy.Changed = true, true, true, &changed
+	raw, err := output.MarshalJSON(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := mutationOutcome(base, OperationMeta{Path: "cluster join"}, raw, nil)
+	if result.Submission != agent.SubmissionAccepted || result.Execution != agent.ExecutionSucceeded || result.Verification != agent.VerificationUnsupported || result.Changed == nil || !*result.Changed || result.Retry != agent.RetryDoNotAutomatic || len(result.NextActions) != 0 {
+		t.Fatalf("synchronous cluster join result not represented accurately: %+v", result)
+	}
+	if err := result.Validate(); err != nil {
+		t.Fatalf("mapped agent result invalid: %v", err)
 	}
 }
 
@@ -665,6 +761,36 @@ func TestAgentLifecyclePostconditionPassIsSeparateFromTaskSuccess(t *testing.T) 
 	}
 }
 
+func TestAgentReceiptRefreshVerifiesGuestDeletion(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+	t.Setenv("NODEX_E2E_TOKEN", "e2e-token")
+	e2eGuestConfigAbsentOverride = nil
+	t.Cleanup(func() { e2eGuestConfigAbsentOverride = nil })
+	var stdout, stderr bytes.Buffer
+	requestID := "req_ct_delete_reconcile"
+	args := []string{"--agent", "--profile", "e2e", "--request-id", requestID, "--yes", "--force", "--confirm-target", "e2e-node/201", "container", "delete", "e2e-node/201"}
+	if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("submit CT delete: %v (%s)", err, stderr.String())
+	}
+	submitted := decodeAgentResult(t, stdout.Bytes())
+	if submitted.Execution != agent.ExecutionRunning || submitted.Verification != agent.VerificationUnsupported {
+		t.Fatalf("delete submission claimed an unobserved postcondition: %+v", submitted)
+	}
+	e2eGuestConfigAbsentOverride = map[string]bool{guestKey("container", 201): true}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"--profile", "e2e", "--yes", "agent", "receipt", "refresh", requestID}, &stdout, &stderr); err != nil {
+		t.Fatalf("refresh CT delete: %v\n%s", err, stdout.String())
+	}
+	var refreshed agent.Receipt
+	if err := json.Unmarshal(stdout.Bytes(), &refreshed); err != nil {
+		t.Fatalf("decode refreshed delete receipt: %v\n%s", err, stdout.String())
+	}
+	if refreshed.Execution != agent.ExecutionSucceeded || refreshed.Verification != agent.VerificationPassed {
+		t.Fatalf("deletion task and authoritative absence were not reconciled separately: %+v", refreshed.Result)
+	}
+}
+
 func TestAgentLifecycleAlreadyDesiredStateIsVerifiedWithoutSubmission(t *testing.T) {
 	isolateConfigAndHome(t)
 	setupE2EConfig(t)
@@ -677,6 +803,63 @@ func TestAgentLifecycleAlreadyDesiredStateIsVerifiedWithoutSubmission(t *testing
 	result := decodeAgentResult(t, stdout.Bytes())
 	if result.Submission != agent.SubmissionNotAttempted || result.Execution != agent.ExecutionSucceeded || result.Verification != agent.VerificationPassed || result.Changed == nil || *result.Changed {
 		t.Fatalf("already-desired guest state was misreported: %+v", result)
+	}
+}
+
+func TestAgentGuestConfigUpdatesVerifyAfterTaskCompletion(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+	t.Setenv("NODEX_E2E_TOKEN", "e2e-token")
+	for _, tc := range []struct {
+		name, operation, target, setting string
+	}{
+		{"vm", "vm update", "e2e-node/100", "memory=2049"},
+		{"container", "container update", "e2e-node/200", "swap=257"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			args := make([]string, 0, 9+len(strings.Fields(tc.operation)))
+			args = append(args, "--agent", "--profile", "e2e", "--request-id", "req_config_"+tc.name, "--yes", "--wait")
+			args = append(args, strings.Fields(tc.operation)...)
+			args = append(args, tc.target, tc.setting)
+			if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
+				t.Fatalf("%s: %v (%s)", tc.operation, err, stderr.String())
+			}
+			result := decodeAgentResult(t, stdout.Bytes())
+			if result.Execution != agent.ExecutionSucceeded || result.Verification != agent.VerificationPassed || result.Changed == nil || !*result.Changed {
+				t.Fatalf("%s task readback did not verify the changed fields: %+v", tc.operation, result)
+			}
+		})
+	}
+}
+
+func TestAgentReceiptReconcileVerifiesSnapshotNameFromReceipt(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+	t.Setenv("NODEX_E2E_TOKEN", "e2e-token")
+	e2eContainerSnapshotOverride = "agent-reconcile-snapshot"
+	t.Cleanup(func() { e2eContainerSnapshotOverride = "" })
+	var stdout, stderr bytes.Buffer
+	requestID := "req_ct_snapshot_reconcile"
+	args := []string{"--agent", "--profile", "e2e", "--request-id", requestID, "--yes", "container", "snapshot", "create", "e2e-node/200", "agent-reconcile-snapshot"}
+	if err := Run(context.Background(), args, &stdout, &stderr); err != nil {
+		t.Fatalf("submit CT snapshot: %v (%s)", err, stderr.String())
+	}
+	submitted := decodeAgentResult(t, stdout.Bytes())
+	if submitted.Execution != agent.ExecutionRunning || submitted.Context.TargetName != "agent-reconcile-snapshot" {
+		t.Fatalf("snapshot request did not preserve its target for reconciliation: %+v", submitted)
+	}
+
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"--profile", "e2e", "--yes", "agent", "receipt", "reconcile", requestID}, &stdout, &stderr); err != nil {
+		t.Fatalf("reconcile CT snapshot: %v\n%s", err, stdout.String())
+	}
+	var reconciled agent.Receipt
+	if err := json.Unmarshal(stdout.Bytes(), &reconciled); err != nil {
+		t.Fatalf("decode reconciled receipt: %v\n%s", err, stdout.String())
+	}
+	if reconciled.Execution != agent.ExecutionSucceeded || reconciled.Verification != agent.VerificationPassed || reconciled.Changed != nil {
+		t.Fatalf("snapshot task completion and observed state were not reported independently: %+v", reconciled.Result)
 	}
 }
 

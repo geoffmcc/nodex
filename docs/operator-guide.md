@@ -17,7 +17,7 @@ monitor or retain monitoring history; `monitor check` runs once and exits.
 The major capability areas are:
 
 - **Proxmox VE:** nodes; VMs and LXC containers; storage; tasks, events and
-  logs; backups and schedules; cluster and HA state; firewall; network apply or
+  logs; backups and schedules; cluster and HA state and resource enrollment; firewall; network apply or
   revert; SDN; Ceph; access and ACL inspection/management; resource pools; and
   replication.
 - **Proxmox Backup Server:** server and datastore inspection; backup snapshots,
@@ -128,9 +128,14 @@ nodex environment backup-health homelab
 ```
 
 Environment backup health checks every PVE guest unless its VMID is explicitly
-excluded. Thresholds for backup age, verification age and datastore usage are
-configurable. Inspect per-check status and blockers, not only the summary.
-Statuses distinguish healthy, warning, blocked, unknown and unsupported.
+excluded. With PBS configured, Nodex checks PBS snapshots, verification state,
+and datastore health. Without PBS, Nodex can use native PVE vzdump archives on
+active PVE backup storage; it checks archive age, storage capacity, and recent
+backup task failures, and reports that PBS verification is unavailable. A
+guest without a recent archive still blocks maintenance. Thresholds for backup
+age, verification age and datastore usage are configurable. Inspect per-check
+status and blockers, not only the summary. Statuses distinguish healthy,
+warning, blocked, unknown and unsupported.
 
 ## Understand safety gates before mutations
 

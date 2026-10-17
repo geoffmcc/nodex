@@ -21,6 +21,21 @@
         upgrade: dist
         state: latest
       register: nodex_update_result
+    - name: Check for pending updates after installation
+      ansible.builtin.command:
+        argv:
+          - apt
+          - list
+          - --upgradable
+      register: nodex_pending_updates
+      changed_when: false
+    - name: Verify the approved full update completed
+      vars:
+        nodex_evidence_id: host.update_verify
+      ansible.builtin.assert:
+        that:
+          - (nodex_pending_updates.stdout_lines | select('search', '/') | list | length) == 0
+        fail_msg: "packages remain upgradable after the approved full update"
     - name: Report update result
       vars:
         nodex_evidence_id: host.update_report

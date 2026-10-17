@@ -13,6 +13,33 @@ import (
 	"github.com/geoffmcc/nodex/internal/output"
 )
 
+func TestParseFirewallRuleEnableFalseIsPreserved(t *testing.T) {
+	for _, value := range []string{"0", "false"} {
+		input, err := parseFirewallRuleArgs([]string{"type=in", "action=ACCEPT", "enable=" + value})
+		if err != nil {
+			t.Fatalf("parse enable=%s: %v", value, err)
+		}
+		if !input.EnableSet || input.Enable != 0 {
+			t.Errorf("enable=%s parsed as EnableSet=%t Enable=%d, want explicit disabled", value, input.EnableSet, input.Enable)
+		}
+	}
+	if _, err := parseFirewallRuleArgs([]string{"enable=maybe"}); err == nil {
+		t.Fatal("invalid enable value was silently ignored")
+	}
+}
+
+func TestFirewallRuleMatchesInputChecksDisabledState(t *testing.T) {
+	actual := domain.FirewallRule{Type: "in", Action: "ACCEPT", Enable: 0, Pos: 0, Comment: "disabled smoke"}
+	expected := domain.FirewallRuleCreateInput{Type: "in", Action: "accept", Enable: 0, EnableSet: true, Comment: "disabled smoke"}
+	if !firewallRuleMatchesInput(actual, expected) {
+		t.Fatal("disabled rule did not match an explicit enable=0 request")
+	}
+	expected.Enable = 1
+	if firewallRuleMatchesInput(actual, expected) {
+		t.Fatal("disabled rule incorrectly matched an enable=1 request")
+	}
+}
+
 // The nit asks for group/token discovery value in the users table. Crucially, a
 // value the server did not report must render as "-" rather than a misleading 0.
 func TestWriteAccessUsersTableShowsGroupsAndTokens(t *testing.T) {
@@ -247,6 +274,37 @@ func TestCheckSecurityAdminRequiresTypeConfirmForDestructiveOps(t *testing.T) {
 
 		if err := checkSecurityAdmin(cmdCtx, "ACL add path=/ role=PVEAdmin", ""); err != nil {
 			t.Fatalf("acl add grants privilege without destroying state, got %v", err)
+		}
+	})
+
+	t.Run("acl remove requires exact target confirmation before connecting", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		cmdCtx := &Context{
+			Writer: &stdout,
+			ErrW:   &stderr,
+			Stdin:  errReader{err: errors.New("stdin must not be read")},
+			Opts: Options{
+				Expert: true, Yes: true, Force: true, NonInteractive: true,
+				ConfirmTarget: "path=/nodes/pve1 user=other@pve role=NoAccess",
+			},
+		}
+		err := runAccessACLRemove(context.Background(), cmdCtx, []string{
+			"/nodes/pve1", "--role", "NoAccess", "--user", "nodex-test@pve",
+		})
+		if err == nil || !strings.Contains(err.Error(), "does not authorize") {
+			t.Fatalf("remove must reject an inexact target before connecting, got %v", err)
+		}
+	})
+
+	t.Run("acl remove requires exactly one principal", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"/nodes/pve1", "--role", "NoAccess"},
+			{"/nodes/pve1", "--role", "NoAccess", "--user", "nodex-test@pve", "--group", "nodex-test"},
+		} {
+			cmdCtx := &Context{Writer: &bytes.Buffer{}, ErrW: &bytes.Buffer{}, Opts: Options{Expert: true, Yes: true, Force: true}}
+			if err := runAccessACLRemove(context.Background(), cmdCtx, args); err == nil {
+				t.Errorf("runAccessACLRemove(%v) succeeded without exactly one principal", args)
+			}
 		}
 	})
 }

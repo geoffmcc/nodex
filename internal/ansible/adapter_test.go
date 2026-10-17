@@ -140,6 +140,7 @@ func TestHelperProcess(t *testing.T) {
 					"stdout_lines": []string{"Listing...", "nano/stable 8.0-1 amd64 [upgradable from: 7.2-1]"},
 				}),
 				task(ContainerEvidenceSimulation, map[string]any{"rc": 0}),
+				task(ContainerEvidenceHold, map[string]any{"rc": 0, "stdout_lines": []string{}}),
 				task(ContainerEvidenceDpkg, map[string]any{"rc": 0}),
 				task(ContainerEvidenceReboot, map[string]any{"rc": 1, "stat": map[string]any{"exists": false}}),
 				task(ContainerEvidenceRoot, map[string]any{
@@ -220,6 +221,38 @@ func TestRunContainerOperationRequiresVMID(t *testing.T) {
 	r := newStubRunner(t, "ok", testHosts()[:1])
 	if _, err := r.Run(context.Background(), RunRequest{Operation: "check-container-updates", Hosts: testHosts()[:1]}); err == nil {
 		t.Fatal("container operation without VMID must be rejected")
+	}
+}
+
+func TestRunContainerPackageInstallUsesStructuredInputs(t *testing.T) {
+	hosts := testHosts()[:1]
+	r := newStubRunner(t, "inspect-files", hosts)
+	res, err := r.Run(context.Background(), RunRequest{
+		Operation: "install-container-packages", Hosts: hosts, ContainerVMID: 42,
+		ContainerPackages: []string{"curl", "python3-venv"},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var payload struct {
+		Args []string `json:"args"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &payload); err != nil {
+		t.Fatalf("parse stub payload: %v", err)
+	}
+	joined := strings.Join(payload.Args, " ")
+	if !strings.Contains(joined, `--extra-vars {"nodex_packages":["curl","python3-venv"]}`) || !strings.Contains(joined, `--extra-vars {"nodex_vmid":42}`) {
+		t.Errorf("package names or VMID were not passed as structured extra-vars: %v", payload.Args)
+	}
+}
+
+func TestRunContainerPackageInstallRejectsUnsafeInputs(t *testing.T) {
+	r := newStubRunner(t, "ok", testHosts()[:1])
+	for _, packages := range [][]string{{"--help"}, {"curl;id"}, {"curl", "curl"}} {
+		_, err := r.Run(context.Background(), RunRequest{Operation: "install-container-packages", Hosts: testHosts()[:1], ContainerVMID: 42, ContainerPackages: packages})
+		if err == nil {
+			t.Errorf("unsafe package list accepted: %v", packages)
+		}
 	}
 }
 
@@ -812,7 +845,7 @@ func countNodexTempDirs(t *testing.T) int {
 
 func TestRegistryAllowlist(t *testing.T) {
 	ids := OperationIDs()
-	want := []string{"apply-approved-updates", "apply-container-updates", "apply-security-policy", "apply-security-updates", "check-container-updates", "check-service", "check-updates", "inspect-security-policy", "restore-security-policy", "verify-container-updates", "verify-host", "verify-maintenance"}
+	want := []string{"apply-approved-updates", "apply-container-updates", "apply-security-policy", "apply-security-updates", "check-container-updates", "check-service", "check-updates", "inspect-security-policy", "install-container-packages", "restore-security-policy", "verify-container-updates", "verify-host", "verify-maintenance"}
 	if len(ids) != len(want) || !reflect.DeepEqual(ids, want) {
 		t.Errorf("unexpected allowlist: %v", ids)
 	}
@@ -827,8 +860,13 @@ func TestRegistryAllowlist(t *testing.T) {
 		if strings.Contains(op.Playbook(), "shell:") || strings.Contains(op.Playbook(), "ansible.builtin.shell") {
 			t.Errorf("operation %q playbook uses the shell module", op.ID)
 		}
+		for _, evidenceID := range op.RequiredEvidenceIDs() {
+			if !strings.Contains(op.Playbook(), "nodex_evidence_id: "+evidenceID) {
+				t.Errorf("operation %q requires evidence %q that its playbook does not emit", op.ID, evidenceID)
+			}
+		}
 	}
-	for _, id := range []string{"apply-security-updates", "apply-approved-updates", "apply-security-policy", "restore-security-policy", "inspect-security-policy", "check-service", "check-container-updates", "apply-container-updates", "verify-container-updates", "verify-maintenance"} {
+	for _, id := range []string{"apply-security-updates", "apply-approved-updates", "apply-security-policy", "restore-security-policy", "inspect-security-policy", "check-service", "check-container-updates", "apply-container-updates", "install-container-packages", "verify-container-updates", "verify-maintenance"} {
 		if _, err := Lookup(id); err != nil {
 			t.Errorf("operation %q must resolve: %v", id, err)
 		}

@@ -5,6 +5,11 @@ loads and validates that plan, requires `--yes --force --confirm-target <plan-id
 rechecks inventory addresses, and executes only the embedded Ansible operations.
 `approved-full-upgrade` is a separate, explicitly selected operation.
 
+`maintenance status` includes a bounded, secret-redacted task diagnostic when
+Ansible captures failure details. This helps distinguish a host repository or
+connectivity problem from missing preflight evidence without exposing raw
+Ansible output.
+
 Security-only plans use schema 2 and digest-bind each selected package's exact
 candidate version, architecture, configured APT source locator, and signed
 Release `Origin`, `Label`, `Codename`, archive, component, and architecture.
