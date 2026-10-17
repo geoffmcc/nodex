@@ -432,7 +432,7 @@ nodex container create pve-a 200 local:vztmpl/debian-12.tar.zst app-200 \
 
 | Command | Description |
 |---------|-------------|
-| `container delete <id>` | Delete a container |
+| `container delete <id>` | Delete a stopped container; shut it down first |
 
 **Configuration and management** (varies by operation):
 

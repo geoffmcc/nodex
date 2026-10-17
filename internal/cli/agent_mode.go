@@ -27,6 +27,14 @@ import (
 
 type agentConfigKey struct{}
 
+// mutationPreflightError identifies a failure that happened before the
+// provider mutation call. Agent receipts can report these as not attempted
+// without confusing provider-side conflict/not-found errors with preflight.
+type mutationPreflightError struct{ err error }
+
+func (e mutationPreflightError) Error() string { return e.err.Error() }
+func (e mutationPreflightError) Unwrap() error { return e.err }
+
 const maxAgentCaptureBytes = 1 << 20
 
 type boundedCapture struct {
@@ -1129,7 +1137,7 @@ func mutationOutcome(result agent.Result, operation OperationMeta, captured []by
 					result.Execution = agent.ExecutionNotStarted
 					result.Retry = agent.RetryDoNotAutomatic
 				}
-			} else if app.ExitCodeFromError(runErr) == app.ExitUsage || app.ExitCodeFromError(runErr) == app.ExitConfig || app.ExitCodeFromError(runErr) == app.ExitCredential || app.ExitCodeFromError(runErr) == app.ExitUnsupportedCap || app.ExitCodeFromError(runErr) == app.ExitValidationError {
+			} else if app.ExitCodeFromError(runErr) == app.ExitUsage || app.ExitCodeFromError(runErr) == app.ExitConfig || app.ExitCodeFromError(runErr) == app.ExitCredential || app.ExitCodeFromError(runErr) == app.ExitUnsupportedCap || app.ExitCodeFromError(runErr) == app.ExitValidationError || isMutationPreflightError(runErr) {
 				result.Submission = agent.SubmissionNotAttempted
 				result.Execution = agent.ExecutionNotStarted
 				result.Retry = agent.RetryDoNotAutomatic
@@ -1153,6 +1161,11 @@ func mutationOutcome(result agent.Result, operation OperationMeta, captured []by
 	}
 	result.ObservedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	return result
+}
+
+func isMutationPreflightError(err error) bool {
+	var preflight mutationPreflightError
+	return errors.As(err, &preflight)
 }
 
 func definitiveProviderReject(err error) bool {

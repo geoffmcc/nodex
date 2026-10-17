@@ -375,7 +375,7 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "vm cloud-init", Description: "Regenerate cloud-init config",
 		Inspection: false, Scope: ScopeGuest, SafetyTier: safety.TierReversible,
-		Waitable: true, ProducesUPID: true, UsesOperationResult: true,
+		Waitable: false, ProducesUPID: false, UsesOperationResult: true,
 		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "CloudInitProvider", HandlerFunc: "runVMCloudInit",
 	})
@@ -609,7 +609,7 @@ func buildRegistry() []OperationMeta {
 		Inspection: false, Scope: ScopeStorage, SafetyTier: safety.TierDestructive,
 		RiskDimensions:      []RiskDimension{RiskDataLoss},
 		RequiresTypeConfirm: true,
-		ConfirmTargetFormat: "the volume ID only (for example vm-100-disk-1), not node/storage/volume",
+		ConfirmTargetFormat: "the storage-relative volume ID only (for example backup/vzdump-lxc-100-2026_10_16-12_00_00.tar or vm-100-disk-1), not node/storage/volid",
 		Waitable:            true, ProducesUPID: true, UsesOperationResult: true,
 		OutputModes:         []string{"table", "json", "yaml"},
 		CapabilityInterface: "StorageMutationProvider", HandlerFunc: "runStorageDelete",
@@ -773,7 +773,7 @@ func buildRegistry() []OperationMeta {
 		{"firewall alias delete", "Delete a firewall alias", "FirewallMutationProvider", "runFirewallAliasDelete", safety.TierDestructive, true, "the alias name argument"},
 		{"firewall ipset create", "Create a firewall IP set", "FirewallMutationProvider", "runFirewallIPSetCreate", safety.TierDisruptive, false, ""},
 		{"firewall ipset entry add", "Add an IP set entry", "FirewallMutationProvider", "runFirewallIPSetEntryAdd", safety.TierDisruptive, false, ""},
-		{"firewall ipset entry remove", "Remove an IP set entry", "FirewallMutationProvider", "runFirewallIPSetEntryRemove", safety.TierDestructive, true, "the IP set name and CIDR joined by a hyphen (for example myipset-10.0.0.0-8)"},
+		{"firewall ipset entry remove", "Remove an IP set entry", "FirewallMutationProvider", "runFirewallIPSetEntryRemove", safety.TierDestructive, true, "the IP set name and CIDR joined by a hyphen, with the CIDR prefix slash replaced by a hyphen (for example myipset-10.0.0.0-8)"},
 		{"firewall ipset delete", "Delete a firewall IP set", "FirewallMutationProvider", "runFirewallIPSetDelete", safety.TierDestructive, true, "the IP set name argument"},
 		{"firewall group create", "Create a security group", "FirewallMutationProvider", "runFirewallGroupCreate", safety.TierDisruptive, false, ""},
 		{"firewall group delete", "Delete a security group", "FirewallMutationProvider", "runFirewallGroupDelete", safety.TierDestructive, true, "the security group name argument"},
