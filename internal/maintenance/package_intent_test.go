@@ -7,7 +7,10 @@ import (
 
 func TestParsePackageIntentsBindsVersionArchitectureAndOrigin(t *testing.T) {
 	intents, err := parsePackageIntents(
-		[]string{"Inst openssl [3.0.14-1] (3.0.15-1 Debian-Security:12/stable-security [amd64])"},
+		[]string{
+			"Inst openssl [3.0.14-1] (3.0.15-1 Debian-Security:12/stable-security [amd64])",
+			"Conf openssl (3.0.15-1 Debian-Security:12/stable-security [amd64])",
+		},
 		[]aptPolicyEvidence{{
 			Item: "openssl", RC: 0,
 			StdoutLines: []string{
@@ -30,6 +33,75 @@ func TestParsePackageIntentsBindsVersionArchitectureAndOrigin(t *testing.T) {
 	}
 	if len(intents[0].Origins) != 1 || intents[0].Origins[0] != wantOrigin {
 		t.Fatalf("origins = %v, want %q", intents[0].Origins, wantOrigin)
+	}
+}
+
+func TestParsePackageIntentsHandlesAPTMultiOriginAndResolverAnnotations(t *testing.T) {
+	simulation := []string{
+		"Inst bsdutils [1:2.41-5] (1:2.41.5-0+deb13u1 Debian:13.7/stable, Debian-Security:13/stable-security [amd64]) [util-linux:amd64 on liblastlog2-2:amd64]",
+	}
+	intents, err := parsePackageIntents(
+		simulation,
+		[]aptPolicyEvidence{{
+			Item: "bsdutils", RC: 0,
+			StdoutLines: []string{
+				"bsdutils:", "  Candidate: 1:2.41.5-0+deb13u1", "  Version table:",
+				" *** 1:2.41.5-0+deb13u1 500",
+				"        500 http://deb.debian.org/debian trixie/main amd64 Packages",
+				"        500 http://security.debian.org/debian-security trixie-security/main amd64 Packages",
+				"        100 /var/lib/dpkg/status",
+			},
+		}},
+		[]string{
+			"http://deb.debian.org/debian|trixie|trixie|Debian|Debian|main|amd64",
+			"http://security.debian.org/debian-security|trixie-security|trixie-security|Debian|Debian-Security|main|amd64",
+		},
+	)
+	if err != nil {
+		t.Fatalf("parse multi-origin package intent: %v", err)
+	}
+	if len(intents) != 1 || intents[0].Selector() != "bsdutils:amd64=1:2.41.5-0+deb13u1" {
+		t.Fatalf("package intent = %+v", intents)
+	}
+	wantOrigin := APTOrigin{
+		Source: "http://security.debian.org/debian-security trixie-security/main amd64",
+		Site:   "http://security.debian.org/debian-security", Release: "trixie-security", Codename: "trixie-security",
+		Origin: "Debian", Label: "Debian-Security", Component: "main", Architecture: "amd64",
+	}
+	if len(intents[0].Origins) != 1 || intents[0].Origins[0] != wantOrigin {
+		t.Fatalf("origins = %+v, want security origin %+v", intents[0].Origins, wantOrigin)
+	}
+	if updates, err := parseSecurityUpdatesChecked(simulation); err != nil || len(updates) != 1 || updates[0] != "bsdutils" {
+		t.Fatalf("security updates = %v, err = %v", updates, err)
+	}
+}
+
+func TestParsePackageIntentsBindsAllArchitecturePackageToNativeIndex(t *testing.T) {
+	intents, err := parsePackageIntents(
+		[]string{"Inst python3-urllib3 [2.3.0-3+deb13u1] (2.3.0-3+deb13u2 Debian:13.7/stable, Debian-Security:13/stable-security [all])"},
+		[]aptPolicyEvidence{{
+			Item: "python3-urllib3", RC: 0,
+			StdoutLines: []string{
+				"python3-urllib3:", "  Candidate: 2.3.0-3+deb13u2", "  Version table:",
+				" *** 2.3.0-3+deb13u2 500",
+				"        500 http://deb.debian.org/debian trixie/main amd64 Packages",
+				"        500 http://security.debian.org/debian-security trixie-security/main amd64 Packages",
+				"        100 /var/lib/dpkg/status",
+			},
+		}},
+		[]string{
+			"http://deb.debian.org/debian|trixie|trixie|Debian|Debian|main|amd64",
+			"http://security.debian.org/debian-security|trixie-security|trixie-security|Debian|Debian-Security|main|amd64",
+		},
+	)
+	if err != nil {
+		t.Fatalf("parse architecture-independent package intent: %v", err)
+	}
+	if len(intents) != 1 || intents[0].Selector() != "python3-urllib3:all=2.3.0-3+deb13u2" {
+		t.Fatalf("package intent = %+v", intents)
+	}
+	if len(intents[0].Origins) != 1 || intents[0].Origins[0].Architecture != "amd64" {
+		t.Fatalf("signed index origin = %+v, want native amd64 index", intents[0].Origins)
 	}
 }
 

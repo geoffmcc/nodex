@@ -8,7 +8,11 @@ import (
 	"strings"
 )
 
-var simulatedInstallRe = regexp.MustCompile(`^Inst\s+(\S+)(?:\s+\[[^]]*\])?\s+\((\S+)\s+(\S+)(?:\s+\[([^]]+)\])?.*\)$`)
+// APT may append resolver dependency annotations after the closing
+// parenthesis and list multiple archive origins separated by commas. Keep the
+// complete archive text and tolerate those trailing annotations; they are not
+// part of the package version or source identity.
+var simulatedInstallRe = regexp.MustCompile(`^Inst\s+(\S+)(?:\s+\[[^]]*\])?\s+\((\S+)\s+(.+?)(?:\s+\[([^]]+)\])?\)(?:\s+.*)?$`)
 
 type aptPolicyEvidence struct {
 	Item        string   `json:"item"`
@@ -29,11 +33,16 @@ type aptIndexTarget struct {
 
 func parsePackageIntents(simulation []string, policies []aptPolicyEvidence, indexTargetLines []string) ([]PackageIntent, error) {
 	type candidate struct {
-		name, version, suite, architecture string
+		name, version, architecture string
 	}
 	candidates := make(map[string]candidate)
 	for _, line := range simulation {
 		line = strings.TrimSpace(line)
+		// APT also emits Conf lines and resolver diagnostics that repeat the
+		// archive name. Only Inst records represent packages to be upgraded.
+		if !strings.HasPrefix(line, "Inst ") {
+			continue
+		}
 		match := simulatedInstallRe.FindStringSubmatch(line)
 		if match == nil {
 			lower := strings.ToLower(line)
@@ -59,7 +68,7 @@ func parsePackageIntents(simulation []string, policies []aptPolicyEvidence, inde
 		if _, duplicate := candidates[key]; duplicate {
 			return nil, fmt.Errorf("duplicate simulated security package %s:%s", name, architecture)
 		}
-		candidates[key] = candidate{name: name, version: match[2], suite: match[3], architecture: architecture}
+		candidates[key] = candidate{name: name, version: match[2], architecture: architecture}
 	}
 	if len(candidates) == 0 && len(policies) == 0 {
 		return nil, nil
@@ -102,7 +111,7 @@ func parsePackageIntents(simulation []string, policies []aptPolicyEvidence, inde
 		if !ok {
 			return nil, fmt.Errorf("APT candidate policy is missing for %s:%s", candidate.name, candidate.architecture)
 		}
-		version, sources, err := parseAPTPolicy(policy.StdoutLines, candidate.architecture, candidate.suite)
+		version, sources, err := parseAPTPolicy(policy.StdoutLines, candidate.architecture)
 		if err != nil || version != candidate.version || len(sources) == 0 {
 			return nil, fmt.Errorf("candidate version or source for %s:%s changed or could not be established", candidate.name, candidate.architecture)
 		}
@@ -110,7 +119,16 @@ func parsePackageIntents(simulation []string, policies []aptPolicyEvidence, inde
 		if err != nil || len(origins) == 0 {
 			return nil, fmt.Errorf("signed APT Release origin for %s:%s could not be established", candidate.name, candidate.architecture)
 		}
-		intents = append(intents, PackageIntent{Name: candidate.name, Version: candidate.version, Architecture: candidate.architecture, Origins: origins})
+		securityOrigins := make([]APTOrigin, 0, len(origins))
+		for _, origin := range origins {
+			if isSecurityArchive(strings.Join([]string{origin.Release, origin.Codename, origin.Origin, origin.Label}, " ")) {
+				securityOrigins = append(securityOrigins, origin)
+			}
+		}
+		if len(securityOrigins) == 0 {
+			return nil, fmt.Errorf("signed security archive origin for %s:%s could not be established", candidate.name, candidate.architecture)
+		}
+		intents = append(intents, PackageIntent{Name: candidate.name, Version: candidate.version, Architecture: candidate.architecture, Origins: securityOrigins})
 	}
 	sortPackageIntents(intents)
 	return intents, nil
@@ -123,7 +141,7 @@ func isSecurityArchive(archive string) bool {
 
 func packageIntentKey(name, architecture string) string { return name + "\x00" + architecture }
 
-func parseAPTPolicy(lines []string, architecture, expectedSuite string) (string, []string, error) {
+func parseAPTPolicy(lines []string, architecture string) (string, []string, error) {
 	candidate := ""
 	for _, line := range lines {
 		if strings.HasPrefix(strings.TrimSpace(line), "Candidate:") {
@@ -155,7 +173,7 @@ func parseAPTPolicy(lines []string, architecture, expectedSuite string) (string,
 		if _, err := fmt.Sscanf(fields[0], "%d", new(int)); err != nil {
 			continue
 		}
-		if fields[1] == "/var/lib/dpkg/status" || fields[3] != architecture {
+		if fields[1] == "/var/lib/dpkg/status" || (architecture != "all" && fields[3] != architecture) {
 			continue
 		}
 		sourceURL, parseErr := url.Parse(fields[1])
@@ -163,14 +181,7 @@ func parseAPTPolicy(lines []string, architecture, expectedSuite string) (string,
 			return "", nil, fmt.Errorf("APT source contains embedded credentials or unsupported URL data")
 		}
 		origin := strings.Join(fields[1:4], " ")
-		suite := expectedSuite
-		if at := strings.LastIndexByte(suite, '/'); at >= 0 {
-			suite = suite[at+1:]
-		}
-		if at := strings.IndexByte(suite, ':'); at >= 0 {
-			suite = suite[at+1:]
-		}
-		if !strings.Contains(origin, ":") || suite == "" || !strings.Contains(strings.ToLower(origin), strings.ToLower(suite)) {
+		if !strings.Contains(origin, ":") {
 			continue
 		}
 		origins = append(origins, origin)
@@ -211,9 +222,13 @@ func matchAPTOrigins(sources []string, targets []aptIndexTarget, architecture st
 		if len(suiteComponent) != 2 {
 			return nil, fmt.Errorf("APT candidate source has no archive component")
 		}
+		sourceArchitecture := fields[2]
+		if architecture != "all" && sourceArchitecture != architecture {
+			return nil, fmt.Errorf("APT candidate source architecture does not match the package")
+		}
 		matched := false
 		for _, target := range targets {
-			if target.Site != fields[0] || target.Release != suiteComponent[0] || target.Component != suiteComponent[1] || target.Architecture != architecture {
+			if target.Site != fields[0] || target.Release != suiteComponent[0] || target.Component != suiteComponent[1] || target.Architecture != sourceArchitecture {
 				continue
 			}
 			siteURL, parseErr := url.Parse(target.Site)

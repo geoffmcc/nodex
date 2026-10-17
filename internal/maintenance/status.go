@@ -9,8 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/geoffmcc/nodex/internal/ansible"
+	"github.com/geoffmcc/nodex/internal/output"
+	"github.com/geoffmcc/nodex/internal/redact"
 )
 
 // Stable evidence IDs from the embedded check-updates/verify-host playbooks.
@@ -75,6 +78,11 @@ func InterpretCheckUpdates(res *ansible.RunResult) []HostStatus {
 		for _, outcome := range res.TaskOutcomes[hr.Host] {
 			seen[outcome.EvidenceID] = true
 			interpretOutcome(&hs, outcome)
+			if hr.Failures > 0 && !outcome.Failed && !outcome.Skipped && !outcome.Unreachable {
+				if detail := maintenanceTaskFailureDetail(outcome); detail != "" {
+					hs.Warnings = append(hs.Warnings, detail)
+				}
+			}
 		}
 		if len(res.TaskOutcomes[hr.Host]) == 0 {
 			hs.EvidenceComplete = false
@@ -104,7 +112,21 @@ func interpretOutcome(hs *HostStatus, o ansible.TaskOutcome) {
 		} else if o.Skipped {
 			hs.Warnings = append(hs.Warnings, "task was skipped")
 		} else {
-			hs.Warnings = append(hs.Warnings, "task reported failure: "+o.Task)
+			detail := "task reported failure: " + o.Task
+			if o.RC != nil {
+				detail += fmt.Sprintf(" (exit code %d)", *o.RC)
+			}
+			message := o.Message
+			if message == "" {
+				message = o.Stderr
+				if message == "" {
+					message = strings.Join(o.StderrLines, " ")
+				}
+			}
+			if message != "" {
+				detail += ": " + maintenanceDiagnostic(message)
+			}
+			hs.Warnings = append(hs.Warnings, detail)
 		}
 	}
 	switch o.EvidenceID {
@@ -160,6 +182,40 @@ func interpretOutcome(hs *HostStatus, o ansible.TaskOutcome) {
 	case taskRootUsage:
 		hs.RootUsage = parseRootUsage(o.StdoutLines)
 	}
+}
+
+func maintenanceTaskFailureDetail(outcome ansible.TaskOutcome) string {
+	message := outcome.Message
+	if message == "" {
+		message = outcome.Stderr
+		if message == "" {
+			message = strings.Join(outcome.StderrLines, " ")
+		}
+	}
+	lower := strings.ToLower(message)
+	if message == "" || !(strings.Contains(lower, "failed") || strings.Contains(lower, "error") || strings.Contains(lower, "unauthorized") || strings.Contains(lower, "denied")) {
+		return ""
+	}
+	detail := "task diagnostic: " + outcome.Task
+	if outcome.RC != nil {
+		detail += fmt.Sprintf(" (exit code %d)", *outcome.RC)
+	}
+	return detail + ": " + maintenanceDiagnostic(message)
+}
+
+// maintenanceDiagnostic keeps useful task failure context in read-only
+// preflight output while redacting secrets, stripping terminal controls, and
+// bounding provider-generated text.
+func maintenanceDiagnostic(value string) string {
+	value = strings.Join(strings.Fields(redact.String(output.SanitizeTerminal(value))), " ")
+	runes := []rune(value)
+	if len(runes) > 240 {
+		return string(runes[:237]) + "..."
+	}
+	if !utf8.ValidString(value) {
+		return strings.ToValidUTF8(value, "�")
+	}
+	return value
 }
 
 // Snapshot converts a host status and its immutable inventory identity into

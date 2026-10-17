@@ -81,6 +81,20 @@
       register: nodex_container_upgrade_simulation
       changed_when: false
 
+    - name: List APT-held LXC packages
+      vars:
+        nodex_evidence_id: container.hold
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - apt-mark
+          - showhold
+      register: nodex_container_held
+      changed_when: false
+
     - name: Check LXC package database
       vars:
         nodex_evidence_id: container.dpkg
