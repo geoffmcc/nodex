@@ -52,8 +52,8 @@ var handlerFlags = map[string]flagSet{
 	"certification report":  {exact: []string{"--ledger"}},
 	"monitor check":         {exact: []string{"--target", "--environment"}},
 	"container os-update":   {exact: []string{"--policy"}},
-	"vm create":             {exact: []string{"--cores", "--memory", "--disk-size", "--disk-storage"}},
-	"container create":      {exact: []string{"--cores", "--memory", "--swap", "--rootfs-size", "--rootfs-storage"}},
+	"vm create":             {exact: []string{"--cores", "--memory", "--disk-size", "--disk-storage", "--net0"}},
+	"container create":      {exact: []string{"--cores", "--memory", "--swap", "--rootfs-size", "--rootfs-storage", "--net0", "--nameserver", "--searchdomain", "--nesting"}},
 	"profile add":           {exact: []string{"--provider"}},
 	"profile set-credentials": {
 		exact: []string{"--backend", "--credential-name"},
@@ -79,6 +79,7 @@ var handlerFlags = map[string]flagSet{
 	"firewall rule create":          {params: firewallRuleParams()},
 	"firewall rule update":          {params: firewallRuleParams()},
 	"access acl add":                {exact: []string{"--role", "--user", "--group", "--propagate"}},
+	"access acl remove":             {exact: []string{"--role", "--user", "--group"}},
 	"pbs snapshot list":             {exact: []string{"--datastore", "--namespace", "--backup-type", "--backup-id"}},
 	"pbs task list":                 {exact: []string{"--running", "--errors"}},
 	"pbs verify run":                {exact: []string{"--datastore"}},
