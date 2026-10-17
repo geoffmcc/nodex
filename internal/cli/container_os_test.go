@@ -40,10 +40,50 @@ func TestContainerOSUsesOnlyAuthoritativeConfigForReturnedTargets(t *testing.T) 
 			return map[string]interface{}{"ostype": 42}, nil
 		}
 	}}
-	cts := []domain.Container{{ID: "node-a/200"}, {ID: "node-b/201"}, {ID: "node-c/202"}, {ID: "node-d/203", OS: "ubuntu"}, {ID: "invalid"}}
-	enrichContainerOS(t.Context(), p, cts)
+	cts := []domain.Container{{ID: "node-a/200"}, {ID: "node-b/201"}, {ID: "node-c/202"}, {ID: "node-d/203", Name: "known", CPU: 1, Memory: 1, Disk: 1, OS: "ubuntu"}, {ID: "invalid"}}
+	enrichContainerConfig(t.Context(), p, cts, false)
 	if strings.Join(calls, ",") != "node-a,node-b,node-c" || cts[0].OS != "debian" || cts[1].OS != "" || cts[2].OS != "" || cts[3].OS != "ubuntu" {
 		t.Fatal(calls, cts)
+	}
+}
+
+func TestContainerConfigEnrichmentFillsRestoredInventoryGaps(t *testing.T) {
+	calls := 0
+	p := &containerOSProbe{read: func(context.Context, string, int) (map[string]interface{}, error) {
+		calls++
+		return map[string]interface{}{
+			"hostname": "nodex-restore-source",
+			"cores":    1,
+			"memory":   512,
+			"rootfs":   "local-lvm:vm-9993-disk-0,size=4G",
+			"ostype":   "ubuntu",
+		}, nil
+	}}
+	containers := []domain.Container{{ID: "pve-nodex-lab/9993", Name: "CT9993", Status: "unknown", CPU: 4, Memory: 512 * 1024 * 1024, Disk: 4 * 1024 * 1024 * 1024, OS: "debian"}}
+	enrichContainerConfig(t.Context(), p, containers, true)
+	got := containers[0]
+	if calls != 1 || got.Name != "nodex-restore-source" || got.CPU != 1 || got.Memory != 512*1024*1024 || got.Disk != 4*1024*1024*1024 || got.OS != "ubuntu" {
+		t.Fatalf("enriched container = %+v; config reads = %d", got, calls)
+	}
+}
+
+func TestParseContainerRootfsSize(t *testing.T) {
+	tests := []struct {
+		value string
+		want  int64
+	}{
+		{"local-lvm:vm-100-disk-0,size=4G", 4 * 1024 * 1024 * 1024},
+		{"local:100/vm-100-disk-0.raw,size=512M", 512 * 1024 * 1024},
+		{"local-lvm:vm-100-disk-0,size=2048K", 2 * 1024 * 1024},
+		{"local-lvm:vm-100-disk-0", 0},
+		{"local-lvm:vm-100-disk-0,size=invalid", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			if got := parseContainerRootfsSize(tt.value); got != tt.want {
+				t.Fatalf("parseContainerRootfsSize(%q) = %d, want %d", tt.value, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -58,7 +98,7 @@ func TestContainerOSEnrichmentHonorsCancellationAndJoinsReads(t *testing.T) {
 		return nil, ctx.Err()
 	}}
 	cts := []domain.Container{{ID: "node/200"}, {ID: "node/201"}}
-	enrichContainerOS(ctx, p, cts)
+	enrichContainerConfig(ctx, p, cts, false)
 	if calls != 1 || cts[0].OS != "" || cts[1].OS != "" {
 		t.Fatal(calls, cts)
 	}

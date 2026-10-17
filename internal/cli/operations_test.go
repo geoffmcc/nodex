@@ -74,7 +74,7 @@ func TestOperations_ConfirmTargetFormatMatchesHandlerTarget(t *testing.T) {
 		{"container delete", "node>/<vmid>"},
 		{"vm snapshot delete", "snapshot name only"},
 		{"container snapshot delete", "snapshot name only"},
-		{"storage delete", "volume ID only"},
+		{"storage delete", "storage-relative volume ID only"},
 		{"backup job delete", "backup job ID only"},
 	}
 	for _, tt := range tests {
@@ -453,7 +453,7 @@ func TestOperations_WaitableOps(t *testing.T) {
 	waitable := []string{
 		"vm start", "vm stop", "vm shutdown", "vm reset", "vm reboot",
 		"vm suspend", "vm resume",
-		"vm update", "vm cloud-init", "vm delete",
+		"vm update", "vm delete",
 		"vm migrate", "vm clone", "vm create", "vm disk resize", "vm disk move", "vm template",
 		"container start", "container stop", "container shutdown", "container reboot",
 		"container suspend", "container resume",
@@ -474,6 +474,19 @@ func TestOperations_WaitableOps(t *testing.T) {
 		if !op.Waitable {
 			t.Errorf("%s should be waitable", path)
 		}
+	}
+}
+
+func TestVMCloudInitIsSynchronousOperation(t *testing.T) {
+	op := LookupOperation("vm cloud-init")
+	if op == nil {
+		t.Fatal("missing operation: vm cloud-init")
+	}
+	if op.Waitable {
+		t.Error("vm cloud-init should not support --wait because Proxmox applies it synchronously")
+	}
+	if op.ProducesUPID {
+		t.Error("vm cloud-init should not advertise a task UPID")
 	}
 }
 

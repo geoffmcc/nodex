@@ -421,7 +421,7 @@ func runContainersAll(ctx context.Context, cmdCtx *Context, _ []string) error {
 				continue
 			}
 			cts = applyLimitN(cts, cmdCtx.Opts.Limit)
-			enrichContainerOS(ctx, ci, cts)
+			enrichContainerConfig(ctx, ci, cts, false)
 			out.AddSuccess(profileName, cts, time.Since(start))
 		} else {
 			err := fmt.Errorf("provider %q does not support container inspection", prov.Name())

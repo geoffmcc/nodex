@@ -388,7 +388,7 @@ func runContainerList(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 	sortGuestsByID(containers, func(c domain.Container) string { return c.ID })
 	containers = applyLimit(containers, cmdCtx.Opts.Limit)
-	enrichContainerOS(ctx, ci, containers)
+	enrichContainerConfig(ctx, ci, containers, false)
 	return writeContainers(cmdCtx, containers)
 }
 
@@ -428,35 +428,91 @@ func runContainerShow(ctx context.Context, cmdCtx *Context, args []string) error
 		}
 	}
 	selected := []domain.Container{container}
-	enrichContainerOS(ctx, ci, selected)
+	enrichContainerConfig(ctx, ci, selected, true)
 	return writeContainer(cmdCtx, selected[0])
 }
 
-// Aggregate inventory does not expose ostype. Enrich only returned rows from
-// read-only configuration, with one total budget rather than one timeout per
-// guest. No persistent cache or guest execution is used. Missing/denied reads
-// leave OS absent in structured output and explicitly unknown in human output.
-func enrichContainerOS(ctx context.Context, inspector domain.ContainerInspector, containers []domain.Container) {
+// Aggregate inventory can lag restored guests and omit config-backed fields.
+// Enrich only returned rows from read-only configuration, with one total
+// budget rather than one timeout per guest. No persistent cache or guest
+// execution is used. Missing/denied reads leave aggregate values intact.
+func enrichContainerConfig(ctx context.Context, inspector domain.ContainerInspector, containers []domain.Container, refresh bool) {
 	bounded, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	for i := range containers {
 		if bounded.Err() != nil {
 			return
 		}
-		if containers[i].OS != "" {
+		container := &containers[i]
+		if !refresh && container.OS != "" && container.Name != "" && container.CPU != 0 && container.Memory != 0 && container.Disk != 0 {
 			continue
 		}
-		node, vmid, err := parseNodeVMID(containers[i].ID)
+		node, vmid, err := parseNodeVMID(container.ID)
 		if err != nil {
 			continue
 		}
 		cfg, err := inspector.ContainerConfig(bounded, node, vmid)
-		if err == nil {
-			if osType, ok := cfg["ostype"].(string); ok {
-				containers[i].OS = osType
-			}
+		if err != nil {
+			continue
+		}
+		if hostname, ok := cfg["hostname"].(string); ok && hostname != "" && (refresh || container.Name == "") {
+			container.Name = hostname
+		}
+		if cores, ok := cfg["cores"]; ok && (refresh || container.CPU == 0) {
+			container.CPU = int(toInt64(cores))
+		}
+		if memory, ok := cfg["memory"]; ok && (refresh || container.Memory == 0) {
+			container.Memory = toInt64(memory) * 1024 * 1024
+		}
+		if disk := parseContainerRootfsSize(cfg["rootfs"]); disk > 0 && (refresh || container.Disk == 0) {
+			container.Disk = disk
+		}
+		if osType, ok := cfg["ostype"].(string); ok && osType != "" && (refresh || container.OS == "") {
+			container.OS = osType
 		}
 	}
+}
+
+func parseContainerRootfsSize(value any) int64 {
+	rootfs, ok := value.(string)
+	if !ok {
+		return 0
+	}
+	for _, property := range strings.Split(rootfs, ",") {
+		key, size, found := strings.Cut(strings.TrimSpace(property), "=")
+		if found && key == "size" {
+			return parseStorageByteSize(size)
+		}
+	}
+	return 0
+}
+
+func parseStorageByteSize(value string) int64 {
+	value = strings.TrimSpace(value)
+	upper := strings.ToUpper(value)
+	units := []struct {
+		suffix string
+		factor int64
+	}{
+		{"KIB", 1 << 10}, {"KB", 1 << 10}, {"K", 1 << 10},
+		{"MIB", 1 << 20}, {"MB", 1 << 20}, {"M", 1 << 20},
+		{"GIB", 1 << 30}, {"GB", 1 << 30}, {"G", 1 << 30},
+		{"TIB", 1 << 40}, {"TB", 1 << 40}, {"T", 1 << 40},
+	}
+	factor := int64(1)
+	for _, unit := range units {
+		if strings.HasSuffix(upper, unit.suffix) {
+			factor = unit.factor
+			value = strings.TrimSpace(value[:len(value)-len(unit.suffix)])
+			break
+		}
+	}
+	amount, err := strconv.ParseInt(value, 10, 64)
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if err != nil || amount < 0 || amount > maxInt64/factor {
+		return 0
+	}
+	return amount * factor
 }
 
 func findContainer(containers []domain.Container, id string) (domain.Container, bool) {

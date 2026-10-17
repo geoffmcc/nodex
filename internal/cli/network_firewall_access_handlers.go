@@ -686,7 +686,7 @@ func runFirewallIPSetEntryRemove(ctx context.Context, cmdCtx *Context, args []st
 	}
 
 	desc := fmt.Sprintf("IP set %s entry %s", name, cidr)
-	target := fmt.Sprintf("%s-%s", name, cidr)
+	target := firewallIPSetEntryConfirmationTarget(name, cidr)
 	if err := checkDestructive(cmdCtx, desc, target); err != nil {
 		return err
 	}
@@ -697,6 +697,12 @@ func runFirewallIPSetEntryRemove(ctx context.Context, cmdCtx *Context, args []st
 
 	fmt.Fprintf(cmdCtx.Writer, "Entry %s removed from IP set %s\n", cidr, name)
 	return nil
+}
+
+// firewallIPSetEntryConfirmationTarget keeps the confirmation target safe to
+// type while preserving the exact IP-set and prefix that will be changed.
+func firewallIPSetEntryConfirmationTarget(name, cidr string) string {
+	return fmt.Sprintf("%s-%s", name, strings.ReplaceAll(cidr, "/", "-"))
 }
 
 func runFirewallIPSetDelete(ctx context.Context, cmdCtx *Context, args []string) error {

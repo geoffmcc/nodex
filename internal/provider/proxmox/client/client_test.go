@@ -148,6 +148,73 @@ func TestCreateFirewallGroupUsesGroupField(t *testing.T) {
 	}
 }
 
+func TestGetFirewallSecurityGroupsDecodesGroupField(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/cluster/firewall/groups" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"group":"nxsmk1016","comment":"disposable","rules":[]}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	groups, err := c.GetFirewallSecurityGroups(context.Background())
+	if err != nil {
+		t.Fatalf("GetFirewallSecurityGroups: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Name != "nxsmk1016" || groups[0].Comment != "disposable" {
+		t.Fatalf("security groups = %+v, want group name and comment from Proxmox response", groups)
+	}
+}
+
+func TestCloneWithTargetStorageRequestsFullClone(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		call func(*Client) error
+	}{
+		{
+			name: "VM",
+			path: "/nodes/pve1/qemu/100/clone",
+			call: func(c *Client) error {
+				_, err := c.VMClone(context.Background(), "pve1", 100, 101, "clone-vm", "local-lvm")
+				return err
+			},
+		},
+		{
+			name: "container",
+			path: "/nodes/pve1/lxc/200/clone",
+			call: func(c *Client) error {
+				_, err := c.CTClone(context.Background(), "pve1", 200, 201, "clone-ct", "local-lvm")
+				return err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != tt.path {
+					t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+				}
+				if err := r.ParseForm(); err != nil {
+					t.Fatalf("ParseForm: %v", err)
+				}
+				if got := r.Form.Get("storage"); got != "local-lvm" {
+					t.Errorf("storage = %q, want local-lvm", got)
+				}
+				if got := r.Form.Get("full"); got != "1" {
+					t.Errorf("full = %q, want 1 when target storage is supplied", got)
+				}
+				_, _ = fmt.Fprint(w, `{"data":"UPID:pve1:1:2:3:clone:101:root@pam:"}`)
+			}))
+			defer s.Close()
+			c := &Client{baseURL: s.URL, client: httpclient.New()}
+			if err := tt.call(c); err != nil {
+				t.Fatalf("clone request: %v", err)
+			}
+		})
+	}
+}
+
 func TestNodesDecodesProxmoxNodeFields(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprint(w, `{"data":[{"id":"node/proxmox","node":"proxmox","status":"online","type":"node"},{"id":"node/backup","node":"backup","status":"offline","type":"node","uptime":42}]}`)

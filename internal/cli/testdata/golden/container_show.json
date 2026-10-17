@@ -5,8 +5,8 @@
   "node": "e2e-node",
   "cpu": 1,
   "os": "debian",
-  "memory": 512,
+  "memory": 536870912,
   "disk": 1024,
-  "memory_human": "512 B",
+  "memory_human": "512.0 MiB",
   "disk_human": "1.0 KiB"
 }

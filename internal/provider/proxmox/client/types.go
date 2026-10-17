@@ -1035,7 +1035,7 @@ type FirewallSecurityGroupsResponse struct {
 
 // FirewallSecurityGroupItem represents a firewall security group.
 type FirewallSecurityGroupItem struct {
-	Name    string `json:"name"`
+	Name    string `json:"group"`
 	Comment string `json:"comment,omitempty"`
 	Rules   []struct {
 		Type     string `json:"type"`

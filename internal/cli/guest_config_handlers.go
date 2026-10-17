@@ -658,21 +658,32 @@ func runVMDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 
 	dp, err := requireDelete(prov)
 	if err != nil {
-		return err
+		return mutationPreflightError{err: err}
 	}
 
 	targetID := fmt.Sprintf("%s/%d", node, vmid)
 	desc := fmt.Sprintf("VM %s", targetID)
 	if err := checkDestructive(cmdCtx, desc, targetID); err != nil {
-		return err
+		return mutationPreflightError{err: err}
 	}
-	if vi, ok := prov.(domain.VMInspector); ok {
+	if si, ok := prov.(domain.GuestStatusInspector); ok {
+		status, err := si.GuestStatus(ctx, node, "vm", vmid)
+		if err != nil {
+			if app.IsNotFoundError(err) {
+				return mutationPreflightError{err: app.NotFoundError("VM %q", targetID)}
+			}
+			return mutationPreflightError{err: fmt.Errorf("inspect VM before delete: %w", err)}
+		}
+		if err := validateVMDeleteStatus(status, targetID); err != nil {
+			return mutationPreflightError{err: err}
+		}
+	} else if vi, ok := prov.(domain.VMInspector); ok {
 		vms, err := vi.VMs(ctx)
 		if err != nil {
-			return fmt.Errorf("inspect VM before delete: %w", err)
+			return mutationPreflightError{err: fmt.Errorf("inspect VM before delete: %w", err)}
 		}
 		if err := validateVMDeleteState(vms, targetID); err != nil {
-			return err
+			return mutationPreflightError{err: err}
 		}
 	}
 
@@ -694,7 +705,11 @@ func validateVMDeleteState(vms []domain.VM, target string) error {
 	if !ok {
 		return app.NotFoundError("VM %q", target)
 	}
-	if strings.EqualFold(vm.Status, "running") {
+	return validateVMDeleteStatus(vm.Status, target)
+}
+
+func validateVMDeleteStatus(status, target string) error {
+	if strings.EqualFold(status, "running") {
 		return app.NewExitError(
 			fmt.Errorf("VM %s is running; stop it first with: nodex vm stop %s", target, target),
 			app.ExitConflict,
@@ -723,13 +738,33 @@ func runCTDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 
 	dp, err := requireDelete(prov)
 	if err != nil {
-		return err
+		return mutationPreflightError{err: err}
 	}
 
 	targetID := fmt.Sprintf("%s/%d", node, vmid)
 	desc := fmt.Sprintf("container %s", targetID)
 	if err := checkDestructive(cmdCtx, desc, targetID); err != nil {
-		return err
+		return mutationPreflightError{err: err}
+	}
+	if si, ok := prov.(domain.GuestStatusInspector); ok {
+		status, err := si.GuestStatus(ctx, node, "container", vmid)
+		if err != nil {
+			if app.IsNotFoundError(err) {
+				return mutationPreflightError{err: app.NotFoundError("container %q", targetID)}
+			}
+			return mutationPreflightError{err: fmt.Errorf("inspect container before delete: %w", err)}
+		}
+		if err := validateCTDeleteStatus(status, targetID); err != nil {
+			return mutationPreflightError{err: err}
+		}
+	} else if ci, ok := prov.(domain.ContainerInspector); ok {
+		containers, err := ci.Containers(ctx)
+		if err != nil {
+			return mutationPreflightError{err: fmt.Errorf("inspect container before delete: %w", err)}
+		}
+		if err := validateCTDeleteState(containers, targetID); err != nil {
+			return mutationPreflightError{err: err}
+		}
 	}
 
 	// Observe the guest beforehand so the postcondition check can say whether
@@ -743,6 +778,24 @@ func runCTDelete(ctx context.Context, cmdCtx *Context, args []string) error {
 
 	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container delete", fmt.Sprintf("%s/%d", node, vmid), "destructive",
 		absenceVerifier(probeContainer(prov, node, vmid), fmt.Sprintf("container %s/%d", node, vmid), prior))
+}
+
+func validateCTDeleteState(containers []domain.Container, target string) error {
+	container, ok := findContainer(containers, target)
+	if !ok {
+		return app.NotFoundError("container %q", target)
+	}
+	return validateCTDeleteStatus(container.Status, target)
+}
+
+func validateCTDeleteStatus(status, target string) error {
+	if strings.EqualFold(status, "running") {
+		return app.NewExitError(
+			fmt.Errorf("container %s is running; shut it down first with: nodex container shutdown %s", target, target),
+			app.ExitConflict,
+		)
+	}
+	return nil
 }
 
 // --- VM Cloud-Init (Tier 1: reversible) ---
@@ -785,6 +838,9 @@ func runVMCloudInit(ctx context.Context, cmdCtx *Context, args []string) error {
 	upid, err := cp.VMCloudInit(ctx, node, vmid)
 	if err != nil {
 		return fmt.Errorf("cloud-init VM %s/%d: %w", node, vmid, err)
+	}
+	if upid == "" {
+		return runSynchronousMutation(ctx, cmdCtx, prov, "vm cloud-init", fmt.Sprintf("%s/%d", node, vmid), "reversible", nil)
 	}
 
 	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm cloud-init", fmt.Sprintf("%s/%d", node, vmid), "reversible")

@@ -69,6 +69,26 @@ func TestOperationDiscoveryCoversRegistryAndAliases(t *testing.T) {
 	}
 }
 
+func TestOperationDiscoveryHonorsGlobalLimit(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"--output", "json", "--limit", "5", "operation", "list"}, &stdout, &stderr); err != nil {
+		t.Fatalf("operation list: %v (%s)", err, stderr.String())
+	}
+	var listed []OperationContract
+	if err := json.Unmarshal(stdout.Bytes(), &listed); err != nil {
+		t.Fatalf("decode operation list: %v\n%s", err, stdout.String())
+	}
+	if len(listed) != 5 {
+		t.Fatalf("operation list returned %d entries with --limit 5", len(listed))
+	}
+	all := Operations()
+	for i, item := range listed {
+		if item.Path != all[i].Path {
+			t.Fatalf("operation %d = %q, want prefix item %q", i, item.Path, all[i].Path)
+		}
+	}
+}
+
 func TestAgentOperationContractsStayInParityWithExistingCLIGrammar(t *testing.T) {
 	for _, op := range Operations() {
 		if _, dispatch := knownDispatchCommands[op.Path]; dispatch {
@@ -199,6 +219,14 @@ func TestOperationDescribeExposesInputAndSafetySchema(t *testing.T) {
 	invalidPBSInput := map[string]any{"arguments": []any{"verify-daily"}, "flags": map[string]any{"--agent": true, "--profile": "backup", "--yes": true, "--datastore": "store1"}}
 	if err := validateSchemaValue(invalidPBSInput, pbsVerify.InputSchema, inputSchemaDoc, "$", 0); err == nil {
 		t.Error("PBS verify schema allowed both mutually exclusive target forms")
+	}
+	vmDelete := describeOperation(*LookupOperation("vm delete"), true)
+	if !strings.Contains(strings.Join(vmDelete.Verification, " "), "VM config endpoint") || !strings.Contains(strings.Join(vmDelete.Verification, " "), "--wait") {
+		t.Errorf("VM delete verification contract does not describe waited absence readback: %v", vmDelete.Verification)
+	}
+	cloudInit := describeOperation(*LookupOperation("vm cloud-init"), true)
+	if !strings.Contains(strings.Join(cloudInit.Recovery, " "), "cannot verify or resubmit") {
+		t.Errorf("cloud-init recovery contract suggests an unavailable task reconciliation: %v", cloudInit.Recovery)
 	}
 	firewall := describeOperation(*LookupOperation("firewall rule create"), true)
 	actionFlag, typeFlag := false, false
@@ -398,6 +426,20 @@ func TestAgentDistinguishesDefinitiveProviderRejectionFromServerError(t *testing
 				t.Fatalf("HTTP %d outcome classification incorrect: %+v", test.status, result)
 			}
 		})
+	}
+}
+
+func TestAgentDoesNotTreatProviderNotFoundAsPreflight(t *testing.T) {
+	base := agent.Result{
+		SchemaVersion: agent.ResultSchemaVersion, RequestID: "req_provider_not_found",
+		ReceiptID: "req_provider_not_found", Operation: "vm delete",
+		Submission: agent.SubmissionUnknown, Execution: agent.ExecutionUnknown,
+		Verification: agent.VerificationUnsupported, Retry: agent.RetryReconcileFirst,
+		StartedAt: "2026-01-02T03:04:05Z", ObservedAt: "2026-01-02T03:04:05Z",
+	}
+	result := mutationOutcome(base, OperationMeta{Path: "vm delete"}, nil, app.NotFoundError("VM missing"))
+	if result.Submission != agent.SubmissionUnknown || result.Execution != agent.ExecutionUnknown || result.Retry != agent.RetryReconcileFirst {
+		t.Fatalf("provider not-found response was mislabeled as preflight: %+v", result)
 	}
 }
 

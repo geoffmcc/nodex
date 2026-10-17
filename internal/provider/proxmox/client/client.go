@@ -1220,7 +1220,8 @@ func (c *Client) CTSnapshotRollback(ctx context.Context, node string, vmid int, 
 	return resp.Data, nil
 }
 
-// VMCloudInit regenerates the cloud-init configuration for a VM and returns the task UPID.
+// VMCloudInit regenerates the cloud-init configuration for a VM. Proxmox
+// applies this endpoint synchronously and may return no task UPID.
 func (c *Client) VMCloudInit(ctx context.Context, node string, vmid int) (string, error) {
 	if node == "" {
 		return "", fmt.Errorf("node name is required")
@@ -1710,6 +1711,9 @@ func (c *Client) VMClone(ctx context.Context, node string, vmid, newVmid int, na
 	}
 	if storage != "" {
 		body.Set("storage", storage)
+		// Proxmox only accepts a target storage for full clones. Without this
+		// flag, the API treats a template clone as linked and rejects storage.
+		body.Set("full", "1")
 	}
 	if err := c.post(ctx, path, body, &resp); err != nil {
 		return "", err
@@ -1737,6 +1741,7 @@ func (c *Client) CTClone(ctx context.Context, node string, vmid, newVmid int, ho
 	}
 	if storage != "" {
 		body.Set("storage", storage)
+		body.Set("full", "1")
 	}
 	if err := c.post(ctx, path, body, &resp); err != nil {
 		return "", err

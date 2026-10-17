@@ -158,7 +158,7 @@ func runOperationList(_ context.Context, cmdCtx *Context, args []string) error {
 	if len(args) != 0 {
 		return app.NewExitError(fmt.Errorf("usage: nodex operation list"), app.ExitUsage)
 	}
-	ops := Operations()
+	ops := applyLimit(Operations(), cmdCtx.Opts.Limit)
 	contracts := make([]OperationSummary, 0, len(ops))
 	for _, op := range ops {
 		contracts = append(contracts, summarizeOperation(op))
@@ -274,9 +274,15 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 		verification = []string{"after synchronous application or waited task success, current guest config is inspected for template:1"}
 	case "vm snapshot delete", "container snapshot delete":
 		verification = []string{"after waited task success, the snapshot list is read back to confirm the named snapshot is absent"}
+	case "vm delete":
+		verification = []string{"with --wait, after task success the receipt-bound VM config endpoint is read to confirm the VM is absent"}
+	case "container delete":
+		verification = []string{"preflight reads authoritative guest status, refuses a running container, and reports a missing container as not attempted", "with --wait, after task success the receipt-bound container config endpoint is read to confirm the container is absent"}
 	}
 	var recovery []string
 	switch {
+	case op.Path == "vm cloud-init":
+		recovery = []string{"agent receipt show", "if the provider call outcome is unknown, inspect the VM's cloud-init state in Proxmox; this synchronous endpoint returns no task ID, so receipt reconciliation cannot verify or resubmit it"}
 	case strings.HasPrefix(op.Path, "maintenance "):
 		switch op.Path {
 		case "maintenance inventory", "maintenance status":
