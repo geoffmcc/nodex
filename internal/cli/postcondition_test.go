@@ -560,9 +560,10 @@ func TestDeletionPostconditionsAreVerified(t *testing.T) {
 		// confirm is the exact value this command requires for type-in
 		// confirmation, which differs per operation.
 		confirm string
-		// statusOverride changes the cluster listing's reported status,
-		// which the VM delete precondition reads before allowing deletion.
-		statusOverride string
+		// Status overrides configure the authoritative status endpoint used by
+		// the VM/container deletion preconditions.
+		statusOverride          string
+		containerStatusOverride string
 	}{
 		{
 			name: "vm-delete",
@@ -578,9 +579,10 @@ func TestDeletionPostconditionsAreVerified(t *testing.T) {
 			confirm: "before-upgrade",
 		},
 		{
-			name:    "container-delete",
-			args:    []string{"container", "delete", "e2e-node/200"},
-			confirm: "e2e-node/200",
+			name:                    "container-delete",
+			args:                    []string{"container", "delete", "e2e-node/200"},
+			confirm:                 "e2e-node/200",
+			containerStatusOverride: "stopped",
 		},
 		{
 			name:    "container-snapshot-delete",
@@ -597,6 +599,10 @@ func TestDeletionPostconditionsAreVerified(t *testing.T) {
 			if tc.statusOverride != "" {
 				e2eVMStatusOverride = tc.statusOverride
 				defer func() { e2eVMStatusOverride = "" }()
+			}
+			if tc.containerStatusOverride != "" {
+				e2eContainerStatusOverride = tc.containerStatusOverride
+				defer func() { e2eContainerStatusOverride = "" }()
 			}
 
 			args := []string{"--output", "json", "--yes", "--force", "--wait", "--confirm-target", tc.confirm}

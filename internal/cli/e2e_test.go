@@ -25,6 +25,7 @@ var e2eNodeUptime = 217 * time.Hour
 // exercise failure-path output. Tests must reset it (defer) and run serially.
 var e2eTaskFailure = false
 var e2eVMStatusOverride string
+var e2eVMListStatusOverride string
 var e2eTaskNodeOverride string
 
 // Template overrides let lifecycle tests model config-backed and inventory
@@ -35,6 +36,7 @@ var e2eVMInventoryTemplateOverride bool
 var e2eContainerInventoryTemplateOverride bool
 var e2eCTTemplateNoTaskID bool
 var e2eCTTemplateCalls int
+var e2eVMCloudInitNoTaskID bool
 
 // e2eNodeServicesOverride, when non-nil, replaces the (otherwise empty) node
 // service list so --limit bounding can be exercised. Tests must reset it and
@@ -190,7 +192,10 @@ func (p *e2eMockProvider) Nodes(_ context.Context) ([]domain.Node, error) {
 	return []domain.Node{{ID: "node/e2e-node", Name: "e2e-node", Status: "online", Role: "node", Platform: "mock", Uptime: &e2eNodeUptime}}, nil
 }
 func (p *e2eMockProvider) VMs(_ context.Context) ([]domain.VM, error) {
-	status := e2eVMStatusOverride
+	status := e2eVMListStatusOverride
+	if status == "" {
+		status = e2eVMStatusOverride
+	}
 	if status == "" {
 		status = "running"
 	}
@@ -674,6 +679,9 @@ func (p *e2eMockProvider) CTTemplate(_ context.Context, node string, vmid int) (
 }
 
 func (p *e2eMockProvider) VMCloudInit(_ context.Context, node string, vmid int) (string, error) {
+	if e2eVMCloudInitNoTaskID {
+		return "", nil
+	}
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12372, 1700000000), nil
 }
 
@@ -1000,6 +1008,37 @@ func TestContainerTemplateWithoutTaskIDIsVerifiedSynchronously(t *testing.T) {
 	}
 	if strings.Contains(out, "OUTCOME_UNKNOWN") {
 		t.Errorf("synchronous template conversion must not report OUTCOME_UNKNOWN: %s", out)
+	}
+}
+
+// Proxmox regenerates VM cloud-init data inline and returns no task UPID.
+// Agent receipts must preserve that synchronous result instead of marking it
+// ambiguous and suggesting a reconciliation that cannot inspect a task.
+func TestVMCloudInitWithoutTaskIDIsSynchronousInAgentMode(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	e2eVMCloudInitNoTaskID = true
+	defer func() { e2eVMCloudInitNoTaskID = false }()
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{
+		"--agent", "--profile", "e2e", "--request-id", "cloudinit-inline-20261016",
+		"--yes", "--output", "json", "vm", "cloud-init", "e2e-node/100",
+	}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("VM cloud-init: %v; stderr: %s", err, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{`"submission": "accepted"`, `"execution": "succeeded"`, `"verification": "unsupported"`, `"retry": "do_not_retry_automatically"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output: %s", want, out)
+		}
+	}
+	for _, unexpected := range []string{"OUTCOME_UNKNOWN", "next_actions", "task_id"} {
+		if strings.Contains(out, unexpected) {
+			t.Errorf("output contains %q for a synchronous operation: %s", unexpected, out)
+		}
 	}
 }
 

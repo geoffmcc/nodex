@@ -90,3 +90,54 @@ func TestRunVMDeleteRejectsRunningVMBeforeMutation(t *testing.T) {
 		t.Fatalf("vm delete error = %v, want conflict exit", err)
 	}
 }
+
+func TestRunVMDeleteUsesAuthoritativeStatusWhenInventoryIsStale(t *testing.T) {
+	seedLogE2E(t)
+	e2eVMStatusOverride = "stopped"
+	e2eVMListStatusOverride = "running"
+	t.Cleanup(func() {
+		e2eVMStatusOverride = ""
+		e2eVMListStatusOverride = ""
+	})
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{
+		"--output", "json", "--yes", "--force", "--confirm-target", "e2e-node/100",
+		"vm", "delete", "e2e-node/100",
+	}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("VM delete rejected a stopped VM because inventory was stale: %v\n%s", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"success": true`) {
+		t.Fatalf("VM delete did not return a successful operation result: %s", stdout.String())
+	}
+}
+
+func TestAgentVMDeletePreflightConflictIsNotSubmitted(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+	t.Setenv("NODEX_E2E_TOKEN", "e2e-token")
+	e2eVMStatusOverride = "running"
+	t.Cleanup(func() { e2eVMStatusOverride = "" })
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{
+		"--agent", "--profile", "e2e", "--request-id", "agent-vm-delete-running-20261016",
+		"--yes", "--force", "--confirm-target", "e2e-node/100", "--output", "json",
+		"vm", "delete", "e2e-node/100",
+	}, &stdout, &stderr)
+	if err == nil || app.ExitCodeFromError(err) != app.ExitConflict {
+		t.Fatalf("VM delete error = %v, want running-VM conflict", err)
+	}
+	out := stdout.String()
+	for _, want := range []string{`"submission": "not_attempted"`, `"execution": "not_started"`, `"retry": "do_not_retry_automatically"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in agent result: %s", want, out)
+		}
+	}
+	for _, unexpected := range []string{"next_actions", "task_id", "OUTCOME_UNKNOWN"} {
+		if strings.Contains(out, unexpected) {
+			t.Errorf("agent result contains %q for a preflight rejection: %s", unexpected, out)
+		}
+	}
+}
