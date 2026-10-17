@@ -27,6 +27,7 @@ var e2eTaskFailure = false
 var e2eVMStatusOverride string
 var e2eVMListStatusOverride string
 var e2eTaskNodeOverride string
+var e2eContainerSnapshotOverride string
 
 // Template overrides let lifecycle tests model config-backed and inventory
 // fallback preflight paths. Tests must reset these values and run serially.
@@ -59,10 +60,12 @@ var e2eTaskStatusOverride string
 // e2eGuestStatusOverride replaces the status the e2e mock reports from its
 // per-guest status read. Tests must reset it and run serially.
 var e2eGuestStatusOverride string
+var e2eGuestConfigAbsentOverride map[string]bool
 
 // e2eContainerStatusOverride replaces the container per-guest status the e2e
 // mock reports, so VM and container lifecycle paths can be driven independently.
 var e2eContainerStatusOverride string
+var e2eContainerListStatusOverride string
 
 // e2eGuestStatusError makes the e2e mock's per-guest status read fail with this
 // HTTP status, so unverifiable postconditions can be exercised. Tests must reset
@@ -202,7 +205,11 @@ func (p *e2eMockProvider) VMs(_ context.Context) ([]domain.VM, error) {
 	return []domain.VM{{ID: "e2e-node/100", Name: "e2e-vm", Status: status, Node: "e2e-node", CPU: 2, Memory: 1024, Disk: 2048, Template: e2eVMInventoryTemplateOverride}}, nil
 }
 func (p *e2eMockProvider) Containers(_ context.Context) ([]domain.Container, error) {
-	return []domain.Container{{ID: "e2e-node/200", Name: "e2e-ct", Status: "running", Node: "e2e-node", CPU: 1, OS: "debian", Memory: 512, Disk: 1024, Template: e2eContainerInventoryTemplateOverride}}, nil
+	status := e2eContainerListStatusOverride
+	if status == "" {
+		status = "running"
+	}
+	return []domain.Container{{ID: "e2e-node/200", Name: "e2e-ct", Status: status, Node: "e2e-node", CPU: 1, OS: "debian", Memory: 512, Disk: 1024, Template: e2eContainerInventoryTemplateOverride}}, nil
 }
 
 // GuestStatus reports the per-guest authoritative status, mirroring the real
@@ -263,7 +270,7 @@ func (p *e2eMockProvider) Cluster(_ context.Context) (*domain.Cluster, error) {
 	return &domain.Cluster{Name: "e2e", Version: "test", Nodes: 1}, nil
 }
 func (p *e2eMockProvider) VMConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
-	if p.guestGone("vm", vmid) {
+	if p.guestGone("vm", vmid) || e2eGuestConfigAbsentOverride[guestKey("vm", vmid)] {
 		return nil, notFound("VM %s/%d does not exist", node, vmid)
 	}
 	if config, ok := p.createdVMConfigs[vmid]; ok {
@@ -324,7 +331,7 @@ func (p *e2eMockProvider) CTClone(_ context.Context, node string, vmid, newVmid 
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12376, 1700000000), nil
 }
 func (p *e2eMockProvider) ContainerConfig(_ context.Context, node string, vmid int) (map[string]interface{}, error) {
-	if p.guestGone("container", vmid) {
+	if p.guestGone("container", vmid) || e2eGuestConfigAbsentOverride[guestKey("container", vmid)] {
 		return nil, notFound("container %s/%d does not exist", node, vmid)
 	}
 	if config, ok := p.createdCTConfigs[vmid]; ok {
@@ -397,6 +404,9 @@ func (p *e2eMockProvider) VMSnapshots(_ context.Context, node string, vmid int) 
 func (p *e2eMockProvider) ContainerSnapshots(_ context.Context, node string, vmid int) ([]domain.Snapshot, error) {
 	all := []domain.Snapshot{
 		{Name: "clean", VMID: vmid, Ctime: 1700000000, Node: node, Target: fmt.Sprintf("%s/%d", node, vmid)},
+	}
+	if e2eContainerSnapshotOverride != "" {
+		all = append(all, domain.Snapshot{Name: e2eContainerSnapshotOverride, VMID: vmid, Ctime: 1700000010, Node: node, Target: fmt.Sprintf("%s/%d", node, vmid)})
 	}
 	return filterDeletedSnapshots(p, "container", vmid, all), nil
 }
@@ -621,10 +631,40 @@ func (p *e2eMockProvider) CTResume(_ context.Context, node string, vmid int) (st
 // Phase 3: ConfigProvider, SnapshotMutationProvider, DeleteProvider, TemplateProvider, CloudInitProvider
 
 func (p *e2eMockProvider) VMConfigUpdate(_ context.Context, node string, vmid int, params map[string]string) (string, error) {
+	config, err := p.VMConfig(context.Background(), node, vmid)
+	if err != nil {
+		return "", err
+	}
+	updated := make(map[string]interface{}, len(config)+len(params))
+	for key, value := range config {
+		updated[key] = value
+	}
+	for key, value := range params {
+		updated[key] = value
+	}
+	if p.createdVMConfigs == nil {
+		p.createdVMConfigs = make(map[int]map[string]interface{})
+	}
+	p.createdVMConfigs[vmid] = updated
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12360, 1700000000), nil
 }
 
 func (p *e2eMockProvider) CTConfigUpdate(_ context.Context, node string, vmid int, params map[string]string) (string, error) {
+	config, err := p.ContainerConfig(context.Background(), node, vmid)
+	if err != nil {
+		return "", err
+	}
+	updated := make(map[string]interface{}, len(config)+len(params))
+	for key, value := range config {
+		updated[key] = value
+	}
+	for key, value := range params {
+		updated[key] = value
+	}
+	if p.createdCTConfigs == nil {
+		p.createdCTConfigs = make(map[int]map[string]interface{})
+	}
+	p.createdCTConfigs[vmid] = updated
 	return fmt.Sprintf("UPID:%s/%08X/%08X", node, 12361, 1700000000), nil
 }
 
@@ -695,12 +735,16 @@ func (p *e2eMockProvider) VMCreate(_ context.Context, node string, vmid int, opt
 	}
 	config := map[string]interface{}{
 		"vmid": vmid, "cores": cores, "memory": memory, "ostype": "l26",
+		"serial0": "socket", "vga": "std",
 	}
 	if options.Name != "" {
 		config["name"] = options.Name
 	}
 	if options.ISO != "" {
 		config["ide2"] = options.ISO + ",media=cdrom"
+	}
+	if options.Net0 != "" {
+		config["net0"] = options.Net0
 	}
 	if options.DiskStorage != "" {
 		diskSize := domain.DefaultVMCreateDiskSizeGiB
@@ -726,10 +770,26 @@ func (p *e2eMockProvider) CTCreate(_ context.Context, node string, vmid int, opt
 		swap = *options.SwapMiB
 	}
 	config := map[string]interface{}{
-		"vmid": vmid, "memory": memory, "swap": swap, "unprivileged": "1",
+		"vmid": vmid, "cmode": "console", "memory": memory, "swap": swap, "unprivileged": "1",
 	}
 	if options.Hostname != "" {
 		config["hostname"] = options.Hostname
+	}
+	if options.Net0 != "" {
+		config["net0"] = options.Net0
+	}
+	if options.Nameserver != "" {
+		config["nameserver"] = options.Nameserver
+	}
+	if options.SearchDomain != "" {
+		config["searchdomain"] = options.SearchDomain
+	}
+	if options.Nesting != nil {
+		if *options.Nesting {
+			config["features"] = "nesting=1"
+		} else {
+			config["features"] = "nesting=0"
+		}
 	}
 	if options.Cores != nil {
 		config["cores"] = *options.Cores
@@ -1102,7 +1162,7 @@ func TestGuestCreationResourceOptionsAreVerified(t *testing.T) {
 		},
 		{
 			name: "container resource settings",
-			args: []string{"--yes", "--force", "--wait", "--output", "json", "container", "create", "e2e-node", "9502", "local:vztmpl/debian.tar.zst", "e2e-ct", "--rootfs-storage", "local-lvm", "--cores", "2", "--memory", "2048", "--swap", "1024", "--rootfs-size", "20"},
+			args: []string{"--yes", "--force", "--wait", "--output", "json", "container", "create", "e2e-node", "9502", "local:vztmpl/debian.tar.zst", "e2e-ct", "--rootfs-storage", "local-lvm", "--cores", "2", "--memory", "2048", "--swap", "1024", "--rootfs-size", "20", "--net0", "name=eth0,bridge=vmbr0,ip=dhcp,ip6=auto", "--nameserver", "1.1.1.1", "--searchdomain", "lab.example", "--nesting", "1"},
 		},
 		{
 			name: "legacy positional disk storage",
@@ -1205,6 +1265,39 @@ func TestMutationFailureIsEmitted(t *testing.T) {
 	}
 	if strings.Count(out, `"class":`) != 1 {
 		t.Fatalf("expected exactly one error class in the envelope, got:\n%s", out)
+	}
+}
+
+func TestContainerSuspendCheckpointFailureIncludesTaskLogCommand(t *testing.T) {
+	isolateConfigAndHome(t)
+	setupE2EConfig(t)
+
+	priorFailure, priorStatus, priorNode := e2eTaskFailure, e2eTaskStatusOverride, e2eTaskNodeOverride
+	e2eTaskFailure = false
+	e2eTaskStatusOverride = "command 'lxc-checkpoint -n 200 -s -D /var/lib/vz/dump' failed: exit code 1"
+	e2eTaskNodeOverride = ""
+	defer func() {
+		e2eTaskFailure, e2eTaskStatusOverride, e2eTaskNodeOverride = priorFailure, priorStatus, priorNode
+	}()
+
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{
+		"--yes", "--wait", "--output", "json", "container", "suspend", "e2e-node/200",
+	}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected the failed Proxmox checkpoint to fail the command")
+	}
+	if got := app.ExitCodeFromError(err); got != app.ExitTaskFailure {
+		t.Fatalf("ExitCodeFromError = %d, want %d: %v", got, app.ExitTaskFailure, err)
+	}
+	for _, want := range []string{
+		`"class": "task_failure"`,
+		`Proxmox LXC suspend failed in its experimental CRIU checkpoint`,
+		"nodex --profile e2e task log e2e-node 'UPID:e2e-node/",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, stdout.String())
+		}
 	}
 }
 
@@ -1486,7 +1579,7 @@ func TestRunAllTableOutput(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{name: "status_all_table", args: []string{"--output", "table", "--all", "status"}, want: []string{"PROFILE", "ENDPOINT", "VERSION", "NODES", "VMS"}},
+		{name: "status_all_table", args: []string{"--output", "table", "--all", "status"}, want: []string{"PROFILE", "PROVIDER", "ENDPOINT", "VERSION", "NODES", "VMS"}},
 		{name: "nodes_all_table", args: []string{"--output", "table", "--all", "node", "list"}, want: []string{"PROFILE", "NAME", "STATUS"}},
 		{name: "vms_all_table", args: []string{"--output", "table", "--all", "vm", "list"}, want: []string{"PROFILE", "ID", "NAME", "STATUS"}},
 		{name: "containers_all_table", args: []string{"--output", "table", "--all", "container", "list"}, want: []string{"PROFILE", "ID", "NAME", "STATUS"}},

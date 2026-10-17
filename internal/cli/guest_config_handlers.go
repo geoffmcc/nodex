@@ -286,12 +286,15 @@ func runVMUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
+	before, beforeErr := readbackVMConfig(ctx, prov, node, vmid)
+
 	upid, err := cp.VMConfigUpdate(ctx, node, vmid, params)
 	if err != nil {
 		return fmt.Errorf("update VM %s/%d: %w", node, vmid, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm update", fmt.Sprintf("%s/%d", node, vmid), "reversible")
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm update", fmt.Sprintf("%s/%d", node, vmid), "reversible",
+		guestConfigUpdateVerifier(prov, "vm", node, vmid, params, before, beforeErr))
 }
 
 // --- Container Config Update ---
@@ -362,7 +365,8 @@ func runCTUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 		return runSynchronousConfigUpdate(ctx, cmdCtx, prov, "container update", fmt.Sprintf("%s/%d", node, vmid), node, vmid, params, before, beforeErr)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container update", fmt.Sprintf("%s/%d", node, vmid), "reversible")
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container update", fmt.Sprintf("%s/%d", node, vmid), "reversible",
+		guestConfigUpdateVerifier(prov, "container", node, vmid, params, before, beforeErr))
 }
 
 // --- VM Snapshot Create ---
@@ -411,12 +415,16 @@ func runVMSnapshotCreate(ctx context.Context, cmdCtx *Context, args []string) er
 		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
+	prior, _ := observePresence(ctx, probeVMSnapshot(prov, node, vmid, name))
+
 	upid, err := sp.VMSnapshotCreate(ctx, node, vmid, name, description)
 	if err != nil {
 		return fmt.Errorf("create VM snapshot %s/%d/%s: %w", node, vmid, name, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "vm snapshot create", fmt.Sprintf("%s/%d", node, vmid), "reversible")
+	target := fmt.Sprintf("snapshot %q of VM %s/%d", name, node, vmid)
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "vm snapshot create", fmt.Sprintf("%s/%d", node, vmid), "reversible",
+		presenceVerifier(probeVMSnapshot(prov, node, vmid, name), target, prior))
 }
 
 // --- VM Snapshot Delete (Tier 3: destructive) ---
@@ -548,12 +556,16 @@ func runCTSnapshotCreate(ctx context.Context, cmdCtx *Context, args []string) er
 		return fmt.Errorf("%w: %s", safety.ErrAuthorizationRequired, result.Message)
 	}
 
+	prior, _ := observePresence(ctx, probeContainerSnapshot(prov, node, vmid, name))
+
 	upid, err := sp.CTSnapshotCreate(ctx, node, vmid, name, description)
 	if err != nil {
 		return fmt.Errorf("create container snapshot %s/%d/%s: %w", node, vmid, name, err)
 	}
 
-	return runMutationWithPolling(ctx, cmdCtx, prov, node, upid, "container snapshot create", fmt.Sprintf("%s/%d", node, vmid), "reversible")
+	target := fmt.Sprintf("snapshot %q of container %s/%d", name, node, vmid)
+	return runMutationWithPostcondition(ctx, cmdCtx, prov, node, upid, "container snapshot create", fmt.Sprintf("%s/%d", node, vmid), "reversible",
+		presenceVerifier(probeContainerSnapshot(prov, node, vmid, name), target, prior))
 }
 
 // --- Container Snapshot Delete (Tier 3: destructive) ---
