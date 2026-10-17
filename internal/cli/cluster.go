@@ -53,7 +53,10 @@ func runClusterInit(ctx context.Context, cmdCtx *Context, args []string) error {
 	result.Safety = safety.TierSecurityAdmin.String()
 	result.UPID = upid
 	result.Submitted = true
+	result.Synchronous = upid == ""
 	result.Success = true
+	changed := true
+	result.Changed = &changed
 	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 }
 
@@ -74,9 +77,17 @@ func runClusterJoin(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = admin.ClusterJoin(ctx, domain.ClusterJoinParams{NodeAddress: nodeAddress, Fingerprint: fingerprint})
-	if err == nil {
-		return app.NewExitError(fmt.Errorf("cluster join unexpectedly produced no refusal"), app.ExitAmbiguousOutcome)
+	if _, err := admin.ClusterJoin(ctx, domain.ClusterJoinParams{NodeAddress: nodeAddress, Fingerprint: fingerprint}); err != nil {
+		return app.NewExitError(err, app.ExitValidationError)
 	}
-	return app.NewExitError(err, app.ExitValidationError)
+	profileName, _ := resolveProfileName(cmdCtx)
+	result := output.NewOperationResult("cluster join", prov.Name(), profileName)
+	result.Target = nodeAddress
+	result.Safety = safety.TierSecurityAdmin.String()
+	result.Submitted = true
+	result.Synchronous = true
+	result.Success = true
+	changed := true
+	result.Changed = &changed
+	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 }

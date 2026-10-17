@@ -208,3 +208,103 @@ func writeHAGroups(cmdCtx *Context, groups []domain.HAGroup) error {
 		return output.WriteTable(cmdCtx.Writer, headers, rows)
 	}
 }
+
+func runHAResourceDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) == 0 {
+		return app.NewExitError(fmt.Errorf("usage: nodex ha resource <add|state|remove> ..."), app.ExitUsage)
+	}
+	switch args[0] {
+	case "add":
+		return runHAResourceAdd(ctx, cmdCtx, args[1:])
+	case "state":
+		return runHAResourceState(ctx, cmdCtx, args[1:])
+	case "remove":
+		return runHAResourceRemove(ctx, cmdCtx, args[1:])
+	default:
+		return app.NewExitError(fmt.Errorf("usage: nodex ha resource <add|state|remove> ..."), app.ExitUsage)
+	}
+}
+
+func runHAResourceAdd(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) < 1 || len(args) > 2 {
+		return app.NewExitError(fmt.Errorf("usage: nodex ha resource add <vm:id|ct:id> [started|stopped|disabled]"), app.ExitUsage)
+	}
+	id := args[0]
+	state := "started"
+	if len(args) == 2 {
+		state = args[1]
+	}
+	if err := checkDestructive(cmdCtx, "add guest to HA management", id); err != nil {
+		return err
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	mutator, err := requireHAResourceMutator(prov)
+	if err != nil {
+		return err
+	}
+	if err := mutator.HAResourceAdd(ctx, id, state); err != nil {
+		return fmt.Errorf("add HA resource %q: %w", id, err)
+	}
+	fmt.Fprintf(cmdCtx.Writer, "Added %s to HA management (state: %s)\n", id, state)
+	return nil
+}
+
+func runHAResourceState(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 2 {
+		return app.NewExitError(fmt.Errorf("usage: nodex ha resource state <vm:id|ct:id> <started|stopped|disabled>"), app.ExitUsage)
+	}
+	id, state := args[0], args[1]
+	if err := checkDestructive(cmdCtx, "change HA resource state", id); err != nil {
+		return err
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	mutator, err := requireHAResourceMutator(prov)
+	if err != nil {
+		return err
+	}
+	if err := mutator.HAResourceSetState(ctx, id, state); err != nil {
+		return fmt.Errorf("set HA resource %q state: %w", id, err)
+	}
+	fmt.Fprintf(cmdCtx.Writer, "Set HA resource %s state to %s\n", id, state)
+	return nil
+}
+
+func runHAResourceRemove(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 {
+		return app.NewExitError(fmt.Errorf("usage: nodex ha resource remove <vm:id|ct:id>"), app.ExitUsage)
+	}
+	id := args[0]
+	if err := checkDestructive(cmdCtx, "remove guest from HA management", id); err != nil {
+		return err
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	mutator, err := requireHAResourceMutator(prov)
+	if err != nil {
+		return err
+	}
+	if err := mutator.HAResourceRemove(ctx, id); err != nil {
+		return fmt.Errorf("remove HA resource %q: %w", id, err)
+	}
+	fmt.Fprintf(cmdCtx.Writer, "Removed %s from HA management\n", id)
+	return nil
+}
+
+func requireHAResourceMutator(prov domain.Provider) (domain.HAResourceMutator, error) {
+	mutator, ok := prov.(domain.HAResourceMutator)
+	if !ok {
+		return nil, app.NewExitError(fmt.Errorf("%w: HA resource management is not supported by provider %q", app.ErrUnsupportedCap, prov.Name()), app.ExitUnsupportedCap)
+	}
+	return mutator, nil
+}

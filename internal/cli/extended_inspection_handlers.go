@@ -57,7 +57,7 @@ func newHAStatusView(status *domain.HAStatus, q quorumInfo) *haStatusView {
 		status = &domain.HAStatus{}
 	}
 	return &haStatusView{
-		Quorum:      status.Quorum,
+		Quorum:      q.Quorum,
 		Status:      status.Status,
 		Enabled:     !q.Standalone && q.Known,
 		Cluster:     q.Name,
