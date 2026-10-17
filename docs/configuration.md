@@ -311,9 +311,10 @@ inspection separately from maintenance. Never reuse the PVE token.
 
 ## Environments
 
-The `environments` section (schema version 2 only) groups a PVE profile and
-a PBS profile for `nodex environment health` and `nodex environment
-backup-health`:
+The `environments` section (schema version 2 only) links a PVE profile and an
+optional PBS profile for `nodex environment health` and `nodex environment
+backup-health`. Without PBS, Nodex checks native PVE backup archives on active
+backup-capable storage; these archives have no PBS verification state.
 
 ```yaml
 version: 2
@@ -332,7 +333,7 @@ environments:
 | Field | Default | Description |
 |-------|---------|-------------|
 | `pve_profile` | — | Profile with `provider: proxmox`. At least one of the two profile fields is required. |
-| `pbs_profile` | — | Profile with `provider: pbs`. |
+| `pbs_profile` | — | Optional profile with `provider: pbs`. When omitted, health checks use native PVE backup archives and PVE storage capacity. |
 | `backup_max_age_hours` | 26 | Newest-backup age beyond which a protected guest degrades to warning. |
 | `verify_max_age_days` | 8 | Snapshot age beyond which a missing verification degrades to warning. |
 | `datastore_usage_warn_percent` | 80 | Datastore usage warning threshold. |

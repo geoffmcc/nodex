@@ -7,11 +7,13 @@ Nodex runs on Linux, macOS, and Windows as a single local binary. Its built-in p
 ## What Nodex does
 
 - **Inspect.** Inspect PVE nodes, VMs, containers, storage, tasks, events, logs, backups, snapshots, firewalls, HA, SDN, Ceph, access, pools and replication. The separate `pbs` provider inspects PBS status, datastores, snapshots, jobs, garbage collection and tasks.
-- **Diagnose.** Run `nodex doctor` for local configuration and profile connectivity checks. `nodex environment health` and `backup-health` combine configured PVE/PBS state, datastore capacity, tasks and guest backup coverage. `nodex monitor check` runs explicitly configured one-shot checks.
-- **Operate.** Start, stop, shutdown, reboot, suspend, and resume VMs and containers. Create and manage snapshots. Update VM and container configurations. Create backups. Upload and download storage content. Migrate and clone guests. Run PBS verification, sync, prune, and garbage-collection jobs behind the same safety gates.
+- **Diagnose.** Run `nodex doctor` for local configuration and profile connectivity checks. `nodex environment health` and `backup-health` combine configured PVE/PBS state, datastore capacity, tasks and guest backup coverage. On a PVE-only host, backup health can use native vzdump archives and reports PBS verification as unavailable. `nodex monitor check` runs explicitly configured one-shot checks.
+- **Operate.** Start, stop, shutdown, reboot, suspend, and resume VMs and containers. Create and manage snapshots. Update VM and container configurations. Install selected APT packages or run an approved full OS upgrade in a running LXC guest through its enrolled PVE host. Create and restore backups. Upload and download storage content. Migrate and clone guests. Run PBS verification, sync, prune, and garbage-collection jobs behind the same safety gates.
 - **Maintain fleets.** Enroll Linux hosts explicitly, inspect updates and health, produce immutable maintenance plans, apply approved updates through allowlisted Ansible operations, and verify/report from durable receipts. This optional workflow requires Ansible.
-- **Automate.** Use structured JSON/YAML, discover operations and their safety requirements, or opt into the versioned agent contract and mutation receipts.
+- **Automate.** Use structured JSON/YAML, discover operations and their safety requirements, or opt into the versioned agent contract and mutation receipts. Agent mode preserves existing confirmation gates and reports task completion separately from readback verification where Nodex can verify the resulting guest or configuration.
 - **Administer** (expert mode where required). Manage access/ACLs, firewall rules, SDN topology, Ceph OSDs and pools, backup schedules, and replication jobs.
+
+Cluster administration includes guarded initialization and joins. Cluster initialization can use a profile's pinned SSH connection when configured, which supports Proxmox where API-token authentication is rejected for `pvecm create`; the profile key must be authorized on the seed node. A join runs `pvecm add` on the joining node over the selected profile's SSH connection; load the joining profile key into an SSH agent, pin both hosts in `known_hosts`, and authorize that key on the existing cluster node. Nodex forwards the agent for the join and does not collect or copy the peer's root password or private key.
 
 Every management command is protected by a five-tier safety model. Read-only commands need no confirmation. Reversible operations need `--yes`. Disruptive operations need `--yes --force`. Destructive operations require typing the target identifier. Security administration requires `--expert`.
 
@@ -199,7 +201,7 @@ nodex log                Show recent node syslog (--last/--grep/--follow)
 nodex doctor             Check system health
 nodex backup             List, create, and restore backups
 nodex firewall           Inspect and manage firewall rules
-nodex ha                 Inspect HA resources
+nodex ha                 Inspect and manage HA resources
 nodex sdn                Inspect and manage SDN
 nodex pools              List resource pools
 nodex pbs                Inspect Proxmox Backup Server; guarded maintenance runs
