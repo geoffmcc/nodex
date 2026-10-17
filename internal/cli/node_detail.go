@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"time"
 
@@ -118,6 +120,9 @@ func writeNodeNetwork(cmdCtx *Context, interfaces []domain.NodeNetwork) error {
 }
 
 func runNodeDNS(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) > 0 && args[0] == "set" {
+		return runNodeDNSSet(ctx, cmdCtx, args[1:])
+	}
 	if len(args) != 1 {
 		return app.NewExitError(fmt.Errorf("usage: nodex node dns <node>"), app.ExitUsage)
 	}
@@ -136,6 +141,56 @@ func runNodeDNS(ctx context.Context, cmdCtx *Context, args []string) error {
 		return fmt.Errorf("get node dns: %w", err)
 	}
 	return writeNodeDNS(cmdCtx, dns)
+}
+
+func runNodeDNSSet(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 2 || net.ParseIP(args[1]) == nil {
+		return app.NewExitError(fmt.Errorf("usage: nodex node dns set <node> <resolver-ip>"), app.ExitUsage)
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	detail, err := requireNodeDetail(prov)
+	if err != nil {
+		return err
+	}
+	current, err := detail.NodeDNS(ctx, args[0])
+	if err != nil {
+		return fmt.Errorf("get current node DNS: %w", err)
+	}
+	updated := *current
+	updated.DNS1 = args[1]
+	if err := checkDisruptive(cmdCtx, fmt.Sprintf("set primary DNS for node %s to %s", args[0], args[1])); err != nil {
+		return err
+	}
+	updater, ok := prov.(domain.NodeDNSUpdater)
+	if !ok {
+		return app.NewExitError(fmt.Errorf("provider does not support node DNS updates"), app.ExitIncompatibility)
+	}
+	if err := updater.SetNodeDNS(ctx, args[0], &updated); err != nil {
+		var providerErr *app.ProviderError
+		if errors.As(err, &providerErr) && providerErr.StatusCode != 0 {
+			return app.NewExitError(fmt.Errorf("set node DNS: %w", err), app.ExitProvider)
+		}
+		return app.NewExitError(fmt.Errorf("node DNS update outcome is unknown: %w", err), app.ExitAmbiguousOutcome)
+	}
+	actual, err := detail.NodeDNS(ctx, args[0])
+	if err != nil {
+		return app.NewExitError(fmt.Errorf("node DNS update submitted but readback failed: %w", err), app.ExitPartialFailure)
+	}
+	if actual.DNS1 != updated.DNS1 || actual.DNS2 != updated.DNS2 || actual.SearchDomain != updated.SearchDomain {
+		return app.NewExitError(fmt.Errorf("node DNS readback does not match requested configuration"), app.ExitPartialFailure)
+	}
+	result := output.NewOperationResult("node dns set", prov.Name(), cmdCtx.Opts.Profile)
+	result.Target = args[0]
+	result.Safety = safety.TierDisruptive.String()
+	result.Submitted, result.Synchronous, result.Success = true, true, true
+	changed := current.DNS1 != updated.DNS1 || current.DNS2 != updated.DNS2 || current.SearchDomain != updated.SearchDomain
+	result.Changed = &changed
+	result.Status, result.Verification = "OK", "verified"
+	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 }
 
 func writeNodeDNS(cmdCtx *Context, dns *domain.NodeDNS) error {

@@ -260,6 +260,59 @@ func TestUploadRejectsUnsupportedContentType(t *testing.T) {
 	}
 }
 
+func TestInferUploadContentType(t *testing.T) {
+	for _, tt := range []struct {
+		filename string
+		want     string
+	}{
+		{"installer.iso", "iso"},
+		{"resolute-server-cloudimg-amd64.img", "import"},
+		{"disk.qcow2", "import"},
+		{"disk.raw", "import"},
+		{"disk.vmdk", "import"},
+		{"ubuntu.tar.zst", "vztmpl"},
+		{"notes.txt", ""},
+	} {
+		t.Run(tt.filename, func(t *testing.T) {
+			if got := inferUploadContentType(tt.filename); got != tt.want {
+				t.Fatalf("inferUploadContentType(%q) = %q, want %q", tt.filename, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeDiskImageFilename(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{"qcow cloud image", []byte{'Q', 'F', 'I', 0xfb, 1, 2}, "resolute-server.qcow2"},
+		{"raw cloud image", []byte{0, 1, 2, 3, 4, 5}, "resolute-server.raw"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f, err := os.CreateTemp(t.TempDir(), "cloud-image-*.img")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			if _, err := f.Write(tt.data); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				t.Fatal(err)
+			}
+			got, err := normalizeDiskImageFilename(f, "resolute-server.img")
+			if err != nil {
+				t.Fatalf("normalizeDiskImageFilename: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("filename = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestVolumePathRequestPath verifies the volume ID is encoded into the content
 // info URL (not a /download route, which does not exist on PVE 9.x).
 func TestVolumePathRequestPath(t *testing.T) {

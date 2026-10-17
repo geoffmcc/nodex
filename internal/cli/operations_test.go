@@ -185,6 +185,9 @@ func TestUnsupportedVMLifecycleDiscoveryIsExplicit(t *testing.T) {
 }
 
 func TestGuestCreateResourceFlagsAreAdvertised(t *testing.T) {
+	if domain.DefaultContainerCreateMemoryMiB != 2048 {
+		t.Fatalf("default container memory = %d MiB, want 2048 MiB", domain.DefaultContainerCreateMemoryMiB)
+	}
 	tests := []struct {
 		path        string
 		flags       []string
@@ -193,7 +196,7 @@ func TestGuestCreateResourceFlagsAreAdvertised(t *testing.T) {
 	}{
 		{
 			path:  "vm create",
-			flags: []string{"--cores", "--memory", "--disk-size", "--disk-storage"},
+			flags: []string{"--cores", "--memory", "--disk-size", "--disk-storage", "--net0"},
 			defaults: map[string]any{
 				"--cores":     domain.DefaultVMCreateCores,
 				"--memory":    domain.DefaultVMCreateMemoryMiB,
@@ -207,7 +210,7 @@ func TestGuestCreateResourceFlagsAreAdvertised(t *testing.T) {
 		},
 		{
 			path:  "container create",
-			flags: []string{"--cores", "--memory", "--swap", "--rootfs-size", "--rootfs-storage"},
+			flags: []string{"--cores", "--memory", "--swap", "--rootfs-size", "--rootfs-storage", "--net0", "--nameserver", "--searchdomain", "--nesting"},
 			defaults: map[string]any{
 				"--memory": domain.DefaultContainerCreateMemoryMiB,
 				"--swap":   domain.DefaultContainerCreateSwapMiB,
@@ -359,6 +362,7 @@ func TestOperations_SecurityAdminOps(t *testing.T) {
 		"access user create",
 		"access user delete",
 		"access acl add",
+		"access acl remove",
 	}
 	for _, path := range adminOps {
 		op := LookupOperation(path)
@@ -371,6 +375,12 @@ func TestOperations_SecurityAdminOps(t *testing.T) {
 		}
 		if !op.RequiresExpert {
 			t.Errorf("%s should require expert", path)
+		}
+		if path == "access acl remove" && !op.RequiresTypeConfirm {
+			t.Errorf("%s should require exact target confirmation", path)
+		}
+		if path != "access user create" && !op.UsesOperationResult {
+			t.Errorf("%s should expose a structured, verifiable mutation result", path)
 		}
 	}
 }

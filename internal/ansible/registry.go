@@ -43,6 +43,9 @@ var applyContainerUpdatesPlaybook string
 //go:embed playbooks/verify-container-updates.yml
 var verifyContainerUpdatesPlaybook string
 
+//go:embed playbooks/install-container-packages.yml
+var installContainerPackagesPlaybook string
+
 //go:embed playbooks/inspect-security-policy.yml
 var inspectSecurityPolicyPlaybook string
 
@@ -146,6 +149,12 @@ var registry = map[string]Operation{
 		Safety: safety.TierObservation, ReadOnly: true, RequiresBecome: false,
 		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: containerVerifyEvidence,
 		playbook: verifyContainerUpdatesPlaybook,
+	},
+	"install-container-packages": {
+		ID: "install-container-packages", Description: "Install explicitly requested packages in an LXC guest",
+		Safety: safety.TierDisruptive, ReadOnly: false, RequiresBecome: false,
+		EvidenceSchema: EvidenceSchemaVersion, RequiredEvidence: containerInstallEvidence,
+		playbook: installContainerPackagesPlaybook,
 	},
 	"inspect-security-policy": {
 		ID: "inspect-security-policy", Description: "Inspect unattended security policy state (read-only)",

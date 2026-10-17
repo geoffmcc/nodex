@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -332,4 +334,342 @@ func absenceVerifier(probe resourceProbe, target string, priorState presenceStat
 			}
 		}
 	}
+}
+
+// vmMigrationVerifier confirms a completed migration by reading the VM's
+// authoritative config on both nodes. Cluster inventory alone is not used
+// because it can lag node-local configuration after a move.
+func vmMigrationVerifier(prov domain.Provider, vmid int, source, target string) postconditionVerifier {
+	return guestMigrationVerifier("VM", vmid, source, target, probeVM(prov, source, vmid), probeVM(prov, target, vmid))
+}
+
+func containerMigrationVerifier(prov domain.Provider, vmid int, source, target string) postconditionVerifier {
+	return guestMigrationVerifier("container", vmid, source, target, probeContainer(prov, source, vmid), probeContainer(prov, target, vmid))
+}
+
+func guestMigrationVerifier(kind string, vmid int, source, target string, sourceProbe, targetProbe resourceProbe) postconditionVerifier {
+	return func(ctx context.Context) postconditionOutcome {
+		deadline := time.Now().Add(postconditionSettleWindow)
+		for {
+			sourceState, sourceErr := observePresence(ctx, sourceProbe)
+			targetState, targetErr := observePresence(ctx, targetProbe)
+			if sourceErr != nil || targetErr != nil {
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s %d migration could not be read on both nodes (source %s: %v; target %s: %v)", kind, vmid, source, sourceErr, target, targetErr)}
+			}
+			if sourceState == presenceAbsent && targetState == presencePresent {
+				changed := true
+				return postconditionOutcome{Verified: true, Changed: &changed}
+			}
+			if !time.Now().Before(deadline) {
+				return postconditionOutcome{Detail: fmt.Sprintf("%s %d migration was not reflected as absent on %s and present on %s", kind, vmid, source, target)}
+			}
+			select {
+			case <-ctx.Done():
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s %d migration could not be confirmed before the deadline: %v", kind, vmid, ctx.Err())}
+			case <-time.After(postconditionPollInterval):
+			}
+		}
+	}
+}
+
+// presenceVerifier builds a verifier for operations whose postcondition is
+// that a named resource exists. A confirmed presence is enough to verify the
+// requested state; Changed is true only when absence was observed before the
+// mutation, false when the resource already existed, and unknown otherwise.
+func presenceVerifier(probe resourceProbe, target string, priorState presenceState) postconditionVerifier {
+	return func(ctx context.Context) postconditionOutcome {
+		deadline := time.Now().Add(postconditionSettleWindow)
+		for {
+			state, err := observePresence(ctx, probe)
+			switch {
+			case err != nil:
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s could not be read after the operation: %v", target, err)}
+			case state == presencePresent:
+				out := postconditionOutcome{Verified: true}
+				switch priorState {
+				case presenceAbsent:
+					changed := true
+					out.Changed = &changed
+				case presencePresent:
+					changed := false
+					out.Changed = &changed
+				}
+				return out
+			}
+
+			if !time.Now().Before(deadline) {
+				return postconditionOutcome{Detail: fmt.Sprintf("%s was still absent after the operation completed and %s of settling", target, postconditionSettleWindow)}
+			}
+			select {
+			case <-ctx.Done():
+				return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("%s could not be confirmed before the deadline: %v", target, ctx.Err())}
+			case <-time.After(postconditionPollInterval):
+			}
+		}
+	}
+}
+
+// vmDiskResizeVerifier confirms that a VM's configured disk reached the size
+// requested by a resize operation. Relative Proxmox sizes need the pre-submit
+// config to determine the requested final size.
+func vmDiskResizeVerifier(prov domain.Provider, node string, vmid int, disk, request string, before map[string]interface{}, beforeErr error) postconditionVerifier {
+	return func(ctx context.Context) postconditionOutcome {
+		requested := strings.TrimSpace(request)
+		relative := strings.HasPrefix(requested, "+")
+		if relative {
+			requested = strings.TrimPrefix(requested, "+")
+		}
+		delta := parseStorageByteSize(requested)
+		if delta <= 0 {
+			return postconditionOutcome{Unverifiable: true, Detail: "requested VM disk resize could not be interpreted as a positive size"}
+		}
+		priorSize := parseContainerRootfsSize(before[disk])
+		if relative && (beforeErr != nil || priorSize <= 0) {
+			return postconditionOutcome{Unverifiable: true, Detail: "the VM disk size before resize could not be read, so the requested relative size cannot be confirmed"}
+		}
+		expected := delta
+		if relative {
+			const maxInt64 = int64(^uint64(0) >> 1)
+			if priorSize > maxInt64-delta {
+				return postconditionOutcome{Unverifiable: true, Detail: "requested VM disk resize exceeds the supported size range"}
+			}
+			expected += priorSize
+		}
+		observed, err := readbackVMConfig(ctx, prov, node, vmid)
+		if err != nil {
+			return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("VM %s/%d disk configuration could not be read after resize: %v", node, vmid, err)}
+		}
+		actualSize := parseContainerRootfsSize(observed[disk])
+		if actualSize <= 0 {
+			return postconditionOutcome{Unverifiable: true, Detail: fmt.Sprintf("VM %s/%d disk %q size was not present in config readback", node, vmid, disk)}
+		}
+		if actualSize < expected {
+			return postconditionOutcome{Detail: fmt.Sprintf("VM %s/%d disk %q is %d bytes after resize; at least %d bytes were requested", node, vmid, disk, actualSize, expected)}
+		}
+		out := postconditionOutcome{Verified: true}
+		if priorSize > 0 {
+			changed := actualSize > priorSize
+			out.Changed = &changed
+		}
+		return out
+	}
+}
+
+func probeFirewallAlias(prov domain.Provider, name string) resourceProbe {
+	return func(ctx context.Context) (presenceState, error) {
+		inspector, ok := prov.(domain.FirewallProvider)
+		if !ok {
+			return presenceUnknown, errProbeUnsupported
+		}
+		aliases, err := inspector.FirewallAliases(ctx)
+		if err != nil {
+			return presenceUnknown, err
+		}
+		for _, alias := range aliases {
+			if alias.Name == name {
+				return presencePresent, nil
+			}
+		}
+		return presenceAbsent, nil
+	}
+}
+
+func readFirewallRulesForScope(ctx context.Context, prov domain.Provider, scope, node string, vmid int) ([]domain.FirewallRule, error) {
+	switch scope {
+	case "cluster":
+		inspector, ok := prov.(domain.FirewallInspector)
+		if !ok {
+			return nil, errProbeUnsupported
+		}
+		return inspector.FirewallRules(ctx)
+	case "node":
+		inspector, ok := prov.(domain.FirewallProvider)
+		if !ok {
+			return nil, errProbeUnsupported
+		}
+		return inspector.NodeFirewallRules(ctx, node)
+	case "vm":
+		inspector, ok := prov.(domain.FirewallProvider)
+		if !ok {
+			return nil, errProbeUnsupported
+		}
+		return inspector.VMFirewallRules(ctx, node, vmid)
+	default:
+		return nil, fmt.Errorf("unsupported firewall rule scope %q", scope)
+	}
+}
+
+func firewallRuleAt(ctx context.Context, prov domain.Provider, scope, node string, vmid, position int) (domain.FirewallRule, error) {
+	rules, err := readFirewallRulesForScope(ctx, prov, scope, node, vmid)
+	if err != nil {
+		return domain.FirewallRule{}, err
+	}
+	for _, rule := range rules {
+		if rule.Pos == position {
+			return rule, nil
+		}
+	}
+	return domain.FirewallRule{}, app.NotFoundError("firewall rule %s at position %d", firewallRuleTarget(scope, node, vmid, position), position)
+}
+
+func firewallRuleTarget(scope, node string, vmid, position int) string {
+	switch scope {
+	case "cluster":
+		return fmt.Sprintf("cluster-rule-%d", position)
+	case "node":
+		return fmt.Sprintf("%s-rule-%d", node, position)
+	case "vm":
+		return fmt.Sprintf("%s-%d-rule-%d", node, vmid, position)
+	default:
+		return fmt.Sprintf("%s-rule-%d", scope, position)
+	}
+}
+
+func firewallRuleMatchesInput(actual domain.FirewallRule, expected domain.FirewallRuleCreateInput) bool {
+	if expected.Type != "" && actual.Type != expected.Type {
+		return false
+	}
+	if expected.Action != "" && !strings.EqualFold(actual.Action, expected.Action) {
+		return false
+	}
+	if expected.EnableSet && actual.Enable != expected.Enable {
+		return false
+	}
+	for _, pair := range [][2]string{
+		{actual.Proto, expected.Proto}, {actual.Dest, expected.Dest}, {actual.Dport, expected.Dport},
+		{actual.Source, expected.Source}, {actual.Sport, expected.Sport}, {actual.ICMPType, expected.ICMPType},
+		{actual.Log, expected.Log}, {actual.Comment, expected.Comment}, {actual.IFace, expected.IFace}, {actual.Macro, expected.Macro},
+	} {
+		if pair[1] != "" && pair[0] != pair[1] {
+			return false
+		}
+	}
+	return true
+}
+
+func firewallRuleInputFrom(actual domain.FirewallRule) domain.FirewallRuleCreateInput {
+	return domain.FirewallRuleCreateInput{
+		Type: actual.Type, Action: actual.Action, Enable: actual.Enable, EnableSet: true,
+		Proto: actual.Proto, Dest: actual.Dest, Dport: actual.Dport, Source: actual.Source,
+		Sport: actual.Sport, ICMPType: actual.ICMPType, Log: actual.Log, Comment: actual.Comment,
+		IFace: actual.IFace, Macro: actual.Macro,
+	}
+}
+
+func probeFirewallRule(prov domain.Provider, scope, node string, vmid, position int, expected domain.FirewallRuleCreateInput) resourceProbe {
+	return func(ctx context.Context) (presenceState, error) {
+		rules, err := readFirewallRulesForScope(ctx, prov, scope, node, vmid)
+		if err != nil {
+			return presenceUnknown, err
+		}
+		for _, rule := range rules {
+			if rule.Pos == position && firewallRuleMatchesInput(rule, expected) {
+				return presencePresent, nil
+			}
+		}
+		return presenceAbsent, nil
+	}
+}
+
+func overrideVerifiedChanged(verify postconditionVerifier, changed bool) postconditionVerifier {
+	return func(ctx context.Context) postconditionOutcome {
+		outcome := verify(ctx)
+		if outcome.Verified {
+			value := changed
+			outcome.Changed = &value
+		}
+		return outcome
+	}
+}
+
+func probeFirewallGroup(prov domain.Provider, name string) resourceProbe {
+	return func(ctx context.Context) (presenceState, error) {
+		inspector, ok := prov.(domain.FirewallProvider)
+		if !ok {
+			return presenceUnknown, errProbeUnsupported
+		}
+		groups, err := inspector.FirewallSecurityGroups(ctx)
+		if err != nil {
+			return presenceUnknown, err
+		}
+		for _, group := range groups {
+			if group.Name == name {
+				return presencePresent, nil
+			}
+		}
+		return presenceAbsent, nil
+	}
+}
+
+func probeFirewallIPSet(prov domain.Provider, name string) resourceProbe {
+	return func(ctx context.Context) (presenceState, error) {
+		inspector, ok := prov.(domain.FirewallProvider)
+		if !ok {
+			return presenceUnknown, errProbeUnsupported
+		}
+		sets, err := inspector.FirewallIPSets(ctx)
+		if err != nil {
+			return presenceUnknown, err
+		}
+		for _, set := range sets {
+			if set.Name == name {
+				return presencePresent, nil
+			}
+		}
+		return presenceAbsent, nil
+	}
+}
+
+func probeFirewallIPSetEntry(prov domain.Provider, name, cidr string) resourceProbe {
+	return func(ctx context.Context) (presenceState, error) {
+		inspector, ok := prov.(domain.FirewallProvider)
+		if !ok {
+			return presenceUnknown, errProbeUnsupported
+		}
+		entries, err := inspector.FirewallIPSet(ctx, name)
+		if err != nil {
+			return presenceUnknown, err
+		}
+		for _, entry := range entries {
+			if normalizeFirewallCIDR(entry.CIDR) == normalizeFirewallCIDR(cidr) {
+				return presencePresent, nil
+			}
+		}
+		return presenceAbsent, nil
+	}
+}
+
+func normalizeFirewallCIDR(value string) string {
+	value = strings.TrimSpace(value)
+	if ip, network, err := net.ParseCIDR(value); err == nil {
+		prefix, _ := network.Mask.Size()
+		return ip.String() + "/" + strconv.Itoa(prefix)
+	}
+	if ip := net.ParseIP(value); ip != nil {
+		if ip.To4() != nil {
+			return ip.String() + "/32"
+		}
+		return ip.String() + "/128"
+	}
+	return value
+}
+
+func runSynchronousMutationWithPostcondition(ctx context.Context, cmdCtx *Context, prov domain.Provider, operation, target, safetyTier string, verify postconditionVerifier) error {
+	profileName, _ := resolveProfileName(cmdCtx)
+	result := output.NewOperationResult(operation, prov.Name(), profileName)
+	result.Target = target
+	result.Safety = safetyTier
+	result.Submitted = true
+	result.Synchronous = true
+	result.Success = true
+	if verify != nil {
+		applyPostcondition(&result, verify(ctx))
+	}
+	if err := output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result); err != nil {
+		return err
+	}
+	if result.Verification == "failed" {
+		return app.MarkEmitted(app.NewExitError(fmt.Errorf("%s was applied but the observed postcondition did not match", operation), app.ExitPartialFailure))
+	}
+	return nil
 }

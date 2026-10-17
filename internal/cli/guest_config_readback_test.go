@@ -166,6 +166,12 @@ func TestVerifyConfigReadback(t *testing.T) {
 			wantOK:    true,
 		},
 		{
+			name:      "QEMU NIC model matches when Proxmox adds the generated MAC address",
+			observed:  map[string]interface{}{"net0": "virtio=BC:24:11:50:29:EF,bridge=vmbr0"},
+			requested: map[string]string{"net0": "virtio,bridge=vmbr0"},
+			wantOK:    true,
+		},
+		{
 			name:      "requested tag with a different observed tag stays a mismatch",
 			observed:  map[string]interface{}{"net0": "virtio,bridge=vmbr0,tag=12"},
 			requested: map[string]string{"net0": "virtio,bridge=vmbr0,tag=99"},

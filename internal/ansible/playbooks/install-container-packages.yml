@@ -1,0 +1,71 @@
+# Install explicitly requested packages in one running LXC guest. Package
+# names arrive as a JSON list and are used only as fixed argv elements.
+- name: Install requested packages in LXC guest
+  hosts: all
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Verify LXC guest is running
+      vars:
+        nodex_evidence_id: container.status
+      ansible.builtin.command:
+        argv: [pct, status, "{{ nodex_vmid }}"]
+      register: nodex_container_status
+      changed_when: false
+      failed_when: "nodex_container_status.rc != 0 or 'status: running' not in nodex_container_status.stdout"
+
+    - name: Verify LXC guest uses APT
+      vars:
+        nodex_evidence_id: container.apt
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ nodex_vmid }}", --, test, -x, /usr/bin/apt-get]
+      register: nodex_container_apt
+      changed_when: false
+
+    - name: Refresh LXC package metadata
+      vars:
+        nodex_evidence_id: container.refresh
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ nodex_vmid }}", --, apt-get, update]
+      register: nodex_container_refresh
+      changed_when: false
+
+    - name: Simulate requested package installation
+      vars:
+        nodex_evidence_id: container.install_simulation
+      ansible.builtin.command:
+        argv: "{{ ['pct', 'exec', nodex_vmid | string, '--', 'apt-get', '-s', '--no-remove', 'install', '--'] + nodex_packages }}"
+      register: nodex_install_simulation
+      changed_when: false
+
+    - name: Refuse package installation that removes packages
+      ansible.builtin.assert:
+        that:
+          - (nodex_install_simulation.stdout_lines | select('match', '^Remv ') | list | length) == 0
+        fail_msg: "the requested installation would remove installed packages"
+
+    - name: Install requested packages without removals
+      vars:
+        nodex_evidence_id: container.install
+      ansible.builtin.command:
+        argv: "{{ ['pct', 'exec', nodex_vmid | string, '--', 'env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', '-y', '--no-remove', 'install', '--'] + nodex_packages }}"
+      register: nodex_package_install
+      changed_when: "'0 newly installed' not in nodex_package_install.stdout"
+
+    - name: Verify requested packages are installed
+      vars:
+        nodex_evidence_id: container.install_verify
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ nodex_vmid }}"
+          - --
+          - dpkg-query
+          - -W
+          - "-f=${Status}\\n"
+          - "{{ item }}"
+      loop: "{{ nodex_packages }}"
+      register: nodex_installed_packages
+      changed_when: false
+      failed_when: "nodex_installed_packages.rc != 0 or 'install ok installed' not in nodex_installed_packages.stdout"

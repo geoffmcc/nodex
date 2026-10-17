@@ -93,6 +93,20 @@ func lifecycleDesiredState(resourceType, operation string) string {
 	return ""
 }
 
+func lifecycleTaskFailureDetail(resourceType, operation, profile, node, upid, status string) string {
+	if resourceType == "container" && operation == "suspend" && strings.Contains(status, "lxc-checkpoint") {
+		command := "nodex task log"
+		if profile != "" {
+			command = fmt.Sprintf("nodex --profile %s task log", profile)
+		}
+		return fmt.Sprintf(
+			"Proxmox LXC suspend failed in its experimental CRIU checkpoint (%s). Inspect the Proxmox task log with `%s %s '%s'`.",
+			status, command, node, upid,
+		)
+	}
+	return fmt.Sprintf("task failed with status %q", status)
+}
+
 // currentGuestStatus returns the reported status of a guest. ok=false means the
 // state could not be determined and callers should proceed with a normal submit.
 //
@@ -368,14 +382,16 @@ func runLifecycle(ctx context.Context, cmdCtx *Context, args []string, operation
 			return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
 		}
 		opResult.Success = false
+		profileName, _ := resolveProfileName(cmdCtx)
+		detail := lifecycleTaskFailureDetail(resourceType, operation, profileName, node, upid, tr.Status)
 		opResult.Error = &output.ResultError{
 			Class:  "task_failure",
 			Exit:   app.ExitTaskFailure,
-			Detail: fmt.Sprintf("task failed with status %q", tr.Status),
+			Detail: detail,
 		}
 		_ = output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, opResult)
 		return app.MarkEmitted(app.NewExitError(
-			fmt.Errorf("task %s failed with status %q", upid, tr.Status),
+			fmt.Errorf("task %s failed: %s", upid, detail),
 			app.ExitTaskFailure,
 		))
 	}

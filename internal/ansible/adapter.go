@@ -145,6 +145,7 @@ type HostSpec struct {
 var inventoryValueRe = regexp.MustCompile(`^[A-Za-z0-9._~/:-]+$`)
 var systemdUnitRe = regexp.MustCompile(`^[A-Za-z0-9_@.:-]+\.service$`)
 var packageNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
+var containerPackageNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?$`)
 var packageVersionRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+:~_-]*$`)
 var packageArchitectureRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 var packageOriginRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:/+%\[\]-]*(?: [A-Za-z0-9._~:/+%\[\]-]+){2}$`)
@@ -190,6 +191,10 @@ type RunRequest struct {
 	// ContainerVMID is accepted only by the fixed LXC guest operations. It is
 	// encoded as a structured extra-var, never interpolated into a command.
 	ContainerVMID int
+
+	// ContainerPackages is accepted only by install-container-packages and is
+	// passed as a JSON list to the fixed PCT package-install playbook.
+	ContainerPackages []string
 
 	// Service is accepted only by check-service and passed as a structured
 	// extra-var to the fixed service_facts playbook.
@@ -445,12 +450,30 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	if len(req.Packages) > 0 && req.Operation != "apply-security-updates" {
 		return nil, fmt.Errorf("packages are not supported for operation %q", req.Operation)
 	}
-	containerOperation := strings.HasSuffix(req.Operation, "-container-updates")
+	containerOperation := strings.HasSuffix(req.Operation, "-container-updates") || req.Operation == "install-container-packages"
 	if containerOperation && req.ContainerVMID <= 0 {
 		return nil, fmt.Errorf("operation %q requires a positive container VMID", req.Operation)
 	}
 	if req.ContainerVMID > 0 && !containerOperation {
 		return nil, fmt.Errorf("container VMID is not supported for operation %q", req.Operation)
+	}
+	if len(req.ContainerPackages) > 0 && req.Operation != "install-container-packages" {
+		return nil, fmt.Errorf("container packages are not supported for operation %q", req.Operation)
+	}
+	if req.Operation == "install-container-packages" {
+		if req.ContainerVMID <= 0 || len(req.ContainerPackages) == 0 || len(req.ContainerPackages) > 32 {
+			return nil, fmt.Errorf("operation %q requires a positive VMID and 1-32 package names", req.Operation)
+		}
+		seen := map[string]bool{}
+		for _, name := range req.ContainerPackages {
+			if !containerPackageNameRe.MatchString(name) {
+				return nil, fmt.Errorf("invalid container package name %q", name)
+			}
+			if seen[name] {
+				return nil, fmt.Errorf("duplicate container package name %q", name)
+			}
+			seen[name] = true
+		}
 	}
 	if req.Operation == "check-service" {
 		if !systemdUnitRe.MatchString(req.Service) {
@@ -537,6 +560,8 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		extraVars = map[string]any{"nodex_packages": req.Packages}
 	case "check-service":
 		extraVars = map[string]any{"nodex_service": req.Service}
+	case "install-container-packages":
+		extraVars = map[string]any{"nodex_packages": req.ContainerPackages}
 	case "apply-security-policy":
 		extraVars = map[string]any{
 			"nodex_policy_plan_id":              req.PolicyPlanID,

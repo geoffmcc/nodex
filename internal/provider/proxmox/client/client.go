@@ -28,7 +28,6 @@ import (
 )
 
 var clusterNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,14}$`)
-var clusterFingerprintPattern = regexp.MustCompile(`^(?:[[:xdigit:]]{2}:){31}[[:xdigit:]]{2}$`)
 
 // Success status codes for API operations.
 var successCodes = map[int]bool{
@@ -250,19 +249,6 @@ func (c *Client) CreateCluster(ctx context.Context, request ClusterInitRequest) 
 		return "", err
 	}
 	return resp.Data, nil
-}
-
-// JoinCluster refuses before network I/O. PVE requires the peer's root
-// password for POST /cluster/config/join; profile API tokens are not valid
-// substitutes and Nodex never accepts or transports that password.
-func (c *Client) JoinCluster(_ context.Context, request ClusterJoinRequest) (string, error) {
-	if strings.TrimSpace(request.Hostname) == "" {
-		return "", fmt.Errorf("cluster join node address is required")
-	}
-	if !clusterFingerprintPattern.MatchString(request.Fingerprint) {
-		return "", fmt.Errorf("cluster join fingerprint must be a SHA-256 fingerprint in colon-separated form")
-	}
-	return "", errors.New("cluster join refused: Proxmox requires the peer root password; Nodex does not accept or transport passwords")
 }
 
 // GetVMConfig returns configuration for a specific VM.
@@ -565,6 +551,53 @@ func (c *Client) GetHAResources(ctx context.Context) ([]HAResourceItem, error) {
 	return resp.Data, nil
 }
 
+// AddHAResource adds a VM or container to HA management.
+func (c *Client) AddHAResource(ctx context.Context, id, state string) error {
+	if err := ValidateHAResourceID(id); err != nil {
+		return err
+	}
+	if err := ValidateHAResourceState(state); err != nil {
+		return err
+	}
+	form := url.Values{"sid": {id}, "state": {state}}
+	return c.post(ctx, "/cluster/ha/resources", form, nil)
+}
+
+// SetHAResourceState changes the requested state of an HA resource.
+func (c *Client) SetHAResourceState(ctx context.Context, id, state string) error {
+	if err := ValidateHAResourceID(id); err != nil {
+		return err
+	}
+	if err := ValidateHAResourceState(state); err != nil {
+		return err
+	}
+	return c.put(ctx, "/cluster/ha/resources/"+url.PathEscape(id), url.Values{"state": {state}}, nil)
+}
+
+// RemoveHAResource removes HA management configuration for a resource.
+func (c *Client) RemoveHAResource(ctx context.Context, id string) error {
+	if err := ValidateHAResourceID(id); err != nil {
+		return err
+	}
+	return c.del(ctx, "/cluster/ha/resources/"+url.PathEscape(id), nil)
+}
+
+var haResourceIDPattern = regexp.MustCompile(`^(vm|ct):[1-9][0-9]*$`)
+
+func ValidateHAResourceID(id string) error {
+	if !haResourceIDPattern.MatchString(id) {
+		return fmt.Errorf("invalid HA resource ID %q (expected vm:<id> or ct:<id>)", id)
+	}
+	return nil
+}
+
+func ValidateHAResourceState(state string) error {
+	if state != "started" && state != "stopped" && state != "disabled" {
+		return fmt.Errorf("invalid HA state %q (expected started, stopped, or disabled)", state)
+	}
+	return nil
+}
+
 // GetHAGroups returns HA groups.
 func (c *Client) GetHAGroups(ctx context.Context) ([]HAGroupItem, error) {
 	var resp HAGroupResponse
@@ -631,6 +664,25 @@ func (c *Client) GetNodeDNS(ctx context.Context, node string) (*NodeDNSData, err
 		return nil, err
 	}
 	return &resp.Data, nil
+}
+
+// SetNodeDNS updates the resolver settings for a Proxmox node.
+func (c *Client) SetNodeDNS(ctx context.Context, node string, dns NodeDNSData) error {
+	if node == "" {
+		return fmt.Errorf("node name is required")
+	}
+	path := "/nodes/" + url.PathEscape(node) + "/dns"
+	body := url.Values{
+		"dns1":   {dns.DNS1},
+		"search": {dns.SearchDomain},
+	}
+	if dns.DNS2 != "" {
+		body.Set("dns2", dns.DNS2)
+	}
+	var resp struct {
+		Data any `json:"data"`
+	}
+	return c.put(ctx, path, body, &resp)
 }
 
 // GetNodeTime returns time configuration for a specific node.
@@ -1040,7 +1092,7 @@ func (c *Client) VMConfigUpdate(ctx context.Context, node string, vmid int, para
 	}
 	var resp TaskResponse
 	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/config"
-	if err := c.post(ctx, path, params, &resp); err != nil {
+	if err := c.post(ctx, path, encodeSSHKeysParam(params), &resp); err != nil {
 		return "", err
 	}
 	return resp.Data, nil
@@ -1056,10 +1108,25 @@ func (c *Client) CTConfigUpdate(ctx context.Context, node string, vmid int, para
 	}
 	var resp TaskResponse
 	path := "/nodes/" + url.PathEscape(node) + "/lxc/" + strconv.Itoa(vmid) + "/config"
-	if err := c.put(ctx, path, params, &resp); err != nil {
+	if err := c.put(ctx, path, encodeSSHKeysParam(params), &resp); err != nil {
 		return "", err
 	}
 	return resp.Data, nil
+}
+
+// encodeSSHKeysParam applies the inner URI escaping required by Proxmox for
+// cloud-init SSH keys. The form encoder adds a separate outer encoding later.
+func encodeSSHKeysParam(params url.Values) url.Values {
+	encoded := make(url.Values, len(params))
+	for key, values := range params {
+		encoded[key] = append([]string(nil), values...)
+	}
+	if keys := encoded.Get("sshkeys"); keys != "" {
+		// QueryEscape protects base64 '+' and '=' characters; Proxmox expects
+		// spaces as %20 rather than query-form '+'.
+		encoded.Set("sshkeys", strings.ReplaceAll(url.QueryEscape(keys), "+", "%20"))
+	}
+	return encoded
 }
 
 // VMDelete deletes a VM and returns the task UPID.
@@ -1536,13 +1603,19 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 	filename := filepath.Base(localPath)
 	contentType := inferUploadContentType(filename)
 	if contentType == "" {
-		return "", fmt.Errorf("unsupported upload content type for %s (supported extensions: .iso, .qcow2, .raw, .vmdk, .tar, .tar.gz, .tgz, .tar.xz, .tar.zst)", filename)
+		return "", fmt.Errorf("unsupported upload content type for %s (supported extensions: .iso, .img, .qcow2, .raw, .vmdk, .tar, .tar.gz, .tgz, .tar.xz, .tar.zst)", filename)
 	}
 	file, err := os.Open(localPath) // #nosec G304 -- localPath validated by os.Lstat + IsRegular above.
 	if err != nil {
 		return "", fmt.Errorf("open local file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
+	if strings.HasSuffix(strings.ToLower(filename), ".img") {
+		filename, err = normalizeDiskImageFilename(file, filename)
+		if err != nil {
+			return "", err
+		}
+	}
 
 	var prefix bytes.Buffer
 	writer := multipart.NewWriter(&prefix)
@@ -1586,12 +1659,30 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 	return taskResp.Data, nil
 }
 
+// normalizeDiskImageFilename maps the conventional .img suffix to a format
+// Proxmox accepts for import content. QCOW2 has a fixed magic header; other
+// .img files are treated as raw disk images.
+func normalizeDiskImageFilename(file *os.File, filename string) (string, error) {
+	var magic [4]byte
+	if _, err := io.ReadFull(file, magic[:]); err != nil {
+		return "", fmt.Errorf("read disk image format: %w", err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", fmt.Errorf("rewind disk image: %w", err)
+	}
+	ext := ".raw"
+	if string(magic[:]) == "QFI\xfb" {
+		ext = ".qcow2"
+	}
+	return strings.TrimSuffix(filename, filepath.Ext(filename)) + ext, nil
+}
+
 func inferUploadContentType(filename string) string {
 	lower := strings.ToLower(filename)
 	switch {
 	case strings.HasSuffix(lower, ".iso"):
 		return "iso"
-	case strings.HasSuffix(lower, ".qcow2"), strings.HasSuffix(lower, ".raw"), strings.HasSuffix(lower, ".vmdk"):
+	case strings.HasSuffix(lower, ".img"), strings.HasSuffix(lower, ".qcow2"), strings.HasSuffix(lower, ".raw"), strings.HasSuffix(lower, ".vmdk"):
 		return "import"
 	case strings.HasSuffix(lower, ".tar"), strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".tgz"), strings.HasSuffix(lower, ".tar.xz"), strings.HasSuffix(lower, ".tar.zst"):
 		return "vztmpl"
@@ -1780,8 +1871,28 @@ func (c *Client) CTCreate(ctx context.Context, node string, vmid int, options do
 	body := url.Values{}
 	body.Set("vmid", strconv.Itoa(vmid))
 	body.Set("ostemplate", options.OSTemplate)
+	// Attach Proxmox's console to /dev/console so freshly created guests show
+	// their login prompt as soon as the web console opens, rather than waiting
+	// for a keystroke to wake a tty getty.
+	body.Set("cmode", "console")
 	if options.Hostname != "" {
 		body.Set("hostname", options.Hostname)
+	}
+	if options.Net0 != "" {
+		body.Set("net0", options.Net0)
+	}
+	if options.Nameserver != "" {
+		body.Set("nameserver", options.Nameserver)
+	}
+	if options.SearchDomain != "" {
+		body.Set("searchdomain", options.SearchDomain)
+	}
+	if options.Nesting != nil {
+		if *options.Nesting {
+			body.Set("features", "nesting=1")
+		} else {
+			body.Set("features", "nesting=0")
+		}
 	}
 	if options.Cores != nil {
 		body.Set("cores", strconv.Itoa(*options.Cores))
@@ -1846,7 +1957,7 @@ func (c *Client) console(ctx context.Context, node, guestType string, vmid int, 
 	}
 	proxy := response.Data
 	port, err := strconv.Atoi(proxy.Port)
-	if port <= 0 || err != nil || proxy.Ticket == "" {
+	if port <= 0 || err != nil || proxy.Ticket == "" || proxy.User == "" {
 		return fmt.Errorf("start console proxy: invalid proxy response")
 	}
 
@@ -1874,6 +1985,12 @@ func (c *Client) console(ctx context.Context, node, guestType string, vmid int, 
 		return fmt.Errorf("connect console websocket: %s", strings.ReplaceAll(err.Error(), proxy.Ticket, "[REDACTED]"))
 	}
 	defer func() { _ = conn.Close() }()
+	// Proxmox termproxy expects an authentication line as the first WebSocket
+	// message. The ticket in the URL identifies the proxy, while this message
+	// authenticates the console session itself.
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(proxy.User+":"+proxy.Ticket+"\n")); err != nil {
+		return fmt.Errorf("authenticate console websocket: %s", strings.ReplaceAll(err.Error(), proxy.Ticket, "[REDACTED]"))
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -1885,7 +2002,9 @@ func (c *Client) console(ctx context.Context, node, guestType string, vmid int, 
 	}()
 
 	errs := make(chan error, 2)
+	ready := make(chan struct{})
 	go func() {
+		connected := false
 		for {
 			messageType, data, readErr := conn.ReadMessage()
 			if readErr != nil {
@@ -1893,6 +2012,18 @@ func (c *Client) console(ctx context.Context, node, guestType string, vmid int, 
 				return
 			}
 			if messageType == websocket.TextMessage || messageType == websocket.BinaryMessage {
+				if !connected {
+					if !bytes.HasPrefix(data, []byte("OK")) {
+						errs <- fmt.Errorf("console proxy rejected the authentication handshake")
+						return
+					}
+					connected = true
+					close(ready)
+					data = data[len("OK"):]
+				}
+				if len(data) == 0 {
+					continue
+				}
 				if _, writeErr := out.Write(data); writeErr != nil {
 					errs <- writeErr
 					return
@@ -1901,12 +2032,33 @@ func (c *Client) console(ctx context.Context, node, guestType string, vmid int, 
 		}
 	}()
 	go func() {
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			return
+		}
 		buf := make([]byte, 32*1024)
 		for {
 			n, readErr := in.Read(buf)
 			if n > 0 {
-				if writeErr := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); writeErr != nil {
-					errs <- writeErr
+				input, disconnect := consoleInputBeforeEscape(buf[:n])
+				if len(input) > 0 {
+					// pve-xtermjs wraps each client input as a packet:
+					// 0:<byte-length>:<terminal-data>. Raw data is ignored by
+					// termproxy, which otherwise leaves the console readable but
+					// unresponsive to keyboard input.
+					packet := make([]byte, 0, len(input)+24)
+					packet = append(packet, "0:"...)
+					packet = strconv.AppendInt(packet, int64(len(input)), 10)
+					packet = append(packet, ':')
+					packet = append(packet, input...)
+					if writeErr := conn.WriteMessage(websocket.TextMessage, packet); writeErr != nil {
+						errs <- writeErr
+						return
+					}
+				}
+				if disconnect {
+					errs <- io.EOF
 					return
 				}
 			}
@@ -1929,6 +2081,15 @@ func (c *Client) console(ctx context.Context, node, guestType string, vmid int, 
 		}
 		return fmt.Errorf("console relay: %w", err)
 	}
+}
+
+// consoleInputBeforeEscape returns the input preceding Ctrl+] and reports
+// whether the local disconnect key was pressed.
+func consoleInputBeforeEscape(input []byte) ([]byte, bool) {
+	if index := bytes.IndexByte(input, 0x1d); index >= 0 {
+		return input[:index], true
+	}
+	return input, false
 }
 
 func isNormalConsoleClose(err error) bool {
@@ -1978,15 +2139,18 @@ func (c *Client) VMCreate(ctx context.Context, node string, vmid int, options do
 		memory = *options.MemoryMiB
 	}
 	body.Set("memory", strconv.Itoa(memory))
-	// Keep newly created guests accessible through the authenticated serial
-	// console, including before an operating system has been installed.
+	// Provide both a standard graphical display (for Proxmox noVNC) and an
+	// authenticated serial console (for Nodex vm console).
 	body.Set("serial0", "socket")
-	body.Set("vga", "serial0")
+	body.Set("vga", "std")
 	if options.Name != "" {
 		body.Set("name", options.Name)
 	}
 	if options.ISO != "" {
 		body.Set("ide2", options.ISO+",media=cdrom")
+	}
+	if options.Net0 != "" {
+		body.Set("net0", options.Net0)
 	}
 	if options.DiskStorage != "" {
 		diskSize := domain.DefaultVMCreateDiskSizeGiB
@@ -2402,6 +2566,14 @@ func (c *Client) RemoveFirewallIPSetEntry(ctx context.Context, name, cidr string
 	if cidr == "" {
 		return fmt.Errorf("CIDR is required")
 	}
+	if ip, network, err := net.ParseCIDR(cidr); err == nil {
+		prefix, bits := network.Mask.Size()
+		if prefix == bits {
+			// Proxmox stores a single host address without its full-width
+			// prefix (for example, 203.0.113.7 instead of 203.0.113.7/32).
+			cidr = ip.String()
+		}
+	}
 	path := "/cluster/firewall/ipset/" + url.PathEscape(name) + "/" + url.PathEscape(cidr)
 	return c.del(ctx, path, nil)
 }
@@ -2594,6 +2766,29 @@ func (c *Client) AddACL(ctx context.Context, path, role, user, group string, pro
 	return c.put(ctx, "/access/acl", body, nil)
 }
 
+// RemoveACL removes one role grant via PUT /access/acl with delete=1.
+func (c *Client) RemoveACL(ctx context.Context, path, role, user, group string) error {
+	if path == "" {
+		return fmt.Errorf("ACL path is required")
+	}
+	if role == "" {
+		return fmt.Errorf("role ID is required")
+	}
+	if (user == "") == (group == "") {
+		return fmt.Errorf("exactly one ACL user or group is required")
+	}
+	body := url.Values{}
+	body.Set("path", path)
+	body.Set("roles", role)
+	body.Set("delete", "1")
+	if user != "" {
+		body.Set("users", user)
+	} else {
+		body.Set("groups", group)
+	}
+	return c.put(ctx, "/access/acl", body, nil)
+}
+
 // --- Phase 5: Firewall helper ---
 
 // FirewallRuleCreateResponse is the response from POST firewall rule creation.
@@ -2610,7 +2805,7 @@ func firewallRuleToValues(rule FirewallRuleCreateRequest) url.Values {
 	if rule.Action != "" {
 		v.Set("action", strings.ToUpper(rule.Action))
 	}
-	if rule.Enable != 0 {
+	if rule.EnableSet || rule.Enable != 0 {
 		v.Set("enable", strconv.Itoa(rule.Enable))
 	}
 	if rule.Pos > 0 {

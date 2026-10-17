@@ -22,15 +22,9 @@ type ClusterInitRequest struct {
 	Link0       string `json:"link0"`
 }
 
-// ClusterJoinRequest contains only non-secret join inputs. PVE additionally
-// requires a peer root password, so this request cannot be executed by Nodex.
-type ClusterJoinRequest struct {
-	Hostname    string `json:"hostname"`
-	Fingerprint string `json:"fingerprint"`
-}
-
 // TermProxyResponse is the short-lived endpoint returned by PVE termproxy.
 type TermProxyResponse struct {
+	User   string `json:"user"`
 	Port   string `json:"port"`
 	Ticket string `json:"ticket"`
 	UPID   string `json:"upid,omitempty"`
@@ -806,6 +800,8 @@ type FirewallRuleItem struct {
 	ICMPType string `json:"icmp_type,omitempty"`
 	Log      string `json:"log,omitempty"`
 	Comment  string `json:"comment,omitempty"`
+	IFace    string `json:"iface,omitempty"`
+	Macro    string `json:"macro,omitempty"`
 }
 
 // HAResourceResponse is the response from /cluster/ha/resources.
@@ -815,7 +811,7 @@ type HAResourceResponse struct {
 
 // HAResourceItem represents a single HA resource.
 type HAResourceItem struct {
-	ID       string `json:"id"`
+	ID       string `json:"sid"`
 	Type     string `json:"type"`
 	State    string `json:"state"`
 	Node     string `json:"node,omitempty"`
@@ -896,7 +892,7 @@ type NodeDNSResponse struct {
 type NodeDNSData struct {
 	DNS1         string `json:"dns1,omitempty"`
 	DNS2         string `json:"dns2,omitempty"`
-	SearchDomain string `json:"searchdomain,omitempty"`
+	SearchDomain string `json:"search,omitempty"`
 }
 
 // NodeTimeResponse is the response from /nodes/{node}/time.
@@ -1124,6 +1120,10 @@ func decodeInt(raw json.RawMessage) int {
 		if n, err := strconv.Atoi(s); err == nil {
 			return n
 		}
+	}
+	var b bool
+	if err := json.Unmarshal(raw, &b); err == nil && b {
+		return 1
 	}
 	return 0
 }
@@ -1624,20 +1624,21 @@ type AccessTokenItem struct {
 
 // FirewallRuleCreateRequest is the body for POST firewall rule creation.
 type FirewallRuleCreateRequest struct {
-	Type     string `json:"type"`
-	Action   string `json:"action"`
-	Enable   int    `json:"enable,omitempty"`
-	Pos      int    `json:"pos,omitempty"`
-	Proto    string `json:"proto,omitempty"`
-	Dest     string `json:"dest,omitempty"`
-	Dport    string `json:"dport,omitempty"`
-	Source   string `json:"source,omitempty"`
-	Sport    string `json:"sport,omitempty"`
-	ICMPType string `json:"icmp_type,omitempty"`
-	Log      string `json:"log,omitempty"`
-	Comment  string `json:"comment,omitempty"`
-	IFace    string `json:"iface,omitempty"`
-	Macro    string `json:"macro,omitempty"`
+	Type      string `json:"type"`
+	Action    string `json:"action"`
+	Enable    int    `json:"enable,omitempty"`
+	EnableSet bool   `json:"-"`
+	Pos       int    `json:"pos,omitempty"`
+	Proto     string `json:"proto,omitempty"`
+	Dest      string `json:"dest,omitempty"`
+	Dport     string `json:"dport,omitempty"`
+	Source    string `json:"source,omitempty"`
+	Sport     string `json:"sport,omitempty"`
+	ICMPType  string `json:"icmp_type,omitempty"`
+	Log       string `json:"log,omitempty"`
+	Comment   string `json:"comment,omitempty"`
+	IFace     string `json:"iface,omitempty"`
+	Macro     string `json:"macro,omitempty"`
 }
 
 // FirewallAliasCreateRequest is the body for POST /cluster/firewall/aliases.

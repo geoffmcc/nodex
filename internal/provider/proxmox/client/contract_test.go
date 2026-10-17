@@ -218,6 +218,13 @@ func TestClusterStatusItemContract(t *testing.T) {
 	if item.Version != 3 {
 		t.Errorf("Version = %d, want 3", item.Version)
 	}
+	var boolQuorum ClusterStatusItem
+	if err := json.Unmarshal([]byte(`{"type":"cluster","name":"mycluster","quorate":true}`), &boolQuorum); err != nil {
+		t.Fatalf("unmarshal boolean quorum: %v", err)
+	}
+	if boolQuorum.Quorate == nil || *boolQuorum.Quorate != 1 {
+		t.Errorf("boolean Quorate = %v, want 1", boolQuorum.Quorate)
+	}
 }
 
 func TestVMConfigDataContract(t *testing.T) {
@@ -524,7 +531,7 @@ func TestFirewallRuleItemContract(t *testing.T) {
 
 func TestHAResourceItemContract(t *testing.T) {
 	raw := `{
-		"id": "ha:vm/100",
+		"sid": "vm:100",
 		"type": "vm",
 		"state": "started",
 		"node": "pve1",
@@ -535,8 +542,8 @@ func TestHAResourceItemContract(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &item); err != nil {
 		t.Fatalf("unmarshal HAResourceItem: %v", err)
 	}
-	if item.ID != "ha:vm/100" {
-		t.Errorf("ID = %q, want ha:vm/100", item.ID)
+	if item.ID != "vm:100" {
+		t.Errorf("ID = %q, want vm:100", item.ID)
 	}
 	if item.Type != "vm" {
 		t.Errorf("Type = %q, want vm", item.Type)

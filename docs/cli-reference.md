@@ -62,6 +62,12 @@ nodex <command> <subcommand> --help
 
 `--all` is supported only for the read-only `status`, `node list`, `vm list`, and `container list` commands. It is not a general fan-out switch and is unavailable for mutations.
 
+`--all status` includes the endpoint and provider for each configured profile.
+Version, node count, and VM count are populated only when that provider supports
+the corresponding Proxmox inspection; unsupported fields display as `-` in
+tables and `null` in JSON/YAML. This avoids presenting PBS profiles as
+Proxmox clusters with zero nodes and VMs.
+
 ## Safety Tiers
 
 Every mutation command is classified into one of these tiers:
@@ -269,6 +275,7 @@ Inspect nodes. Safety: Tier 0 (Observation), except `node updates` (Tier 1; requ
 | `node services <name>` | List node services |
 | `node network <name>` | Show node network interfaces |
 | `node dns <name>` | Show node DNS configuration |
+| `node dns set <node> <resolver-ip>` | Set the primary DNS resolver for one Proxmox node; preserves the secondary resolver and search domain and verifies readback |
 | `node time <name>` | Show node time configuration |
 | `node disks <name>` | List node disks |
 | `node certificates <name>` | List node TLS certificates |
@@ -325,6 +332,10 @@ an explicit config inspection. Status/watch do not perform this enrichment.
 | `vm resume <id>` | Resume a suspended VM |
 | `vm console <node>/<vmid>` | Open an interactive VM serial console (text mode) |
 
+The guest must provide a serial console on `serial0` for guest text and keyboard
+input to work. Press **Ctrl+]** to disconnect Nodex without sending that key to
+the guest. A graphical guest display remains available through Proxmox noVNC.
+
 The Proxmox QEMU API has no separate VM `pause` or `unpause` action. `vm pause`
 and `vm unpause` return an unsupported-capability error with guidance to use
 `vm suspend` and `vm resume`, respectively. Nodex's `vm suspend` leaves
@@ -338,21 +349,25 @@ memory; it does not save the VM state to disk.
 | `vm reset <id>` | Hard reset a VM |
 | `vm reboot <id>` | Reboot a VM |
 | `vm migrate <node>/<vmid> <target> [online]` | Migrate a VM to another node |
-| `vm create <node> <vmid> [name] [iso] [disk-storage] [--disk-storage ID] [--cores N] [--memory MiB] [--disk-size GiB]` | Create a VM with bounded CPU, RAM, and optional boot-disk size |
+| `vm create <node> <vmid> [name] [iso] [disk-storage] [--disk-storage ID] [--cores N] [--memory MiB] [--disk-size GiB] [--net0 CONFIG]` | Create a VM with bounded CPU, RAM, and optional network and boot-disk settings |
 
-VM creation defaults to 1 core and 512 MiB of RAM. Supplying `disk-storage`
+VM creation defaults to 1 core and 2048 MiB of RAM. Supplying `disk-storage`
 creates a 4 GiB boot disk unless `--disk-size` is specified; without disk
 storage, no boot disk is created. Storage may be supplied in the legacy
 positional slot or with `--disk-storage`, but not both. `--cores` accepts
 1–8192, `--memory` accepts 16–1048576 MiB, and `--disk-size` accepts 1–65536
 GiB. Disk size requires an explicit disk storage.
+VM creation does not assume a bridge name. Pass `--net0 virtio,bridge=vmbr0`
+(or your Proxmox bridge and desired QEMU NIC settings) to attach a network
+interface.
 With `--wait`, Nodex reads the created VM configuration back and verifies the
-requested CPU, memory, name/ISO, and boot-disk settings. Without `--wait`, the
+requested CPU, memory, name/ISO, network interface, and boot-disk settings.
+Without `--wait`, the
 result reports provider acceptance only.
 
 ```bash
 nodex vm create pve-a 100 web local:iso/debian.iso --disk-storage local-lvm \
-  --cores 4 --memory 8192 --disk-size 64 --yes --force
+  --cores 4 --memory 8192 --disk-size 64 --net0 virtio,bridge=vmbr0 --yes --force
 ```
 
 **Destructive commands** (Tier 3, requires type-in confirmation):
@@ -373,7 +388,7 @@ nodex vm create pve-a 100 web local:iso/debian.iso --disk-storage local-lvm \
 | `vm snapshot rollback <id> <name>` | Roll back to a VM snapshot (`--yes --force`) |
 | `vm clone <node>/<vmid> <new-vmid> <name> [storage]` | Clone a VM |
 | `vm disk move <node>/<vmid> <disk> <storage>` | Move a VM disk to another storage (`--yes --force`) |
-| `vm disk resize <node>/<vmid> <disk> <size>` | Resize a VM disk (`--yes --force`) |
+| `vm disk resize <node>/<vmid> <disk> <size>` | Resize a VM disk (`--yes --force`); with `--wait`, read back the selected disk's configured size |
 
 ### `nodex container`
 
@@ -396,9 +411,17 @@ Inspect and operate containers.
 | `container start <id>` | Start a container |
 | `container stop <id>` | Stop a container (force) |
 | `container shutdown <id>` | Graceful container shutdown |
-| `container suspend <id>` | Suspend a container |
+| `container suspend <id>` | Suspend a container (Proxmox LXC checkpoint support is experimental) |
 | `container resume <id>` | Resume a suspended container |
 | `container console <node>/<vmid>` | Open an interactive container console (text mode) |
+
+Proxmox LXC suspend is experimental and uses CRIU checkpointing through
+`lxc-checkpoint`. It can fail for otherwise healthy containers when the host or
+guest workload uses features CRIU cannot checkpoint. When Nodex reports this
+failure, use the suggested `nodex task log <node> '<upid>'` command to inspect the
+Proxmox task details. A successful task submission is not a guarantee that the
+container reached a suspended state; Proxmox does not expose a distinct
+suspended state through `status/current`.
 
 **Disruptive commands** (Tier 2, requires `--yes --force`):
 
@@ -406,11 +429,37 @@ Inspect and operate containers.
 |---------|-------------|
 | `container reboot <id>` | Reboot a container |
 | `container migrate <node>/<vmid> <target>` | Migrate a container to another node |
-| `container create <node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB]` | Create an unprivileged container with bounded resources |
+| `container create <node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB] [--net0 CONFIG] [--nameserver IP] [--searchdomain DOMAIN] [--nesting 0|1]` | Create an unprivileged container with a login-ready `/dev/console`, bounded resources, and optional network settings |
 | `container restore <node> <vmid> <archive> [storage]` | Restore a container from a backup archive |
 
-Container creation always requests an unprivileged container. Memory and swap
-default to 512 MiB each; when `--cores` is omitted, Proxmox's default CPU
+With `--wait`, VM and container migrations read the guest config on both nodes
+after task completion and verify that the guest is absent from the source and
+present on the target. Without `--wait`, the agent receipt records task status
+only.
+
+Restore commands are guest-type specific. Use `container restore` for LXC
+archives and `backup restore` for QEMU VM archives. When the archive is named
+as a Proxmox storage volume, Nodex checks its storage inventory subtype before
+submitting the restore, so a mismatched archive is rejected before Proxmox can
+leave a partial guest behind. With `--wait`, Nodex reads the restored guest
+configuration back to confirm it exists. Receipt reconciliation repeats that
+existence check without resubmitting the restore.
+
+Container creation sets Proxmox `cmode=console` so the Web UI attaches to
+`/dev/console` and the guest can show its login prompt immediately. A network
+interface is not created unless `--net0` is supplied; Nodex does not guess the
+bridge, address allocation policy, or gateway for your network. Supply a
+Proxmox LXC network string such as `name=eth0,bridge=vmbr0,ip=dhcp,ip6=auto`
+when DHCP is available. Use `--nameserver` and `--searchdomain` to set guest DNS
+explicitly. For newer Ubuntu systemd-networkd guests, `--nesting 1` may be
+required for boot-time networking in an unprivileged container. Nesting expands
+guest access to procfs/sysfs and permits nested container features; enable it
+only when the guest needs it. Nodex verifies the requested network and nesting
+configuration by readback, but configuration readback does not prove that
+guest routing or DNS works after startup. Console mode is also checked by
+configuration readback. Start the container and check its
+address, default route, and DNS before installing packages or relying on it.
+Memory defaults to 2048 MiB and swap defaults to 512 MiB; when `--cores` is omitted, Proxmox's default CPU
 allocation is retained. `--cores` accepts 1–8192, `--memory` accepts 16–1048576
 MiB, `--swap` accepts 0–1048576 MiB, and `--rootfs-size` accepts 1–65536 GiB.
 Rootfs storage may be supplied in the legacy positional slot or with
@@ -419,13 +468,19 @@ without `--rootfs-size`, Proxmox applies its create-time rootfs sizing. If no
 storage is supplied, Nodex leaves storage resolution to Proxmox rather than
 choosing a storage from the inventory.
 With `--wait`, Nodex reads the created container configuration back and verifies
-the requested CPU, memory, swap, unprivileged setting, hostname, and rootfs
-storage/size. Without `--wait`, the result reports provider acceptance only.
+the requested CPU, memory, swap, unprivileged setting, hostname, network,
+nameserver, search domain, nesting, and rootfs storage/size. Without `--wait`,
+the result reports provider acceptance only. Nodex can set `nesting` through its
+Proxmox API token when creating a CT. On an existing CT, Proxmox may reject a
+feature update if the request would also change another feature, such as
+`keyctl`, that the token is not allowed to modify; setting the needed feature
+at creation avoids that limitation.
 
 ```bash
 nodex container create pve-a 200 local:vztmpl/debian-12.tar.zst app-200 \
   --rootfs-storage local-lvm --cores 2 --memory 2048 --swap 512 \
-  --rootfs-size 20 --yes --force
+  --rootfs-size 20 --net0 name=eth0,bridge=vmbr0,ip=dhcp,ip6=auto \
+  --nesting 1 --yes --force
 ```
 
 **Destructive commands** (Tier 3, requires type-in confirmation):
@@ -439,6 +494,7 @@ nodex container create pve-a 200 local:vztmpl/debian-12.tar.zst app-200 \
 | Command | Description |
 |---------|-------------|
 | `container update <id> <params...>` | Update container config |
+| `container install <node>/<vmid> <package> [package ...]` | Install up to 32 requested APT packages in a running LXC guest through its enrolled PVE host |
 | `container os-update <node>/<vmid> --policy approved-full-upgrade` | Update a running LXC guest OS through the enrolled PVE host |
 | `container template <id>` | Convert container to template |
 | `container snapshot create <id> <name> [description]` | Create a container snapshot (`--yes`) |
@@ -454,7 +510,17 @@ identified running LXC, and executes the fixed APT full-upgrade procedure
 through its uniquely enrolled PVE host's Ansible connection. It never reboots
 the guest. Nodex verifies that the guest remains running and has no remaining
 APT or package-database issues after the update. VM operating system updates
-are not provided by this command.
+are not provided by this command. Its running-state preflight uses Proxmox's
+single-container status endpoint when available, avoiding stale cluster-list
+status immediately after a start.
+
+`container install` is also disruptive and requires `--yes --force`. Package
+names use a restricted Debian package-name format and are passed as structured
+arguments to a fixed Ansible playbook. Nodex refreshes APT metadata, simulates
+the requested install, refuses package removals, installs only the requested
+packages and required dependencies from the guest's configured repositories,
+then verifies that each requested package is installed. It does not add APT
+repositories or accept shell commands.
 
 ### `nodex storage`
 
@@ -599,9 +665,9 @@ Inspect cluster state. Safety: Tier 0.
 | `cluster status` | Show cluster quorum and node health |
 | `cluster log` | Show cluster log entries |
 | `cluster init <name> <bind-address>` | Initialize a new PVE cluster; requires `--expert --yes --force` and typing the cluster name, or `--non-interactive --expert --yes --force --confirm-target <name>` |
-| `cluster join <node-address> <fingerprint>` | Validate a join target, then refuse execution because PVE requires the peer root password; Nodex never accepts or transports that password |
+| `cluster join <node-address> <fingerprint>` | Run `pvecm add` on the joining node through the selected profile's pinned SSH connection; forwards an operator-loaded SSH agent |
 
-Cluster initialization posts `clustername` and `link0` to `/cluster/config` and returns the provider worker UPID. It is a destructive cluster and corosync operation, not a reversible configuration change. The join endpoint `/cluster/config/join` also requires a peer root password; the existing profile API token is not equivalent, so Nodex fails closed before making a join request.
+Cluster initialization uses the Proxmox API and returns the provider worker UPID when the profile has no SSH configuration. Proxmox rejects API-token authentication for this operation, so profiles with SSH configured run `pvecm create` on the seed node over pinned SSH instead. That path requires the profile's SSH key to be authorized for the configured user on the seed node. Cluster join runs `pvecm add` on the joining node through the selected profile's pinned SSH connection. The operator must load the joining profile's key into `ssh-agent`; Nodex forwards the agent to the joining node and does not collect or copy the peer root password or private key. The key must be authorized on the existing node, and both SSH host keys must be pinned in `known_hosts`. After joining, update the joining profile to trust the cluster CA and use a cluster-wide API credential: the node adopts the cluster CA, and its former standalone API tokens may no longer be valid.
 
 #### Standalone hosts
 
@@ -745,9 +811,19 @@ and `firewall rules` are documented aliases for `firewall cluster-rules`.
 | `firewall group delete <name>` | Delete a security group (legacy alias) |
 | `firewall options update <params...>` | Update firewall options |
 
+Firewall rule create/update accepts `enable=0` or `enable=false` to explicitly
+disable a rule; `enable=1` or `enable=true` enables it. If omitted, Nodex leaves
+the field unset so Proxmox applies its default.
+
+Alias, IP-set, IP-set entry, and security-group mutations complete synchronously
+and read their inventory back after the write. Single-host IPv4/IPv6 IP-set
+entries may be entered with `/32` or `/128`; Nodex handles Proxmox's bare-IP
+representation when checking or removing them.
+
 ### `nodex ha`
 
-Inspect HA resources. Safety: Tier 0.
+Inspect HA resources and enroll guests in HA management. Adding a resource is
+Tier 3 because the HA manager may start or move that guest.
 
 | Command | Description |
 |---------|-------------|
@@ -755,10 +831,23 @@ Inspect HA resources. Safety: Tier 0.
 | `ha groups` | List HA groups |
 | `ha status` | Show HA status |
 | `ha current` | Show current HA resource state |
+| `ha resource add <vm:id|ct:id> [started|stopped|disabled]` | Add a guest to HA management (default state: `started`) |
+| `ha resource state <vm:id|ct:id> <started|stopped|disabled>` | Change the requested HA state |
+| `ha resource remove <vm:id|ct:id>` | Remove a guest from HA management; leaves the guest itself untouched |
 
 `ha status` reports `standalone`, `cluster`, and `quorum_known` so a standalone
 host is distinguishable from a cluster whose quorum could not be read. `enabled`
-is `false` on a standalone host, where the HA subsystem does not apply.
+is `false` on a standalone host, where the HA subsystem does not apply. Its
+`quorum` value comes from cluster status (where `1` means quorate and `0` means
+not quorate), because the HA status endpoint does not report cluster quorum.
+`enabled: true` means the HA subsystem applies to the cluster; it does not mean
+that any guests are configured as HA resources. Check `ha list` to see which
+guests are actually managed by HA.
+
+All `ha resource` mutations require `--yes --force --confirm-target <resource-id>`.
+Changes are read back after submission. Before using `started`, confirm that
+the guest's storage and configuration support HA recovery on the other cluster
+nodes.
 
 ### `nodex sdn`
 
@@ -814,7 +903,7 @@ nodex maintenance policy restore --plan <file> --yes --force --confirm-target <p
 | Command | Description |
 |---------|-------------|
 | `maintenance inventory` | List enrolled hosts with role, environment, group, criticality, backup requirement, reboot policy, and unattended-security opt-in |
-| `maintenance status` | Run the read-only `check-updates` preflight through the allowlisted Ansible boundary: pending updates, security updates, reboot-required state, failed units, root filesystem usage per host. With `--environment`, adds the environment's backup health. Exits 11 on partial failure. |
+| `maintenance status` | Run the read-only `check-updates` preflight through the allowlisted Ansible boundary: pending updates, security updates, reboot-required state, failed units, root filesystem usage per host. Failed checks include a bounded, secret-redacted task diagnostic when Ansible captures one. With `--environment`, adds the environment's backup health. Exits 11 on partial failure. |
 | `maintenance plan` | Run the same preflight and emit an immutable plan: plan ID, creation/expiry timestamps (default TTL 4h), update policy, per-host package intent, execution order (standard hosts first, critical hosts serial, PVE/PBS/DNS roles last), batch size, reboot policy (always `never` in this phase), backup requirements and their observed state, infrastructure snapshot, warnings, blockers, and a SHA-256 digest over the whole plan. Security-only plans bind and print the exact candidate version, architecture, APT source, and signed Release identity. Save it with `--output json > plan.json`. |
 | `maintenance apply` | Apply an existing digest-verified plan with `--yes --force --confirm-target <plan-id>`. Security-only apply rechecks candidates/origins, refuses holds, removals and unapproved dependency changes, installs exact versions and verifies installed package facts. Writes atomic receipts and refuses blocked, stale, tampered, or ambiguous reruns. |
 | `maintenance resume` | Revalidate a plan-bound receipt and continue only hosts not yet started; refuses to replay non-successful hosts. |
@@ -826,7 +915,7 @@ nodex maintenance policy restore --plan <file> --yes --force --confirm-target <p
 | `maintenance policy apply` | Install `unattended-upgrades` if needed, back up any existing Nodex-owned policy file, apply the reviewed security-only APT drop-in, enable the daily timer, and verify postconditions. Requires `--yes --force --confirm-target <plan-id>`. It does not install OS updates in the apply transaction and never enables automatic reboot. |
 | `maintenance policy restore` | Restore the Nodex-managed policy file and prior timer state from the original plan after rechecking the current state and remote backup. Requires the same confirmation as apply; the `unattended-upgrades` package is retained. If apply used `--receipt-dir`, pass the same directory to restore. |
 
-Plans are tamper-evident (any modification breaks the digest), expiring, deterministic for unchanged inputs, and contain no secrets. A plan created with blockers is still emitted for review but apply refuses it. Backup requirements can only be verified when `--environment` links the hosts to a PVE/PBS pair; without it, `backup_required` hosts are a blocker by design.
+Plans are tamper-evident (any modification breaks the digest), expiring, deterministic for unchanged inputs, and contain no secrets. A plan created with blockers is still emitted for review but apply refuses it. Backup requirements can be verified when `--environment` links the hosts to PVE and either PBS or active PVE backup storage. Without an environment, `backup_required` hosts are a blocker by design. Native PVE archives are checked for age, storage capacity and recent failed backup tasks; they do not provide PBS verification evidence.
 
 The unattended-security policy is distinct from `maintenance plan --policy
 security-only`, which applies one reviewed package-update batch. Policy plans
@@ -854,7 +943,11 @@ nodex environment backup-health <name>
 |---------|-------------|
 | `environment list` | List configured environments and their profiles |
 | `environment health <name>` | Infrastructure health: PVE/PBS reachability, datastore availability and capacity, active backup-chain tasks, recent failed PVE/PBS tasks |
-| `environment backup-health <name>` | Everything in `health`, plus per-guest backup coverage: every non-excluded PVE guest's newest PBS backup, its age against the environment's thresholds, the datastore and namespace containing it, and its verification state |
+| `environment backup-health <name>` | Everything in `health`, plus per-guest backup coverage: every non-excluded PVE guest's newest PBS backup when PBS is configured, or native PVE vzdump archive otherwise, its age, storage capacity, and verification state where available |
+
+Without PBS, Nodex checks native PVE backup archives on active backup-capable
+storage and recent PVE backup task results. PBS verification is reported as
+unavailable; archive presence does not prove backup integrity.
 
 Check and guest statuses are `healthy`, `warning`, `blocked`, `unknown` (required data could not be retrieved), or `unsupported` (the provider or configuration cannot answer). The overall status is never healthier than the least healthy check — an evaluation with missing data reports `unknown`, not `healthy`. The result also reports `maintenance_safe` with explicit blockers (unreachable providers, unavailable or full datastores, active backup-chain tasks, stale or missing guest backups).
 
@@ -1004,6 +1097,7 @@ silently falls back to the plain index and those columns show `-` for everyone.
 | `access user create <userid> [email=<e>] [firstname=<f>] [lastname=<l>] [comment=<c>]` | Create a user (`--password-stdin` for a password) |
 | `access user delete <userid>` | Delete a user |
 | `access acl add <path> --role <role> [--user <id>] [--group <id>] [--propagate]` | Add an ACL entry |
+| `access acl remove <path> --role <role> (--user <id> \| --group <id>)` | Remove one grant; requires `--yes --force --expert` and exact `--confirm-target`, then verifies removal |
 
 ### `nodex ceph`
 

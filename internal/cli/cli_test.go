@@ -1810,17 +1810,24 @@ func TestWriteContainersAllNilHandling(t *testing.T) {
 }
 
 func TestWriteAggregatedStatusNilHandling(t *testing.T) {
-	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML} {
+	for _, format := range []output.Format{output.FormatJSON, output.FormatYAML, output.FormatTable} {
 		t.Run(string(format), func(t *testing.T) {
 			var stdout bytes.Buffer
 			cmdCtx := &Context{Writer: &stdout, Opts: Options{Output: format}}
 			out := output.NewMultiProfileOutput[aggregatedStatus]()
+			out.AddSuccess("pbs", aggregatedStatus{Endpoint: "https://pbs.example.invalid", Provider: "pbs"}, 0)
 			if err := writeAggregatedStatus(cmdCtx, out); err != nil {
 				t.Fatalf("writeAggregatedStatus empty: %v", err)
 			}
 			got := strings.TrimSpace(stdout.String())
-			if !strings.Contains(got, "results") {
+			if format != output.FormatTable && !strings.Contains(got, "results") {
 				t.Fatalf("writeAggregatedStatus empty = %q, want MultiProfileOutput envelope", got)
+			}
+			if format == output.FormatTable && !strings.Contains(got, "-") {
+				t.Fatalf("table output = %q, want unsupported counts shown as n/a", got)
+			}
+			if format == output.FormatJSON && !strings.Contains(got, `"nodes": null`) {
+				t.Fatalf("JSON output = %q, want unsupported counts encoded as null", got)
 			}
 		})
 	}

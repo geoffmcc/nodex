@@ -235,7 +235,7 @@ func runAgent(ctx context.Context, original []string, opts Options, helpPath, re
 				return emitAgentFailure(stdout, requestID, meta.Path, agent.RetrySafe, app.ExitConfig, "INVALID_PROFILE_ENDPOINT", err)
 			}
 			executionContext = targetContext(*meta, handlerArgs, dispatchArgs, opts.Profile, config.NormalizeProvider(p.Provider), endpoint, p)
-			if meta.Path == "container os-update" {
+			if meta.Path == "container os-update" || meta.Path == "container install" {
 				hostName, inventoryHost, hostErr := findPVEInventoryHost(cfg, opts.Profile, executionContext.Node)
 				if hostErr != nil {
 					return emitAgentFailureWithContext(stdout, requestID, meta.Path, executionContext, agent.RetrySafe, app.ExitConfig, "SSH_TARGET_UNAVAILABLE", hostErr)
@@ -845,6 +845,9 @@ func targetContext(op OperationMeta, args, dispatchArgs []string, profile, provi
 		c.ResourceID = flagValue(dispatchArgs, "--target")
 	default:
 		c.ResourceID = first
+	}
+	if (op.Path == "vm snapshot create" || op.Path == "vm snapshot delete" || op.Path == "container snapshot create" || op.Path == "container snapshot delete") && second != "" {
+		c.TargetName = second
 	}
 	return c
 }
@@ -1484,6 +1487,97 @@ func taskExecutionStatus(ctx context.Context, cmdCtx *Context, r *agent.Receipt)
 			} else {
 				r.Verification = agent.VerificationFailed
 				addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_FAILED", Message: "task succeeded, but the observed guest state does not match the requested postcondition"})
+			}
+		}
+		if r.Operation == "backup restore" || r.Operation == "container restore" {
+			vmid, parseErr := strconv.Atoi(r.Context.ResourceID)
+			if parseErr != nil || r.Context.Node == "" {
+				r.Verification = agent.VerificationUnknown
+				addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_UNKNOWN", Message: "restore task succeeded, but the receipt lacks a usable node or guest ID for readback"})
+			} else {
+				var probe resourceProbe
+				guestType := "VM"
+				if r.Operation == "backup restore" {
+					probe = probeVM(prov, r.Context.Node, vmid)
+				} else {
+					guestType = "container"
+					probe = probeContainer(prov, r.Context.Node, vmid)
+				}
+				outcome := presenceVerifier(probe, fmt.Sprintf("%s %s/%d", guestType, r.Context.Node, vmid), presenceUnknown)(ctx)
+				switch {
+				case outcome.Verified:
+					r.Verification = agent.VerificationPassed
+				case outcome.Unverifiable:
+					r.Verification = agent.VerificationUnknown
+					addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_UNKNOWN", Message: safeMessage(outcome.Detail)})
+				default:
+					r.Verification = agent.VerificationFailed
+					addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_FAILED", Message: safeMessage(outcome.Detail)})
+				}
+			}
+		}
+		if guestDeletePath(r.Operation) {
+			parts := strings.Fields(r.Operation)
+			vmid, parseErr := strconv.Atoi(r.Context.ResourceID)
+			if parseErr != nil || r.Context.Node == "" {
+				r.Verification = agent.VerificationUnknown
+				addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_UNKNOWN", Message: "delete task succeeded, but the receipt lacks a usable node or guest ID for readback"})
+			} else {
+				var probe resourceProbe
+				switch parts[0] {
+				case "vm":
+					probe = probeVM(prov, r.Context.Node, vmid)
+				default:
+					probe = probeContainer(prov, r.Context.Node, vmid)
+				}
+				outcome := absenceVerifier(probe, fmt.Sprintf("%s %s/%d", parts[0], r.Context.Node, vmid), presenceUnknown)(ctx)
+				switch {
+				case outcome.Verified:
+					r.Verification = agent.VerificationPassed
+				case outcome.Unverifiable:
+					r.Verification = agent.VerificationUnknown
+					addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_UNKNOWN", Message: safeMessage(outcome.Detail)})
+				default:
+					r.Verification = agent.VerificationFailed
+					addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_FAILED", Message: safeMessage(outcome.Detail)})
+				}
+			}
+		}
+		if parts := strings.Fields(r.Operation); len(parts) == 3 && (parts[1] == "snapshot") && (parts[2] == "create" || parts[2] == "delete") {
+			vmid, parseErr := strconv.Atoi(r.Context.ResourceID)
+			if parseErr != nil || r.Context.Node == "" || r.Context.TargetName == "" {
+				r.Verification = agent.VerificationUnknown
+				addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_UNKNOWN", Message: "snapshot task succeeded, but the receipt lacks a usable node, resource ID, or snapshot name for readback"})
+			} else {
+				var probe resourceProbe
+				switch parts[0] {
+				case "vm":
+					probe = probeVMSnapshot(prov, r.Context.Node, vmid, r.Context.TargetName)
+				case "container":
+					probe = probeContainerSnapshot(prov, r.Context.Node, vmid, r.Context.TargetName)
+				}
+				if probe == nil {
+					r.Verification = agent.VerificationUnknown
+					addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_UNKNOWN", Message: "snapshot task succeeded, but the receipt operation does not identify a supported guest type"})
+				} else {
+					var outcome postconditionOutcome
+					target := fmt.Sprintf("snapshot %q of %s %s/%d", r.Context.TargetName, parts[0], r.Context.Node, vmid)
+					if parts[2] == "create" {
+						outcome = presenceVerifier(probe, target, presenceUnknown)(ctx)
+					} else {
+						outcome = absenceVerifier(probe, target, presenceUnknown)(ctx)
+					}
+					switch {
+					case outcome.Verified:
+						r.Verification = agent.VerificationPassed
+					case outcome.Unverifiable:
+						r.Verification = agent.VerificationUnknown
+						addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_UNKNOWN", Message: safeMessage(outcome.Detail)})
+					default:
+						r.Verification = agent.VerificationFailed
+						addAgentWarning(&r.Result, agent.Warning{Code: "POSTCONDITION_FAILED", Message: safeMessage(outcome.Detail)})
+					}
+				}
 			}
 		}
 	}

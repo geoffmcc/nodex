@@ -72,6 +72,7 @@ type ExecutionContext struct {
 	Endpoint         string           `json:"endpoint,omitempty"`
 	ResourceType     string           `json:"resource_type,omitempty"`
 	ResourceID       string           `json:"resource_id,omitempty"`
+	TargetName       string           `json:"target_name,omitempty"`
 	RelatedTargets   []ResourceTarget `json:"related_targets,omitempty"`
 	Node             string           `json:"node,omitempty"`
 	Namespace        string           `json:"namespace,omitempty"`
@@ -247,6 +248,9 @@ func (r Result) Validate() error {
 	}
 	if len(r.Context.RelatedTargets) > 32 {
 		return errors.New("agent result related target set exceeds its size limit")
+	}
+	if len(r.Context.TargetName) > 256 || strings.ContainsAny(r.Context.TargetName, "\x00\r\n\x1b") {
+		return errors.New("agent result contains an invalid target name")
 	}
 	for _, target := range r.Context.RelatedTargets {
 		if strings.TrimSpace(target.ResourceType) == "" || strings.TrimSpace(target.ResourceID) == "" || len(target.ResourceType) > 128 || len(target.ResourceID) > 4096 {

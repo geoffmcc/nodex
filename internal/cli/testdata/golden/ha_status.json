@@ -1,5 +1,5 @@
 {
-  "quorum": 1,
+  "quorum": 3,
   "status": "online",
   "enabled": true,
   "cluster": "e2e",

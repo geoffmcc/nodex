@@ -117,8 +117,12 @@ status when the SSH dependency changes.
   inventory host; without Ansible the result is `unsupported`. ICMP targets
   require the local operating system to permit an ICMP ping socket; otherwise
   they report `unsupported` rather than healthy.
-- Cluster join is preflight-only. Corosync membership, subscription-key
-  management, TFA enrollment and arbitrary remote execution are not provided.
+- Cluster join runs `pvecm add` on the joining node over the profile's pinned
+  SSH connection and requires the profile key in an operator-loaded SSH agent,
+  trusted SSH host keys, and authorization on the existing cluster node.
+  Corosync membership and quorum behavior still require live verification.
+- Subscription-key management, TFA enrollment and arbitrary remote execution
+  are not provided.
 - Nodex is pre-1.0. See [compatibility policy](compatibility.md) for the
   stability levels of CLI, configuration and structured output.
 

@@ -172,14 +172,16 @@ func TestNewHAStatusView(t *testing.T) {
 		wantClust  string
 		wantStand  bool
 		wantKnown  bool
+		wantQuorum int
 	}{
 		{
 			name:       "clustered host has HA enabled",
-			status:     &domain.HAStatus{Quorum: 1, Status: "online"},
+			status:     &domain.HAStatus{Quorum: 0, Status: "unknown"},
 			quorum:     quorumInfo{Known: true, Name: "prod", Quorum: 1},
 			wantEnable: true,
 			wantClust:  "prod",
 			wantKnown:  true,
+			wantQuorum: 1,
 		},
 		{
 			// The nit: a standalone host must not look like a broken cluster.
@@ -210,6 +212,9 @@ func TestNewHAStatusView(t *testing.T) {
 			}
 			if view.QuorumKnown != tt.wantKnown {
 				t.Errorf("QuorumKnown = %v, want %v", view.QuorumKnown, tt.wantKnown)
+			}
+			if view.Quorum != tt.wantQuorum {
+				t.Errorf("Quorum = %v, want %v", view.Quorum, tt.wantQuorum)
 			}
 		})
 	}

@@ -144,7 +144,9 @@ func init() {
 		&command{name: "status", short: "Show detailed node status", run: runNodeStatus},
 		&command{name: "services", short: "List node services", run: runNodeServices},
 		&command{name: "network", short: "Show node network interfaces", run: runNodeNetwork},
-		&command{name: "dns", short: "Show node DNS configuration", run: runNodeDNS},
+		&command{name: "dns", short: "Show or update node DNS configuration", run: runNodeDNS, sub: map[string]*command{
+			"set": {name: "set", short: "Set a node’s primary DNS resolver", run: runNodeDNSSet},
+		}},
 		&command{name: "time", short: "Show node time configuration", run: runNodeTime},
 		&command{name: "disks", short: "List node disks", run: runNodeDisks},
 		&command{name: "certificates", short: "List node certificates", run: runNodeCertificates},
@@ -193,10 +195,11 @@ func init() {
 		&command{name: "stop", short: "Stop a container (force)", run: runCTStop},
 		&command{name: "shutdown", short: "Graceful container shutdown", run: runCTShutdown},
 		&command{name: "reboot", short: "Reboot a container", run: runCTReboot},
-		&command{name: "suspend", short: "Suspend a container", run: runCTSuspend},
+		&command{name: "suspend", short: "Suspend a container (Proxmox LXC checkpoint support is experimental)", run: runCTSuspend},
 		&command{name: "resume", short: "Resume a suspended container", run: runCTResume},
 		&command{name: "update", short: "Update container configuration", run: runCTUpdate},
 		&command{name: "os-update", short: "Update a running LXC guest OS", run: runContainerOSUpdate},
+		&command{name: "install", short: "Install requested packages in a running LXC guest", run: runContainerPackageInstall},
 		&command{name: "delete", short: "Delete a container (destructive)", run: runCTDelete},
 		&command{name: "template", short: "Convert container to template", run: runCTTemplate},
 		&command{name: "snapshot", short: "Manage container snapshots", run: runCTSnapshotDispatch},
@@ -218,7 +221,7 @@ func init() {
 		&command{name: "status", short: "Show cluster status", run: runClusterStatus},
 		&command{name: "log", short: "Show cluster log entries", run: runClusterLog},
 		&command{name: "init", short: "Initialize a Proxmox cluster", run: runClusterInit},
-		&command{name: "join", short: "Preflight a Proxmox cluster join", run: runClusterJoin},
+		&command{name: "join", short: "Join a Proxmox cluster over SSH", run: runClusterJoin},
 	)
 	register("event", "Manage events", nil,
 		&command{name: "list", short: "List cluster events", run: runEventList},
@@ -262,6 +265,7 @@ func init() {
 		&command{name: "groups", short: "List HA groups", run: runHAGroups},
 		&command{name: "status", short: "Show HA status", run: runHAStatus},
 		&command{name: "current", short: "Show current HA resource state", run: runHACurrent},
+		&command{name: "resource", short: "Manage HA resources", run: runHAResourceDispatch},
 	)
 	register("sdn", "Manage SDN", nil,
 		// Plural commands are read-only; singular commands mutate.
@@ -465,6 +469,26 @@ func runNormal(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		if len(args) > 0 {
 			subName := args[0]
 			if sub, ok := cmd.sub[subName]; ok {
+				if sub.sub != nil && len(args) > 1 {
+					nestedName := args[1]
+					if nested, ok := sub.sub[nestedName]; ok {
+						path := []string{name, subName, nestedName}
+						if err := validateInvocation(cmdCtx.Opts, nested.meta); err != nil {
+							return err
+						}
+						if err := checkAllSupported(cmdCtx.Opts.All, path...); err != nil {
+							return err
+						}
+						if cmdCtx.Opts.All && len(args) > 2 {
+							return app.NewExitError(fmt.Errorf("unexpected arguments for --all: %s", strings.Join(args[2:], " ")), app.ExitUsage)
+						}
+						err := nested.run(ctx, cmdCtx, args[2:])
+						if err == nil {
+							warnInertConfirmFlags(cmdCtx.Opts, nested.meta, safeStderr)
+						}
+						return err
+					}
+				}
 				if sub.bound && sub.meta == nil {
 					return app.NewExitError(fmt.Errorf("command %q has no operation metadata", name+" "+subName), app.ExitGeneral)
 				}

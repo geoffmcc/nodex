@@ -47,15 +47,19 @@ const (
 	HostEvidenceUpdateVerify  = "host.update_verify"
 	HostEvidenceUpdateReport  = "host.update_report"
 
-	ContainerEvidenceStatus     = "container.status"
-	ContainerEvidenceAPT        = "container.apt"
-	ContainerEvidenceRefresh    = "container.refresh"
-	ContainerEvidencePackages   = "container.packages"
-	ContainerEvidenceSimulation = "container.simulation"
-	ContainerEvidenceDpkg       = "container.dpkg"
-	ContainerEvidenceReboot     = "container.reboot"
-	ContainerEvidenceRoot       = "container.root"
-	ContainerEvidenceUpdate     = "container.update"
+	ContainerEvidenceStatus            = "container.status"
+	ContainerEvidenceAPT               = "container.apt"
+	ContainerEvidenceRefresh           = "container.refresh"
+	ContainerEvidencePackages          = "container.packages"
+	ContainerEvidenceSimulation        = "container.simulation"
+	ContainerEvidenceDpkg              = "container.dpkg"
+	ContainerEvidenceHold              = "container.hold"
+	ContainerEvidenceReboot            = "container.reboot"
+	ContainerEvidenceRoot              = "container.root"
+	ContainerEvidenceUpdate            = "container.update"
+	ContainerEvidenceInstallSimulation = "container.install_simulation"
+	ContainerEvidenceInstall           = "container.install"
+	ContainerEvidenceInstallVerify     = "container.install_verify"
 
 	SecurityPolicyEvidenceInspect = "policy.inspect"
 	SecurityPolicyEvidenceApply   = "policy.apply"
@@ -95,6 +99,7 @@ var containerPreflightEvidence = []string{
 	ContainerEvidenceRefresh,
 	ContainerEvidencePackages,
 	ContainerEvidenceSimulation,
+	ContainerEvidenceHold,
 	ContainerEvidenceDpkg,
 	ContainerEvidenceReboot,
 	ContainerEvidenceRoot,
@@ -108,11 +113,21 @@ var containerApplyEvidence = []string{
 	ContainerEvidenceUpdate,
 }
 
+var containerInstallEvidence = []string{
+	ContainerEvidenceStatus,
+	ContainerEvidenceAPT,
+	ContainerEvidenceRefresh,
+	ContainerEvidenceInstallSimulation,
+	ContainerEvidenceInstall,
+	ContainerEvidenceInstallVerify,
+}
+
 var containerVerifyEvidence = []string{
 	ContainerEvidenceStatus,
 	ContainerEvidenceAPT,
 	ContainerEvidencePackages,
 	ContainerEvidenceSimulation,
+	ContainerEvidenceHold,
 	ContainerEvidenceDpkg,
 	ContainerEvidenceReboot,
 	ContainerEvidenceRoot,

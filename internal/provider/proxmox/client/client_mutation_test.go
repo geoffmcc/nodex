@@ -44,6 +44,36 @@ func TestPostMethodAndPath(t *testing.T) {
 	}
 }
 
+func TestRemoveFirewallIPSetEntryNormalizesHostPrefix(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", r.Method)
+		}
+		if r.URL.Path != "/cluster/firewall/ipset/nxagt17/203.0.113.7" {
+			t.Errorf("path = %q, want host address without /32", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	if err := c.RemoveFirewallIPSetEntry(context.Background(), "nxagt17", "203.0.113.7/32"); err != nil {
+		t.Fatalf("RemoveFirewallIPSetEntry: %v", err)
+	}
+}
+
+func TestFirewallRuleToValuesPreservesExplicitDisabledState(t *testing.T) {
+	disabled := firewallRuleToValues(FirewallRuleCreateRequest{Type: "in", Action: "ACCEPT", Enable: 0, EnableSet: true})
+	if got := disabled.Get("enable"); got != "0" {
+		t.Fatalf("explicit disabled enable value = %q, want 0", got)
+	}
+	defaultRule := firewallRuleToValues(FirewallRuleCreateRequest{Type: "in", Action: "ACCEPT"})
+	if got := defaultRule.Get("enable"); got != "" {
+		t.Fatalf("unspecified enable value = %q, want omitted to preserve Proxmox default", got)
+	}
+}
+
 func TestPostContentTypeAndBody(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ct := r.Header.Get("Content-Type")
@@ -86,6 +116,51 @@ func TestPostAuthorizationHeader(t *testing.T) {
 	}
 }
 
+func TestRemoveACLUsesPutDeleteAndExactPrincipal(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/access/acl" {
+			t.Fatalf("request = %s %s, want PUT /access/acl", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		for key, want := range map[string]string{
+			"path": "/nodes/pve1", "roles": "NoAccess", "users": "nodex-test@pve", "delete": "1",
+		} {
+			if got := r.Form.Get(key); got != want {
+				t.Errorf("form %s = %q, want %q", key, got, want)
+			}
+		}
+		if got := r.Form.Get("groups"); got != "" {
+			t.Errorf("groups = %q, want omitted", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	defer s.Close()
+
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	if err := c.RemoveACL(context.Background(), "/nodes/pve1", "NoAccess", "nodex-test@pve", ""); err != nil {
+		t.Fatalf("RemoveACL: %v", err)
+	}
+}
+
+func TestRemoveACLRequiresExactlyOnePrincipal(t *testing.T) {
+	c := &Client{}
+	for _, tc := range []struct {
+		name, user, group string
+	}{
+		{name: "none"},
+		{name: "both", user: "nodex-test@pve", group: "nodex-test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := c.RemoveACL(context.Background(), "/nodes/pve1", "NoAccess", tc.user, tc.group); err == nil {
+				t.Fatal("expected principal validation error")
+			}
+		})
+	}
+}
+
 func TestCTCreate(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/nodes/pve1/lxc" {
@@ -96,6 +171,7 @@ func TestCTCreate(t *testing.T) {
 		}
 		want := map[string]string{
 			"vmid":         "9402",
+			"cmode":        "console",
 			"ostemplate":   "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
 			"hostname":     "nodex-test-ct",
 			"cores":        "2",
@@ -103,6 +179,10 @@ func TestCTCreate(t *testing.T) {
 			"swap":         "1024",
 			"unprivileged": "1",
 			"rootfs":       "local-lvm:20",
+			"net0":         "name=eth0,bridge=vmbr0,ip=dhcp,ip6=auto",
+			"nameserver":   "1.1.1.1",
+			"searchdomain": "lab.example",
+			"features":     "nesting=1",
 		}
 		for key, value := range want {
 			if got := r.FormValue(key); got != value {
@@ -118,10 +198,15 @@ func TestCTCreate(t *testing.T) {
 
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
 	cores, memory, swap, rootfsSize := 2, 2048, 1024, 20
+	nesting := true
 	upid, err := c.CTCreate(context.Background(), "pve1", 9402, domain.ContainerCreateOptions{
 		OSTemplate:    "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst",
 		Hostname:      "nodex-test-ct",
 		Storage:       "local-lvm",
+		Net0:          "name=eth0,bridge=vmbr0,ip=dhcp,ip6=auto",
+		Nameserver:    "1.1.1.1",
+		SearchDomain:  "lab.example",
+		Nesting:       &nesting,
 		Cores:         &cores,
 		MemoryMiB:     &memory,
 		SwapMiB:       &swap,
@@ -141,7 +226,7 @@ func TestCTCreateDefaultsAreExplicitAndUnprivileged(t *testing.T) {
 			t.Fatalf("parse form: %v", err)
 		}
 		for key, want := range map[string]string{
-			"memory": "512", "swap": "512", "unprivileged": "1", "storage": "local-lvm",
+			"cmode": "console", "memory": "2048", "swap": "512", "unprivileged": "1", "storage": "local-lvm",
 		} {
 			if got := r.FormValue(key); got != want {
 				t.Errorf("%s = %q, want %q", key, got, want)
@@ -177,12 +262,13 @@ func TestVMCreate(t *testing.T) {
 			"name":    "nodex-test-vm",
 			"ostype":  "l26",
 			"cores":   "1",
-			"memory":  "512",
+			"memory":  "2048",
 			"serial0": "socket",
-			"vga":     "serial0",
+			"vga":     "std",
 			"ide2":    "local:iso/debian.iso,media=cdrom",
 			"scsi0":   "local-lvm:4",
 			"scsihw":  "virtio-scsi-single",
+			"net0":    "virtio,bridge=vmbr0",
 		}
 		for key, value := range want {
 			if got := r.FormValue(key); got != value {
@@ -195,7 +281,7 @@ func TestVMCreate(t *testing.T) {
 
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
 	upid, err := c.VMCreate(context.Background(), "pve1", 9403, domain.VMCreateOptions{
-		Name: "nodex-test-vm", ISO: "local:iso/debian.iso", DiskStorage: "local-lvm",
+		Name: "nodex-test-vm", ISO: "local:iso/debian.iso", DiskStorage: "local-lvm", Net0: "virtio,bridge=vmbr0",
 	})
 	if err != nil {
 		t.Fatalf("VMCreate: %v", err)
@@ -963,6 +1049,20 @@ func TestVMConfigUpdatePathAndBody(t *testing.T) {
 	}
 	if upid != "UPID:pve1:00003048:0023A45B:" {
 		t.Errorf("upid = %q, want UPID:pve1:00003048:0023A45B:", upid)
+	}
+}
+
+func TestEncodeSSHKeysParamForProxmox(t *testing.T) {
+	params := url.Values{"sshkeys": {"ssh-ed25519 AAA+/== user@host"}, "cores": {"2"}}
+	encoded := encodeSSHKeysParam(params)
+	if got, want := encoded.Get("sshkeys"), "ssh-ed25519%20AAA%2B%2F%3D%3D%20user%40host"; got != want {
+		t.Fatalf("encoded sshkeys = %q, want %q", got, want)
+	}
+	if got := encoded.Get("cores"); got != "2" {
+		t.Fatalf("cores = %q, want unchanged value 2", got)
+	}
+	if got := params.Get("sshkeys"); got != "ssh-ed25519 AAA+/== user@host" {
+		t.Fatalf("input params mutated: sshkeys = %q", got)
 	}
 }
 
