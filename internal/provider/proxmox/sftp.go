@@ -29,6 +29,10 @@ type sftpDialer func(ctx context.Context, host, user, keyFile string, port int) 
 // realSFTPDial authenticates to host:port as user with the private key in
 // keyFile and returns an SFTP client.
 func realSFTPDial(ctx context.Context, host, user, keyFile string, port int) (sftpClient, error) {
+	return realSFTPDialWithKnownHosts(ctx, host, user, keyFile, port, "")
+}
+
+func realSFTPDialWithKnownHosts(ctx context.Context, host, user, keyFile string, port int, knownHostsFile string) (sftpClient, error) {
 	if port < 1 || port > 65535 {
 		port = 22
 	}
@@ -46,7 +50,7 @@ func realSFTPDial(ctx context.Context, host, user, keyFile string, port int) (sf
 	if err != nil {
 		return nil, fmt.Errorf("parse ssh key %s: %w", keyFile, err)
 	}
-	hostKeyCallback, err := defaultHostKeyCallback()
+	hostKeyCallback, err := defaultHostKeyCallback(knownHostsFile)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +86,10 @@ func realSFTPDial(ctx context.Context, host, user, keyFile string, port int) (sf
 // defaultHostKeyCallback requires the server key to be present in the
 // operator's standard OpenSSH known_hosts file. The endpoint being configured
 // is not itself proof of the remote host's identity.
-func defaultHostKeyCallback() (ssh.HostKeyCallback, error) {
+func defaultHostKeyCallback(path string) (ssh.HostKeyCallback, error) {
+	if path != "" {
+		return hostKeyCallback(path)
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve home directory for SSH known_hosts: %w", err)

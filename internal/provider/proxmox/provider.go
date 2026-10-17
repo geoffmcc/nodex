@@ -38,11 +38,12 @@ func init() {
 type Provider struct {
 	client *client.Client
 
-	sshHost    string
-	sshUser    string
-	sshKeyFile string
-	sshPort    int
-	sftpDial   sftpDialer
+	sshHost           string
+	sshUser           string
+	sshKeyFile        string
+	sshPort           int
+	sshKnownHostsFile string
+	sftpDial          sftpDialer
 }
 
 // SetSSHConfig configures SSH transfer settings (e.g. SFTP storage download).
@@ -52,9 +53,11 @@ func (p *Provider) SetSSHConfig(host, user, keyFile string, port int) {
 	p.sshUser = user
 	p.sshKeyFile = keyFile
 	p.sshPort = port
-	if p.sftpDial == nil {
-		p.sftpDial = realSFTPDial
-	}
+}
+
+// SetSSHKnownHostsFile configures the pinned host-key file for SFTP transfers.
+func (p *Provider) SetSSHKnownHostsFile(path string) {
+	p.sshKnownHostsFile = path
 }
 
 // Name returns "proxmox".
@@ -2398,7 +2401,13 @@ func (p *Provider) DownloadContentBody(ctx context.Context, node, storage, volum
 	}
 	dial := p.sftpDial
 	if dial == nil {
-		dial = realSFTPDial
+		if p.sshKnownHostsFile == "" {
+			dial = realSFTPDial
+		} else {
+			dial = func(ctx context.Context, host, user, keyFile string, port int) (sftpClient, error) {
+				return realSFTPDialWithKnownHosts(ctx, host, user, keyFile, port, p.sshKnownHostsFile)
+			}
+		}
 	}
 	return downloadViaSFTP(ctx, host, p.sshUser, p.sshKeyFile, port, remotePath, w, dial)
 }

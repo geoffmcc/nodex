@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/pathvalidate"
@@ -584,6 +585,13 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 	if err != nil {
 		return err
 	}
+	profileName, err := resolveProfileName(cmdCtx)
+	if err != nil {
+		return err
+	}
+	if err := configureStorageDownloadSSH(prov, profileName, node); err != nil {
+		return err
+	}
 
 	// Write to a temporary file in the destination directory, then atomically rename.
 	// This ensures no partial or corrupt file is left at the final path.
@@ -644,6 +652,86 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		Destination: cleaned,
 		SizeBytes:   sizeBytes,
 	})
+}
+
+// configureStorageDownloadSSH uses an explicitly profile-bound PVE inventory
+// host when the selected profile omits SSH transfer settings. This keeps the
+// inventory as the source of its enrolled host's SSH identity instead of
+// requiring the same user and key to be copied into the profile.
+func configureStorageDownloadSSH(prov domain.Provider, profileName, node string) error {
+	sshConfig, ok := prov.(interface {
+		SetSSHConfig(host, user, keyFile string, port int)
+	})
+	if !ok {
+		return nil
+	}
+	cfg, err := config.Read()
+	if err != nil {
+		return err
+	}
+	settings, found, err := storageDownloadSSHFromInventory(cfg, profileName, node)
+	if err != nil || !found {
+		return err
+	}
+	sshConfig.SetSSHConfig(settings.Host, settings.User, settings.KeyFile, settings.Port)
+	if settings.KnownHostsFile != "" {
+		if knownHosts, ok := prov.(interface{ SetSSHKnownHostsFile(string) }); ok {
+			knownHosts.SetSSHKnownHostsFile(settings.KnownHostsFile)
+		}
+	}
+	return nil
+}
+
+type storageDownloadSSHSettings struct {
+	Host, User, KeyFile, KnownHostsFile string
+	Port                                int
+}
+
+func storageDownloadSSHFromInventory(cfg *config.Config, profileName, node string) (storageDownloadSSHSettings, bool, error) {
+	if cfg == nil {
+		return storageDownloadSSHSettings{}, false, nil
+	}
+	profile, ok := cfg.Profiles[profileName]
+	if !ok || (profile.SSHUser != "" && profile.SSHKeyFile != "") || cfg.Inventory == nil {
+		return storageDownloadSSHSettings{}, false, nil
+	}
+	var match *config.InventoryHost
+	for _, host := range cfg.Inventory.Hosts {
+		if host.Role != config.RolePVE || host.PVENode != node || !inventoryHostBoundToProfile(cfg, host, profileName) {
+			continue
+		}
+		if match != nil {
+			return storageDownloadSSHSettings{}, false, app.NewExitError(
+				fmt.Errorf("storage download SSH settings are ambiguous: multiple inventory hosts match PVE node %q and profile %q", node, profileName),
+				app.ExitConfig,
+			)
+		}
+		copy := host
+		match = &copy
+	}
+	if match == nil {
+		return storageDownloadSSHSettings{}, false, nil
+	}
+	settings := storageDownloadSSHSettings{
+		Host:           profile.SSHHost,
+		User:           profile.SSHUser,
+		KeyFile:        profile.SSHKeyFile,
+		KnownHostsFile: match.KnownHostsFile,
+		Port:           profile.SSHPort,
+	}
+	if settings.Host == "" {
+		settings.Host = match.Address
+	}
+	if settings.User == "" {
+		settings.User = match.SSHUser
+	}
+	if settings.KeyFile == "" {
+		settings.KeyFile = match.SSHKeyFile
+	}
+	if settings.Port == 0 {
+		settings.Port = match.SSHPort
+	}
+	return settings, true, nil
 }
 
 // storageDownloadResult is the structured form of `storage download`. The
