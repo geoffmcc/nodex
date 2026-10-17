@@ -5,7 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/geoffmcc/nodex/internal/app"
@@ -120,6 +125,7 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilityNodeDetail,
 		domain.CapabilityFirewallAdvanced,
 		domain.CapabilityHAStatus,
+		domain.CapabilityHAMutations,
 		domain.CapabilityBackupContent,
 		domain.CapabilitySDN,
 		domain.CapabilitySnapshotDetail,
@@ -156,23 +162,153 @@ func (p *Provider) ClusterInit(ctx context.Context, params domain.ClusterInitPar
 	if p.client == nil {
 		return "", errors.New(errNotConnected)
 	}
+	// Proxmox rejects cluster creation through API-token authentication even
+	// when the token belongs to root@pam. When profile SSH is configured, use
+	// the root SSH identity instead; this also matches the authentication path
+	// used by ClusterJoin.
+	if p.sshHost != "" || p.sshKeyFile != "" || p.sshUser != "" {
+		return "", p.clusterInitSSH(ctx, params)
+	}
 	return p.client.CreateCluster(ctx, client.ClusterInitRequest{
 		ClusterName: params.Name,
 		Link0:       params.BindAddress,
 	})
 }
 
-// ClusterJoin performs the validated, fail-closed join preflight. It never
-// sends a join request because the PVE API requires an unavailable secret.
+func (p *Provider) clusterInitSSH(ctx context.Context, params domain.ClusterInitParams) error {
+	if !clusterNamePattern.MatchString(params.Name) {
+		return errors.New("cluster name must contain only letters, digits, dots, and hyphens")
+	}
+	if p.sshHost == "" || !safeSSHUser(p.sshUser) || p.sshKeyFile == "" {
+		return errors.New("cluster init over SSH requires profile SSH host, user, and key file")
+	}
+	if err := credentials.CheckSecretFilePermissions(p.sshKeyFile); err != nil {
+		return fmt.Errorf("insecure SSH key permissions: %w", err)
+	}
+	if !safeSSHHost(p.sshHost) || !safeClusterNodeAddress(params.BindAddress) {
+		return errors.New("cluster init SSH host or bind address contains unsupported characters")
+	}
+	knownHosts := p.sshKnownHostsFile
+	if knownHosts == "" {
+		if home, homeErr := os.UserHomeDir(); homeErr == nil {
+			knownHosts = filepath.Join(home, ".ssh", "known_hosts")
+		}
+	}
+	args := buildClusterInitSSHArgs(p.sshHost, p.sshUser, p.sshKeyFile, p.sshPort, knownHosts, params.Name, params.BindAddress)
+	sshPath, err := exec.LookPath("ssh")
+	if err != nil {
+		return fmt.Errorf("cluster init requires the OpenSSH client: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, sshPath, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("run pvecm create on seed node: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+var clusterNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$`)
+
+func buildClusterInitSSHArgs(host, user, keyFile string, port int, knownHosts, name, bindAddress string) []string {
+	if port < 1 || port > 65535 {
+		port = 22
+	}
+	args := []string{"-T", "-i", keyFile, "-p", fmt.Sprint(port), "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes"}
+	if knownHosts != "" {
+		args = append(args, "-o", "UserKnownHostsFile="+knownHosts)
+	}
+	remote := "pvecm create " + shellQuote(name) + " --link0 " + shellQuote(bindAddress)
+	return append(args, user+"@"+host, remote)
+}
+
+// ClusterJoin runs pvecm add on the joining node over the profile's pinned SSH
+// connection. PVE's SSH join path lets Nodex forward an operator-loaded agent
+// without accepting or copying the peer root password/private key.
 func (p *Provider) ClusterJoin(ctx context.Context, params domain.ClusterJoinParams) (string, error) {
 	if p.client == nil {
 		return "", errors.New(errNotConnected)
 	}
-	return p.client.JoinCluster(ctx, client.ClusterJoinRequest{
-		Hostname:    params.NodeAddress,
-		Fingerprint: params.Fingerprint,
-	})
+	if strings.TrimSpace(params.NodeAddress) == "" {
+		return "", errors.New("cluster join node address is required")
+	}
+	if !clusterJoinFingerprintPattern.MatchString(params.Fingerprint) {
+		return "", errors.New("cluster join fingerprint must be a SHA-256 fingerprint in colon-separated form")
+	}
+	if p.sshHost == "" || !safeSSHUser(p.sshUser) || p.sshKeyFile == "" {
+		return "", errors.New("cluster join requires profile SSH host, user, and key file")
+	}
+	if err := credentials.CheckSecretFilePermissions(p.sshKeyFile); err != nil {
+		return "", fmt.Errorf("insecure SSH key permissions: %w", err)
+	}
+	if !safeSSHHost(p.sshHost) || !safeClusterNodeAddress(params.NodeAddress) {
+		return "", errors.New("cluster join host or peer address contains unsupported characters")
+	}
+	knownHosts := p.sshKnownHostsFile
+	if knownHosts == "" {
+		if home, homeErr := os.UserHomeDir(); homeErr == nil {
+			knownHosts = filepath.Join(home, ".ssh", "known_hosts")
+		}
+	}
+	args := buildClusterJoinSSHArgs(p.sshHost, p.sshUser, p.sshKeyFile, p.sshPort, knownHosts, params.NodeAddress, params.Fingerprint, os.Getenv("SSH_AUTH_SOCK") != "")
+	sshPath, err := exec.LookPath("ssh")
+	if err != nil {
+		return "", fmt.Errorf("cluster join requires the OpenSSH client: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, sshPath, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("run pvecm add on joining node: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return "", nil
 }
+
+var clusterJoinFingerprintPattern = regexp.MustCompile(`^(?:[A-Fa-f0-9]{2}:){31}[A-Fa-f0-9]{2}$`)
+
+func buildClusterJoinSSHArgs(host, user, keyFile string, port int, knownHosts, peer, fingerprint string, forwardAgent bool) []string {
+	if port < 1 || port > 65535 {
+		port = 22
+	}
+	args := []string{"-T", "-i", keyFile, "-p", fmt.Sprint(port), "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes"}
+	if forwardAgent {
+		args = append(args, "-A", "-o", "ForwardAgent=yes")
+	}
+	if knownHosts != "" {
+		args = append(args, "-o", "UserKnownHostsFile="+knownHosts)
+	}
+	remote := "pvecm add " + shellQuote(peer) + " --fingerprint " + shellQuote(fingerprint) + " --use_ssh 1"
+	return append(args, user+"@"+host, remote)
+}
+
+func safeSSHHost(host string) bool {
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	for _, r := range host {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+func safeClusterNodeAddress(host string) bool { return safeSSHHost(host) }
+
+func safeSSHUser(user string) bool {
+	if user == "" {
+		return false
+	}
+	for i, r := range user {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == '_' || i > 0 && (r >= '0' && r <= '9' || r == '-')) {
+			return false
+		}
+	}
+	return true
+}
+
+func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 
 // VMConsole opens an interactive QEMU serial console.
 func (p *Provider) VMConsole(ctx context.Context, node string, vmid int, in io.Reader, out io.Writer) error {
@@ -962,6 +1098,8 @@ func (p *Provider) FirewallRules(ctx context.Context) ([]domain.FirewallRule, er
 			ICMPType: item.ICMPType,
 			Log:      item.Log,
 			Comment:  item.Comment,
+			IFace:    item.IFace,
+			Macro:    item.Macro,
 		})
 	}
 	return result, nil
@@ -988,6 +1126,62 @@ func (p *Provider) HAResources(ctx context.Context) ([]domain.HAResource, error)
 		})
 	}
 	return result, nil
+}
+
+// HAResourceAdd enrolls a guest in HA and confirms it appears in configuration.
+func (p *Provider) HAResourceAdd(ctx context.Context, id, state string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	if err := p.client.AddHAResource(ctx, id, state); err != nil {
+		return fmt.Errorf("add HA resource %q: %w", id, err)
+	}
+	return p.verifyHAResourceState(ctx, id, "HA resource add", func(item client.HAResourceItem) bool { return item.State == state })
+}
+
+func (p *Provider) HAResourceSetState(ctx context.Context, id, state string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	if err := p.client.SetHAResourceState(ctx, id, state); err != nil {
+		return fmt.Errorf("set HA resource %q state: %w", id, err)
+	}
+	return p.verifyHAResourceState(ctx, id, "HA resource state update", func(item client.HAResourceItem) bool { return item.State == state })
+}
+
+func (p *Provider) HAResourceRemove(ctx context.Context, id string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	if err := p.client.RemoveHAResource(ctx, id); err != nil {
+		return fmt.Errorf("remove HA resource %q: %w", id, err)
+	}
+	items, err := p.client.GetHAResources(ctx)
+	if err != nil {
+		return fmt.Errorf("remove HA resource %q succeeded but readback failed: %w", id, err)
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return fmt.Errorf("remove HA resource %q returned success but it remains in configuration", id)
+		}
+	}
+	return nil
+}
+
+func (p *Provider) verifyHAResourceState(ctx context.Context, id, operation string, match func(client.HAResourceItem) bool) error {
+	items, err := p.client.GetHAResources(ctx)
+	if err != nil {
+		return fmt.Errorf("%s succeeded but readback failed: %w", operation, err)
+	}
+	for _, item := range items {
+		if item.ID == id {
+			if match(item) {
+				return nil
+			}
+			return fmt.Errorf("%s returned success but the requested HA state was not observed", operation)
+		}
+	}
+	return fmt.Errorf("%s returned success but resource %q is absent from configuration", operation, id)
 }
 
 // HAGroups returns HA groups.
@@ -1161,6 +1355,19 @@ func (p *Provider) NodeDNS(ctx context.Context, node string) (*domain.NodeDNS, e
 		DNS2:         data.DNS2,
 		SearchDomain: data.SearchDomain,
 	}, nil
+}
+
+// SetNodeDNS updates resolver settings on one Proxmox node.
+func (p *Provider) SetNodeDNS(ctx context.Context, node string, dns *domain.NodeDNS) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	if dns == nil {
+		return errors.New("node DNS settings are required")
+	}
+	return p.client.SetNodeDNS(ctx, node, client.NodeDNSData{
+		DNS1: dns.DNS1, DNS2: dns.DNS2, SearchDomain: dns.SearchDomain,
+	})
 }
 
 // NodeTime returns time configuration for a specific node.
@@ -1400,6 +1607,8 @@ func (p *Provider) NodeFirewallRules(ctx context.Context, node string) ([]domain
 			ICMPType: item.ICMPType,
 			Log:      item.Log,
 			Comment:  item.Comment,
+			IFace:    item.IFace,
+			Macro:    item.Macro,
 		})
 	}
 	return result, nil
@@ -1429,6 +1638,8 @@ func (p *Provider) VMFirewallRules(ctx context.Context, node string, vmid int) (
 			ICMPType: item.ICMPType,
 			Log:      item.Log,
 			Comment:  item.Comment,
+			IFace:    item.IFace,
+			Macro:    item.Macro,
 		})
 	}
 	return result, nil
@@ -2540,6 +2751,8 @@ func (p *Provider) CreateFirewallRule(ctx context.Context, rule domain.FirewallR
 		ICMPType: item.ICMPType,
 		Log:      item.Log,
 		Comment:  item.Comment,
+		IFace:    item.IFace,
+		Macro:    item.Macro,
 	}, nil
 }
 
@@ -2578,6 +2791,8 @@ func (p *Provider) CreateNodeFirewallRule(ctx context.Context, node string, rule
 		ICMPType: item.ICMPType,
 		Log:      item.Log,
 		Comment:  item.Comment,
+		IFace:    item.IFace,
+		Macro:    item.Macro,
 	}, nil
 }
 
@@ -2616,6 +2831,8 @@ func (p *Provider) CreateVMFirewallRule(ctx context.Context, node string, vmid i
 		ICMPType: item.ICMPType,
 		Log:      item.Log,
 		Comment:  item.Comment,
+		IFace:    item.IFace,
+		Macro:    item.Macro,
 	}, nil
 }
 
@@ -2927,23 +3144,31 @@ func (p *Provider) AddACL(ctx context.Context, path, role, user, group string, p
 	return p.client.AddACL(ctx, path, role, user, group, propagate)
 }
 
+func (p *Provider) RemoveACL(ctx context.Context, path, role, user, group string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	return p.client.RemoveACL(ctx, path, role, user, group)
+}
+
 // firewallRuleInputToRequest converts a domain.FirewallRuleCreateInput to a client request.
 func firewallRuleInputToRequest(input domain.FirewallRuleCreateInput) client.FirewallRuleCreateRequest {
 	return client.FirewallRuleCreateRequest{
-		Type:     input.Type,
-		Action:   input.Action,
-		Enable:   input.Enable,
-		Pos:      input.Pos,
-		Proto:    input.Proto,
-		Dest:     input.Dest,
-		Dport:    input.Dport,
-		Source:   input.Source,
-		Sport:    input.Sport,
-		ICMPType: input.ICMPType,
-		Log:      input.Log,
-		Comment:  input.Comment,
-		IFace:    input.IFace,
-		Macro:    input.Macro,
+		Type:      input.Type,
+		Action:    input.Action,
+		Enable:    input.Enable,
+		EnableSet: input.EnableSet,
+		Pos:       input.Pos,
+		Proto:     input.Proto,
+		Dest:      input.Dest,
+		Dport:     input.Dport,
+		Source:    input.Source,
+		Sport:     input.Sport,
+		ICMPType:  input.ICMPType,
+		Log:       input.Log,
+		Comment:   input.Comment,
+		IFace:     input.IFace,
+		Macro:     input.Macro,
 	}
 }
 
