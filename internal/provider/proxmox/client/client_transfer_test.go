@@ -295,6 +295,7 @@ func TestNormalizeDiskImageFilename(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer f.Close()
 			if _, err := f.Write(tt.data); err != nil {
 				t.Fatal(err)
 			}
