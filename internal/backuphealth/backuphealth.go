@@ -183,18 +183,25 @@ func (s *Service) CheckEnvironmentBackupHealth(ctx context.Context, req Request)
 		record(Check{Name: "pve_reachable", Status: StatusHealthy})
 	}
 
+	// A standalone PVE installation can provide backup evidence through native
+	// vzdump archives. In that case PBS checks are not applicable; evaluate the
+	// PVE backup storage and archives below instead.
+	nativePVEBackups := pveUp && s.PBS == nil
+
 	// --- PBS reachability ---
 	pbsUp := false
-	if s.PBS == nil {
+	if s.PBS == nil && !nativePVEBackups {
 		record(Check{Name: "pbs_reachable", Status: StatusUnsupported, Detail: "no pbs_profile configured"})
-	} else if err := s.PBS.Health(ctx); err != nil {
-		record(Check{Name: "pbs_reachable", Status: StatusBlocked, Detail: err.Error()})
-		maintenanceUnsafe("PBS is unreachable")
-		res.PartialFailure = true
-		res.Errors = append(res.Errors, fmt.Sprintf("pbs_reachable: %v", err))
-	} else {
-		pbsUp = true
-		record(Check{Name: "pbs_reachable", Status: StatusHealthy})
+	} else if s.PBS != nil {
+		if err := s.PBS.Health(ctx); err != nil {
+			record(Check{Name: "pbs_reachable", Status: StatusBlocked, Detail: err.Error()})
+			maintenanceUnsafe("PBS is unreachable")
+			res.PartialFailure = true
+			res.Errors = append(res.Errors, fmt.Sprintf("pbs_reachable: %v", err))
+		} else {
+			pbsUp = true
+			record(Check{Name: "pbs_reachable", Status: StatusHealthy})
+		}
 	}
 
 	// --- Datastores ---
@@ -262,9 +269,16 @@ func (s *Service) CheckEnvironmentBackupHealth(ctx context.Context, req Request)
 	if pveUp {
 		record(s.checkPVEBackupTasks(ctx, now, retrievalError))
 	}
+	if nativePVEBackups {
+		if req.IncludeGuests {
+			s.checkPVEBackupCoverage(ctx, req, now, res, record, maintenanceUnsafe, retrievalError)
+		} else {
+			record(Check{Name: "backup_backend", Status: StatusHealthy, Detail: "using native PVE backup storage; guest coverage not requested"})
+		}
+	}
 
 	// --- Guest coverage ---
-	if req.IncludeGuests {
+	if req.IncludeGuests && !nativePVEBackups {
 		s.checkGuestCoverage(ctx, req, now, datastores, res, record, maintenanceUnsafe, retrievalError)
 	}
 
@@ -274,6 +288,185 @@ func (s *Service) CheckEnvironmentBackupHealth(ctx context.Context, req Request)
 	res.MaintenanceSafe = res.Overall == StatusHealthy && len(res.Blockers) == 0 && !res.PartialFailure
 	sort.Strings(res.Blockers)
 	return res, nil
+}
+
+// checkPVEBackupCoverage verifies recent native vzdump archives on PVE backup
+// storages. Native archives do not expose PBS verification state, so this
+// check relies on archive age, storage health/capacity, and PVE task history.
+func (s *Service) checkPVEBackupCoverage(
+	ctx context.Context,
+	req Request,
+	now time.Time,
+	res *Result,
+	record func(Check),
+	unsafe func(string),
+	retrievalError func(string, error) Check,
+) {
+	vi, okVM := s.PVE.(domain.VMInspector)
+	ci, okCT := s.PVE.(domain.ContainerInspector)
+	si, okStorage := s.PVE.(domain.StorageInspector)
+	bi, okBackup := s.PVE.(domain.BackupProvider)
+	if !okVM || !okCT || !okStorage || !okBackup {
+		record(Check{Name: "guest_backup_coverage", Status: StatusUnsupported, Detail: "PVE provider does not expose guests, backup storage, and backup archives"})
+		unsafe("native PVE backup evidence unsupported")
+		return
+	}
+	vms, err := vi.VMs(ctx)
+	if err != nil {
+		record(retrievalError("guest_backup_coverage", err))
+		unsafe("guest list unknown")
+		return
+	}
+	cts, err := ci.Containers(ctx)
+	if err != nil {
+		record(retrievalError("guest_backup_coverage", err))
+		unsafe("guest list unknown")
+		return
+	}
+	storages, err := si.Storage(ctx)
+	if err != nil {
+		record(retrievalError("pve_backup_storages", err))
+		unsafe("PVE backup storage state unknown")
+		return
+	}
+
+	type archive struct {
+		storage string
+		item    domain.BackupContentItem
+	}
+	newest := map[int]archive{}
+	var stores []domain.Storage
+	for _, st := range storages {
+		if (st.Status != "active" && st.Status != "available") || !contains(st.Content, "backup") {
+			continue
+		}
+		stores = append(stores, st)
+		node := st.Node
+		if node == "" {
+			nodeInspector, ok := s.PVE.(domain.NodeInspector)
+			if !ok {
+				record(Check{Name: "pve_backup_storages", Status: StatusUnsupported, Detail: "provider cannot identify the node for shared backup storage"})
+				unsafe("PVE backup storage node unsupported")
+				return
+			}
+			nodes, nodeErr := nodeInspector.Nodes(ctx)
+			if nodeErr != nil {
+				record(retrievalError("pve_backup_storages", nodeErr))
+				unsafe("PVE backup storage nodes unknown")
+				return
+			}
+			if len(nodes) != 1 {
+				record(Check{Name: "pve_backup_storages", Status: StatusUnknown, Detail: "shared backup storage requires an explicit node"})
+				unsafe("PVE backup storage node ambiguous")
+				return
+			}
+			node = nodes[0].Name
+		}
+		items, listErr := bi.BackupContent(ctx, node, st.Name)
+		if listErr != nil {
+			res.PartialFailure = true
+			res.Errors = append(res.Errors, fmt.Sprintf("backup content %s: %v", st.Name, listErr))
+			continue
+		}
+		for _, item := range items {
+			if item.Content != "backup" || item.VMID <= 0 || item.Ctime <= 0 {
+				continue
+			}
+			if old, exists := newest[item.VMID]; !exists || item.Ctime > old.item.Ctime {
+				newest[item.VMID] = archive{storage: st.Name, item: item}
+			}
+		}
+	}
+	if len(stores) == 0 {
+		record(Check{Name: "pve_backup_storages", Status: StatusBlocked, Detail: "no active PVE storage configured for backup content"})
+		unsafe("no active PVE backup storage")
+	} else {
+		record(checkPVEBackupStorageCapacity(stores, req.Thresholds, unsafe))
+	}
+
+	excluded := map[int]bool{}
+	for _, id := range req.ExcludeGuests {
+		excluded[id] = true
+	}
+	coverage := StatusHealthy
+	evaluate := func(id, name, guestType, node string) {
+		vmid := parseVMID(id)
+		if vmid <= 0 || excluded[vmid] {
+			return
+		}
+		g := GuestCoverage{VMID: vmid, Name: name, Type: guestType, Node: node, Status: StatusHealthy, Verification: "none"}
+		found, ok := newest[vmid]
+		if !ok {
+			g.Status = StatusBlocked
+			g.Detail = "no native PVE backup found"
+			unsafe(fmt.Sprintf("guest %d (%s) has no native PVE backup", vmid, name))
+		} else {
+			g.NewestBackup = int64(found.item.Ctime)
+			g.Datastore = found.storage
+			g.AgeHours = int64(now.Sub(time.Unix(g.NewestBackup, 0)).Hours())
+			if g.AgeHours < 0 {
+				g.Status = StatusUnknown
+				g.Detail = "backup timestamp is in the future"
+				unsafe(fmt.Sprintf("guest %d (%s) backup timestamp is invalid", vmid, name))
+			} else if time.Duration(g.AgeHours)*time.Hour > req.Thresholds.BackupMaxAge {
+				g.Status = StatusWarning
+				g.Detail = fmt.Sprintf("newest native PVE backup is %dh old (threshold %dh); PBS verification is unavailable", g.AgeHours, int64(req.Thresholds.BackupMaxAge.Hours()))
+				unsafe(fmt.Sprintf("guest %d (%s) native PVE backup is stale (%dh)", vmid, name, g.AgeHours))
+			} else {
+				g.Detail = "recent native PVE backup; PBS verification unavailable"
+			}
+		}
+		coverage = worse(coverage, g.Status)
+		res.Guests = append(res.Guests, g)
+	}
+	for _, vm := range vms {
+		if vm.Template {
+			continue
+		}
+		evaluate(vm.ID, vm.Name, "vm", vm.Node)
+	}
+	for _, ct := range cts {
+		evaluate(ct.ID, ct.Name, "ct", ct.Node)
+	}
+	sort.Slice(res.Guests, func(i, j int) bool { return res.Guests[i].VMID < res.Guests[j].VMID })
+	if res.PartialFailure {
+		coverage = worse(coverage, StatusUnknown)
+	}
+	record(Check{Name: "guest_backup_coverage", Status: coverage, Detail: fmt.Sprintf("%d protected guest(s) evaluated using native PVE archives", len(res.Guests))})
+	record(Check{Name: "backup_backend", Status: StatusHealthy, Detail: "native PVE backup archives; PBS verification is unavailable"})
+}
+
+func checkPVEBackupStorageCapacity(stores []domain.Storage, t Thresholds, unsafe func(string)) Check {
+	status := StatusHealthy
+	var details []string
+	for _, st := range stores {
+		switch {
+		case st.Total <= 0 || st.Used < 0 || st.Used > st.Total:
+			status = worse(status, StatusUnknown)
+			details = append(details, fmt.Sprintf("%s: capacity unavailable or invalid", st.Name))
+			unsafe(fmt.Sprintf("PVE backup storage %q capacity unknown", st.Name))
+		default:
+			usedPct := int(st.Used * 100 / st.Total)
+			if usedPct >= t.DatastoreBlockPercent {
+				status = worse(status, StatusBlocked)
+				details = append(details, fmt.Sprintf("%s: %d%% used (block threshold %d%%)", st.Name, usedPct, t.DatastoreBlockPercent))
+				unsafe(fmt.Sprintf("PVE backup storage %q at %d%% capacity", st.Name, usedPct))
+			} else if usedPct >= t.DatastoreWarnPercent {
+				status = worse(status, StatusWarning)
+				details = append(details, fmt.Sprintf("%s: %d%% used (warn threshold %d%%)", st.Name, usedPct, t.DatastoreWarnPercent))
+			}
+		}
+	}
+	return Check{Name: "pve_backup_storages", Status: status, Detail: strings.Join(details, "; ")}
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // checkDatastores evaluates availability and capacity.
@@ -547,6 +740,9 @@ func (s *Service) checkGuestCoverage(
 	}
 
 	for _, vm := range vms {
+		if vm.Template {
+			continue
+		}
 		evaluate("vm", vm.ID, vm.Name, vm.Node)
 	}
 	for _, ct := range cts {

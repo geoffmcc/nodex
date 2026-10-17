@@ -32,6 +32,9 @@ type fakePVE struct {
 	cts       []domain.Container
 	tasks     []domain.Task
 	tasksErr  error
+	storages  []domain.Storage
+	backups   map[string][]domain.BackupContentItem
+	backupErr error
 }
 
 func (f *fakePVE) Name() string                                               { return "proxmox" }
@@ -56,6 +59,16 @@ func (f *fakePVE) VMConfig(context.Context, string, int) (map[string]interface{}
 }
 func (f *fakePVE) ContainerConfig(context.Context, string, int) (map[string]interface{}, error) {
 	return nil, errors.New("not implemented")
+}
+func (f *fakePVE) Storage(context.Context) ([]domain.Storage, error) { return f.storages, nil }
+func (f *fakePVE) StorageContent(context.Context, string, string) ([]domain.StorageContentItem, error) {
+	return nil, errors.New("not implemented")
+}
+func (f *fakePVE) BackupContent(_ context.Context, node, storage string) ([]domain.BackupContentItem, error) {
+	if f.backupErr != nil {
+		return nil, f.backupErr
+	}
+	return f.backups[node+"|"+storage], nil
 }
 
 // fakePBS implements domain.Provider + PBSDatastoreInspector +
@@ -115,7 +128,7 @@ func (f *fakePBS) PBSTaskLog(context.Context, string) ([]domain.PBSTaskLogLine, 
 
 func healthyFakes() (*fakePVE, *fakePBS) {
 	pve := &fakePVE{
-		vms: []domain.VM{{ID: "pve1/100", Name: "web", Node: "pve1"}},
+		vms: []domain.VM{{ID: "pve1/100", Name: "web", Node: "pve1"}, {ID: "pve1/999", Name: "template", Node: "pve1", Template: true}},
 		cts: []domain.Container{{ID: "pve1/200", Name: "db", Node: "pve1"}},
 	}
 	pbs := &fakePBS{
@@ -430,6 +443,50 @@ func TestPBSOnlyEnvironment(t *testing.T) {
 	}
 	if res.MaintenanceSafe {
 		t.Error("unsupported environment checks must not be safe for maintenance")
+	}
+}
+
+func TestNativePVEBackupEnvironmentWithoutPBS(t *testing.T) {
+	pve := &fakePVE{
+		vms:      []domain.VM{{ID: "pve1/100", Name: "web", Node: "pve1"}, {ID: "pve1/999", Name: "template", Node: "pve1", Template: true}},
+		cts:      []domain.Container{{ID: "pve1/200", Name: "db", Node: "pve1"}},
+		storages: []domain.Storage{{Name: "local", Node: "pve1", Status: "available", Content: []string{"backup"}, Total: 1000, Used: 400}},
+		backups: map[string][]domain.BackupContentItem{
+			"pve1|local": {
+				{Content: "backup", VMID: 100, Subtype: "qemu", Ctime: int(hoursAgo(5))},
+				{Content: "backup", VMID: 200, Subtype: "lxc", Ctime: int(hoursAgo(6))},
+			},
+		},
+	}
+	res := run(t, pve, nil, nil)
+	if res.Overall != StatusHealthy || !res.MaintenanceSafe {
+		t.Fatalf("native PVE backups should allow maintenance: overall=%s safe=%t blockers=%v checks=%+v", res.Overall, res.MaintenanceSafe, res.Blockers, res.Checks)
+	}
+	if len(res.Guests) != 2 {
+		t.Fatalf("expected two covered guests, got %+v", res.Guests)
+	}
+	for _, guest := range res.Guests {
+		if guest.Status != StatusHealthy || guest.Verification != "none" {
+			t.Errorf("guest backup evidence = %+v; want recent native backup without claiming PBS verification", guest)
+		}
+		if guest.Node != "pve1" {
+			t.Errorf("guest node = %q; want pve1", guest.Node)
+		}
+	}
+	if c := findCheck(t, res, "backup_backend"); c.Status != StatusHealthy || !strings.Contains(c.Detail, "verification is unavailable") {
+		t.Errorf("backup backend check = %+v", c)
+	}
+}
+
+func TestNativePVEBackupMissingArchiveBlocks(t *testing.T) {
+	pve := &fakePVE{
+		vms:      []domain.VM{{ID: "pve1/100", Name: "web", Node: "pve1"}},
+		storages: []domain.Storage{{Name: "local", Node: "pve1", Status: "active", Content: []string{"backup"}, Total: 1000, Used: 400}},
+		backups:  map[string][]domain.BackupContentItem{},
+	}
+	res := run(t, pve, nil, nil)
+	if res.MaintenanceSafe || findCheck(t, res, "guest_backup_coverage").Status != StatusBlocked {
+		t.Fatalf("missing native archive should block maintenance: safe=%t checks=%+v", res.MaintenanceSafe, res.Checks)
 	}
 }
 
