@@ -180,7 +180,7 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops,
 		OperationMeta{Path: "monitor targets", Description: "List configured monitoring targets", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMonitorTargets"},
 		OperationMeta{Path: "monitor check", Description: "Check configured monitoring targets", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMonitorCheck"},
-		OperationMeta{Path: "certification run", Description: "Run an opt-in disposable certification transaction", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the certification ledger entry ID, which selects the entry to act on", Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertification"},
+		OperationMeta{Path: "certification run", Description: "Run an opt-in disposable certification transaction", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the exact certification VM name supplied with --name", Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertification"},
 		OperationMeta{Path: "certification cleanup", Description: "Recover pending certification cleanup", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the certification ledger entry ID, matched against entries in the certification ledger", Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationCleanup"},
 		OperationMeta{Path: "certification report", Description: "Show the sanitized certification ledger", Inspection: true, Scope: ScopeCert, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationReport"},
 	)
@@ -238,7 +238,7 @@ func buildRegistry() []OperationMeta {
 		OutputModes: []string{"json"}, HandlerFunc: "runProfileExport",
 	})
 	ops = append(ops, OperationMeta{
-		Path: "profile import", Description: "Import a profile from stdin",
+		Path: "profile import", Description: "Import a profile from stdin into an initialized NodeX config (run `nodex init` first)",
 		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
 		OutputModes: []string{"table"}, HandlerFunc: "runProfileImport",
 	})
@@ -465,8 +465,8 @@ func buildRegistry() []OperationMeta {
 		{"container start", "Start a container"},
 		{"container stop", "Stop a container (force)"},
 		{"container shutdown", "Graceful container shutdown"},
-		{"container suspend", "Suspend a container (Proxmox LXC checkpoint support is experimental)"},
-		{"container resume", "Resume a suspended container"},
+		{"container suspend", "Experimental: suspend a container using Proxmox LXC/CRIU checkpoint support"},
+		{"container resume", "Experimental: resume a suspended container using Proxmox LXC/CRIU checkpoint support"},
 	}
 	for _, v := range ctLifecycleReversible {
 		ops = append(ops, OperationMeta{
@@ -538,7 +538,7 @@ func buildRegistry() []OperationMeta {
 		{"container template", "Convert container to template", "TemplateProvider", "runCTTemplate", []RiskDimension{RiskDataLoss}},
 		{"container migrate", "Migrate container to another node", "MigrationProvider", "runCTMigrate", []RiskDimension{RiskServiceDown}},
 		{"container clone", "Clone a container", "CloneProvider", "runCTClone", nil},
-		{"container create", "Create an unprivileged container with a login-ready /dev/console; networking is optional via --net0 and nesting can be enabled for guests that require it", "ContainerCreateProvider", "runCTCreate", nil},
+		{"container create", "Create an unprivileged container with /dev/console; some systemd guests need --nesting 1 for getty to provide a login prompt, and nesting expands procfs/sysfs access", "ContainerCreateProvider", "runCTCreate", nil},
 		{"container restore", "Restore a container from a backup archive", "ContainerRestoreProvider", "runCTRestore", nil},
 	}
 	for _, v := range ctDisruptive {
@@ -1388,7 +1388,7 @@ func collectCommandPaths(cmds map[string]*command, prefix string) []string {
 var knownDispatchCommands = map[string][]string{
 	"ha resource":        {"ha resource add", "ha resource state", "ha resource remove"},
 	"maintenance policy": {"maintenance policy plan", "maintenance policy apply", "maintenance policy restore"},
-	"agent receipt":      {"agent receipt list", "agent receipt show", "agent receipt refresh", "agent receipt reconcile"},
+	"agent receipt":      {"agent receipt list", "agent receipt show", "agent receipt delete", "agent receipt refresh", "agent receipt reconcile"},
 	"vm snapshot":        {"vm snapshot create", "vm snapshot delete", "vm snapshot rollback"},
 	"container snapshot": {"container snapshot create", "container snapshot delete", "container snapshot rollback"},
 	"vm disk":            {"vm disk resize", "vm disk move"},
@@ -1414,7 +1414,7 @@ var knownDispatchCommands = map[string][]string{
 	"access tokens":      {"access tokens list"},
 
 	// PBS dispatchers.
-	"pbs datastore":          {"pbs datastore list", "pbs datastore show"},
+	"pbs datastore":          {"pbs datastore list", "pbs datastore show", "pbs datastore create"},
 	"pbs snapshot":           {"pbs snapshot list"},
 	"pbs task":               {"pbs task list", "pbs task show", "pbs task log"},
 	"pbs verify":             {"pbs verify list", "pbs verify run"},

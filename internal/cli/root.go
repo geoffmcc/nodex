@@ -101,9 +101,10 @@ func init() {
 	register("init", "Initialize nodex configuration", runInit)
 	register("agent", "Machine-readable agent contract and mutation receipts", nil,
 		&command{name: "contract", short: "Show the versioned agent contract", run: runAgentContract},
-		&command{name: "receipt", short: "Inspect or reconcile agent mutation receipts", run: runAgentReceiptDispatch, sub: map[string]*command{
+		&command{name: "receipt", short: "Inspect or manage agent mutation receipts", run: runAgentReceiptDispatch, sub: map[string]*command{
 			"list":      {name: "list", short: "List recent mutation receipts", run: runAgentReceiptList},
 			"show":      {name: "show", short: "Show a mutation receipt", run: runAgentReceiptShow},
+			"delete":    {name: "delete", short: "Delete a completed local receipt", run: runAgentReceiptDelete},
 			"refresh":   {name: "refresh", short: "Refresh task execution status", run: runAgentReceiptRefresh},
 			"reconcile": {name: "reconcile", short: "Reconcile an ambiguous outcome without resubmitting", run: runAgentReceiptReconcile},
 		}},
@@ -130,7 +131,7 @@ func init() {
 		&command{name: "diagnose-permissions", short: "Diagnose profile permissions", run: runProfileDiagnosePermissions},
 		&command{name: "remove", short: "Remove a profile", run: runProfileRemove},
 		&command{name: "export", short: "Export a profile (sanitized)", run: runProfileExport},
-		&command{name: "import", short: "Import a profile from stdin", run: runProfileImport},
+		&command{name: "import", short: "Import a profile from stdin (run nodex init first)", run: runProfileImport},
 	)
 	register("provider", "Manage providers", nil,
 		&command{name: "list", short: "List available providers", run: runProviderList},
@@ -205,7 +206,7 @@ func init() {
 		&command{name: "snapshot", short: "Manage container snapshots", run: runCTSnapshotDispatch},
 		&command{name: "migrate", short: "Migrate container to another node", run: runCTMigrate},
 		&command{name: "clone", short: "Clone a container", run: runCTClone},
-		&command{name: "create", short: "Create an unprivileged container with optional resource controls", run: runCTCreate},
+		&command{name: "create", short: "Create an unprivileged container; --nesting 1 may be needed for a systemd console login", run: runCTCreate},
 		&command{name: "restore", short: "Restore a container from a backup archive", run: runCTRestore},
 		&command{name: "console", short: "Open container console", run: runContainerConsole},
 	)
@@ -325,7 +326,7 @@ func init() {
 		&command{name: "health", short: "Check environment infrastructure health", run: runEnvironmentHealth},
 		&command{name: "backup-health", short: "Check environment backup health and guest coverage", run: runEnvironmentBackupHealth},
 	)
-	register("pbs", "Inspect Proxmox Backup Server", nil,
+	register("pbs", "Manage Proxmox Backup Server", nil,
 		&command{name: "status", short: "Show PBS host status", run: runPBSStatus},
 		&command{name: "version", short: "Show PBS server version", run: runPBSVersion},
 		&command{name: "subscription", short: "Show PBS subscription status", run: runPBSSubscription},
