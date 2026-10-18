@@ -2,12 +2,19 @@ package credentials
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/geoffmcc/nodex/internal/domain"
 )
+
+// ErrNoEnvironmentCredentials means that no usable non-empty credential
+// values were supplied for a profile. The resolver may consider the next
+// configured backend only for this absence case; malformed partial values
+// must stop resolution instead of silently substituting another identity.
+var ErrNoEnvironmentCredentials = errors.New("no credentials found in environment")
 
 // EnvBackend reads credentials from environment variables.
 type EnvBackend struct {
@@ -43,12 +50,12 @@ func (b *EnvBackend) Get(_ context.Context, profile string) (*domain.Credentials
 	username := os.Getenv(prefix + "_USERNAME")
 	password := os.Getenv(prefix + "_PASSWORD")
 
-	if token == "" && tokenID == "" && username == "" {
-		return nil, fmt.Errorf("no credentials found for profile %q in environment", profile)
+	if token == "" && tokenID == "" && tokenSecret == "" && username == "" && password == "" {
+		return nil, fmt.Errorf("%w for profile %q", ErrNoEnvironmentCredentials, profile)
 	}
 
 	creds := &domain.Credentials{
-		Type:        credentialType(token, tokenID, username),
+		Type:        credentialType(token, tokenID, tokenSecret, username, password),
 		Token:       token,
 		TokenID:     tokenID,
 		TokenSecret: tokenSecret,
@@ -94,14 +101,11 @@ func (b *EnvBackend) upperPrefix() string {
 	return strings.ToUpper(strings.ReplaceAll(b.prefix, "-", "_"))
 }
 
-func credentialType(token, tokenID, username string) string {
-	if token != "" {
+func credentialType(token, tokenID, tokenSecret, username, password string) string {
+	if token != "" || tokenID != "" || tokenSecret != "" {
 		return "token"
 	}
-	if tokenID != "" {
-		return "token"
-	}
-	if username != "" {
+	if username != "" || password != "" {
 		return "password"
 	}
 	return "unknown"

@@ -241,6 +241,13 @@ When `credential_ref` is empty, Nodex tries:
 1. Environment variables for the selected profile
 2. A same-name file credential under `~/.nodex/credentials/`
 
+The file backend is used only when no non-empty environment credential values
+were supplied. If environment variables contain an incomplete token or
+username/password pair, resolution stops with an error; Nodex does not silently
+switch to a saved credential with a different identity. If an existing file
+credential is unreadable, malformed, or fails its permission checks, that error
+is reported instead of being reduced to “no credentials found.”
+
 If neither source is available, the command exits with a credential error (exit code 4).
 
 ## Environment Variables
@@ -259,7 +266,10 @@ Supported variables:
 - `NODEX_<PROFILE>_USERNAME`
 - `NODEX_<PROFILE>_PASSWORD`
 
-The Proxmox VE and PBS providers use API token credentials. Incomplete token or username/password pairs are rejected by credential validation.
+The Proxmox VE and PBS providers use API token credentials. Incomplete token
+or username/password values are rejected before backend fallback; PVE and PBS
+do not support password-based provider authentication. Use the API token ID
+and secret pair for provider connections.
 
 ## Proxmox Backup Server Profiles
 
