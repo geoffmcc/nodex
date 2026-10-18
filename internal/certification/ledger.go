@@ -4,6 +4,7 @@
 package certification
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -112,7 +113,12 @@ func loadUnlocked(path string) (*Ledger, error) {
 		}
 		return nil, fmt.Errorf("read certification ledger: %w", err)
 	}
+	return decodeLedger(b)
+}
+
+func decodeLedger(b []byte) (*Ledger, error) {
 	var l Ledger
+	var err error
 	dec := json.NewDecoder(strings.NewReader(string(b)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&l); err != nil {
@@ -166,6 +172,76 @@ func Save(path string, l *Ledger) error {
 	}
 	defer func() { _ = config.Unlock(lock) }()
 	return saveUnlocked(path, l)
+}
+
+// MigrateCompletedLegacy upgrades a populated schema 1 ledger only when every
+// recorded transaction is conclusively cleaned up. It preserves the exact
+// original bytes in a sibling backup before writing the schema 2 digest. The
+// backup is never overwritten with different content.
+func MigrateCompletedLegacy(path string) (string, int, error) {
+	if err := validateMutationLedgerPath(path); err != nil {
+		return "", 0, err
+	}
+	cleanupLock, err := config.Lock(cleanupLockPath(path))
+	if err != nil {
+		return "", 0, fmt.Errorf("lock certification cleanup: %w", err)
+	}
+	defer func() { _ = config.Unlock(cleanupLock) }()
+	lock, err := config.Lock(path)
+	if err != nil {
+		return "", 0, fmt.Errorf("lock certification ledger: %w", err)
+	}
+	defer func() { _ = config.Unlock(lock) }()
+
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", 0, fmt.Errorf("inspect certification ledger: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", 0, fmt.Errorf("certification ledger must be a regular file")
+	}
+	original, err := os.ReadFile(path) // #nosec G304 -- path is restricted to the default per-configuration ledger.
+	if err != nil {
+		return "", 0, fmt.Errorf("read certification ledger: %w", err)
+	}
+	l, err := decodeLedger(original)
+	if err != nil {
+		return "", 0, err
+	}
+	if !l.LegacyUnverified {
+		return "", 0, fmt.Errorf("certification ledger is already verified; no migration is needed")
+	}
+	for _, entry := range l.Entries {
+		if entry.Cleanup != "complete" || entry.LeaseID != "" || entry.LeaseExpiresAt != 0 {
+			return "", 0, fmt.Errorf("legacy ledger contains a pending or leased transaction; reconcile it from a trusted source before migration")
+		}
+	}
+	backup := path + ".legacy-v1.bak"
+	if backupInfo, statErr := os.Lstat(backup); statErr == nil {
+		if !backupInfo.Mode().IsRegular() {
+			return "", 0, fmt.Errorf("legacy ledger backup must be a regular file")
+		}
+		prior, readErr := os.ReadFile(backup)
+		if readErr != nil {
+			return "", 0, fmt.Errorf("read legacy ledger backup: %w", readErr)
+		}
+		if !bytes.Equal(prior, original) {
+			return "", 0, fmt.Errorf("legacy ledger backup already exists with different contents: %s", backup)
+		}
+	} else if os.IsNotExist(statErr) {
+		if err := atomicwrite.WriteFile(backup, original, false, 0o700, 0o600); err != nil {
+			return "", 0, fmt.Errorf("preserve legacy ledger backup: %w", err)
+		}
+	} else {
+		return "", 0, fmt.Errorf("inspect legacy ledger backup: %w", statErr)
+	}
+
+	l.Schema = SchemaVersion
+	l.LegacyUnverified = false
+	if err := saveUnlocked(path, l); err != nil {
+		return "", 0, fmt.Errorf("write migrated certification ledger (original preserved at %s): %w", backup, err)
+	}
+	return backup, len(l.Entries), nil
 }
 
 func saveUnlocked(path string, l *Ledger) error {

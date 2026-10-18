@@ -257,6 +257,9 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 	}
 	verification := []string{"submission outcome only; operation-specific postcondition verification is not generally available"}
 	permissionNote := "Current provider permissions are determined only when the existing handler makes its request."
+	if op.Path == "certification migrate-ledger" {
+		permissionNote = "No provider is contacted by this local operation."
+	}
 	if strings.HasPrefix(op.ProviderSupportNote, "Unsupported:") {
 		verification = []string{"not applicable; operation is rejected as unsupported before submission"}
 		permissionNote = "Not checked; the unsupported operation makes no provider request."
@@ -310,6 +313,8 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 		verification = []string{"after synchronous creation, the firewall security-group inventory is read back to confirm the group exists"}
 	case "firewall group delete":
 		verification = []string{"after synchronous deletion, the firewall security-group inventory is read back to confirm the group is absent"}
+	case "certification migrate-ledger":
+		verification = []string{"certification report should show the current schema and verified integrity; the exact schema 1 input remains in the no-overwrite .legacy-v1.bak file"}
 	case "firewall ipset create":
 		verification = []string{"after synchronous creation, the firewall IP-set inventory is read back to confirm the set exists"}
 	case "firewall ipset delete":
@@ -340,6 +345,8 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 		default:
 			recovery = []string{"use the plan-bound maintenance report/verify/resume/reconcile/abandon workflow; agent receipts are not used"}
 		}
+	case op.Path == "certification migrate-ledger":
+		recovery = []string{"use certification report to inspect schema and integrity status; preserve the .legacy-v1.bak file if the migration did not complete"}
 	case strings.HasPrefix(op.Path, "certification ") && !op.Inspection:
 		recovery = []string{"use certification report/cleanup and its dedicated ledger; agent receipts are not used"}
 	case !supported:
@@ -755,6 +762,9 @@ func usageFlagTakesValue(token string) bool {
 }
 
 func targetRequirement(op OperationMeta) string {
+	if op.Path == "certification migrate-ledger" {
+		return "no provider target; operates only on the default per-configuration certification ledger"
+	}
 	if op.Path == "certification report" {
 		return "none; reads the local sanitized certification ledger"
 	}
@@ -803,6 +813,8 @@ func sideEffects(op OperationMeta) ([]string, []string) {
 		return []string{}, []string{"remote_read"}
 	case "certification run", "certification cleanup":
 		return []string{"local_certification_ledger_write"}, []string{"remote_mutation"}
+	case "certification migrate-ledger":
+		return []string{"local_certification_ledger_write"}, []string{}
 	case "maintenance inventory", "maintenance status", "maintenance verify":
 		return []string{}, []string{"remote_read"}
 	case "maintenance plan":
@@ -915,7 +927,7 @@ func agentModeSupport(op OperationMeta) (bool, string, bool) {
 		return false, "requires interactive terminal input or secret collection", true
 	}
 	switch op.Path {
-	case "init", "profile add", "profile set-credentials", "profile use", "profile remove", "profile import", "storage download":
+	case "init", "profile add", "profile set-credentials", "profile use", "profile remove", "profile import", "storage download", "certification migrate-ledger":
 		return false, "local configuration/credential or local-file side effects are intentionally excluded from agent execution", false
 	case "certification run", "certification cleanup":
 		return false, "uses the dedicated certification authorization and recovery ledger; use its existing workflow", false

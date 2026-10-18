@@ -112,6 +112,32 @@ func TestOperations_ConfirmTargetFormatAbsentWithoutTypeConfirm(t *testing.T) {
 	}
 }
 
+func TestCertificationLedgerMigrationContractIsLocalAndAccurate(t *testing.T) {
+	op := LookupOperation("certification migrate-ledger")
+	if op == nil {
+		t.Fatal("certification migrate-ledger is missing from operation registry")
+	}
+	contract := describeOperation(*op, true)
+	if len(contract.Arguments) != 0 {
+		t.Fatalf("local migration advertises positional arguments: %+v", contract.Arguments)
+	}
+	if !containsString(contract.Confirmation, "--yes") {
+		t.Fatalf("migration confirmation = %v, want --yes", contract.Confirmation)
+	}
+	if len(contract.RemoteSideEffects) != 0 || !containsString(contract.LocalSideEffects, "local_certification_ledger_write") {
+		t.Fatalf("migration side effects = local %v remote %v", contract.LocalSideEffects, contract.RemoteSideEffects)
+	}
+	if contract.TargetRequirement != "no provider target; operates only on the default per-configuration certification ledger" {
+		t.Fatalf("migration target requirement = %q", contract.TargetRequirement)
+	}
+	if contract.ProviderPermissionNote != "No provider is contacted by this local operation." {
+		t.Fatalf("migration provider permission note = %q", contract.ProviderPermissionNote)
+	}
+	if supported, _, _ := agentModeSupport(*op); supported {
+		t.Fatal("local ledger migration must remain outside agent mutation execution")
+	}
+}
+
 func TestOperations_ExpertRequiresSecurityAdmin(t *testing.T) {
 	for _, op := range Operations() {
 		if op.RequiresExpert && op.SafetyTier != safety.TierSecurityAdmin {

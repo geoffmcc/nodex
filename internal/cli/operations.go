@@ -183,6 +183,7 @@ func buildRegistry() []OperationMeta {
 		OperationMeta{Path: "certification run", Description: "Run an opt-in disposable certification transaction", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the exact certification VM name supplied with --name", Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertification"},
 		OperationMeta{Path: "certification cleanup", Description: "Recover pending certification cleanup", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the certification ledger entry ID, matched against entries in the certification ledger", Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationCleanup"},
 		OperationMeta{Path: "certification report", Description: "Show the sanitized certification ledger", Inspection: true, Scope: ScopeCert, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationReport"},
+		OperationMeta{Path: "certification migrate-ledger", Description: "Upgrade completed schema 1 certification history with an exact backup; local-only", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierReversible, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationLedgerMigration"},
 	)
 
 	// --- profile ---
