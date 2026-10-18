@@ -117,10 +117,34 @@ func ValidateUPID(upid string) error {
 	if len(upid) < 36 || len(upid) > 256 {
 		return fmt.Errorf("invalid UPID: unexpected length")
 	}
-	if strings.ContainsAny(upid, " \t\r\n/\\?#%") {
+	if strings.ContainsAny(upid, " \t\r\n/?#%") {
 		return fmt.Errorf("invalid UPID: contains unsafe characters")
 	}
+	// PBS escapes colons embedded in worker IDs as the literal sequence
+	// "\\x3a" in returned UPIDs. Keep that representation intact for task
+	// status URLs, while rejecting every other backslash escape.
+	for i := 0; i < len(upid); i++ {
+		if upid[i] != '\\' {
+			continue
+		}
+		if i+3 >= len(upid) || upid[i+1] != 'x' || !isHexByte(upid[i+2:i+4]) {
+			return fmt.Errorf("invalid UPID: contains unsafe characters")
+		}
+		i += 3
+	}
 	return nil
+}
+
+func isHexByte(s string) bool {
+	if len(s) != 2 {
+		return false
+	}
+	for i := 0; i < 2; i++ {
+		if !((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f') || (s[i] >= 'A' && s[i] <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // Version returns the PBS server version (GET /version).

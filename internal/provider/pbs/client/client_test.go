@@ -241,12 +241,15 @@ func TestValidateUPID(t *testing.T) {
 		valid bool
 	}{
 		{"valid PBS upid", valid, true},
+		{"PBS escaped worker ID delimiters", "UPID:pbs:000002D0:000001CC:00000005:6AD40EE9:syncjob:ndxvalremote17\\x3andxval1017\\x3andxval1018\\x3a\\x3andxvalsync17:root@pam!nodex-lab:", true},
 		{"missing prefix", "NOTUPID:pbs:00001234:", false},
 		{"too short", "UPID:x:", false},
 		{"embedded slash", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:x/../y:root@pam:", false},
 		{"embedded space", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:a b:root@pam:", false},
 		{"embedded newline", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:a\nb:root@pam:", false},
 		{"embedded percent", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:a%2Fb:root@pam:", false},
+		{"invalid backslash escape", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:a\\xZZ:root@pam:", false},
+		{"backslash path separator", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:a\\/b:root@pam:", false},
 		{"too long", "UPID:" + strings.Repeat("x", 300), false},
 		{"empty", "", false},
 	}
