@@ -396,6 +396,15 @@ func buildRegistry() []OperationMeta {
 	})
 
 	// --- vm (disruptive mutations) ---
+	ops = append(ops, OperationMeta{
+		Path: "vm install", Description: "Install explicitly requested APT packages in a running QEMU VM through its QEMU Guest Agent",
+		ProviderSupportNote: "Requires QEMU Guest Agent installed and running in the guest and a Proxmox API identity authorized for guest-agent command execution; this is a powerful guest execution capability.",
+		Inspection:          false, Scope: ScopeGuest, SafetyTier: safety.TierDisruptive,
+		RiskDimensions: []RiskDimension{RiskServiceDown, RiskPrivEsc},
+		Waitable:       false, UsesOperationResult: true,
+		OutputModes:         []string{"table", "json", "yaml"},
+		CapabilityInterface: "VMGuestAgentExecutor", HandlerFunc: "runVMPackageInstall",
+	})
 	vmDisruptive := []struct {
 		op, desc, capIface, handler string
 		risks                       []RiskDimension

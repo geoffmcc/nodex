@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -269,6 +270,85 @@ func (c *Client) GetVMConfig(ctx context.Context, node string, vmid int) (*VMCon
 		resp.Data.VMID = vmid
 	}
 	return &resp.Data, nil
+}
+
+const maxVMGuestExecOutputBytes = 1 << 20
+
+// VMGuestExec submits exactly one argv-based process to the QEMU Guest Agent.
+// The mutation transport deliberately performs no automatic retries.
+func (c *Client) VMGuestExec(ctx context.Context, node string, vmid int, argv []string) (int, error) {
+	if node == "" {
+		return 0, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 {
+		return 0, fmt.Errorf("VMID is required")
+	}
+	if len(argv) == 0 || len(argv) > 64 {
+		return 0, fmt.Errorf("guest command must contain between 1 and 64 arguments")
+	}
+	body := url.Values{}
+	for _, arg := range argv {
+		if len(arg) > 4096 || strings.ContainsRune(arg, '\x00') {
+			return 0, fmt.Errorf("guest command contains an invalid argument")
+		}
+		body.Add("command", arg)
+	}
+	body.Set("capture-output", "1")
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/agent/exec"
+	var resp struct {
+		Data GuestExecResponse `json:"data"`
+	}
+	if err := c.post(ctx, path, body, &resp); err != nil {
+		return 0, err
+	}
+	if resp.Data.PID <= 0 {
+		return 0, fmt.Errorf("QEMU Guest Agent returned an invalid process identifier")
+	}
+	return resp.Data.PID, nil
+}
+
+// VMGuestExecStatus reads one guest process status. It is safe to repeat after
+// transport errors because it does not submit or restart the guest process.
+func (c *Client) VMGuestExecStatus(ctx context.Context, node string, vmid, pid int) (*domain.VMGuestExecStatus, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	if vmid <= 0 || pid <= 0 {
+		return nil, fmt.Errorf("VMID and guest process identifier are required")
+	}
+	query := url.Values{"pid": []string{strconv.Itoa(pid)}}
+	path := "/nodes/" + url.PathEscape(node) + "/qemu/" + strconv.Itoa(vmid) + "/agent/exec-status?" + query.Encode()
+	var resp struct {
+		Data GuestExecStatusResponse `json:"data"`
+	}
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Data.Exited != 0 && resp.Data.Exited != 1 {
+		return nil, fmt.Errorf("QEMU Guest Agent returned an invalid process state")
+	}
+	decode := func(value string) (string, error) {
+		if len(value) > (maxVMGuestExecOutputBytes*4/3)+8 {
+			return "", fmt.Errorf("QEMU Guest Agent output exceeded the 1 MiB limit")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(value)
+		if err != nil {
+			return "", fmt.Errorf("QEMU Guest Agent returned malformed encoded output")
+		}
+		if len(decoded) > maxVMGuestExecOutputBytes {
+			return "", fmt.Errorf("QEMU Guest Agent output exceeded the 1 MiB limit")
+		}
+		return string(decoded), nil
+	}
+	stdout, err := decode(resp.Data.OutData)
+	if err != nil {
+		return nil, err
+	}
+	stderr, err := decode(resp.Data.ErrData)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.VMGuestExecStatus{Exited: resp.Data.Exited == 1, ExitCode: resp.Data.ExitCode, Stdout: stdout, Stderr: stderr}, nil
 }
 
 // GetGuestStatus returns the current status of a single guest.

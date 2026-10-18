@@ -260,6 +260,9 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 	if op.Path == "certification migrate-ledger" {
 		permissionNote = "No provider is contacted by this local operation."
 	}
+	if op.Path == "vm install" {
+		permissionNote = "Discovery does not check permissions; the selected Proxmox API identity must be authorized for QEMU Guest Agent execution, and Proxmox permission failures are rejected at request time."
+	}
 	if strings.HasPrefix(op.ProviderSupportNote, "Unsupported:") {
 		verification = []string{"not applicable; operation is rejected as unsupported before submission"}
 		permissionNote = "Not checked; the unsupported operation makes no provider request."
@@ -329,6 +332,8 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 		verification = []string{"with --wait, after task success the receipt-bound VM config endpoint is read to confirm the VM is absent"}
 	case "container delete":
 		verification = []string{"preflight reads authoritative guest status, refuses a running container, and reports a missing container as not attempted", "with --wait, after task success the receipt-bound container config endpoint is read to confirm the container is absent"}
+	case "vm install":
+		verification = []string{"after each QEMU Guest Agent process exits successfully, every requested package is checked with dpkg-query; a lost submission or status response remains unknown and may leave a guest process running"}
 	}
 	var recovery []string
 	switch {
@@ -336,6 +341,8 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 		recovery = []string{"agent receipt show", "agent receipt reconcile refreshes the task and reads back the receipt-bound snapshot name; it never resubmits"}
 	case op.Path == "vm cloud-init":
 		recovery = []string{"agent receipt show", "if the provider call outcome is unknown, inspect the VM's cloud-init state in Proxmox; this synchronous endpoint returns no task ID, so receipt reconciliation cannot verify or resubmit it"}
+	case op.Path == "vm install":
+		recovery = []string{"agent receipt show", "inspect the VM's running guest processes and requested package states before deciding whether to retry; guest-agent execution is never resubmitted automatically"}
 	case strings.HasPrefix(op.Path, "maintenance "):
 		switch op.Path {
 		case "maintenance inventory", "maintenance status":
@@ -604,7 +611,7 @@ func operationInputSchema(op OperationMeta, args []AgentArgument, flags []AgentF
 		argsSchema["minItems"] = 0
 		argsSchema["maxItems"] = 1
 	}
-	if op.Path == "container install" {
+	if op.Path == "container install" || op.Path == "vm install" {
 		// The target plus at least one package are required; the CLI accepts up
 		// to 32 packages after the target.
 		argsSchema["minItems"] = 2

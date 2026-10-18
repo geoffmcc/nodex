@@ -156,6 +156,7 @@ func init() {
 		&command{name: "updates", short: "List updates (may refresh package-status cache; requires --yes, Sys.Modify)", run: runNodeUpdates},
 	)
 	register("vm", "Manage virtual machines", nil,
+		&command{name: "install", short: "Install requested APT packages in a running QEMU VM", run: runVMPackageInstall},
 		&command{name: "list", short: "List all virtual machines", run: runVMList},
 		&command{name: "show", short: "Show VM details", run: runVMShow},
 		&command{name: "config", short: "Show VM configuration", run: runVMConfig},
