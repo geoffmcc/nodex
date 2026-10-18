@@ -169,9 +169,10 @@ var leafHelp = map[string]helpEntry{
 	"profile diagnose-permissions": {usage: "<profile>"},
 	"provider list":                {usage: ""},
 	"provider capabilities":        {usage: "<name>"},
-	"certification run":            {usage: "--environment <name> --suite <readonly|disposable-mutations> --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage> --yes --force --confirm-target <name> [--ledger <path>]"},
+	"certification run":            {usage: "--environment <name> --suite <readonly|disposable-mutations> --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage> --yes --force --confirm-target <name>"},
 	"certification cleanup":        {usage: "[--ledger <path>]"},
 	"certification report":         {usage: "[--ledger <path>]"},
+	"certification migrate-ledger": {usage: ""},
 
 	// Dispatch group leaves.
 	"vm snapshot create":          {desc: "Create a VM snapshot", usage: "<node>/<vmid> <name> [description]"},

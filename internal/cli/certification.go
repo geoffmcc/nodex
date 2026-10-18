@@ -102,14 +102,19 @@ func runCertification(ctx context.Context, cmdCtx *Context, args []string) error
 	}
 	environment, suite, node, name, storage, ledger, vmid, err := certificationArgs(args)
 	if err != nil || environment == "" || suite == "" || node == "" || name == "" || storage == "" || vmid <= 0 {
-		return app.NewExitError(fmt.Errorf("usage: nodex --profile <authorized-profile> certification run --environment <name> --suite <readonly|disposable-mutations> --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage> [--ledger <path>]"), app.ExitUsage)
+		return app.NewExitError(fmt.Errorf("usage: nodex --profile <authorized-profile> certification run --environment <name> --suite <readonly|disposable-mutations> --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage>"), app.ExitUsage)
 	}
-	loaded, err := certification.Load(ledger)
-	if err != nil {
-		return app.NewExitError(err, app.ExitValidationError)
-	}
-	if loaded.IntegrityStatus() != "verified" {
-		return app.NewExitError(fmt.Errorf("certification run is blocked: ledger integrity status is %s", loaded.IntegrityStatus()), app.ExitValidationError)
+	if suite != "readonly" {
+		if err := certification.ValidateMutationLedgerPath(ledger); err != nil {
+			return app.NewExitError(err, app.ExitValidationError)
+		}
+		loaded, err := certification.Load(ledger)
+		if err != nil {
+			return app.NewExitError(err, app.ExitValidationError)
+		}
+		if loaded.IntegrityStatus() != "verified" {
+			return app.NewExitError(fmt.Errorf("certification run is blocked: ledger integrity status is %s", loaded.IntegrityStatus()), app.ExitValidationError)
+		}
 	}
 	cfg, err := config.Read()
 	if err != nil {
@@ -207,6 +212,28 @@ func runCertificationReport(_ context.Context, cmdCtx *Context, args []string) e
 		report.Entries = entries
 	}
 	return writeCertification(cmdCtx, report)
+}
+
+func runCertificationLedgerMigration(_ context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 0 || !cmdCtx.Opts.Yes {
+		return app.NewExitError(fmt.Errorf("usage: nodex --yes certification migrate-ledger (local-only; upgrades completed schema 1 history and preserves an exact backup)"), app.ExitUsage)
+	}
+	dir, err := config.Dir()
+	if err != nil {
+		return app.NewExitError(err, app.ExitConfig)
+	}
+	ledger := filepath.Join(dir, "certification-ledger.json")
+	backup, count, err := certification.MigrateCompletedLegacy(ledger)
+	if err != nil {
+		return app.NewExitError(err, app.ExitValidationError)
+	}
+	return writeCertification(cmdCtx, struct {
+		Status       string `json:"status" yaml:"status"`
+		Schema       int    `json:"schema" yaml:"schema"`
+		Entries      int    `json:"entries" yaml:"entries"`
+		Backup       string `json:"backup" yaml:"backup"`
+		ProviderUsed bool   `json:"provider_used" yaml:"provider_used"`
+	}{Status: "migrated", Schema: certification.SchemaVersion, Entries: count, Backup: backup, ProviderUsed: false})
 }
 
 func writeCertification(cmdCtx *Context, value any) error {

@@ -141,7 +141,15 @@ nodex --profile nodex-test-profile --yes --force --confirm-target nodex-cert-smo
   --node <node> --vmid <vmid> --name nodex-cert-smoke --storage <storage>
 nodex --profile nodex-test-profile --yes --confirm-target <ledger-entry-id> certification cleanup
 nodex certification report [--ledger <path>]
+nodex --yes certification migrate-ledger
 ```
+
+`certification migrate-ledger` is a local-only format upgrade. It converts a
+schema 1 ledger only when every recorded transaction is complete and has no
+active lease, preserves the exact original as
+`certification-ledger.json.legacy-v1.bak`, and writes the current schema with an
+integrity digest. It does not connect to a provider. The backup is never
+overwritten with different contents.
 
 Run records cleanup intent before creating a VM, verifies the configured
 provider/endpoint/leaf certificate and CA identity, waits for task completion,

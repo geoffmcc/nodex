@@ -118,6 +118,7 @@ func init() {
 		&command{name: "run", short: "Create, verify, and clean up a certification VM", run: runCertification},
 		&command{name: "cleanup", short: "Recover pending certification cleanup", run: runCertificationCleanup},
 		&command{name: "report", short: "Show the sanitized certification ledger", run: runCertificationReport},
+		&command{name: "migrate-ledger", short: "Upgrade a completed legacy certification ledger", run: runCertificationLedgerMigration},
 	)
 	register("completion", "Generate shell completion scripts", runCompletion)
 	register("profile", "Manage connection profiles", nil,

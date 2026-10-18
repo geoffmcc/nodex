@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -60,6 +62,8 @@ type Result struct {
 }
 
 type taskClient struct{ provider domain.TaskInspector }
+
+var certificationIdentityTimeout = 15 * time.Second
 
 func (c taskClient) GetTask(ctx context.Context, node, upid string) (*task.TaskStatus, error) {
 	t, err := c.provider.Task(ctx, node, upid)
@@ -150,6 +154,39 @@ func validateAuthorizationBinding(a *Authorization) error {
 	return nil
 }
 
+// validateMutationLedgerPath keeps mutation resource accounting in one
+// per-configuration ledger. Reports and recovery may read alternate ledgers,
+// but mutation runs must not split an environment's MaxResources count.
+func validateMutationLedgerPath(path string) error {
+	dir, err := config.Dir()
+	if err != nil {
+		return fmt.Errorf("resolve certification ledger directory: %w", err)
+	}
+	defaultPath := filepath.Join(dir, "certification-ledger.json")
+	selected, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve selected certification ledger: %w", err)
+	}
+	canonicalDefault, err := filepath.Abs(defaultPath)
+	if err != nil {
+		return fmt.Errorf("resolve default certification ledger: %w", err)
+	}
+	selected = filepath.Clean(selected)
+	canonicalDefault = filepath.Clean(canonicalDefault)
+	equal := selected == canonicalDefault
+	if runtime.GOOS == "windows" {
+		equal = strings.EqualFold(selected, canonicalDefault)
+	}
+	if !equal {
+		return fmt.Errorf("mutation certification must use the default per-configuration ledger; --ledger is supported for reports and cleanup only")
+	}
+	return nil
+}
+
+// ValidateMutationLedgerPath rejects alternate cleanup ledgers for mutation
+// runs so resource limits remain shared across invocations.
+func ValidateMutationLedgerPath(path string) error { return validateMutationLedgerPath(path) }
+
 func validSHA256Identity(value string) bool {
 	if len(value) != sha256.Size*2 {
 		return false
@@ -186,7 +223,9 @@ func VerifyEndpointIdentity(ctx context.Context, endpoint, caFile, expected, exp
 			return fmt.Errorf("load configured trust anchor")
 		}
 	}
-	conn, err := (&tls.Dialer{NetDialer: &net.Dialer{}, Config: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: u.Hostname(), RootCAs: roots}}).DialContext(ctx, "tcp", u.Host)
+	identityCtx, cancel := context.WithTimeout(ctx, certificationIdentityTimeout)
+	defer cancel()
+	conn, err := (&tls.Dialer{NetDialer: &net.Dialer{Timeout: certificationIdentityTimeout}, Config: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: u.Hostname(), RootCAs: roots}}).DialContext(identityCtx, "tcp", u.Host)
 	if err != nil {
 		return fmt.Errorf("verify certification endpoint TLS identity")
 	}
@@ -263,6 +302,11 @@ func Run(ctx context.Context, p domain.Provider, req Request, ledgerPath string,
 	}
 	if !strings.EqualFold(p.Name(), req.Authorization.Provider) {
 		return Result{}, fmt.Errorf("connected provider does not match certification authorization")
+	}
+	if req.Suite != "readonly" {
+		if err := validateMutationLedgerPath(ledgerPath); err != nil {
+			return Result{}, err
+		}
 	}
 	if err := VerifyEndpointIdentity(ctx, req.Endpoint, req.CAFile, req.Authorization.ExpectedFingerprint, req.Authorization.TrustedCAIdentity); err != nil {
 		return Result{}, err

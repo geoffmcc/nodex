@@ -1,14 +1,125 @@
 package certification
 
 import (
+	"context"
+	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/geoffmcc/nodex/internal/config"
+	"github.com/geoffmcc/nodex/internal/domain"
 )
 
 const testProfile = "nodex-test-profile"
+
+func TestVerifyEndpointIdentityBoundsStalledTLSHandshake(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	serverDone := make(chan struct{})
+	defer close(serverDone)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		<-serverDone
+	}()
+
+	previousTimeout := certificationIdentityTimeout
+	certificationIdentityTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { certificationIdentityTimeout = previousTimeout })
+	started := time.Now()
+	err = VerifyEndpointIdentity(
+		context.Background(), "https://"+listener.Addr().String(), "",
+		strings.Repeat("0", 64), strings.Repeat("1", 64),
+	)
+	if err == nil {
+		t.Fatal("stalled TLS handshake was accepted")
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("identity check took %s, expected its timeout to bound the TLS handshake", elapsed)
+	}
+}
+
+func TestMutationLedgerPathUsesSingleDefaultLedger(t *testing.T) {
+	root := t.TempDir()
+	setCertificationConfigEnv(t, root)
+	defaultDir, err := config.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(defaultDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	defaultPath := filepath.Join(defaultDir, "certification-ledger.json")
+	if err := validateMutationLedgerPath(defaultPath); err != nil {
+		t.Fatalf("default ledger rejected: %v", err)
+	}
+
+	alternate := filepath.Join(root, "alternate-ledger.json")
+	if err := validateMutationLedgerPath(alternate); err == nil || !strings.Contains(err.Error(), "must use the default") {
+		t.Fatalf("alternate ledger error = %v, want shared-accounting rejection", err)
+	}
+
+	if runtime.GOOS == "windows" {
+		t.Skip("directory symlink creation is not available on every Windows runner")
+	}
+	aliasDir := filepath.Join(root, "config-alias")
+	if err := os.Symlink(defaultDir, aliasDir); err != nil {
+		t.Skipf("create directory symlink: %v", err)
+	}
+	if err := validateMutationLedgerPath(filepath.Join(aliasDir, "certification-ledger.json")); err == nil || !strings.Contains(err.Error(), "must use the default") {
+		t.Fatalf("symlink alias error = %v, want rejection to preserve the shared lock identity", err)
+	}
+}
+
+type ledgerGuardProvider struct{}
+
+func (ledgerGuardProvider) Name() string                                               { return "proxmox" }
+func (ledgerGuardProvider) Version() string                                            { return "test" }
+func (ledgerGuardProvider) Connect(context.Context, string, *domain.Credentials) error { return nil }
+func (ledgerGuardProvider) Close() error                                               { return nil }
+func (ledgerGuardProvider) Health(context.Context) error                               { return nil }
+func (ledgerGuardProvider) Capabilities() []domain.Capability                          { return nil }
+
+func TestRunRejectsAlternateMutationLedgerBeforeNetwork(t *testing.T) {
+	setCertificationConfigEnv(t, t.TempDir())
+	expires := time.Now().Add(time.Hour).Unix()
+	auth := &Authorization{
+		Environment: "lab", Profile: testProfile, Endpoint: "https://127.0.0.1:1",
+		Provider: "proxmox", ExpectedFingerprint: strings.Repeat("a", 64),
+		TrustedCAIdentity: strings.Repeat("b", 64), Nodes: []string{"pve-test"},
+		Storage: []string{"local"}, VMIDMin: 9000, VMIDMax: 9010,
+		Suites: []string{"disposable-mutations"}, AllowMutations: true,
+		MaxResources: 1, ExpiresAt: expires,
+	}
+	req := Request{
+		Profile: testProfile, Node: "pve-test", Name: "nodex-cert-accounting",
+		Storage: "local", VMID: 9001, ConfirmTarget: "nodex-cert-accounting",
+		OptIn: true, Environment: "lab", Suite: "disposable-mutations",
+		Endpoint: auth.Endpoint, Authorization: auth,
+	}
+	_, err := Run(context.Background(), ledgerGuardProvider{}, req, filepath.Join(t.TempDir(), "alternate.json"), time.Now())
+	if err == nil || !strings.Contains(err.Error(), "must use the default per-configuration ledger") {
+		t.Fatalf("Run error = %v, want alternate-ledger rejection before network", err)
+	}
+}
+
+func setCertificationConfigEnv(t *testing.T, root string) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", root)
+	t.Setenv("HOME", root)
+	t.Setenv("USERPROFILE", root)
+	t.Setenv("AppData", filepath.Join(root, "appdata"))
+}
 
 func TestValidateRequestIsFailClosed(t *testing.T) {
 	base := Request{Profile: testProfile, Node: "pve-test", VMID: 9000, Name: "nodex-cert-smoke", Storage: "local", ConfirmTarget: "nodex-cert-smoke", OptIn: true}
@@ -173,6 +284,96 @@ func TestLegacyLedgerIsReadableButCannotAuthorizeMutations(t *testing.T) {
 	}
 	if string(after) != string(before) {
 		t.Fatal("legacy ledger changed after blocked mutation attempts")
+	}
+}
+
+func TestMigrateCompletedLegacyPreservesExactBackup(t *testing.T) {
+	root := t.TempDir()
+	setCertificationConfigEnv(t, root)
+	dir, err := config.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "certification-ledger.json")
+	legacy := `{"schema":1,"entries":[{"id":"legacy-done","profile":"nodex-test-profile","node":"pve-test","vmid":9005,"name":"nodex-cert-done","storage":"local","state":"cleaned","cleanup":"complete","created_at":5,"updated_at":6}]}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backup, count, err := MigrateCompletedLegacy(path)
+	if err != nil {
+		t.Fatalf("MigrateCompletedLegacy: %v", err)
+	}
+	if backup != path+".legacy-v1.bak" || count != 1 {
+		t.Fatalf("migration result = (%q, %d), want backup path and one entry", backup, count)
+	}
+	backupBytes, err := os.ReadFile(backup)
+	if err != nil || string(backupBytes) != legacy {
+		t.Fatalf("backup bytes = %q, error = %v; want exact original", backupBytes, err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load migrated ledger: %v", err)
+	}
+	if loaded.Schema != SchemaVersion || loaded.IntegrityStatus() != "verified" || len(loaded.Entries) != 1 || loaded.Entries[0].ID != "legacy-done" {
+		t.Fatalf("migrated ledger did not preserve and verify history: %+v", loaded)
+	}
+}
+
+func TestMigrateCompletedLegacyRejectsPendingWithoutChanges(t *testing.T) {
+	root := t.TempDir()
+	setCertificationConfigEnv(t, root)
+	dir, err := config.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "certification-ledger.json")
+	legacy := `{"schema":1,"entries":[{"id":"legacy-pending","profile":"nodex-test-profile","node":"pve-test","vmid":9005,"name":"nodex-cert-pending","storage":"local","state":"created","cleanup":"required","created_at":5,"updated_at":5}]}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := MigrateCompletedLegacy(path); err == nil || !strings.Contains(err.Error(), "pending or leased") {
+		t.Fatalf("migration error = %v, want pending-entry refusal", err)
+	}
+	actual, err := os.ReadFile(path)
+	if err != nil || string(actual) != legacy {
+		t.Fatalf("pending ledger changed: bytes=%q err=%v", actual, err)
+	}
+	if _, err := os.Stat(path + ".legacy-v1.bak"); !os.IsNotExist(err) {
+		t.Fatalf("unexpected backup for rejected ledger: %v", err)
+	}
+}
+
+func TestMigrateCompletedLegacyRejectsConflictingBackup(t *testing.T) {
+	root := t.TempDir()
+	setCertificationConfigEnv(t, root)
+	dir, err := config.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "certification-ledger.json")
+	legacy := `{"schema":1,"entries":[{"id":"legacy-done","profile":"nodex-test-profile","node":"pve-test","vmid":9005,"name":"nodex-cert-done","storage":"local","state":"cleaned","cleanup":"complete","created_at":5,"updated_at":6}]}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backup := path + ".legacy-v1.bak"
+	if err := os.WriteFile(backup, []byte("unrelated backup"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := MigrateCompletedLegacy(path); err == nil || !strings.Contains(err.Error(), "different contents") {
+		t.Fatalf("migration error = %v, want conflicting-backup refusal", err)
+	}
+	actual, err := os.ReadFile(path)
+	if err != nil || string(actual) != legacy {
+		t.Fatalf("legacy ledger changed: bytes=%q err=%v", actual, err)
 	}
 }
 
