@@ -1135,7 +1135,7 @@ Manage replication jobs.
 |---------|-------------|
 | `replication list` | List replication jobs |
 | `replication show <id>` | Show replication job details |
-| `replication create <id> <guest> <type> <target> [key=value...]` | Create a replication job (`--yes --force`) |
+| `replication create <guest-job-id> <target> [key=value...]` | Create a replication job; the ID is `<guest>-<job-number>` (`--yes --force`) |
 | `replication update <id> [key=value...]` | Update a replication job (`--yes --force`) |
 | `replication delete <id>` | Delete a replication job (destructive; `--yes --force --confirm-target <id>`) |
 | `replication schedule <node> <id>` | Schedule replication now (`--yes`) |

@@ -152,7 +152,7 @@ var leafHelp = map[string]helpEntry{
 	"ceph status":                  {usage: "<node>"},
 	"replication list":             {usage: ""},
 	"replication show":             {usage: "<id>"},
-	"replication create":           {usage: "<id> <guest> <type> <target> [key=value...]"},
+	"replication create":           {usage: "<guest-job-id> <target> [key=value...]"},
 	"replication update":           {usage: "<id> [key=value...]"},
 	"replication delete":           {usage: "<id>"},
 	"replication schedule":         {usage: "<node> <id>"},

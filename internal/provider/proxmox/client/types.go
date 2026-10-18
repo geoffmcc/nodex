@@ -1869,8 +1869,6 @@ type ReplicationJobItem struct {
 // ReplicationCreateRequest is the body for POST /cluster/replication.
 type ReplicationCreateRequest struct {
 	ID       string `json:"id"`
-	Guest    int    `json:"guest"`
-	Type     string `json:"type"`
 	Target   string `json:"target"`
 	Schedule string `json:"schedule,omitempty"`
 	Comment  string `json:"comment,omitempty"`

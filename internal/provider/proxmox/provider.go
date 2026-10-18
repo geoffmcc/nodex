@@ -2101,8 +2101,6 @@ func (p *Provider) ReplicationCreate(ctx context.Context, params domain.Replicat
 	}
 	return p.client.CreateReplication(ctx, client.ReplicationCreateRequest{
 		ID:       params.ID,
-		Guest:    params.Guest,
-		Type:     params.Type,
 		Target:   params.Target,
 		Schedule: params.Schedule,
 		Comment:  params.Comment,

@@ -909,29 +909,36 @@ func writeReplicationJobDetail(cmdCtx *Context, job *domain.ReplicationJob) erro
 	}
 }
 
-// nodex replication create <id> <guest> <type> <target> [key=value...]
+func parseReplicationJobID(id string) (int, error) {
+	guestText, jobText, ok := strings.Cut(id, "-")
+	guest, guestErr := strconv.Atoi(guestText)
+	jobNum, jobErr := strconv.Atoi(jobText)
+	if !ok || guestErr != nil || jobErr != nil || guest < 100 || guest > 999999999 || jobNum < 0 || jobNum > 999999999 {
+		return 0, fmt.Errorf("invalid replication job ID %q; use <guest>-<job-number>, for example 9924-0", id)
+	}
+	return guest, nil
+}
+
+// nodex replication create <guest-job-id> <target> [key=value...]
 func runReplicationCreate(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) < 4 {
-		return app.NewExitError(fmt.Errorf("usage: nodex replication create <id> <guest> <type> <target> [key=value...]"), app.ExitUsage)
+	if len(args) < 2 {
+		return app.NewExitError(fmt.Errorf("usage: nodex replication create <guest-job-id> <target> [key=value...] (ID format: <guest>-<job-number>)"), app.ExitUsage)
 	}
 
 	id := args[0]
-	guest, err := strconv.Atoi(args[1])
-	if err != nil || guest <= 0 {
-		return app.NewExitError(fmt.Errorf("invalid guest ID: %s", args[1]), app.ExitUsage)
+	guest, err := parseReplicationJobID(id)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
 	}
-	jobType := args[2]
-	target := args[3]
+	target := args[1]
 
 	input := domain.ReplicationCreateInput{
 		ID:     id,
-		Guest:  guest,
-		Type:   jobType,
 		Target: target,
 	}
 
 	// Parse optional key=value parameters
-	for _, arg := range args[4:] {
+	for _, arg := range args[2:] {
 		parts := strings.SplitN(arg, "=", 2)
 		if len(parts) != 2 {
 			return app.NewExitError(fmt.Errorf("invalid parameter: %s (expected key=value)", arg), app.ExitUsage)

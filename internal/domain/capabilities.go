@@ -683,8 +683,6 @@ type ReplicationJob struct {
 // ReplicationCreateInput holds fields for creating a replication job.
 type ReplicationCreateInput struct {
 	ID       string
-	Guest    int
-	Type     string
 	Target   string
 	Schedule string
 	Comment  string

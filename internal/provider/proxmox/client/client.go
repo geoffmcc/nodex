@@ -3088,8 +3088,7 @@ func (c *Client) GetReplicationJob(ctx context.Context, id string) (*Replication
 func (c *Client) CreateReplication(ctx context.Context, req ReplicationCreateRequest) error {
 	body := url.Values{}
 	body.Set("id", req.ID)
-	body.Set("guest", strconv.Itoa(req.Guest))
-	body.Set("type", req.Type)
+	body.Set("type", "local")
 	body.Set("target", req.Target)
 	if req.Schedule != "" {
 		body.Set("schedule", req.Schedule)
