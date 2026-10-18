@@ -1367,9 +1367,12 @@ func collectStatusSnapshotWithTaskWarningCache(ctx context.Context, prov domain.
 		if ha, err := hp.HAStatus(ctx); err == nil && ha != nil {
 			overview.Sections["ha"] = "available"
 			overview.HA = &statusHA{
-				Status:      ha.Status,
-				Quorum:      ha.Quorum,
-				QuorumKnown: ha.Status != "unknown",
+				Status: ha.Status,
+				// Cluster quorum is authoritative for the cluster overview. The
+				// HA manager endpoint can report an unknown lifecycle status while
+				// cluster status still provides a reliable quorum value.
+				Quorum:      quorum.Quorum,
+				QuorumKnown: quorum.Known,
 				Standalone:  quorum.Standalone,
 			}
 		}

@@ -363,6 +363,34 @@ func TestStatusSharedSnapshotUnknownStatesAndTasks(t *testing.T) {
 	}
 }
 
+type unknownHAWithKnownQuorumProvider struct{ *e2eMockProvider }
+
+func (*unknownHAWithKnownQuorumProvider) HAStatus(context.Context) (*domain.HAStatus, error) {
+	return &domain.HAStatus{Status: "unknown", Quorum: 0}, nil
+}
+
+func TestStatusOverviewUsesClusterQuorumWhenHAStatusUnknown(t *testing.T) {
+	p := &unknownHAWithKnownQuorumProvider{e2eMockProvider: &e2eMockProvider{connected: true}}
+	snapshot := collectStatusSnapshot(t.Context(), p, false)
+	if snapshot.HA == nil || snapshot.HA.Status != "unknown" {
+		t.Fatalf("HA manager status should remain unknown: %+v", snapshot.HA)
+	}
+	if !snapshot.HA.QuorumKnown || snapshot.HA.Quorum != 3 {
+		t.Fatalf("HA quorum should use known cluster quorum: %+v", snapshot.HA)
+	}
+	if !snapshot.QuorumKnown || snapshot.Quorum != 3 {
+		t.Fatalf("cluster quorum lost: known=%v quorum=%d", snapshot.QuorumKnown, snapshot.Quorum)
+	}
+}
+
+func TestFirewallOptionsUpdateRejectsUnsupportedLogInDrop(t *testing.T) {
+	ctx := &Context{Writer: &bytes.Buffer{}, ErrW: &bytes.Buffer{}, Opts: Options{Profile: "nodex-test-lab", Yes: true, Force: true}}
+	err := runFirewallOptionsUpdate(t.Context(), ctx, []string{"enable=0", "log_in_drop=1"})
+	if app.ExitCodeFromError(err) != app.ExitUsage || !strings.Contains(err.Error(), "unknown option: log_in_drop") {
+		t.Fatalf("log_in_drop should be rejected before contacting PVE: %v", err)
+	}
+}
+
 func TestStatusGuestInventoryShowsNameNumberAndState(t *testing.T) {
 	s := &statusOverview{
 		Sections: map[string]string{"vms": "available", "containers": "available", "storage": "available", "tasks": "available"}, Nodes: 2,
