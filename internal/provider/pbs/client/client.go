@@ -140,7 +140,7 @@ func isHexByte(s string) bool {
 		return false
 	}
 	for i := 0; i < 2; i++ {
-		if !((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f') || (s[i] >= 'A' && s[i] <= 'F')) {
+		if (s[i] < '0' || s[i] > '9') && (s[i] < 'a' || s[i] > 'f') && (s[i] < 'A' || s[i] > 'F') {
 			return false
 		}
 	}
