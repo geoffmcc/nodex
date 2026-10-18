@@ -579,7 +579,7 @@ type SDNMutationProvider interface {
 	SDNDeleteVNet(ctx context.Context, vnet string) error
 	SDNCreateSubnet(ctx context.Context, vnet, cidr, gateway string) error
 	SDNDeleteSubnet(ctx context.Context, vnet, subnet string) error
-	SDNCreateController(ctx context.Context, ctrl string) error
+	SDNCreateController(ctx context.Context, ctrl string, asn uint32, peers, fabric string) error
 	SDNDeleteController(ctx context.Context, ctrl string) error
 }
 
@@ -683,8 +683,6 @@ type ReplicationJob struct {
 // ReplicationCreateInput holds fields for creating a replication job.
 type ReplicationCreateInput struct {
 	ID       string
-	Guest    int
-	Type     string
 	Target   string
 	Schedule string
 	Comment  string
@@ -811,12 +809,11 @@ type FirewallRuleCreateInput struct {
 
 // FirewallOptionsUpdateInput holds the fields for updating firewall options.
 type FirewallOptionsUpdateInput struct {
-	Enable       int
+	Enable       *int
 	PolicyIn     string
 	PolicyOut    string
-	LogInDrop    int
 	LogRateLimit string
-	NFConntrack  int
+	NFConntrack  *int
 	Digest       string
 }
 
@@ -1012,6 +1009,10 @@ func CapabilityMetadata() map[Capability]CapabilityMeta {
 		CapabilityPBSDatastores: {
 			Name: "PBS Datastores", Category: CapInspection, Safety: TierObservation,
 			Interfaces: []string{"PBSDatastoreInspector"},
+		},
+		CapabilityPBSDatastoreCreate: {
+			Name: "PBS Datastore Creation", Category: CapMutation, Safety: TierDestructive,
+			Interfaces: []string{"PBSDatastoreCreator"},
 		},
 		CapabilityPBSSnapshots: {
 			Name: "PBS Snapshots", Category: CapInspection, Safety: TierObservation,

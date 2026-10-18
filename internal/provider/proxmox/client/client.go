@@ -2612,8 +2612,8 @@ func (c *Client) DeleteFirewallGroup(ctx context.Context, name string) error {
 // UpdateFirewallOptions updates firewall options via PUT /cluster/firewall/options.
 func (c *Client) UpdateFirewallOptions(ctx context.Context, opts FirewallOptionsUpdateRequest) error {
 	body := url.Values{}
-	if opts.Enable != 0 {
-		body.Set("enable", strconv.Itoa(opts.Enable))
+	if opts.Enable != nil {
+		body.Set("enable", strconv.Itoa(*opts.Enable))
 	}
 	if opts.PolicyIn != "" {
 		body.Set("policy_in", opts.PolicyIn)
@@ -2621,14 +2621,11 @@ func (c *Client) UpdateFirewallOptions(ctx context.Context, opts FirewallOptions
 	if opts.PolicyOut != "" {
 		body.Set("policy_out", opts.PolicyOut)
 	}
-	if opts.LogInDrop != 0 {
-		body.Set("log_in_drop", strconv.Itoa(opts.LogInDrop))
-	}
 	if opts.LogRateLimit != "" {
 		body.Set("log_ratelimit", opts.LogRateLimit)
 	}
-	if opts.NFConntrack != 0 {
-		body.Set("nf_conntrack_max", strconv.Itoa(opts.NFConntrack))
+	if opts.NFConntrack != nil {
+		body.Set("nf_conntrack_max", strconv.Itoa(*opts.NFConntrack))
 	}
 	if opts.Digest != "" {
 		body.Set("digest", opts.Digest)
@@ -3043,10 +3040,17 @@ func (c *Client) DeleteSDNSubnet(ctx context.Context, vnet, subnet string) error
 }
 
 // CreateSDNController creates an SDN controller.
-func (c *Client) CreateSDNController(ctx context.Context, ctrl string) error {
+func (c *Client) CreateSDNController(ctx context.Context, ctrl string, asn uint32, peers, fabric string) error {
 	body := url.Values{}
 	body.Set("controller", ctrl)
 	body.Set("type", "evpn")
+	body.Set("asn", strconv.FormatUint(uint64(asn), 10))
+	if peers != "" {
+		body.Set("peers", peers)
+	}
+	if fabric != "" {
+		body.Set("fabric", fabric)
+	}
 	return c.post(ctx, "/cluster/sdn/controllers", body, nil)
 }
 
@@ -3081,8 +3085,7 @@ func (c *Client) GetReplicationJob(ctx context.Context, id string) (*Replication
 func (c *Client) CreateReplication(ctx context.Context, req ReplicationCreateRequest) error {
 	body := url.Values{}
 	body.Set("id", req.ID)
-	body.Set("guest", strconv.Itoa(req.Guest))
-	body.Set("type", req.Type)
+	body.Set("type", "local")
 	body.Set("target", req.Target)
 	if req.Schedule != "" {
 		body.Set("schedule", req.Schedule)

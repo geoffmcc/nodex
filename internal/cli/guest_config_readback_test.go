@@ -103,6 +103,26 @@ func TestVerifyConfigReadback(t *testing.T) {
 			wantOK:    true,
 		},
 		{
+			name:      "cloud-init shorthand matches generated Proxmox volume",
+			observed:  map[string]interface{}{"ide2": "local-lvm:vm-9930-cloudinit,media=cdrom"},
+			requested: map[string]string{"ide2": "local-lvm:cloudinit"},
+			wantOK:    true,
+		},
+		{
+			name:      "cloud-init generated volume must use requested storage",
+			observed:  map[string]interface{}{"ide2": "other:vm-9930-cloudinit,media=cdrom"},
+			requested: map[string]string{"ide2": "local-lvm:cloudinit"},
+			wantOK:    false,
+			wantKeys:  []string{"ide2"},
+		},
+		{
+			name:      "cloud-init generated volume must remain a CD-ROM",
+			observed:  map[string]interface{}{"ide2": "local-lvm:vm-9930-cloudinit,media=disk"},
+			requested: map[string]string{"ide2": "local-lvm:cloudinit"},
+			wantOK:    false,
+			wantKeys:  []string{"ide2"},
+		},
+		{
 			name:      "requested property absent from readback stays a mismatch",
 			observed:  map[string]interface{}{"ide2": "local:iso/proxmox-ve_9.2-1.iso,size=1666190K"},
 			requested: map[string]string{"ide2": "local:iso/proxmox-ve_9.2-1.iso,media=cdrom"},

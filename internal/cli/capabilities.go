@@ -18,6 +18,7 @@ func implementsAnyPBS(prov domain.Provider) bool {
 	switch prov.(type) {
 	case domain.PBSSystemInspector,
 		domain.PBSDatastoreInspector,
+		domain.PBSDatastoreCreator,
 		domain.PBSSnapshotInspector,
 		domain.PBSTaskInspector,
 		domain.PBSJobInspector,
@@ -463,6 +464,17 @@ func requirePBSDatastores(prov domain.Provider) (domain.PBSDatastoreInspector, e
 	if !ok {
 		return nil, app.NewExitError(
 			fmt.Errorf("%w: pbs datastore commands not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
+			app.ExitUnsupportedCap,
+		)
+	}
+	return p, nil
+}
+
+func requirePBSDatastoreCreate(prov domain.Provider) (domain.PBSDatastoreCreator, error) {
+	p, ok := prov.(domain.PBSDatastoreCreator)
+	if !ok {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: pbs datastore creation not supported by provider %q", app.ErrUnsupportedCap, prov.Name()),
 			app.ExitUnsupportedCap,
 		)
 	}

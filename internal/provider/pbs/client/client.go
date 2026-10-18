@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -116,10 +117,34 @@ func ValidateUPID(upid string) error {
 	if len(upid) < 36 || len(upid) > 256 {
 		return fmt.Errorf("invalid UPID: unexpected length")
 	}
-	if strings.ContainsAny(upid, " \t\r\n/\\?#%") {
+	if strings.ContainsAny(upid, " \t\r\n/?#%") {
 		return fmt.Errorf("invalid UPID: contains unsafe characters")
 	}
+	// PBS escapes colons embedded in worker IDs as the literal sequence
+	// "\\x3a" in returned UPIDs. Keep that representation intact for task
+	// status URLs, while rejecting every other backslash escape.
+	for i := 0; i < len(upid); i++ {
+		if upid[i] != '\\' {
+			continue
+		}
+		if i+3 >= len(upid) || upid[i+1] != 'x' || !isHexByte(upid[i+2:i+4]) {
+			return fmt.Errorf("invalid UPID: contains unsafe characters")
+		}
+		i += 3
+	}
 	return nil
+}
+
+func isHexByte(s string) bool {
+	if len(s) != 2 {
+		return false
+	}
+	for i := 0; i < 2; i++ {
+		if (s[i] < '0' || s[i] > '9') && (s[i] < 'a' || s[i] > 'f') && (s[i] < 'A' || s[i] > 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 // Version returns the PBS server version (GET /version).
@@ -162,6 +187,21 @@ func (c *Client) Datastore(ctx context.Context, name string) (*DatastoreConfig, 
 		return nil, err
 	}
 	return &resp.Data, nil
+}
+
+// CreateDatastore registers a datastore at an absolute backing path
+// (POST /config/datastore). PBS initializes the backing directory as needed.
+func (c *Client) CreateDatastore(ctx context.Context, req DatastoreCreateRequest) error {
+	if err := ValidateJobID(req.Name); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(req.Path, "/") || path.Clean(req.Path) != req.Path || req.Path == "/" {
+		return fmt.Errorf("datastore path must be a clean absolute POSIX path other than /")
+	}
+	form := url.Values{}
+	form.Set("name", req.Name)
+	form.Set("path", req.Path)
+	return c.postForm(ctx, "/config/datastore", form)
 }
 
 // DatastoreStatus returns datastore usage (GET /admin/datastore/{store}/status).
@@ -496,6 +536,27 @@ func (c *Client) post(ctx context.Context, path string, result any) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	return c.decodeResponse(resp, result)
+}
+
+func (c *Client) postForm(ctx context.Context, path string, form url.Values) error {
+	u := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(form.Encode()))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	if err := c.validateEndpoint(req.URL); err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if c.token != "" {
+		req.Header.Set("Authorization", "PBSAPIToken="+c.token)
+	}
+	resp, err := c.client.DoMutation(ctx, req)
+	if err != nil {
+		return &app.ProviderError{StatusCode: 0, Detail: fmt.Sprintf("execute request: %v", err), Err: err}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return c.decodeResponse(resp, nil)
 }
 
 // decodeResponse reads, validates, and decodes a PBS API response.

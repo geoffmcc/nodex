@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -96,6 +97,66 @@ func TestGetAcceptsBoundaryBody(t *testing.T) {
 	}
 	if out.Data.Version != "8.2" {
 		t.Fatalf("version = %q", out.Data.Version)
+	}
+}
+
+func TestCreateReplicationUsesPVEJobIDAndLocalType(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/cluster/replication" {
+			t.Fatalf("request = %s %s, want POST /cluster/replication", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		want := url.Values{
+			"id":       {"9924-0"},
+			"type":     {"local"},
+			"target":   {"pve"},
+			"schedule": {"Mon *-*-* 23:59:00"},
+			"comment":  {"NodeX validation"},
+		}
+		if got := r.Form; !reflect.DeepEqual(got, want) {
+			t.Errorf("replication create form = %v, want %v", got, want)
+		}
+		if r.Form.Has("guest") {
+			t.Errorf("replication create must encode guest in id, got guest field %q", r.Form.Get("guest"))
+		}
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	defer server.Close()
+	c := &Client{baseURL: server.URL, client: httpclient.New()}
+	err := c.CreateReplication(context.Background(), ReplicationCreateRequest{
+		ID: "9924-0", Target: "pve", Schedule: "Mon *-*-* 23:59:00", Comment: "NodeX validation",
+	})
+	if err != nil {
+		t.Fatalf("CreateReplication: %v", err)
+	}
+}
+
+func TestUpdateFirewallOptionsSendsExplicitZeroAndOmitsUnsupportedLogInDrop(t *testing.T) {
+	var got url.Values
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/cluster/firewall/options" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parse form: %v", err)
+		}
+		got = r.Form
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	zero := 0
+	if err := c.UpdateFirewallOptions(context.Background(), FirewallOptionsUpdateRequest{Enable: &zero}); err != nil {
+		t.Fatalf("update firewall options: %v", err)
+	}
+	if got.Get("enable") != "0" {
+		t.Fatalf("explicit disable was omitted: %v", got)
+	}
+	if _, exists := got["log_in_drop"]; exists {
+		t.Fatalf("unsupported log_in_drop was sent: %v", got)
 	}
 }
 

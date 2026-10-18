@@ -179,6 +179,10 @@ func parseGlobal(args []string) (opts Options, helpPath []string, remaining []st
 			continue
 		}
 
+		commandPath, flagSet := commandFlagInfo(path, region)
+		if !hasInline && flagSet.requiresInlineValue(name) {
+			return opts, helpPath, region, fmt.Errorf("flag %s requires an inline value; use --%s=<value> (see `nodex help %q`)", tok, name, commandPath)
+		}
 		return opts, helpPath, region, fmt.Errorf("unknown flag: %s", tok)
 	}
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -10,10 +11,12 @@ import (
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
+	pbsclient "github.com/geoffmcc/nodex/internal/provider/pbs/client"
+	"github.com/geoffmcc/nodex/internal/safety"
 )
 
 // Handlers for the `nodex pbs` command group (Proxmox Backup Server,
-// read-only). Every handler connects the profile's provider and requires the
+// handlers connect the profile's provider and require the
 // matching PBS capability interface, so running a pbs command against a
 // non-PBS profile fails with an unsupported-capability error.
 
@@ -188,7 +191,7 @@ func runPBSCertificates(ctx context.Context, cmdCtx *Context, args []string) err
 // === pbs datastore ===
 
 func runPBSDatastoreDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
-	usage := fmt.Errorf("usage: nodex pbs datastore <list|show> [args]")
+	usage := fmt.Errorf("usage: nodex pbs datastore <list|show|create> [args]")
 	if len(args) < 1 {
 		return app.NewExitError(usage, app.ExitUsage)
 	}
@@ -197,9 +200,93 @@ func runPBSDatastoreDispatch(ctx context.Context, cmdCtx *Context, args []string
 		return runPBSDatastoreList(ctx, cmdCtx, args[1:])
 	case "show":
 		return runPBSDatastoreShow(ctx, cmdCtx, args[1:])
+	case "create":
+		return runPBSDatastoreCreate(ctx, cmdCtx, args[1:])
 	default:
 		return app.NewExitError(usage, app.ExitUsage)
 	}
+}
+
+func runPBSDatastoreCreate(ctx context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 2 || strings.HasPrefix(args[0], "--") || strings.HasPrefix(args[1], "--") {
+		return app.NewExitError(fmt.Errorf("usage: nodex pbs datastore create <name> <absolute-path> --yes --force --confirm-target <name:path>"), app.ExitUsage)
+	}
+	name, backingPath := args[0], args[1]
+	if err := pbsclient.ValidateJobID(name); err != nil {
+		return app.NewExitError(fmt.Errorf("invalid datastore name: %w", err), app.ExitUsage)
+	}
+	if !strings.HasPrefix(backingPath, "/") || path.Clean(backingPath) != backingPath || backingPath == "/" {
+		return app.NewExitError(fmt.Errorf("datastore path must be a clean absolute POSIX path other than /"), app.ExitUsage)
+	}
+	target := name + ":" + backingPath
+	if err := checkDestructive(cmdCtx, "create PBS datastore at "+target, target); err != nil {
+		return err
+	}
+	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	creator, err := requirePBSDatastoreCreate(prov)
+	if err != nil {
+		return err
+	}
+	inspector, err := requirePBSDatastores(prov)
+	if err != nil {
+		return err
+	}
+	existingStores, err := inspector.PBSDatastores(ctx)
+	if err != nil {
+		return fmt.Errorf("check existing PBS datastores: %w", err)
+	}
+	for _, existing := range existingStores {
+		if existing.Name == name || existing.Path == backingPath {
+			return app.NewExitError(fmt.Errorf("datastore name or path already exists: %s:%s", existing.Name, existing.Path), app.ExitConflict)
+		}
+	}
+	if err := creator.PBSCreateDatastore(ctx, name, backingPath); err != nil {
+		return fmt.Errorf("create PBS datastore %q: %w", name, err)
+	}
+	var lastReadErr error
+	for attempt := 0; attempt < 12; attempt++ {
+		stores, readErr := inspector.PBSDatastores(ctx)
+		if readErr != nil {
+			lastReadErr = readErr
+		} else {
+			for _, store := range stores {
+				if store.Name == name && store.Path == backingPath {
+					return writePBSDatastoreCreateResult(cmdCtx, prov.Name(), target)
+				}
+			}
+		}
+		if attempt < 11 {
+			timer := time.NewTimer(250 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return app.NewExitError(fmt.Errorf("datastore creation submitted but read-back was interrupted: %w", ctx.Err()), app.ExitPartialFailure)
+			case <-timer.C:
+			}
+		}
+	}
+	if lastReadErr != nil {
+		return app.NewExitError(fmt.Errorf("datastore creation submitted but read-back failed: %w", lastReadErr), app.ExitPartialFailure)
+	}
+	return app.NewExitError(fmt.Errorf("datastore creation submitted but matching name/path was not present on read-back"), app.ExitPartialFailure)
+}
+
+func writePBSDatastoreCreateResult(cmdCtx *Context, provider, target string) error {
+	result := output.NewOperationResult("pbs datastore create", provider, cmdCtx.Opts.Profile)
+	result.Target = target
+	result.Safety = safety.TierDestructive.String()
+	result.Submitted = true
+	result.Synchronous = true
+	result.Success = true
+	result.Status = "verified"
+	result.Verification = "verified"
+	changed := true
+	result.Changed = &changed
+	return output.WriteResult(cmdCtx.Writer, cmdCtx.Opts.Output, result)
 }
 
 func runPBSDatastoreList(ctx context.Context, cmdCtx *Context, args []string) error {

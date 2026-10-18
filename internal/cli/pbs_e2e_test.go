@@ -24,6 +24,8 @@ func init() {
 // provider registry creates a fresh instance per connection, so the toggle
 // is package-level.
 var pbsE2EEmptyMode bool
+var pbsE2ECreatedDatastores []domain.PBSDatastore
+var pbsE2EReadbackDelay int
 
 // pbsE2EMockProvider implements domain.Provider plus every PBS inspector
 // interface with canned fictional data.
@@ -42,6 +44,7 @@ func (p *pbsE2EMockProvider) Connect(_ context.Context, _ string, _ *domain.Cred
 func (p *pbsE2EMockProvider) Capabilities() []domain.Capability {
 	return []domain.Capability{
 		domain.CapabilityPBSSystem, domain.CapabilityPBSDatastores,
+		domain.CapabilityPBSDatastoreCreate,
 		domain.CapabilityPBSSnapshots, domain.CapabilityPBSTasks,
 		domain.CapabilityPBSJobs, domain.CapabilityPBSGC,
 	}
@@ -83,6 +86,13 @@ func (p *pbsE2EMockProvider) PBSCertificates(_ context.Context) ([]domain.PBSCer
 }
 
 func (p *pbsE2EMockProvider) PBSDatastores(_ context.Context) ([]domain.PBSDatastore, error) {
+	if len(pbsE2ECreatedDatastores) > 0 {
+		if pbsE2EReadbackDelay > 0 {
+			pbsE2EReadbackDelay--
+			return nil, nil
+		}
+		return append([]domain.PBSDatastore(nil), pbsE2ECreatedDatastores...), nil
+	}
 	if p.isEmpty() {
 		return nil, nil
 	}
@@ -90,6 +100,12 @@ func (p *pbsE2EMockProvider) PBSDatastores(_ context.Context) ([]domain.PBSDatas
 		Name: "backups", Path: "/mnt/datastore/backups", Comment: "e2e datastore",
 		GCSchedule: "daily", PruneSchedule: "daily", VerifyNew: true,
 	}}, nil
+}
+
+func (p *pbsE2EMockProvider) PBSCreateDatastore(_ context.Context, name, backingPath string) error {
+	pbsE2ECreatedDatastores = append(pbsE2ECreatedDatastores, domain.PBSDatastore{Name: name, Path: backingPath})
+	pbsE2EReadbackDelay = 1
+	return nil
 }
 
 func (p *pbsE2EMockProvider) PBSDatastore(_ context.Context, name string) (*domain.PBSDatastore, error) {
@@ -399,6 +415,44 @@ func TestPBSE2E_EmptyListsStable(t *testing.T) {
 				t.Errorf("expected stable empty list [], got: %q", trimmed)
 			}
 		})
+	}
+}
+
+func TestPBSE2E_DatastoreCreateRequiresExactConfirmationAndVerifiesReadback(t *testing.T) {
+	seedPBSE2EConfig(t)
+	pbsE2EEmptyMode = true
+	pbsE2ECreatedDatastores = nil
+	pbsE2EReadbackDelay = 0
+	t.Cleanup(func() {
+		pbsE2EEmptyMode = false
+		pbsE2ECreatedDatastores = nil
+		pbsE2EReadbackDelay = 0
+	})
+	name, backingPath := "ndx-test", "/var/lib/proxmox-backup/ndx-test"
+	target := name + ":" + backingPath
+	_, _, err := runPBSCommand(t, "--profile", "pbs-e2e", "pbs", "datastore", "create", name, backingPath,
+		"--yes", "--force", "--confirm-target", "wrong")
+	if err == nil {
+		t.Fatal("create without exact target confirmation succeeded")
+	}
+	if len(pbsE2ECreatedDatastores) != 0 {
+		t.Fatal("provider was called before exact confirmation")
+	}
+	out, stderr, err := runPBSCommand(t, "--profile", "pbs-e2e", "--output", "json", "--yes", "--force", "--confirm-target", target,
+		"pbs", "datastore", "create", name, backingPath)
+	if err != nil {
+		t.Fatalf("create: %v (stderr: %s)", err, stderr)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("result JSON: %v (%s)", err, out)
+	}
+	if result["verification"] != "verified" || result["success"] != true {
+		t.Fatalf("result does not report verified success: %#v", result)
+	}
+	list, _, err := runPBSCommand(t, "--profile", "pbs-e2e", "--output", "json", "pbs", "datastore", "list")
+	if err != nil || !strings.Contains(list, name) || !strings.Contains(list, backingPath) {
+		t.Fatalf("created datastore missing from list: %v (%s)", err, list)
 	}
 }
 

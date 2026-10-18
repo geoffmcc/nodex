@@ -125,6 +125,73 @@ func TestRun_HelpCommand(t *testing.T) {
 	}
 }
 
+func TestBackupJobCreateHelpDocumentsModernScheduleSyntax(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"help", "backup job create"}, &stdout, &stderr); err != nil {
+		t.Fatalf("Run(help backup job create): %v (stderr %q)", err, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"schedule=<calendar>", "starttime=<HH:MM>", "dow=<d>"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("backup job create help missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRun_HelpCommandAcceptsQuotedMultiwordPath(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"help", "storage upload"}, &stdout, &stderr); err != nil {
+		t.Fatalf("Run(help \"storage upload\"): %v (stderr %q)", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Usage: nodex storage upload <node> <storage> <local-file>") {
+		t.Fatalf("quoted-path help = %q, want storage upload usage", stdout.String())
+	}
+}
+
+func TestAccessUserCreateHelpDocumentsPasswordInputModes(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"help", "access user create"}, &stdout, &stderr); err != nil {
+		t.Fatalf("Run(help access user create): %v (stderr %q)", err, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"--password-stdin", "prompts for its password interactively", "nodex access user create --profile homelab --yes --force --expert tom@pve", "nodex access user create --profile homelab --yes --force --expert --password-stdin tom@pve"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("access user create help missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "access user create access user create") {
+		t.Fatalf("access user create help repeats the command in an example:\n%s", out)
+	}
+}
+
+func TestSDNControllerCreateRejectsInvalidASNBeforeConnecting(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), []string{"sdn", "controller", "create", "ndxevpn1", "--asn=not-a-number"}, &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "invalid ASN") {
+		t.Fatalf("Run(invalid controller ASN) error = %v, want local ASN validation error", err)
+	}
+}
+
+func TestSDNControllerCreateRequiresExactlyOneUnderlayBeforeConnecting(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"missing", []string{"sdn", "controller", "create", "ndxevpn1", "--asn=65000"}, "exactly one"},
+		{"both", []string{"sdn", "controller", "create", "ndxevpn1", "--asn=65000", "--peers=10.0.0.1", "--fabric=fab1"}, "exactly one"},
+		{"invalid peer", []string{"sdn", "controller", "create", "ndxevpn1", "--asn=65000", "--peers=not-an-ip"}, "invalid peer IP"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			err := Run(context.Background(), tc.args, &stdout, &stderr)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Run() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestRun_UnknownCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), []string{"nonexistent"}, &stdout, &stderr)
@@ -498,6 +565,18 @@ func TestRun_DeepHelpExitsZero(t *testing.T) {
 	}
 }
 
+func TestContainerCreateHelpExplainsNestingForSystemdGetty(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if err := Run(context.Background(), []string{"container", "create", "--help"}, &stdout, &stderr); err != nil {
+		t.Fatalf("container create help: %v", err)
+	}
+	for _, want := range []string{"--nesting 1", "getty", "login prompt", "procfs/sysfs"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("container create help missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRun_DeepHelpDoesNotReachHandler(t *testing.T) {
 	// --help on a dispatch operation must render help without invoking the
 	// handler (which for e.g. access user create would prompt for credentials).
@@ -509,7 +588,7 @@ func TestRun_DeepHelpDoesNotReachHandler(t *testing.T) {
 	if !strings.Contains(combined, "nodex access user") {
 		t.Errorf("expected access user help, got:\n%s", combined)
 	}
-	if strings.Contains(combined, "Error:") || strings.Contains(combined, "password") {
+	if strings.Contains(combined, "Error:") || strings.Contains(combined, "Password:") {
 		t.Errorf("help reached a prompt/handler:\n%s", combined)
 	}
 }

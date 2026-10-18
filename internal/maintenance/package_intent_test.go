@@ -103,6 +103,13 @@ func TestParsePackageIntentsBindsAllArchitecturePackageToNativeIndex(t *testing.
 	if len(intents[0].Origins) != 1 || intents[0].Origins[0].Architecture != "amd64" {
 		t.Fatalf("signed index origin = %+v, want native amd64 index", intents[0].Origins)
 	}
+	if err := validateSecurityPackageIntents([]string{"python3-urllib3"}, intents); err != nil {
+		t.Fatalf("validate architecture-independent package intent: %v", err)
+	}
+	intents[0].Origins[0].Architecture = "arm64"
+	if err := validateSecurityPackageIntents([]string{"python3-urllib3"}, intents); err == nil {
+		t.Fatal("accepted origin architecture that differs from its signed APT source")
+	}
 }
 
 func TestParsePackageIntentsRejectsMissingCandidateSource(t *testing.T) {

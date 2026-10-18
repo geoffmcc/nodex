@@ -174,6 +174,35 @@ func missingProperties(observed, requested []configProperty) string {
 	return strings.Join(missing, ", ")
 }
 
+// cloudInitVolumeMatches accepts Proxmox's canonical readback for the
+// storage:cloudinit shorthand. Proxmox expands it to a VM-specific volume and
+// adds media=cdrom when the config is read back.
+func cloudInitVolumeMatches(observed, requested string) bool {
+	requestedStorage, requestedVolume, ok := strings.Cut(requested, ":")
+	if !ok || requestedStorage == "" || requestedVolume != "cloudinit" {
+		return false
+	}
+	observedProperties, ok := parseConfigProperties(observed)
+	if !ok || len(observedProperties) < 2 {
+		return false
+	}
+	volumeStorage, volumeName, ok := strings.Cut(observedProperties[0].value, ":")
+	if !ok || volumeStorage != requestedStorage || !strings.HasPrefix(volumeName, "vm-") || !strings.HasSuffix(volumeName, "-cloudinit") {
+		return false
+	}
+	vmid := strings.TrimSuffix(strings.TrimPrefix(volumeName, "vm-"), "-cloudinit")
+	if _, err := strconv.Atoi(vmid); err != nil {
+		return false
+	}
+	mediaIsCDROM := false
+	for _, property := range observedProperties[1:] {
+		if property.key == "media" && property.value == "cdrom" {
+			mediaIsCDROM = true
+		}
+	}
+	return mediaIsCDROM
+}
+
 // verifyConfigReadback compares each requested key against the provider's
 // current config. It returns whether every requested field matched.
 //
@@ -205,6 +234,9 @@ func verifyConfigReadback(observed map[string]interface{}, requested map[string]
 				continue
 			}
 			mismatches = append(mismatches, configFieldMismatch{Key: key, Request: wantCanonical, Observed: got})
+			continue
+		}
+		if present && cloudInitVolumeMatches(got, wantCanonical) {
 			continue
 		}
 		// Compare a property list by the properties asked for, so a

@@ -9,12 +9,13 @@ import "context"
 
 // PBS capability constants.
 const (
-	CapabilityPBSSystem     Capability = "pbs_system"
-	CapabilityPBSDatastores Capability = "pbs_datastores"
-	CapabilityPBSSnapshots  Capability = "pbs_snapshots"
-	CapabilityPBSTasks      Capability = "pbs_tasks"
-	CapabilityPBSJobs       Capability = "pbs_jobs"
-	CapabilityPBSGC         Capability = "pbs_gc"
+	CapabilityPBSSystem          Capability = "pbs_system"
+	CapabilityPBSDatastores      Capability = "pbs_datastores"
+	CapabilityPBSDatastoreCreate Capability = "pbs_datastore_create"
+	CapabilityPBSSnapshots       Capability = "pbs_snapshots"
+	CapabilityPBSTasks           Capability = "pbs_tasks"
+	CapabilityPBSJobs            Capability = "pbs_jobs"
+	CapabilityPBSGC              Capability = "pbs_gc"
 
 	// Guarded PBS mutations. Each ran through the product decision gate;
 	// safety tiers are declared in CapabilityMetadata:
@@ -278,6 +279,11 @@ type PBSDatastoreInspector interface {
 	PBSDatastore(ctx context.Context, name string) (*PBSDatastore, error)
 	PBSDatastoreStatus(ctx context.Context, store string) (*PBSDatastoreStatus, error)
 	PBSDatastoreUsages(ctx context.Context) ([]PBSDatastoreUsage, error)
+}
+
+// PBSDatastoreCreator creates a PBS datastore configuration on an explicit path.
+type PBSDatastoreCreator interface {
+	PBSCreateDatastore(ctx context.Context, name, path string) error
 }
 
 // PBSSnapshotInspector exposes backup snapshot inspection.

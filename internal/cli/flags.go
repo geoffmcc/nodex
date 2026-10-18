@@ -31,6 +31,15 @@ func (fs flagSet) owns(name string, hasInline bool) bool {
 	return false
 }
 
+func (fs flagSet) requiresInlineValue(name string) bool {
+	for _, f := range fs.params {
+		if name == f {
+			return true
+		}
+	}
+	return false
+}
+
 // handlerFlags maps command paths (joined by spaces) to the flags the
 // handler owns. Keys are full leaf paths ("setup", "certification run",
 // "pbs snapshot list") or dispatch sub-operations registered in
@@ -87,6 +96,7 @@ var handlerFlags = map[string]flagSet{
 	"sdn zone create":               {params: []string{"type"}},
 	"sdn vnet create":               {params: []string{"zone"}},
 	"sdn subnet create":             {params: []string{"gateway"}},
+	"sdn controller create":         {params: []string{"asn", "peers", "fabric"}},
 }
 
 func maintenanceFilterFlags() []string {
@@ -105,9 +115,14 @@ func firewallRuleParams() []string {
 // knownDispatchCommands ('region[0]' is the operation token, e.g. "create"
 // for "firewall alias create").
 func commandFlagSet(path, region []string) flagSet {
+	_, fs := commandFlagInfo(path, region)
+	return fs
+}
+
+func commandFlagInfo(path, region []string) (string, flagSet) {
 	full := strings.Join(path, " ")
 	if fs, ok := handlerFlags[full]; ok {
-		return fs
+		return full, fs
 	}
 	ops, ok := knownDispatchCommands[full]
 	if !ok {
@@ -117,9 +132,10 @@ func commandFlagSet(path, region []string) flagSet {
 		}
 	}
 	if !ok || len(region) == 0 {
-		return flagSet{}
+		return full, flagSet{}
 	}
 	bestLength := 0
+	bestPath := full
 	var best flagSet
 	for _, candidate := range ops {
 		suffix := strings.Fields(strings.TrimPrefix(candidate, full+" "))
@@ -137,10 +153,10 @@ func commandFlagSet(path, region []string) flagSet {
 			continue
 		}
 		if fs, ok := handlerFlags[candidate]; ok {
-			best, bestLength = fs, len(suffix)
+			best, bestLength, bestPath = fs, len(suffix), candidate
 		}
 	}
-	return best
+	return bestPath, best
 }
 
 // globalBoolFlags are global flags that take no value (unless --flag=false).

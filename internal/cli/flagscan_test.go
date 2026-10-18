@@ -65,6 +65,16 @@ func TestParseGlobalRemainingPreservesCommandPath(t *testing.T) {
 			wantErr: "unknown flag: --bogus",
 		},
 		{
+			name:    "inline handler value gives recovery syntax",
+			args:    []string{"sdn", "zone", "create", "ndxv01", "--type", "simple"},
+			wantErr: "flag --type requires an inline value; use --type=<value> (see `nodex help \"sdn zone create\"`)",
+		},
+		{
+			name:    "controller ASN space syntax gives recovery syntax",
+			args:    []string{"sdn", "controller", "create", "ndxevpn1", "--asn", "65000"},
+			wantErr: "flag --asn requires an inline value; use --asn=<value> (see `nodex help \"sdn controller create\"`)",
+		},
+		{
 			name:    "missing global value",
 			args:    []string{"--output"},
 			wantErr: "flag needs an argument: --output",

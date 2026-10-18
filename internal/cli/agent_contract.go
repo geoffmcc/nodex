@@ -233,6 +233,10 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 			if op.Path == "pbs verify run" {
 				flags[i].Required = false // one branch of an exclusive job-ID/datastore choice
 			}
+		case "--peers", "--fabric":
+			if op.Path == "sdn controller create" {
+				flags[i].Required = false
+			}
 		}
 	}
 	args := parseArgumentSyntax(op.Path, usage)
@@ -646,6 +650,12 @@ func operationInputSchema(op OperationMeta, args []AgentArgument, flags []AgentF
 			map[string]any{"required": []string{"--group"}},
 		}
 	}
+	if op.Path == "sdn controller create" {
+		flagsSchema["oneOf"] = []any{
+			map[string]any{"required": []string{"--peers"}},
+			map[string]any{"required": []string{"--fabric"}},
+		}
+	}
 	if len(requiredFlags) > 0 {
 		flagsSchema["required"] = requiredFlags
 	}
@@ -815,6 +825,8 @@ func sideEffects(op OperationMeta) ([]string, []string) {
 		return []string{"local_agent_receipt_write"}, []string{"remote_read"}
 	case "agent receipt show", "agent receipt list":
 		return []string{"local_receipt_read", "local_receipt_directory_create_if_missing"}, []string{}
+	case "agent receipt delete":
+		return []string{"local_agent_receipt_write"}, []string{}
 	case "maintenance report":
 		return []string{"local_maintenance_receipt_read"}, []string{}
 	}
@@ -859,6 +871,8 @@ func operationConstraints(op OperationMeta) []string {
 	switch op.Path {
 	case "pbs verify run":
 		constraints = append(constraints, "provide exactly one positional job ID or --datastore <store>")
+	case "sdn controller create":
+		constraints = append(constraints, "provide exactly one of --peers=<ip[,ip...]> or --fabric=<name>")
 	case "firewall rule create":
 		constraints = append(constraints, "action and type are required; cluster scope takes no resource ID, node scope requires a node, and VM scope requires node/VMID; remaining fields are validated by the existing firewall handler")
 	case "firewall rule update", "firewall rule delete":

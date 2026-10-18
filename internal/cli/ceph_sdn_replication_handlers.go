@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -684,12 +685,65 @@ func runSDNSubnetDelete(ctx context.Context, cmdCtx *Context, args []string) err
 	return nil
 }
 
-// nodex sdn controller create <name>
+// nodex sdn controller create <name> --asn=<asn> --peers=<ip[,ip...]>
 func runSDNControllerCreate(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) != 1 {
-		return app.NewExitError(fmt.Errorf("usage: nodex sdn controller create <name>"), app.ExitUsage)
+	if len(args) < 2 {
+		return app.NewExitError(fmt.Errorf("usage: nodex sdn controller create <name> --asn=<asn> (--peers=<ip[,ip...]> | --fabric=<name>)"), app.ExitUsage)
 	}
 	ctrlName := args[0]
+	var asn uint64
+	gotASN := false
+	peers := ""
+	gotPeers := false
+	fabric := ""
+	gotFabric := false
+	for _, arg := range args[1:] {
+		key, value, ok := strings.Cut(arg, "=")
+		if !ok || (key != "--asn" && key != "--peers" && key != "--fabric") {
+			return app.NewExitError(fmt.Errorf("unknown SDN controller create argument %q; expected --asn=<asn> and exactly one of --peers=<ip[,ip...]> or --fabric=<name>", arg), app.ExitUsage)
+		}
+		if key == "--asn" {
+			if gotASN {
+				return app.NewExitError(fmt.Errorf("--asn may be specified only once"), app.ExitUsage)
+			}
+			parsed, err := strconv.ParseUint(value, 10, 32)
+			if err != nil {
+				return app.NewExitError(fmt.Errorf("invalid ASN %q: expected an integer from 0 to 4294967295", value), app.ExitUsage)
+			}
+			asn, gotASN = parsed, true
+		} else {
+			if key == "--peers" {
+				if gotPeers {
+					return app.NewExitError(fmt.Errorf("--peers may be specified only once"), app.ExitUsage)
+				}
+				if strings.TrimSpace(value) == "" {
+					return app.NewExitError(fmt.Errorf("--peers must be a comma-separated IP list"), app.ExitUsage)
+				}
+				peers, gotPeers = value, true
+			} else {
+				if gotFabric {
+					return app.NewExitError(fmt.Errorf("--fabric may be specified only once"), app.ExitUsage)
+				}
+				if strings.TrimSpace(value) == "" {
+					return app.NewExitError(fmt.Errorf("--fabric must name a configured SDN fabric"), app.ExitUsage)
+				}
+				fabric, gotFabric = value, true
+			}
+		}
+	}
+	if !gotASN {
+		return app.NewExitError(fmt.Errorf("--asn is required; use --asn=<0..4294967295>"), app.ExitUsage)
+	}
+	if gotPeers == gotFabric {
+		return app.NewExitError(fmt.Errorf("specify exactly one of --peers=<ip[,ip...]> or --fabric=<name>"), app.ExitUsage)
+	}
+	if gotPeers {
+		for _, peer := range strings.Split(peers, ",") {
+			if net.ParseIP(strings.TrimSpace(peer)) == nil {
+				return app.NewExitError(fmt.Errorf("invalid peer IP %q", peer), app.ExitUsage)
+			}
+		}
+	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
@@ -707,7 +761,7 @@ func runSDNControllerCreate(ctx context.Context, cmdCtx *Context, args []string)
 		return err
 	}
 
-	if err := sm.SDNCreateController(ctx, ctrlName); err != nil {
+	if err := sm.SDNCreateController(ctx, ctrlName, uint32(asn), peers, fabric); err != nil {
 		return fmt.Errorf("create SDN controller: %w", err)
 	}
 
@@ -855,29 +909,36 @@ func writeReplicationJobDetail(cmdCtx *Context, job *domain.ReplicationJob) erro
 	}
 }
 
-// nodex replication create <id> <guest> <type> <target> [key=value...]
+func parseReplicationJobID(id string) (int, error) {
+	guestText, jobText, ok := strings.Cut(id, "-")
+	guest, guestErr := strconv.Atoi(guestText)
+	jobNum, jobErr := strconv.Atoi(jobText)
+	if !ok || guestErr != nil || jobErr != nil || guest < 100 || guest > 999999999 || jobNum < 0 || jobNum > 999999999 {
+		return 0, fmt.Errorf("invalid replication job ID %q; use <guest>-<job-number>, for example 9924-0", id)
+	}
+	return guest, nil
+}
+
+// nodex replication create <guest-job-id> <target> [key=value...]
 func runReplicationCreate(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) < 4 {
-		return app.NewExitError(fmt.Errorf("usage: nodex replication create <id> <guest> <type> <target> [key=value...]"), app.ExitUsage)
+	if len(args) < 2 {
+		return app.NewExitError(fmt.Errorf("usage: nodex replication create <guest-job-id> <target> [key=value...] (ID format: <guest>-<job-number>)"), app.ExitUsage)
 	}
 
 	id := args[0]
-	guest, err := strconv.Atoi(args[1])
-	if err != nil || guest <= 0 {
-		return app.NewExitError(fmt.Errorf("invalid guest ID: %s", args[1]), app.ExitUsage)
+	guest, err := parseReplicationJobID(id)
+	if err != nil {
+		return app.NewExitError(err, app.ExitUsage)
 	}
-	jobType := args[2]
-	target := args[3]
+	target := args[1]
 
 	input := domain.ReplicationCreateInput{
 		ID:     id,
-		Guest:  guest,
-		Type:   jobType,
 		Target: target,
 	}
 
 	// Parse optional key=value parameters
-	for _, arg := range args[4:] {
+	for _, arg := range args[2:] {
 		parts := strings.SplitN(arg, "=", 2)
 		if len(parts) != 2 {
 			return app.NewExitError(fmt.Errorf("invalid parameter: %s (expected key=value)", arg), app.ExitUsage)

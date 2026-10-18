@@ -27,6 +27,7 @@ var leafHelp = map[string]helpEntry{
 	"agent contract":          {usage: ""},
 	"agent receipt list":      {usage: "[--request-prefix <prefix>]"},
 	"agent receipt show":      {usage: "<request-id>"},
+	"agent receipt delete":    {desc: "Delete a completed local receipt", usage: "<request-id> --yes --force --confirm-target <request-id>"},
 	"agent receipt refresh":   {usage: "<request-id> --yes"},
 	"agent receipt reconcile": {usage: "<request-id> --yes"},
 	"operation list":          {usage: ""},
@@ -86,8 +87,8 @@ var leafHelp = map[string]helpEntry{
 	"container stop":               {usage: "<node>/<vmid>"},
 	"container shutdown":           {usage: "<node>/<vmid>"},
 	"container reboot":             {usage: "<node>/<vmid>"},
-	"container suspend":            {usage: "<node>/<vmid>"},
-	"container resume":             {usage: "<node>/<vmid>"},
+	"container suspend":            {desc: "Experimental Proxmox LXC/CRIU checkpoint operation; support depends on guest console and host configuration", usage: "<node>/<vmid>"},
+	"container resume":             {desc: "Experimental Proxmox LXC/CRIU checkpoint operation; support depends on guest console and host configuration", usage: "<node>/<vmid>"},
 	"container update":             {usage: "<node>/<vmid> <key=value>"},
 	"container os-update":          {usage: "<node>/<vmid> --policy approved-full-upgrade"},
 	"container install":            {usage: "<node>/<vmid> <package> [package ...]"},
@@ -95,7 +96,7 @@ var leafHelp = map[string]helpEntry{
 	"container template":           {usage: "<node>/<vmid>"},
 	"container migrate":            {usage: "<node>/<vmid> <target>"},
 	"container clone":              {usage: "<node>/<vmid> <new-vmid> <name> [storage]"},
-	"container create":             {desc: "Creates an unprivileged container with a login-ready /dev/console; networking is opt-in with --net0. Set --nesting 1 for guests that need nested features such as newer systemd-networkd. Defaults to 2048 MiB RAM, 512 MiB swap, and Proxmox CPU allocation.", usage: "<node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB] [--net0 CONFIG] [--nameserver IP] [--searchdomain DOMAIN] [--nesting 0|1]"},
+	"container create":             {desc: "Creates an unprivileged container with /dev/console. Some systemd guests need --nesting 1 for getty to provide a login prompt; nesting expands procfs/sysfs access. Networking is opt-in with --net0. Defaults to 2048 MiB RAM, 512 MiB swap, and Proxmox CPU allocation.", usage: "<node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB] [--net0 CONFIG] [--nameserver IP] [--searchdomain DOMAIN] [--nesting 0|1]"},
 	"container restore":            {usage: "<node> <vmid> <archive> [storage]"},
 	"container console":            {usage: "<node>/<vmid>"},
 	"storage list":                 {usage: ""},
@@ -151,7 +152,7 @@ var leafHelp = map[string]helpEntry{
 	"ceph status":                  {usage: "<node>"},
 	"replication list":             {usage: ""},
 	"replication show":             {usage: "<id>"},
-	"replication create":           {usage: "<id> <guest> <type> <target> [key=value...]"},
+	"replication create":           {usage: "<guest-job-id> <target> [key=value...]"},
 	"replication update":           {usage: "<id> [key=value...]"},
 	"replication delete":           {usage: "<id>"},
 	"replication schedule":         {usage: "<node> <id>"},
@@ -168,7 +169,7 @@ var leafHelp = map[string]helpEntry{
 	"profile diagnose-permissions": {usage: "<profile>"},
 	"provider list":                {usage: ""},
 	"provider capabilities":        {usage: "<name>"},
-	"certification run":            {usage: "--environment <name> --suite <readonly|disposable-mutations> --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage> [--ledger <path>]"},
+	"certification run":            {usage: "--environment <name> --suite <readonly|disposable-mutations> --node <node> --vmid <id> --name nodex-cert-<name> --storage <storage> --yes --force --confirm-target <name> [--ledger <path>]"},
 	"certification cleanup":        {usage: "[--ledger <path>]"},
 	"certification report":         {usage: "[--ledger <path>]"},
 
@@ -197,10 +198,10 @@ var leafHelp = map[string]helpEntry{
 	"firewall group delete":          {desc: "Delete a firewall security group", usage: "<name>"},
 	"firewall security-group create": {desc: "Create a firewall security group", usage: "<name> [--comment \"...\"]"},
 	"firewall security-group delete": {desc: "Delete a firewall security group", usage: "<name>"},
-	"firewall options update":        {desc: "Update firewall options", usage: "enable=<0|1> [policy_in=<a>] [policy_out=<a>] [log_in_drop=<0|1>] [log_ratelimit=<s>] [nf_conntrack_max=<n>] [digest=<s>]"},
+	"firewall options update":        {desc: "Update firewall options", usage: "enable=<0|1> [policy_in=<a>] [policy_out=<a>] [log_ratelimit=<s>] [nf_conntrack_max=<n>] [digest=<s>]"},
 	"backup job list":                {desc: "List backup job schedules", usage: ""},
 	"backup job show":                {desc: "Show a backup job schedule", usage: "<id>"},
-	"backup job create":              {desc: "Create a backup job schedule", usage: "storage=<name> mode=<mode> starttime=<HH:MM> [node=<n>] [vmid=<id>] [dow=<d>] [compress=<c>] [comment=<c>] [mailnotification=<m>] [mailto=<m>] [prune-backups=<p>] [pool=<p>]"},
+	"backup job create":              {desc: "Create a backup job schedule", usage: "storage=<name> mode=<mode> schedule=<calendar> (or starttime=<HH:MM> [dow=<d>]) [node=<n>] [vmid=<id>] [compress=<c>] [comment=<c>] [mailnotification=<m>] [mailto=<m>] [prune-backups=<p>] [pool=<p>]"},
 	"backup job update":              {desc: "Update a backup job schedule", usage: "<id> [key=value ...]"},
 	"backup job delete":              {desc: "Delete a backup job schedule", usage: "<id>"},
 	"sdn zone create":                {desc: "Create an SDN zone", usage: "<name> --type=<type>"},
@@ -209,7 +210,7 @@ var leafHelp = map[string]helpEntry{
 	"sdn vnet delete":                {desc: "Delete an SDN VNet", usage: "<name>"},
 	"sdn subnet create":              {desc: "Create an SDN subnet", usage: "<vnet> <cidr> --gateway=<gw>"},
 	"sdn subnet delete":              {desc: "Delete an SDN subnet", usage: "<vnet> <subnet>"},
-	"sdn controller create":          {desc: "Create an SDN controller", usage: "<name>"},
+	"sdn controller create":          {desc: "Create an EVPN SDN controller; provide a local ASN and either peer IPs or a fabric", usage: "<name> --asn=<0..4294967295> (--peers=<ip[,ip...]> | --fabric=<name>)", examples: []string{"ndxevpn1 --asn=65000 --peers=10.0.0.1,10.0.0.2", "ndxevpn1 --asn=65000 --fabric=fab1"}},
 	"sdn controller delete":          {desc: "Delete an SDN controller", usage: "<name>"},
 	"ceph osd list":                  {desc: "List Ceph OSDs", usage: "<node>"},
 	"ceph osd create":                {desc: "Create a Ceph OSD", usage: "<node> <dev>"},
@@ -220,7 +221,7 @@ var leafHelp = map[string]helpEntry{
 	"ceph pool list":                 {desc: "List Ceph pools", usage: "<node>"},
 	"ceph pool create":               {desc: "Create a Ceph pool", usage: "<node> <name> [key=value...]"},
 	"ceph pool destroy":              {desc: "Destroy a Ceph pool", usage: "<node> <name>"},
-	"access user create":             {desc: "Create an access user", usage: "<userid> [email=<e>] [firstname=<f>] [lastname=<l>] [comment=<c>]", examples: []string{"tom email=tom@example.com"}},
+	"access user create":             {desc: "Create an access user; prompts for its password interactively or reads it from stdin with --password-stdin", usage: "<userid> [--password-stdin] [email=<e>] [firstname=<f>] [lastname=<l>] [comment=<c>]", examples: []string{"tom email=tom@example.com", "--profile homelab --yes --force --expert tom@pve", "--profile homelab --yes --force --expert --password-stdin tom@pve"}},
 	"access user delete":             {desc: "Delete an access user", usage: "<userid>"},
 	"access users list":              {desc: "List access users", usage: ""},
 	"access groups list":             {desc: "List access groups", usage: ""},
@@ -234,6 +235,7 @@ var leafHelp = map[string]helpEntry{
 	// PBS dispatch leaves.
 	"pbs datastore list":            {desc: "List PBS datastores", usage: ""},
 	"pbs datastore show":            {desc: "Show PBS datastore details", usage: "<datastore>"},
+	"pbs datastore create":          {desc: "Create a PBS datastore (destructive; exact confirmation required)", usage: "<name> <absolute-path> --yes --force --confirm-target <name:path>"},
 	"pbs snapshot list":             {desc: "List PBS backup snapshots", usage: "--datastore <store> [--namespace <ns>] [--backup-type vm|ct|host] [--backup-id <id>]"},
 	"pbs task list":                 {desc: "List PBS tasks", usage: "[--running] [--errors]"},
 	"pbs task show":                 {desc: "Show a PBS task", usage: "<upid>"},
@@ -281,6 +283,11 @@ func printCommandHelp(w io.Writer, path []string) bool {
 	if len(path) == 0 {
 		printUsage(w)
 		return true
+	}
+	// Accept the same quoted multiword operation path used by
+	// `operation describe`, e.g. `nodex help "storage upload"`.
+	if len(path) == 1 && strings.ContainsAny(path[0], " \t") {
+		path = strings.Fields(path[0])
 	}
 
 	if isDispatchOp(strings.Join(path, " ")) {

@@ -502,6 +502,22 @@ func (l *Lease) Save(r Receipt) error {
 	return syncReceiptDirectory(l.store.dir)
 }
 
+// Delete removes one terminal receipt while holding its per-request lease.
+// Unresolved submissions are retained so cleanup cannot erase recovery data.
+func (l *Lease) Delete() error {
+	r, err := l.Load()
+	if err != nil {
+		return err
+	}
+	if r.Submission == SubmissionUnknown || r.Execution == ExecutionUnknown || r.Execution == ExecutionRunning {
+		return errors.New("cannot delete an unresolved receipt; reconcile it first")
+	}
+	if err := os.Remove(l.path); err != nil {
+		return fmt.Errorf("delete receipt: %w", err)
+	}
+	return syncReceiptDirectory(l.store.dir)
+}
+
 func (s *Store) Get(id string) (Receipt, error) {
 	l, err := s.Lock(id)
 	if err != nil {

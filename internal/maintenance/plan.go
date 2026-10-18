@@ -354,7 +354,8 @@ func validateSecurityPackageIntents(updates []string, intents []PackageIntent) e
 			archiveComponent := strings.SplitN(sourceFields[1], "/", 2)
 			if urlErr != nil || sourceURL.User != nil || sourceURL.RawQuery != "" || sourceURL.Fragment != "" || len(archiveComponent) != 2 ||
 				origin.Site != sourceFields[0] || origin.Release != archiveComponent[0] || origin.Component != archiveComponent[1] ||
-				origin.Origin == "" || origin.Architecture != intent.Architecture || sourceFields[2] != intent.Architecture || originSet[origin.Record()] {
+				origin.Origin == "" || origin.Architecture != sourceFields[2] ||
+				(intent.Architecture != "all" && sourceFields[2] != intent.Architecture) || originSet[origin.Record()] {
 				return fmt.Errorf("security package %q has invalid APT origin evidence; regenerate the plan", intent.Name)
 			}
 			originSet[origin.Record()] = true

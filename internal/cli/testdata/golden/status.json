@@ -78,7 +78,7 @@
   },
   "ha": {
     "status": "online",
-    "quorum": 1,
+    "quorum": 3,
     "quorum_known": true,
     "standalone": false
   },

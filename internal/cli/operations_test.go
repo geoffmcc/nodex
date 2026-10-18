@@ -19,6 +19,19 @@ func TestOperations_Count(t *testing.T) {
 	t.Logf("Registry: %d total, %d inspection, %d mutation", len(ops), len(inspect), len(mutate))
 }
 
+func TestPBSDatastoreCreateIsAdvertisedAsConfirmedMutation(t *testing.T) {
+	op := LookupOperation("pbs datastore create")
+	if op == nil {
+		t.Fatal("pbs datastore create is missing from operation registry")
+	}
+	if op.Inspection || op.SafetyTier != safety.TierDestructive || !op.RequiresTypeConfirm {
+		t.Fatalf("unexpected create safety metadata: inspection=%v tier=%s type-confirm=%v", op.Inspection, op.SafetyTier, op.RequiresTypeConfirm)
+	}
+	if op.ConfirmTargetFormat == "" || op.CapabilityInterface != "PBSDatastoreCreator" {
+		t.Fatalf("create operation lacks confirmation or provider interface metadata: %+v", op)
+	}
+}
+
 func TestOperations_EveryMutationHasTierAboveObservation(t *testing.T) {
 	for _, op := range MutationOperations() {
 		if op.SafetyTier == safety.TierObservation {
@@ -76,6 +89,7 @@ func TestOperations_ConfirmTargetFormatMatchesHandlerTarget(t *testing.T) {
 		{"container snapshot delete", "snapshot name only"},
 		{"storage delete", "storage-relative volume ID only"},
 		{"backup job delete", "backup job ID only"},
+		{"certification run", "exact certification VM name supplied with --name"},
 	}
 	for _, tt := range tests {
 		op := LookupOperation(tt.path)
@@ -141,6 +155,46 @@ func TestNodeUpdatesIsConfirmedBecauseProxmoxRefreshesPackageStatusCache(t *test
 	}
 	if op.SafetyTier != safety.TierReversible {
 		t.Fatalf("node updates tier = %s, want reversible", op.SafetyTier)
+	}
+}
+
+func TestContainerSuspendIsAdvertisedAsExperimental(t *testing.T) {
+	op := LookupOperation("container suspend")
+	if op == nil {
+		t.Fatal("LookupOperation(\"container suspend\") = nil")
+	}
+	if !strings.Contains(strings.ToLower(op.Description), "experimental") {
+		t.Fatalf("container suspend description = %q, want experimental warning", op.Description)
+	}
+}
+
+func TestSDNControllerCreatePublishesEVPNASNRequirement(t *testing.T) {
+	op := LookupOperation("sdn controller create")
+	if op == nil {
+		t.Fatal("LookupOperation(\"sdn controller create\") = nil")
+	}
+	if !strings.Contains(op.Description, "EVPN") || !strings.Contains(op.Description, "ASN") {
+		t.Fatalf("description = %q, want EVPN/ASN requirements", op.Description)
+	}
+	contract := describeOperation(*op, true)
+	if contract.ArgumentSyntax != "<name> --asn=<0..4294967295> (--peers=<ip[,ip...]> | --fabric=<name>)" {
+		t.Fatalf("argument syntax = %q", contract.ArgumentSyntax)
+	}
+	foundASN := false
+	foundPeers := false
+	for _, flag := range contract.Flags {
+		if flag.Name == "--asn" && strings.Contains(flag.ValueSyntax, "--asn=<value>") {
+			foundASN = true
+		}
+		if flag.Name == "--peers" && strings.Contains(flag.ValueSyntax, "--peers=<value>") {
+			foundPeers = true
+		}
+	}
+	if !foundASN {
+		t.Fatal("operation description does not expose the inline --asn flag")
+	}
+	if !foundPeers {
+		t.Fatal("operation description does not expose the inline --peers flag")
 	}
 }
 
@@ -538,6 +592,30 @@ func TestOperations_DescriptionsNotEmpty(t *testing.T) {
 			t.Errorf("%q has empty description", op.Path)
 		}
 	}
+}
+
+func TestProfileImportDescriptionExplainsConfigPrerequisite(t *testing.T) {
+	for _, op := range Operations() {
+		if op.Path == "profile import" {
+			if !strings.Contains(op.Description, "nodex init") {
+				t.Fatalf("profile import description = %q, want nodex init prerequisite", op.Description)
+			}
+			return
+		}
+	}
+	t.Fatal("profile import operation metadata not found")
+}
+
+func TestContainerCreateDescriptionDisclosesNestingConsoleRequirement(t *testing.T) {
+	for _, op := range Operations() {
+		if op.Path == "container create" {
+			if !strings.Contains(op.Description, "--nesting 1") || !strings.Contains(op.Description, "login prompt") {
+				t.Fatalf("container create description = %q, want nesting/getty login guidance", op.Description)
+			}
+			return
+		}
+	}
+	t.Fatal("container create operation metadata not found")
 }
 
 func TestOperations_HandlerFuncNotEmpty(t *testing.T) {

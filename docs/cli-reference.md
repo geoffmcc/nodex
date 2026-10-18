@@ -136,7 +136,7 @@ the configured certification environment. It never falls back to the current
 profile.
 
 ```bash
-nodex --profile nodex-test-profile --yes --confirm-target nodex-cert-smoke \
+nodex --profile nodex-test-profile --yes --force --confirm-target nodex-cert-smoke \
   certification run --environment <environment> --suite <readonly|disposable-mutations> \
   --node <node> --vmid <vmid> --name nodex-cert-smoke --storage <storage>
 nodex --profile nodex-test-profile --yes --confirm-target <ledger-entry-id> certification cleanup
@@ -259,7 +259,7 @@ Subcommands:
 | `profile diagnose-permissions <name>` | Report confirmed, missing, unsupported, and unknown setup/permission checks without exposing credentials |
 | `profile remove <name> [--remove-credential]` | Remove a profile |
 | `profile export <name>` | Export a sanitized profile (no credentials) |
-| `profile import <name>` | Import a profile from stdin under the given name |
+| `profile import <name>` | Import a profile from stdin under the given name; initialize config with `nodex init` first |
 
 `set-credentials` stores token credentials in the `file` backend by default. Use `--backend keyring` for OS keyring. Use `--credential-name <name>` for a different credential name. This command requires interactive input; rejected with `--non-interactive`.
 
@@ -411,8 +411,8 @@ Inspect and operate containers.
 | `container start <id>` | Start a container |
 | `container stop <id>` | Stop a container (force) |
 | `container shutdown <id>` | Graceful container shutdown |
-| `container suspend <id>` | Suspend a container (Proxmox LXC checkpoint support is experimental) |
-| `container resume <id>` | Resume a suspended container |
+| `container suspend <id>` | Experimental Proxmox LXC/CRIU checkpoint operation; support depends on guest console and host configuration |
+| `container resume <id>` | Experimental Proxmox LXC/CRIU checkpoint operation; support depends on guest console and host configuration |
 | `container console <node>/<vmid>` | Open an interactive container console (text mode) |
 
 Proxmox LXC suspend is experimental and uses CRIU checkpointing through
@@ -429,7 +429,7 @@ suspended state through `status/current`.
 |---------|-------------|
 | `container reboot <id>` | Reboot a container |
 | `container migrate <node>/<vmid> <target>` | Migrate a container to another node |
-| `container create <node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB] [--net0 CONFIG] [--nameserver IP] [--searchdomain DOMAIN] [--nesting 0|1]` | Create an unprivileged container with a login-ready `/dev/console`, bounded resources, and optional network settings |
+| `container create <node> <vmid> <ostemplate> [hostname] [storage] [--rootfs-storage ID] [--cores N] [--memory MiB] [--swap MiB] [--rootfs-size GiB] [--net0 CONFIG] [--nameserver IP] [--searchdomain DOMAIN] [--nesting 0|1]` | Create an unprivileged container with `/dev/console`, bounded resources, and optional network settings |
 | `container restore <node> <vmid> <archive> [storage]` | Restore a container from a backup archive |
 
 With `--wait`, VM and container migrations read the guest config on both nodes
@@ -446,18 +446,19 @@ configuration back to confirm it exists. Receipt reconciliation repeats that
 existence check without resubmitting the restore.
 
 Container creation sets Proxmox `cmode=console` so the Web UI attaches to
-`/dev/console` and the guest can show its login prompt immediately. A network
+`/dev/console`. Some unprivileged systemd guests cannot start their getty and
+show a login prompt unless `--nesting 1` is enabled; verify this through the
+console after startup. Nesting expands guest access to procfs/sysfs and permits
+nested container features, so enable it only when the guest needs it. A network
 interface is not created unless `--net0` is supplied; Nodex does not guess the
 bridge, address allocation policy, or gateway for your network. Supply a
 Proxmox LXC network string such as `name=eth0,bridge=vmbr0,ip=dhcp,ip6=auto`
 when DHCP is available. Use `--nameserver` and `--searchdomain` to set guest DNS
 explicitly. For newer Ubuntu systemd-networkd guests, `--nesting 1` may be
-required for boot-time networking in an unprivileged container. Nesting expands
-guest access to procfs/sysfs and permits nested container features; enable it
-only when the guest needs it. Nodex verifies the requested network and nesting
-configuration by readback, but configuration readback does not prove that
-guest routing or DNS works after startup. Console mode is also checked by
-configuration readback. Start the container and check its
+required for boot-time networking in an unprivileged container. Nodex verifies
+network and nesting settings by readback, but this does not prove guest routing
+or DNS works after startup. Console mode is also checked by configuration
+readback. Start the container and check its
 address, default route, and DNS before installing packages or relying on it.
 Memory defaults to 2048 MiB and swap defaults to 512 MiB; when `--cores` is omitted, Proxmox's default CPU
 allocation is retained. `--cores` accepts 1–8192, `--memory` accepts 16–1048576
@@ -876,7 +877,7 @@ singular noun is always the mutate verb, so every resource has a matching
 | `sdn vnet delete <name>` | Delete an SDN VNet |
 | `sdn subnet create <vnet> <cidr> --gateway=<gw>` | Create an SDN subnet |
 | `sdn subnet delete <vnet> <subnet>` | Delete an SDN subnet |
-| `sdn controller create <name>` | Create an SDN controller |
+| `sdn controller create <name> --asn=<asn> (--peers=<ip[,ip...]> | --fabric=<name>)` | Create an EVPN SDN controller |
 | `sdn controller delete <name>` | Delete an SDN controller |
 
 ### `nodex maintenance`
@@ -955,7 +956,9 @@ Exit codes: `healthy` and `warning` exit 0; `blocked`, `unknown`, `unsupported`,
 
 ### `nodex pbs`
 
-Inspect a Proxmox Backup Server (read-only). Requires a profile with `provider: pbs` (see the configuration reference).
+Inspect a Proxmox Backup Server and manage its datastores. Requires a profile
+with `provider: pbs` (see the configuration reference). Inspection commands are
+read-only; datastore creation is destructive and requires exact confirmation.
 
 The whole `pbs` group is gated before any connection attempt. When the selected
 profile's provider exposes no PBS capability — the common case on a PVE-only
@@ -980,6 +983,7 @@ nodex pbs subscription
 nodex pbs certificates
 nodex pbs datastore list
 nodex pbs datastore show <datastore>
+nodex pbs datastore create <name> <absolute-path> --yes --force --confirm-target <name:path>
 nodex pbs snapshot list --datastore <store> [--namespace <ns>] [--backup-type vm|ct|host] [--backup-id <id>]
 nodex pbs task list [--running] [--errors]
 nodex pbs task show <upid>
@@ -1002,6 +1006,7 @@ nodex pbs garbage-collection run <datastore>
 | `pbs certificates` | API certificate details, including expiry |
 | `pbs datastore list` | Datastore configurations |
 | `pbs datastore show <datastore>` | One datastore's configuration plus usage; usage errors (e.g. an unmounted removable datastore) are reported in `status_error` without failing the command |
+| `pbs datastore create <name> <absolute-path>` | Register a datastore at an unused absolute backing path; requires `--yes --force --confirm-target <name:path>` |
 | `pbs snapshot list --datastore <store>` | Backup snapshots in a datastore, including owner, protection, and verification state; `--namespace`, `--backup-type`, and `--backup-id` narrow the listing |
 | `pbs task list` | Recent tasks; `--running` and `--errors` filter, global `--limit` caps the count |
 | `pbs task show <upid>` | Task status and exit state for a PBS UPID |
@@ -1131,7 +1136,7 @@ Manage replication jobs.
 |---------|-------------|
 | `replication list` | List replication jobs |
 | `replication show <id>` | Show replication job details |
-| `replication create <id> <guest> <type> <target> [key=value...]` | Create a replication job (`--yes --force`) |
+| `replication create <guest-job-id> <target> [key=value...]` | Create a replication job; the ID is `<guest>-<job-number>` (`--yes --force`) |
 | `replication update <id> [key=value...]` | Update a replication job (`--yes --force`) |
 | `replication delete <id>` | Delete a replication job (destructive; `--yes --force --confirm-target <id>`) |
 | `replication schedule <node> <id>` | Schedule replication now (`--yes`) |

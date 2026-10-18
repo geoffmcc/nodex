@@ -136,6 +136,7 @@ func buildRegistry() []OperationMeta {
 		OperationMeta{Path: "agent receipt", Description: "Inspect or reconcile agent mutation receipts (routing)", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptDispatch"},
 		OperationMeta{Path: "agent receipt list", Description: "List recent agent mutation receipts, optionally scoped by request-ID prefix", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptList"},
 		OperationMeta{Path: "agent receipt show", Description: "Show one agent mutation receipt", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptShow"},
+		OperationMeta{Path: "agent receipt delete", Description: "Delete one terminal local mutation receipt; unresolved receipts are retained", Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the local receipt request ID exactly as passed on the command line", OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptDelete"},
 		OperationMeta{Path: "agent receipt refresh", Description: "Refresh task execution status from the bound provider", Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierReversible, OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptRefresh"},
 		OperationMeta{Path: "agent receipt reconcile", Description: "Read-only reconciliation of an ambiguous receipt", Inspection: false, Scope: ScopeSystem, SafetyTier: safety.TierReversible, OutputModes: []string{"json"}, HandlerFunc: "runAgentReceiptReconcile"},
 		OperationMeta{Path: "operation list", Description: "List supported operation metadata", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"json"}, HandlerFunc: "runOperationList"},
@@ -179,7 +180,7 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops,
 		OperationMeta{Path: "monitor targets", Description: "List configured monitoring targets", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMonitorTargets"},
 		OperationMeta{Path: "monitor check", Description: "Check configured monitoring targets", Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runMonitorCheck"},
-		OperationMeta{Path: "certification run", Description: "Run an opt-in disposable certification transaction", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the certification ledger entry ID, which selects the entry to act on", Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertification"},
+		OperationMeta{Path: "certification run", Description: "Run an opt-in disposable certification transaction", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the exact certification VM name supplied with --name", Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertification"},
 		OperationMeta{Path: "certification cleanup", Description: "Recover pending certification cleanup", Inspection: false, Scope: ScopeCert, SafetyTier: safety.TierDestructive, RequiresTypeConfirm: true, ConfirmTargetFormat: "the certification ledger entry ID, matched against entries in the certification ledger", Waitable: true, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationCleanup"},
 		OperationMeta{Path: "certification report", Description: "Show the sanitized certification ledger", Inspection: true, Scope: ScopeCert, SafetyTier: safety.TierObservation, OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runCertificationReport"},
 	)
@@ -237,7 +238,7 @@ func buildRegistry() []OperationMeta {
 		OutputModes: []string{"json"}, HandlerFunc: "runProfileExport",
 	})
 	ops = append(ops, OperationMeta{
-		Path: "profile import", Description: "Import a profile from stdin",
+		Path: "profile import", Description: "Import a profile from stdin into an initialized NodeX config (run `nodex init` first)",
 		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
 		OutputModes: []string{"table"}, HandlerFunc: "runProfileImport",
 	})
@@ -464,8 +465,8 @@ func buildRegistry() []OperationMeta {
 		{"container start", "Start a container"},
 		{"container stop", "Stop a container (force)"},
 		{"container shutdown", "Graceful container shutdown"},
-		{"container suspend", "Suspend a container (Proxmox LXC checkpoint support is experimental)"},
-		{"container resume", "Resume a suspended container"},
+		{"container suspend", "Experimental: suspend a container using Proxmox LXC/CRIU checkpoint support"},
+		{"container resume", "Experimental: resume a suspended container using Proxmox LXC/CRIU checkpoint support"},
 	}
 	for _, v := range ctLifecycleReversible {
 		ops = append(ops, OperationMeta{
@@ -537,7 +538,7 @@ func buildRegistry() []OperationMeta {
 		{"container template", "Convert container to template", "TemplateProvider", "runCTTemplate", []RiskDimension{RiskDataLoss}},
 		{"container migrate", "Migrate container to another node", "MigrationProvider", "runCTMigrate", []RiskDimension{RiskServiceDown}},
 		{"container clone", "Clone a container", "CloneProvider", "runCTClone", nil},
-		{"container create", "Create an unprivileged container with a login-ready /dev/console; networking is optional via --net0 and nesting can be enabled for guests that require it", "ContainerCreateProvider", "runCTCreate", nil},
+		{"container create", "Create an unprivileged container with /dev/console; some systemd guests need --nesting 1 for getty to provide a login prompt, and nesting expands procfs/sysfs access", "ContainerCreateProvider", "runCTCreate", nil},
 		{"container restore", "Restore a container from a backup archive", "ContainerRestoreProvider", "runCTRestore", nil},
 	}
 	for _, v := range ctDisruptive {
@@ -846,7 +847,7 @@ func buildRegistry() []OperationMeta {
 		{"sdn vnet delete", "Delete an SDN VNet", "runSDNVNetDelete", true, "the SDN VNet name"},
 		{"sdn subnet create", "Create an SDN subnet", "runSDNSubnetCreate", false, ""},
 		{"sdn subnet delete", "Delete an SDN subnet", "runSDNSubnetDelete", true, "`<vnet>/<subnet>` combining the VNet and subnet names (for example prod/lan)"},
-		{"sdn controller create", "Create an SDN controller", "runSDNControllerCreate", false, ""},
+		{"sdn controller create", "Create an EVPN SDN controller (ASN and peer IPs or fabric required)", "runSDNControllerCreate", false, ""},
 		{"sdn controller delete", "Delete an SDN controller", "runSDNControllerDelete", true, "the SDN controller name"},
 	}
 	for _, v := range sdnMutations {
@@ -1051,7 +1052,7 @@ func buildRegistry() []OperationMeta {
 		{Path: "pbs certificates", Description: "List PBS certificates",
 			Inspection: true, Scope: ScopeSystem, SafetyTier: safety.TierObservation,
 			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSSystemInspector", HandlerFunc: "runPBSCertificates"},
-		{Path: "pbs datastore", Description: "Inspect PBS datastores (routing)",
+		{Path: "pbs datastore", Description: "Manage PBS datastores (routing)",
 			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
 			OutputModes: []string{"table"}, HandlerFunc: "runPBSDatastoreDispatch"},
 		{Path: "pbs datastore list", Description: "List PBS datastores",
@@ -1060,6 +1061,11 @@ func buildRegistry() []OperationMeta {
 		{Path: "pbs datastore show", Description: "Show PBS datastore configuration and usage",
 			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
 			OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSDatastoreInspector", HandlerFunc: "runPBSDatastoreShow"},
+		{Path: "pbs datastore create", Description: "Create a PBS datastore at an absolute backing path",
+			Inspection: false, Scope: ScopeBackup, SafetyTier: safety.TierDestructive,
+			RiskDimensions: []RiskDimension{RiskDataLoss}, RequiresTypeConfirm: true,
+			ConfirmTargetFormat: "<name>:<absolute-path> (for example ndx-store:/var/lib/proxmox-backup/ndx-store)",
+			UsesOperationResult: true, OutputModes: []string{"table", "json", "yaml"}, CapabilityInterface: "PBSDatastoreCreator", HandlerFunc: "runPBSDatastoreCreate"},
 		{Path: "pbs snapshot", Description: "Inspect PBS backup snapshots (routing)",
 			Inspection: true, Scope: ScopeBackup, SafetyTier: safety.TierObservation,
 			OutputModes: []string{"table"}, HandlerFunc: "runPBSSnapshotDispatch"},
@@ -1382,7 +1388,7 @@ func collectCommandPaths(cmds map[string]*command, prefix string) []string {
 var knownDispatchCommands = map[string][]string{
 	"ha resource":        {"ha resource add", "ha resource state", "ha resource remove"},
 	"maintenance policy": {"maintenance policy plan", "maintenance policy apply", "maintenance policy restore"},
-	"agent receipt":      {"agent receipt list", "agent receipt show", "agent receipt refresh", "agent receipt reconcile"},
+	"agent receipt":      {"agent receipt list", "agent receipt show", "agent receipt delete", "agent receipt refresh", "agent receipt reconcile"},
 	"vm snapshot":        {"vm snapshot create", "vm snapshot delete", "vm snapshot rollback"},
 	"container snapshot": {"container snapshot create", "container snapshot delete", "container snapshot rollback"},
 	"vm disk":            {"vm disk resize", "vm disk move"},
@@ -1408,7 +1414,7 @@ var knownDispatchCommands = map[string][]string{
 	"access tokens":      {"access tokens list"},
 
 	// PBS dispatchers.
-	"pbs datastore":          {"pbs datastore list", "pbs datastore show"},
+	"pbs datastore":          {"pbs datastore list", "pbs datastore show", "pbs datastore create"},
 	"pbs snapshot":           {"pbs snapshot list"},
 	"pbs task":               {"pbs task list", "pbs task show", "pbs task log"},
 	"pbs verify":             {"pbs verify list", "pbs verify run"},

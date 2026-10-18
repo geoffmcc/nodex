@@ -1668,12 +1668,11 @@ type FirewallGroupCreateRequest struct {
 
 // FirewallOptionsUpdateRequest is the body for PUT /cluster/firewall/options.
 type FirewallOptionsUpdateRequest struct {
-	Enable       int    `json:"enable,omitempty"`
+	Enable       *int   `json:"enable,omitempty"`
 	PolicyIn     string `json:"policy_in,omitempty"`
 	PolicyOut    string `json:"policy_out,omitempty"`
-	LogInDrop    int    `json:"log_in_drop,omitempty"`
 	LogRateLimit string `json:"log_ratelimit,omitempty"`
-	NFConntrack  int    `json:"nf_conntrack_max,omitempty"`
+	NFConntrack  *int   `json:"nf_conntrack_max,omitempty"`
 	Digest       string `json:"digest,omitempty"`
 }
 
@@ -1829,6 +1828,8 @@ type SDNCreateSubnetRequest struct {
 // SDNCreateControllerRequest is the body for POST /cluster/sdn/controllers.
 type SDNCreateControllerRequest struct {
 	Controller string `json:"controller"`
+	Type       string `json:"type"`
+	ASN        uint32 `json:"asn"`
 }
 
 // SDNZonesMutationResponse is the response from SDN zone mutations.
@@ -1867,8 +1868,6 @@ type ReplicationJobItem struct {
 // ReplicationCreateRequest is the body for POST /cluster/replication.
 type ReplicationCreateRequest struct {
 	ID       string `json:"id"`
-	Guest    int    `json:"guest"`
-	Type     string `json:"type"`
 	Target   string `json:"target"`
 	Schedule string `json:"schedule,omitempty"`
 	Comment  string `json:"comment,omitempty"`

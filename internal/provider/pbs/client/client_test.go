@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -174,6 +175,50 @@ func TestRequestPathsAndParams(t *testing.T) {
 	}
 }
 
+func TestCreateDatastorePostsPBSFormToConfigAPI(t *testing.T) {
+	var gotMethod, gotPath, gotContentType string
+	var gotForm url.Values
+	c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotContentType = r.Method, r.URL.Path, r.Header.Get("Content-Type")
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm: %v", err)
+		}
+		gotForm = r.PostForm
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	if err := c.CreateDatastore(context.Background(), DatastoreCreateRequest{
+		Name: "ndx-test", Path: "/var/lib/proxmox-backup/ndx-test",
+	}); err != nil {
+		t.Fatalf("CreateDatastore: %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api2/json/config/datastore" {
+		t.Fatalf("request = %s %s", gotMethod, gotPath)
+	}
+	if gotContentType != "application/x-www-form-urlencoded" {
+		t.Errorf("Content-Type = %q", gotContentType)
+	}
+	if gotForm.Get("name") != "ndx-test" || gotForm.Get("path") != "/var/lib/proxmox-backup/ndx-test" {
+		t.Errorf("form = %#v", gotForm)
+	}
+}
+
+func TestCreateDatastoreValidatesNameAndPath(t *testing.T) {
+	c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("invalid datastore request reached provider")
+	}))
+	for _, req := range []DatastoreCreateRequest{
+		{Name: "x", Path: "/var/lib/x"},
+		{Name: "ndx-test", Path: "relative"},
+		{Name: "ndx-test", Path: "/var/lib/../unsafe"},
+		{Name: "ndx-test", Path: "/"},
+	} {
+		if err := c.CreateDatastore(context.Background(), req); err == nil {
+			t.Errorf("CreateDatastore(%+v) succeeded, want validation error", req)
+		}
+	}
+}
+
 func TestStoreNameEscapedInPath(t *testing.T) {
 	var gotEscaped string
 	c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -196,12 +241,15 @@ func TestValidateUPID(t *testing.T) {
 		valid bool
 	}{
 		{"valid PBS upid", valid, true},
+		{"PBS escaped worker ID delimiters", "UPID:pbs:000002D0:000001CC:00000005:6AD40EE9:syncjob:ndxvalremote17\\x3andxval1017\\x3andxval1018\\x3a\\x3andxvalsync17:root@pam!nodex-lab:", true},
 		{"missing prefix", "NOTUPID:pbs:00001234:", false},
 		{"too short", "UPID:x:", false},
 		{"embedded slash", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:x/../y:root@pam:", false},
 		{"embedded space", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:a b:root@pam:", false},
 		{"embedded newline", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:a\nb:root@pam:", false},
 		{"embedded percent", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:a%2Fb:root@pam:", false},
+		{"invalid backslash escape", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:a\\xZZ:root@pam:", false},
+		{"backslash path separator", "UPID:pbs:00001234:00005678:00000001:65f00000:reader:a\\/b:root@pam:", false},
 		{"too long", "UPID:" + strings.Repeat("x", 300), false},
 		{"empty", "", false},
 	}
