@@ -63,6 +63,7 @@ versions and CI runners are maintained in the workflow itself.
 | CLI registration, operation metadata, help and output | `internal/cli/`, especially `root.go`, `operations.go`, and CLI tests |
 | Agent contract, schemas and mutation receipts | `internal/agent/`, `internal/cli/agent_*.go`, `docs/agent/schemas/` |
 | PVE provider and typed API client | `internal/provider/proxmox/` and `internal/provider/proxmox/client/` |
+| QEMU Guest Agent package installation | `internal/cli/vm_package_install.go`, `vm_package_install_test.go`, and `internal/provider/proxmox/client/guest_exec_test.go`; argv is structured, exec submission is single-attempt, process status is polled, and package state is verified; no live QEMU VM was available in the authorized lab inventory during this run |
 | PBS provider and typed API client | `internal/provider/pbs/` and `internal/provider/pbs/client/` |
 | Configuration and platform paths | `internal/config/` |
 | Credential sources and validation | `internal/credentials/` |
@@ -72,6 +73,23 @@ versions and CI runners are maintained in the workflow itself.
 | Maintenance plans, receipts, unattended security policy | `internal/maintenance/`, `internal/ansible/`, and maintenance CLI tests |
 | Combined PVE/PBS health | `internal/backuphealth/` |
 | One-shot monitoring, ICMP and systemd service checks | `internal/monitor/`, `internal/ansible/`, and monitor CLI tests |
+
+## Recorded live lab coverage
+
+On 2026-10-18, live mutations were run only through the explicit
+`nodex-test-lab` PVE profile. The disposable CT workflow covered create with
+configuration readback, description update, start, graceful shutdown, snapshot
+create/list/delete, and exact-target deletion. The operator separately
+authorized deleting the existing `wp-blog` CT (`pve-nodex-lab/119`); NodeX
+shut it down and deleted that exact target, and subsequent lookup returned
+not-found. The run ended with empty VM and CT inventories. The detailed initial
+configuration, task outcomes, and cleanup record are in the external
+hardening report, not treated as a repository certification.
+
+The profile has no QEMU guests and is not linked to PBS. QEMU Guest Agent live
+execution and PBS live mutations therefore remain unverified; do not infer live
+coverage from the unit and HTTP-mock tests. Existing VM backup archives were
+not restored or repurposed to create a guest.
 
 ## Scope of evidence
 

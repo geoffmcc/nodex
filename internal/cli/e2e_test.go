@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -100,6 +101,7 @@ type e2eMockProvider struct {
 	deletedSnapshots map[string]bool
 	createdVMConfigs map[int]map[string]interface{}
 	createdCTConfigs map[int]map[string]interface{}
+	vmGuestCommands  map[int][]string
 }
 
 // guestKey identifies one guest in the e2e mock's status map.
@@ -180,7 +182,38 @@ func (p *e2eMockProvider) Capabilities() []domain.Capability {
 		domain.CapabilityDelete, domain.CapabilityTemplate,
 		domain.CapabilityCloudInit, domain.CapabilityVMCreate, domain.CapabilityContainerCreate,
 		domain.CapabilityClone,
+		domain.CapabilityVMGuestAgentExec,
 	}
+}
+
+func (p *e2eMockProvider) VMGuestExec(_ context.Context, _ string, _ int, argv []string) (int, error) {
+	if p.vmGuestCommands == nil {
+		p.vmGuestCommands = make(map[int][]string)
+	}
+	pid := len(p.vmGuestCommands) + 1
+	p.vmGuestCommands[pid] = append([]string(nil), argv...)
+	return pid, nil
+}
+
+func (p *e2eMockProvider) VMGuestExecStatus(_ context.Context, _ string, _ int, pid int) (*domain.VMGuestExecStatus, error) {
+	argv := p.vmGuestCommands[pid]
+	if argv == nil {
+		return nil, errors.New("unknown guest pid")
+	}
+	stdout := ""
+	for _, arg := range argv {
+		if arg == "-s" {
+			stdout = "Inst curl [8.0]\n"
+		}
+		if arg == "-y" {
+			stdout = "1 newly installed, 0 removed\n"
+		}
+	}
+	if argv[0] == "/usr/bin/dpkg-query" {
+		stdout = "install ok installed"
+	}
+	exit := 0
+	return &domain.VMGuestExecStatus{Exited: true, ExitCode: &exit, Stdout: stdout}, nil
 }
 func (p *e2eMockProvider) Connect(_ context.Context, endpoint string, creds *domain.Credentials) error {
 	if endpoint == "https://e2e.example.invalid" && creds != nil && creds.Token == "e2e-token" {

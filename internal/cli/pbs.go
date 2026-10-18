@@ -126,22 +126,34 @@ func runPBSSubscription(ctx context.Context, cmdCtx *Context, args []string) err
 	if err != nil {
 		return fmt.Errorf("get pbs subscription: %w", err)
 	}
+	return writePBSSubscription(cmdCtx, sub)
+}
 
+func writePBSSubscription(cmdCtx *Context, sub *domain.PBSSubscription) error {
+	if sub == nil {
+		sub = &domain.PBSSubscription{}
+	}
+	// PBS subscription keys are entitlement credentials. Keep all public
+	// subscription metadata, but never include the key in machine-readable output.
+	safeSub := *sub
+	if safeSub.Key != "" {
+		safeSub.Key = "[REDACTED]"
+	}
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
-		return output.WriteJSON(cmdCtx.Writer, sub)
+		return output.WriteJSON(cmdCtx.Writer, safeSub)
 	case output.FormatYAML:
-		return output.WriteYAML(cmdCtx.Writer, sub)
+		return output.WriteYAML(cmdCtx.Writer, safeSub)
 	default:
-		fmt.Fprintf(cmdCtx.Writer, "Status:   %s\n", sub.Status)
-		if sub.ProductName != "" {
-			fmt.Fprintf(cmdCtx.Writer, "Product:  %s\n", sub.ProductName)
+		fmt.Fprintf(cmdCtx.Writer, "Status:   %s\n", safeSub.Status)
+		if safeSub.ProductName != "" {
+			fmt.Fprintf(cmdCtx.Writer, "Product:  %s\n", safeSub.ProductName)
 		}
-		if sub.Message != "" {
-			fmt.Fprintf(cmdCtx.Writer, "Message:  %s\n", sub.Message)
+		if safeSub.Message != "" {
+			fmt.Fprintf(cmdCtx.Writer, "Message:  %s\n", safeSub.Message)
 		}
-		if sub.NextDueDate != "" {
-			fmt.Fprintf(cmdCtx.Writer, "Due date: %s\n", sub.NextDueDate)
+		if safeSub.NextDueDate != "" {
+			fmt.Fprintf(cmdCtx.Writer, "Due date: %s\n", safeSub.NextDueDate)
 		}
 		return nil
 	}

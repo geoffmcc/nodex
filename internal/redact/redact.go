@@ -73,6 +73,8 @@ var secretLabelFragments = []string{
 	`api[_-]?token`, `apikey`, `api[_-]?key`, `secret[_-]?key`,
 	`access[_-]?key`, `access[_-]?token`, `auth[_-]?token`,
 	`token`, `secret`, `password`, `passwd`, `pwd`,
+	// Proxmox's cloud-init password key is a single word, so generic word-boundary matching misses it.
+	`cipassword`,
 	`credential`, `credentials`, `passphrase`, `private[_-]?key`,
 	`authorization`,
 }

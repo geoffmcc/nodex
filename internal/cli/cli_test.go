@@ -80,6 +80,135 @@ func TestRunSanitizesDirectHandlerStdoutAndStderr(t *testing.T) {
 	}
 }
 
+func TestWriteConfigRedactsCredentialFieldsInEveryOutputFormat(t *testing.T) {
+	const canary = "nodex-config-secret-canary-73f9"
+	formats := []output.Format{output.FormatTable, output.FormatJSON, output.FormatYAML}
+	for _, format := range formats {
+		t.Run(string(format), func(t *testing.T) {
+			var stdout bytes.Buffer
+			cmdCtx := &Context{
+				Opts:   Options{Output: format},
+				Writer: &stdout,
+			}
+			config := map[string]interface{}{
+				"name":       "fixture-vm",
+				"cipassword": canary,
+				"password":   canary,
+				"nested": map[string]interface{}{
+					"api_token": canary,
+				},
+			}
+			if err := writeConfig(cmdCtx, config); err != nil {
+				t.Fatalf("writeConfig: %v", err)
+			}
+			got := stdout.String()
+			if strings.Contains(got, canary) {
+				t.Fatalf("%s config output leaked a credential value: %q", format, got)
+			}
+			if !strings.Contains(got, "[REDACTED]") {
+				t.Fatalf("%s config output omitted redaction marker: %q", format, got)
+			}
+			if !strings.Contains(got, "fixture-vm") {
+				t.Fatalf("%s config output dropped a non-secret field: %q", format, got)
+			}
+			switch format {
+			case output.FormatJSON:
+				if !strings.Contains(got, `"cipassword"`) {
+					t.Fatalf("redacted JSON dropped the cipassword field: %q", got)
+				}
+				var decoded map[string]interface{}
+				if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+					t.Fatalf("redacted JSON is invalid: %v", err)
+				}
+			case output.FormatYAML:
+				if !strings.Contains(got, "cipassword:") {
+					t.Fatalf("redacted YAML dropped the cipassword field: %q", got)
+				}
+				var decoded map[string]interface{}
+				if err := yaml.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+					t.Fatalf("redacted YAML is invalid: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestWriteNodeSubscriptionRedactsKeyInEveryOutputFormat(t *testing.T) {
+	const canary = "nodex-subscription-key-canary-482d"
+	formats := []output.Format{output.FormatTable, output.FormatJSON, output.FormatYAML}
+	for _, format := range formats {
+		t.Run(string(format), func(t *testing.T) {
+			var stdout bytes.Buffer
+			cmdCtx := &Context{
+				Opts:   Options{Output: format},
+				Writer: &stdout,
+			}
+			if err := writeNodeSubscription(cmdCtx, &domain.NodeSubscription{Status: "active", Key: canary}); err != nil {
+				t.Fatalf("writeNodeSubscription: %v", err)
+			}
+			got := stdout.String()
+			if strings.Contains(got, canary) {
+				t.Fatalf("%s subscription output leaked the key: %q", format, got)
+			}
+			if !strings.Contains(got, "[REDACTED]") || !strings.Contains(got, "active") {
+				t.Fatalf("%s subscription output lost redaction or public status: %q", format, got)
+			}
+			switch format {
+			case output.FormatJSON:
+				var decoded map[string]interface{}
+				if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+					t.Fatalf("redacted JSON is invalid: %v", err)
+				}
+			case output.FormatYAML:
+				var decoded map[string]interface{}
+				if err := yaml.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+					t.Fatalf("redacted YAML is invalid: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestWritePBSSubscriptionRedactsKeyInEveryOutputFormat(t *testing.T) {
+	const canary = "nodex-pbs-subscription-key-canary-c014"
+	formats := []output.Format{output.FormatTable, output.FormatJSON, output.FormatYAML}
+	for _, format := range formats {
+		t.Run(string(format), func(t *testing.T) {
+			var stdout bytes.Buffer
+			cmdCtx := &Context{Opts: Options{Output: format}, Writer: &stdout}
+			sub := &domain.PBSSubscription{Status: "active", Key: canary, ProductName: "PBS", Message: "fixture"}
+			if err := writePBSSubscription(cmdCtx, sub); err != nil {
+				t.Fatalf("writePBSSubscription: %v", err)
+			}
+			got := stdout.String()
+			if strings.Contains(got, canary) {
+				t.Fatalf("%s PBS subscription output leaked the key: %q", format, got)
+			}
+			if !strings.Contains(got, "active") || !strings.Contains(got, "PBS") {
+				t.Fatalf("%s PBS subscription output dropped public fields: %q", format, got)
+			}
+			switch format {
+			case output.FormatJSON:
+				var decoded map[string]interface{}
+				if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+					t.Fatalf("redacted JSON is invalid: %v", err)
+				}
+				if decoded["key"] != "[REDACTED]" {
+					t.Fatalf("JSON key = %v, want redaction marker", decoded["key"])
+				}
+			case output.FormatYAML:
+				var decoded map[string]interface{}
+				if err := yaml.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+					t.Fatalf("redacted YAML is invalid: %v", err)
+				}
+				if decoded["key"] != "[REDACTED]" {
+					t.Fatalf("YAML key = %v, want redaction marker", decoded["key"])
+				}
+			}
+		})
+	}
+}
+
 func TestRun_Help(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := Run(context.Background(), []string{"help"}, &stdout, &stderr)

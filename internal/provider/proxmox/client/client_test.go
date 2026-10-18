@@ -591,7 +591,7 @@ func TestGetContainerConfigInjectsVMIDFromParameter(t *testing.T) {
 
 func TestGetVMConfigPreservesUnknownKeysAndDigest(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprint(w, `{"data":{"vmid":100,"name":"test-vm","serial0":"socket","vga":"std","digest":"abcdef123456","protection":1}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"vmid":100,"name":"test-vm","serial0":"socket","vga":"std","cipassword":"cloud-init-password-hash","digest":"abcdef123456","protection":1}}`)
 	}))
 	defer s.Close()
 	c := &Client{baseURL: s.URL, client: httpclient.New()}
@@ -605,8 +605,8 @@ func TestGetVMConfigPreservesUnknownKeysAndDigest(t *testing.T) {
 	if config.Protection != 1 {
 		t.Errorf("Protection = %d, want 1", config.Protection)
 	}
-	if config.Raw["serial0"] != "socket" || config.Raw["vga"] != "std" {
-		t.Errorf("Raw = %#v, want serial0/vga preserved", config.Raw)
+	if config.Raw["serial0"] != "socket" || config.Raw["vga"] != "std" || config.Raw["cipassword"] != "cloud-init-password-hash" {
+		t.Errorf("Raw = %#v, want serial0/vga/cipassword preserved", config.Raw)
 	}
 }
 

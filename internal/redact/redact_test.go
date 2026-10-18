@@ -895,8 +895,9 @@ func TestSanitizeRedactsSecretNamedKeys(t *testing.T) {
 
 func TestSanitizeRedactsSecretNamedMapKeys(t *testing.T) {
 	in := map[string]string{
-		"api_token": "a1b2c3d4e5",
-		"host":      "pve.local",
+		"api_token":  "a1b2c3d4e5",
+		"cipassword": "cloud-init-password-hash",
+		"host":       "pve.local",
 	}
 	out, ok := Sanitize(in).(map[string]string)
 	if !ok {
@@ -904,6 +905,9 @@ func TestSanitizeRedactsSecretNamedMapKeys(t *testing.T) {
 	}
 	if out["api_token"] != redacted {
 		t.Errorf("api_token = %q, want %q", out["api_token"], redacted)
+	}
+	if out["cipassword"] != redacted {
+		t.Errorf("cipassword = %q, want %q", out["cipassword"], redacted)
 	}
 	if out["host"] != "pve.local" {
 		t.Errorf("host = %q, want pve.local", out["host"])
@@ -982,6 +986,7 @@ func TestLabelRulesRespectWordBoundaries(t *testing.T) {
 	for _, in := range []string{
 		`{"tokenizer": "keep-me-1"}`,
 		`{"password_hash": "keep-me-1"}`,
+		`{"mycipassword": "keep-me-1"}`,
 		`{"mytoken": "keep-me-1"}`,
 	} {
 		if got := String(in); got != in {

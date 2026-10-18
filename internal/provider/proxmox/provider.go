@@ -154,6 +154,7 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilitySDNMutation,
 		domain.CapabilityReplication,
 		domain.CapabilityClusterAdmin,
+		domain.CapabilityVMGuestAgentExec,
 	}
 }
 
@@ -566,6 +567,31 @@ func (p *Provider) VMConfig(ctx context.Context, node string, vmid int) (map[str
 		return nil, fmt.Errorf("get vm config: %w", err)
 	}
 	return vmConfigToMap(config), nil
+}
+
+// VMGuestExec submits an argv-based process through the QEMU Guest Agent.
+func (p *Provider) VMGuestExec(ctx context.Context, node string, vmid int, argv []string) (int, error) {
+	if p.client == nil {
+		return 0, errors.New(errNotConnected)
+	}
+	pid, err := p.client.VMGuestExec(ctx, node, vmid, argv)
+	if err != nil {
+		return 0, fmt.Errorf("execute process through QEMU Guest Agent: %w", err)
+	}
+	return pid, nil
+}
+
+// VMGuestExecStatus reads the current status of a process started by the
+// QEMU Guest Agent.
+func (p *Provider) VMGuestExecStatus(ctx context.Context, node string, vmid, pid int) (*domain.VMGuestExecStatus, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	status, err := p.client.VMGuestExecStatus(ctx, node, vmid, pid)
+	if err != nil {
+		return nil, fmt.Errorf("read QEMU Guest Agent process status: %w", err)
+	}
+	return status, nil
 }
 
 // GuestStatus returns the authoritative current status of a single guest.

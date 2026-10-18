@@ -23,6 +23,22 @@ type VMInspector interface {
 	VMConfig(ctx context.Context, node string, vmid int) (map[string]interface{}, error)
 }
 
+// VMGuestAgentExecutor runs one argv-based process through the QEMU Guest
+// Agent and polls its process status. Implementations must not retry exec
+// submissions: a transport error can occur after the guest accepted it.
+type VMGuestAgentExecutor interface {
+	VMGuestExec(ctx context.Context, node string, vmid int, argv []string) (int, error)
+	VMGuestExecStatus(ctx context.Context, node string, vmid, pid int) (*VMGuestExecStatus, error)
+}
+
+// VMGuestExecStatus is the result of one QEMU Guest Agent process poll.
+type VMGuestExecStatus struct {
+	Exited   bool
+	ExitCode *int
+	Stdout   string
+	Stderr   string
+}
+
 // ContainerInspector provides container listing and configuration.
 type ContainerInspector interface {
 	Containers(ctx context.Context) ([]Container, error)
@@ -735,6 +751,7 @@ const (
 	CapabilitySDNMutation      Capability = "sdn_mutation"
 	CapabilityReplication      Capability = "replication"
 	CapabilityClusterAdmin     Capability = "cluster_admin"
+	CapabilityVMGuestAgentExec Capability = "vm_guest_agent_exec"
 )
 
 // NetworkMutationProvider exposes network configuration mutation operations.
@@ -1139,6 +1156,10 @@ func CapabilityMetadata() map[Capability]CapabilityMeta {
 		CapabilityClusterAdmin: {
 			Name: "Cluster Administration", Category: CapMutation, Safety: TierSecurityAdmin,
 			Interfaces: []string{"ClusterAdministrationProvider"},
+		},
+		CapabilityVMGuestAgentExec: {
+			Name: "VM Guest Agent Execution", Category: CapMutation, Safety: TierDisruptive,
+			Interfaces: []string{"VMGuestAgentExecutor"},
 		},
 	}
 }

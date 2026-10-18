@@ -504,6 +504,7 @@ nodex container create pve-a 200 local:vztmpl/debian-12.tar.zst app-200 \
 |---------|-------------|
 | `container update <id> <params...>` | Update container config |
 | `container install <node>/<vmid> <package> [package ...]` | Install up to 32 requested APT packages in a running LXC guest through its enrolled PVE host |
+| `vm install <node>/<vmid> <package> [package ...]` | Install up to 32 requested APT packages in a running QEMU VM through its QEMU Guest Agent |
 | `container os-update <node>/<vmid> --policy approved-full-upgrade` | Update a running LXC guest OS through the enrolled PVE host |
 | `container template <id>` | Convert container to template |
 | `container snapshot create <id> <name> [description]` | Create a container snapshot (`--yes`) |
@@ -530,6 +531,18 @@ the requested install, refuses package removals, installs only the requested
 packages and required dependencies from the guest's configured repositories,
 then verifies that each requested package is installed. It does not add APT
 repositories or accept shell commands.
+
+`vm install` is disruptive and requires `--yes --force`. It requires a running
+Debian-based VM with the QEMU Guest Agent already installed, enabled, and
+running. The Proxmox API identity must have permission to execute guest-agent
+commands; that capability allows guest command execution and should be granted
+only to trusted operators. NodeX sends fixed APT and `dpkg-query` executables
+with structured argv, refreshes metadata, simulates the requested install,
+refuses package removals, installs requested packages and dependencies from
+the guest's configured repositories, then verifies each requested package.
+It does not accept shell commands or add repositories. If submission or
+follow-up status is lost, the result is reported as unknown and NodeX does not
+resubmit the command; inspect the VM before deciding whether to retry.
 
 ### `nodex storage`
 

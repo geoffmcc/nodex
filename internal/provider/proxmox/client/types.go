@@ -16,6 +16,20 @@ type TaskResponse struct {
 	Data string `json:"data"`
 }
 
+// GuestExecResponse is the process identifier returned by QEMU Guest Agent exec.
+type GuestExecResponse struct {
+	PID int `json:"pid"`
+}
+
+// GuestExecStatusResponse is the QEMU Guest Agent exec-status payload.
+// Proxmox uses hyphenated keys for captured output fields.
+type GuestExecStatusResponse struct {
+	Exited   int    `json:"exited"`
+	ExitCode *int   `json:"exitcode"`
+	OutData  string `json:"out-data"`
+	ErrData  string `json:"err-data"`
+}
+
 // ClusterInitRequest is the body for POST /cluster/config.
 type ClusterInitRequest struct {
 	ClusterName string `json:"clustername"`
