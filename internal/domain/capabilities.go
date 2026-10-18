@@ -579,7 +579,7 @@ type SDNMutationProvider interface {
 	SDNDeleteVNet(ctx context.Context, vnet string) error
 	SDNCreateSubnet(ctx context.Context, vnet, cidr, gateway string) error
 	SDNDeleteSubnet(ctx context.Context, vnet, subnet string) error
-	SDNCreateController(ctx context.Context, ctrl string) error
+	SDNCreateController(ctx context.Context, ctrl string, asn uint32, peers, fabric string) error
 	SDNDeleteController(ctx context.Context, ctrl string) error
 }
 

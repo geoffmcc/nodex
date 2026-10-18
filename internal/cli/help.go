@@ -210,7 +210,7 @@ var leafHelp = map[string]helpEntry{
 	"sdn vnet delete":                {desc: "Delete an SDN VNet", usage: "<name>"},
 	"sdn subnet create":              {desc: "Create an SDN subnet", usage: "<vnet> <cidr> --gateway=<gw>"},
 	"sdn subnet delete":              {desc: "Delete an SDN subnet", usage: "<vnet> <subnet>"},
-	"sdn controller create":          {desc: "Create an SDN controller", usage: "<name>"},
+	"sdn controller create":          {desc: "Create an EVPN SDN controller; provide a local ASN and either peer IPs or a fabric", usage: "<name> --asn=<0..4294967295> (--peers=<ip[,ip...]> | --fabric=<name>)", examples: []string{"ndxevpn1 --asn=65000 --peers=10.0.0.1,10.0.0.2", "ndxevpn1 --asn=65000 --fabric=fab1"}},
 	"sdn controller delete":          {desc: "Delete an SDN controller", usage: "<name>"},
 	"ceph osd list":                  {desc: "List Ceph OSDs", usage: "<node>"},
 	"ceph osd create":                {desc: "Create a Ceph OSD", usage: "<node> <dev>"},

@@ -172,3 +172,52 @@ func TestGetSDNSubnetsPropagatesSubnetError(t *testing.T) {
 		t.Fatal("expected error from forbidden subnet response")
 	}
 }
+
+func TestCreateSDNControllerSendsRequiredEVPNASN(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/cluster/sdn/controllers" {
+			t.Fatalf("request = %s %s, want POST /cluster/sdn/controllers", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		for key, want := range map[string]string{"controller": "ndxevpn1", "type": "evpn", "asn": "65000", "peers": "10.0.0.1,10.0.0.2"} {
+			if got := r.Form.Get(key); got != want {
+				t.Errorf("form %s = %q, want %q", key, got, want)
+			}
+		}
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	defer server.Close()
+
+	c := &Client{baseURL: server.URL, client: httpclient.New()}
+	if err := c.CreateSDNController(context.Background(), "ndxevpn1", 65000, "10.0.0.1,10.0.0.2", ""); err != nil {
+		t.Fatalf("CreateSDNController: %v", err)
+	}
+}
+
+func TestCreateSDNControllerSendsEVPNFabric(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/cluster/sdn/controllers" {
+			t.Fatalf("request = %s %s, want POST /cluster/sdn/controllers", r.Method, r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		for key, want := range map[string]string{"controller": "ndxevpn-fabric", "type": "evpn", "asn": "65000", "fabric": "fab1"} {
+			if got := r.Form.Get(key); got != want {
+				t.Errorf("form %s = %q, want %q", key, got, want)
+			}
+		}
+		if got := r.Form.Get("peers"); got != "" {
+			t.Errorf("peers = %q, want omitted", got)
+		}
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	defer server.Close()
+
+	c := &Client{baseURL: server.URL, client: httpclient.New()}
+	if err := c.CreateSDNController(context.Background(), "ndxevpn-fabric", 65000, "", "fab1"); err != nil {
+		t.Fatalf("CreateSDNController: %v", err)
+	}
+}

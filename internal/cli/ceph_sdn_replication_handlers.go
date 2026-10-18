@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -684,12 +685,65 @@ func runSDNSubnetDelete(ctx context.Context, cmdCtx *Context, args []string) err
 	return nil
 }
 
-// nodex sdn controller create <name>
+// nodex sdn controller create <name> --asn=<asn> --peers=<ip[,ip...]>
 func runSDNControllerCreate(ctx context.Context, cmdCtx *Context, args []string) error {
-	if len(args) != 1 {
-		return app.NewExitError(fmt.Errorf("usage: nodex sdn controller create <name>"), app.ExitUsage)
+	if len(args) < 2 {
+		return app.NewExitError(fmt.Errorf("usage: nodex sdn controller create <name> --asn=<asn> (--peers=<ip[,ip...]> | --fabric=<name>)"), app.ExitUsage)
 	}
 	ctrlName := args[0]
+	var asn uint64
+	gotASN := false
+	peers := ""
+	gotPeers := false
+	fabric := ""
+	gotFabric := false
+	for _, arg := range args[1:] {
+		key, value, ok := strings.Cut(arg, "=")
+		if !ok || (key != "--asn" && key != "--peers" && key != "--fabric") {
+			return app.NewExitError(fmt.Errorf("unknown SDN controller create argument %q; expected --asn=<asn> and exactly one of --peers=<ip[,ip...]> or --fabric=<name>", arg), app.ExitUsage)
+		}
+		if key == "--asn" {
+			if gotASN {
+				return app.NewExitError(fmt.Errorf("--asn may be specified only once"), app.ExitUsage)
+			}
+			parsed, err := strconv.ParseUint(value, 10, 32)
+			if err != nil {
+				return app.NewExitError(fmt.Errorf("invalid ASN %q: expected an integer from 0 to 4294967295", value), app.ExitUsage)
+			}
+			asn, gotASN = parsed, true
+		} else {
+			if key == "--peers" {
+				if gotPeers {
+					return app.NewExitError(fmt.Errorf("--peers may be specified only once"), app.ExitUsage)
+				}
+				if strings.TrimSpace(value) == "" {
+					return app.NewExitError(fmt.Errorf("--peers must be a comma-separated IP list"), app.ExitUsage)
+				}
+				peers, gotPeers = value, true
+			} else {
+				if gotFabric {
+					return app.NewExitError(fmt.Errorf("--fabric may be specified only once"), app.ExitUsage)
+				}
+				if strings.TrimSpace(value) == "" {
+					return app.NewExitError(fmt.Errorf("--fabric must name a configured SDN fabric"), app.ExitUsage)
+				}
+				fabric, gotFabric = value, true
+			}
+		}
+	}
+	if !gotASN {
+		return app.NewExitError(fmt.Errorf("--asn is required; use --asn=<0..4294967295>"), app.ExitUsage)
+	}
+	if gotPeers == gotFabric {
+		return app.NewExitError(fmt.Errorf("specify exactly one of --peers=<ip[,ip...]> or --fabric=<name>"), app.ExitUsage)
+	}
+	if gotPeers {
+		for _, peer := range strings.Split(peers, ",") {
+			if net.ParseIP(strings.TrimSpace(peer)) == nil {
+				return app.NewExitError(fmt.Errorf("invalid peer IP %q", peer), app.ExitUsage)
+			}
+		}
+	}
 
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
@@ -707,7 +761,7 @@ func runSDNControllerCreate(ctx context.Context, cmdCtx *Context, args []string)
 		return err
 	}
 
-	if err := sm.SDNCreateController(ctx, ctrlName); err != nil {
+	if err := sm.SDNCreateController(ctx, ctrlName, uint32(asn), peers, fabric); err != nil {
 		return fmt.Errorf("create SDN controller: %w", err)
 	}
 

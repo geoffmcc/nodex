@@ -876,7 +876,7 @@ singular noun is always the mutate verb, so every resource has a matching
 | `sdn vnet delete <name>` | Delete an SDN VNet |
 | `sdn subnet create <vnet> <cidr> --gateway=<gw>` | Create an SDN subnet |
 | `sdn subnet delete <vnet> <subnet>` | Delete an SDN subnet |
-| `sdn controller create <name>` | Create an SDN controller |
+| `sdn controller create <name> --asn=<asn> (--peers=<ip[,ip...]> | --fabric=<name>)` | Create an EVPN SDN controller |
 | `sdn controller delete <name>` | Delete an SDN controller |
 
 ### `nodex maintenance`

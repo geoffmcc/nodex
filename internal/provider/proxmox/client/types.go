@@ -1829,6 +1829,8 @@ type SDNCreateSubnetRequest struct {
 // SDNCreateControllerRequest is the body for POST /cluster/sdn/controllers.
 type SDNCreateControllerRequest struct {
 	Controller string `json:"controller"`
+	Type       string `json:"type"`
+	ASN        uint32 `json:"asn"`
 }
 
 // SDNZonesMutationResponse is the response from SDN zone mutations.

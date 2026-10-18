@@ -847,7 +847,7 @@ func buildRegistry() []OperationMeta {
 		{"sdn vnet delete", "Delete an SDN VNet", "runSDNVNetDelete", true, "the SDN VNet name"},
 		{"sdn subnet create", "Create an SDN subnet", "runSDNSubnetCreate", false, ""},
 		{"sdn subnet delete", "Delete an SDN subnet", "runSDNSubnetDelete", true, "`<vnet>/<subnet>` combining the VNet and subnet names (for example prod/lan)"},
-		{"sdn controller create", "Create an SDN controller", "runSDNControllerCreate", false, ""},
+		{"sdn controller create", "Create an EVPN SDN controller (ASN and peer IPs or fabric required)", "runSDNControllerCreate", false, ""},
 		{"sdn controller delete", "Delete an SDN controller", "runSDNControllerDelete", true, "the SDN controller name"},
 	}
 	for _, v := range sdnMutations {

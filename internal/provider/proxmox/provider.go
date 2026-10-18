@@ -2023,11 +2023,11 @@ func (p *Provider) SDNDeleteSubnet(ctx context.Context, vnet, subnet string) err
 }
 
 // SDNCreateController creates an SDN controller.
-func (p *Provider) SDNCreateController(ctx context.Context, ctrl string) error {
+func (p *Provider) SDNCreateController(ctx context.Context, ctrl string, asn uint32, peers, fabric string) error {
 	if p.client == nil {
 		return errors.New(errNotConnected)
 	}
-	return p.client.CreateSDNController(ctx, ctrl)
+	return p.client.CreateSDNController(ctx, ctrl, asn, peers, fabric)
 }
 
 // SDNDeleteController deletes an SDN controller.

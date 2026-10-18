@@ -3043,10 +3043,17 @@ func (c *Client) DeleteSDNSubnet(ctx context.Context, vnet, subnet string) error
 }
 
 // CreateSDNController creates an SDN controller.
-func (c *Client) CreateSDNController(ctx context.Context, ctrl string) error {
+func (c *Client) CreateSDNController(ctx context.Context, ctrl string, asn uint32, peers, fabric string) error {
 	body := url.Values{}
 	body.Set("controller", ctrl)
 	body.Set("type", "evpn")
+	body.Set("asn", strconv.FormatUint(uint64(asn), 10))
+	if peers != "" {
+		body.Set("peers", peers)
+	}
+	if fabric != "" {
+		body.Set("fabric", fabric)
+	}
 	return c.post(ctx, "/cluster/sdn/controllers", body, nil)
 }
 
