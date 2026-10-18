@@ -74,6 +74,12 @@ type DatastoreResponse struct {
 	Data DatastoreConfig `json:"data"`
 }
 
+// DatastoreCreateRequest contains the required PBS datastore creation fields.
+type DatastoreCreateRequest struct {
+	Name string
+	Path string
+}
+
 // DatastoreConfig is a datastore configuration entry.
 type DatastoreConfig struct {
 	Name            string `json:"name"`

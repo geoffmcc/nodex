@@ -19,6 +19,19 @@ func TestOperations_Count(t *testing.T) {
 	t.Logf("Registry: %d total, %d inspection, %d mutation", len(ops), len(inspect), len(mutate))
 }
 
+func TestPBSDatastoreCreateIsAdvertisedAsConfirmedMutation(t *testing.T) {
+	op := LookupOperation("pbs datastore create")
+	if op == nil {
+		t.Fatal("pbs datastore create is missing from operation registry")
+	}
+	if op.Inspection || op.SafetyTier != safety.TierDestructive || !op.RequiresTypeConfirm {
+		t.Fatalf("unexpected create safety metadata: inspection=%v tier=%s type-confirm=%v", op.Inspection, op.SafetyTier, op.RequiresTypeConfirm)
+	}
+	if op.ConfirmTargetFormat == "" || op.CapabilityInterface != "PBSDatastoreCreator" {
+		t.Fatalf("create operation lacks confirmation or provider interface metadata: %+v", op)
+	}
+}
+
 func TestOperations_EveryMutationHasTierAboveObservation(t *testing.T) {
 	for _, op := range MutationOperations() {
 		if op.SafetyTier == safety.TierObservation {

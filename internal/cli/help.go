@@ -235,6 +235,7 @@ var leafHelp = map[string]helpEntry{
 	// PBS dispatch leaves.
 	"pbs datastore list":            {desc: "List PBS datastores", usage: ""},
 	"pbs datastore show":            {desc: "Show PBS datastore details", usage: "<datastore>"},
+	"pbs datastore create":          {desc: "Create a PBS datastore (destructive; exact confirmation required)", usage: "<name> <absolute-path> --yes --force --confirm-target <name:path>"},
 	"pbs snapshot list":             {desc: "List PBS backup snapshots", usage: "--datastore <store> [--namespace <ns>] [--backup-type vm|ct|host] [--backup-id <id>]"},
 	"pbs task list":                 {desc: "List PBS tasks", usage: "[--running] [--errors]"},
 	"pbs task show":                 {desc: "Show a PBS task", usage: "<upid>"},

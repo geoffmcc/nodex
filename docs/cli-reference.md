@@ -955,7 +955,9 @@ Exit codes: `healthy` and `warning` exit 0; `blocked`, `unknown`, `unsupported`,
 
 ### `nodex pbs`
 
-Inspect a Proxmox Backup Server (read-only). Requires a profile with `provider: pbs` (see the configuration reference).
+Inspect a Proxmox Backup Server and manage its datastores. Requires a profile
+with `provider: pbs` (see the configuration reference). Inspection commands are
+read-only; datastore creation is destructive and requires exact confirmation.
 
 The whole `pbs` group is gated before any connection attempt. When the selected
 profile's provider exposes no PBS capability — the common case on a PVE-only
@@ -980,6 +982,7 @@ nodex pbs subscription
 nodex pbs certificates
 nodex pbs datastore list
 nodex pbs datastore show <datastore>
+nodex pbs datastore create <name> <absolute-path> --yes --force --confirm-target <name:path>
 nodex pbs snapshot list --datastore <store> [--namespace <ns>] [--backup-type vm|ct|host] [--backup-id <id>]
 nodex pbs task list [--running] [--errors]
 nodex pbs task show <upid>
@@ -1002,6 +1005,7 @@ nodex pbs garbage-collection run <datastore>
 | `pbs certificates` | API certificate details, including expiry |
 | `pbs datastore list` | Datastore configurations |
 | `pbs datastore show <datastore>` | One datastore's configuration plus usage; usage errors (e.g. an unmounted removable datastore) are reported in `status_error` without failing the command |
+| `pbs datastore create <name> <absolute-path>` | Register a datastore at an unused absolute backing path; requires `--yes --force --confirm-target <name:path>` |
 | `pbs snapshot list --datastore <store>` | Backup snapshots in a datastore, including owner, protection, and verification state; `--namespace`, `--backup-type`, and `--backup-id` narrow the listing |
 | `pbs task list` | Recent tasks; `--running` and `--errors` filter, global `--limit` caps the count |
 | `pbs task show <upid>` | Task status and exit state for a PBS UPID |

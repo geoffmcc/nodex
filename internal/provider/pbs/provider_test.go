@@ -27,16 +27,17 @@ func TestProviderCapabilities(t *testing.T) {
 	p := &Provider{}
 	caps := p.Capabilities()
 	want := map[domain.Capability]bool{
-		domain.CapabilityPBSSystem:     false,
-		domain.CapabilityPBSDatastores: false,
-		domain.CapabilityPBSSnapshots:  false,
-		domain.CapabilityPBSTasks:      false,
-		domain.CapabilityPBSJobs:       false,
-		domain.CapabilityPBSGC:         false,
-		domain.CapabilityPBSVerifyRun:  false,
-		domain.CapabilityPBSSyncRun:    false,
-		domain.CapabilityPBSPruneRun:   false,
-		domain.CapabilityPBSGCRun:      false,
+		domain.CapabilityPBSSystem:          false,
+		domain.CapabilityPBSDatastores:      false,
+		domain.CapabilityPBSDatastoreCreate: false,
+		domain.CapabilityPBSSnapshots:       false,
+		domain.CapabilityPBSTasks:           false,
+		domain.CapabilityPBSJobs:            false,
+		domain.CapabilityPBSGC:              false,
+		domain.CapabilityPBSVerifyRun:       false,
+		domain.CapabilityPBSSyncRun:         false,
+		domain.CapabilityPBSPruneRun:        false,
+		domain.CapabilityPBSGCRun:           false,
 	}
 	for _, c := range caps {
 		if _, ok := want[c]; !ok {
@@ -69,6 +70,7 @@ func TestPBSMutationSafetyTiers(t *testing.T) {
 		{domain.CapabilityPBSSyncRun, domain.TierDisruptive},
 		{domain.CapabilityPBSPruneRun, domain.TierDestructive},
 		{domain.CapabilityPBSGCRun, domain.TierDisruptive},
+		{domain.CapabilityPBSDatastoreCreate, domain.TierDestructive},
 	}
 	for _, tt := range tests {
 		m, ok := meta[tt.cap]
@@ -93,6 +95,7 @@ func TestProviderImplementsDeclaredInterfaces(t *testing.T) {
 	checks := map[string]bool{}
 	_, checks["PBSSystemInspector"] = prov.(domain.PBSSystemInspector)
 	_, checks["PBSDatastoreInspector"] = prov.(domain.PBSDatastoreInspector)
+	_, checks["PBSDatastoreCreator"] = prov.(domain.PBSDatastoreCreator)
 	_, checks["PBSSnapshotInspector"] = prov.(domain.PBSSnapshotInspector)
 	_, checks["PBSTaskInspector"] = prov.(domain.PBSTaskInspector)
 	_, checks["PBSJobInspector"] = prov.(domain.PBSJobInspector)

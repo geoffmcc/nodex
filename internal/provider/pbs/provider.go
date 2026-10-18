@@ -87,6 +87,7 @@ func (p *Provider) Capabilities() []domain.Capability {
 	return []domain.Capability{
 		domain.CapabilityPBSSystem,
 		domain.CapabilityPBSDatastores,
+		domain.CapabilityPBSDatastoreCreate,
 		domain.CapabilityPBSSnapshots,
 		domain.CapabilityPBSTasks,
 		domain.CapabilityPBSJobs,
@@ -96,6 +97,17 @@ func (p *Provider) Capabilities() []domain.Capability {
 		domain.CapabilityPBSPruneRun,
 		domain.CapabilityPBSGCRun,
 	}
+}
+
+// PBSCreateDatastore registers a datastore at the supplied backing path.
+func (p *Provider) PBSCreateDatastore(ctx context.Context, name, path string) error {
+	if p.client == nil {
+		return errors.New(errNotConnected)
+	}
+	if err := p.client.CreateDatastore(ctx, client.DatastoreCreateRequest{Name: name, Path: path}); err != nil {
+		return fmt.Errorf("create datastore %q: %w", name, err)
+	}
+	return nil
 }
 
 const errNotConnected = "provider not connected: call Connect() first"

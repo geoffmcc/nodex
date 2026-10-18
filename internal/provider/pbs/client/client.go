@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -162,6 +163,21 @@ func (c *Client) Datastore(ctx context.Context, name string) (*DatastoreConfig, 
 		return nil, err
 	}
 	return &resp.Data, nil
+}
+
+// CreateDatastore registers a datastore at an absolute backing path
+// (POST /config/datastore). PBS initializes the backing directory as needed.
+func (c *Client) CreateDatastore(ctx context.Context, req DatastoreCreateRequest) error {
+	if err := ValidateJobID(req.Name); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(req.Path, "/") || path.Clean(req.Path) != req.Path || req.Path == "/" {
+		return fmt.Errorf("datastore path must be a clean absolute POSIX path other than /")
+	}
+	form := url.Values{}
+	form.Set("name", req.Name)
+	form.Set("path", req.Path)
+	return c.postForm(ctx, "/config/datastore", form)
 }
 
 // DatastoreStatus returns datastore usage (GET /admin/datastore/{store}/status).
@@ -496,6 +512,27 @@ func (c *Client) post(ctx context.Context, path string, result any) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	return c.decodeResponse(resp, result)
+}
+
+func (c *Client) postForm(ctx context.Context, path string, form url.Values) error {
+	u := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(form.Encode()))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	if err := c.validateEndpoint(req.URL); err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if c.token != "" {
+		req.Header.Set("Authorization", "PBSAPIToken="+c.token)
+	}
+	resp, err := c.client.DoMutation(ctx, req)
+	if err != nil {
+		return &app.ProviderError{StatusCode: 0, Detail: fmt.Sprintf("execute request: %v", err), Err: err}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return c.decodeResponse(resp, nil)
 }
 
 // decodeResponse reads, validates, and decodes a PBS API response.

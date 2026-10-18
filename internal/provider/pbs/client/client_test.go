@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -171,6 +172,50 @@ func TestRequestPathsAndParams(t *testing.T) {
 				t.Errorf("query = %q, want %q", gotQuery, tt.wantQuery)
 			}
 		})
+	}
+}
+
+func TestCreateDatastorePostsPBSFormToConfigAPI(t *testing.T) {
+	var gotMethod, gotPath, gotContentType string
+	var gotForm url.Values
+	c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath, gotContentType = r.Method, r.URL.Path, r.Header.Get("Content-Type")
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm: %v", err)
+		}
+		gotForm = r.PostForm
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":null}`))
+	}))
+	if err := c.CreateDatastore(context.Background(), DatastoreCreateRequest{
+		Name: "ndx-test", Path: "/var/lib/proxmox-backup/ndx-test",
+	}); err != nil {
+		t.Fatalf("CreateDatastore: %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api2/json/config/datastore" {
+		t.Fatalf("request = %s %s", gotMethod, gotPath)
+	}
+	if gotContentType != "application/x-www-form-urlencoded" {
+		t.Errorf("Content-Type = %q", gotContentType)
+	}
+	if gotForm.Get("name") != "ndx-test" || gotForm.Get("path") != "/var/lib/proxmox-backup/ndx-test" {
+		t.Errorf("form = %#v", gotForm)
+	}
+}
+
+func TestCreateDatastoreValidatesNameAndPath(t *testing.T) {
+	c := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("invalid datastore request reached provider")
+	}))
+	for _, req := range []DatastoreCreateRequest{
+		{Name: "x", Path: "/var/lib/x"},
+		{Name: "ndx-test", Path: "relative"},
+		{Name: "ndx-test", Path: "/var/lib/../unsafe"},
+		{Name: "ndx-test", Path: "/"},
+	} {
+		if err := c.CreateDatastore(context.Background(), req); err == nil {
+			t.Errorf("CreateDatastore(%+v) succeeded, want validation error", req)
+		}
 	}
 }
 

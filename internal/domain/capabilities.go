@@ -1013,6 +1013,10 @@ func CapabilityMetadata() map[Capability]CapabilityMeta {
 			Name: "PBS Datastores", Category: CapInspection, Safety: TierObservation,
 			Interfaces: []string{"PBSDatastoreInspector"},
 		},
+		CapabilityPBSDatastoreCreate: {
+			Name: "PBS Datastore Creation", Category: CapMutation, Safety: TierDestructive,
+			Interfaces: []string{"PBSDatastoreCreator"},
+		},
 		CapabilityPBSSnapshots: {
 			Name: "PBS Snapshots", Category: CapInspection, Safety: TierObservation,
 			Interfaces: []string{"PBSSnapshotInspector"},
