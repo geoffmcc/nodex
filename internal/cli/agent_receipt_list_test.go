@@ -237,3 +237,46 @@ func TestAgentReceiptListFiltersByRequestIDPrefix(t *testing.T) {
 		t.Fatalf("returned request ID %q does not match prefix %q", result.Items[0].RequestID, result.RequestPrefix)
 	}
 }
+
+func TestAgentReceiptDeleteRequiresExactConfirmationAndKeepsUnresolved(t *testing.T) {
+	isolateConfigAndHome(t)
+	id := "req_delete_completed"
+	writeReceipt(t, id, testReceipt(id, boolPtr(false)))
+	for _, args := range [][]string{
+		{"agent", "receipt", "delete", id},
+		{"--yes", "--force", "--confirm-target", "wrong", "agent", "receipt", "delete", id},
+	} {
+		var out, errOut bytes.Buffer
+		if err := Run(context.Background(), args, &out, &errOut); err == nil {
+			t.Fatalf("delete accepted without exact destructive confirmation: %v", args)
+		}
+	}
+	var out, errOut bytes.Buffer
+	if err := Run(context.Background(), []string{"--yes", "--force", "--confirm-target", id, "agent", "receipt", "delete", id}, &out, &errOut); err != nil {
+		t.Fatalf("delete completed receipt: %v (%s)", err, errOut.String())
+	}
+	if _, err := agent.DefaultStore(); err != nil {
+		t.Fatal(err)
+	}
+	store, _ := agent.DefaultStore()
+	if _, err := store.Get(id); err == nil {
+		t.Fatal("completed receipt remains after delete")
+	}
+
+	unresolvedID := "req_delete_unresolved"
+	unresolved := testReceipt(unresolvedID, nil)
+	unresolved.Submission = agent.SubmissionUnknown
+	unresolved.Execution = agent.ExecutionUnknown
+	unresolved.Verification = agent.VerificationUnknown
+	unresolved.Retry = agent.RetryReconcileFirst
+	writeReceipt(t, unresolvedID, unresolved)
+	out.Reset()
+	errOut.Reset()
+	err := Run(context.Background(), []string{"--yes", "--force", "--confirm-target", unresolvedID, "agent", "receipt", "delete", unresolvedID}, &out, &errOut)
+	if err == nil {
+		t.Fatal("unresolved receipt deletion succeeded")
+	}
+	if _, err := store.Get(unresolvedID); err != nil {
+		t.Fatalf("unresolved receipt was removed: %v", err)
+	}
+}

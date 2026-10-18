@@ -61,7 +61,7 @@ type receiptListResult struct {
 
 func runAgentReceiptDispatch(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) == 0 {
-		return app.NewExitError(errors.New("usage: nodex agent receipt <list|show|refresh|reconcile>"), app.ExitUsage)
+		return app.NewExitError(errors.New("usage: nodex agent receipt <list|show|delete|refresh|reconcile>"), app.ExitUsage)
 	}
 	var handler CommandFunc
 	switch args[0] {
@@ -69,16 +69,45 @@ func runAgentReceiptDispatch(ctx context.Context, cmdCtx *Context, args []string
 		handler = runAgentReceiptList
 	case "show":
 		handler = runAgentReceiptShow
+	case "delete":
+		handler = runAgentReceiptDelete
 	case "refresh":
 		handler = runAgentReceiptRefresh
 	case "reconcile":
 		handler = runAgentReceiptReconcile
 	default:
-		valid := []string{"list", "show", "refresh", "reconcile"}
+		valid := []string{"list", "show", "delete", "refresh", "reconcile"}
 		sort.Strings(valid)
 		return app.NewExitError(fmt.Errorf("unknown receipt operation %q (valid: %s)", args[0], strings.Join(valid, ", ")), app.ExitUsage)
 	}
 	return handler(ctx, cmdCtx, args[1:])
+}
+
+func runAgentReceiptDelete(_ context.Context, cmdCtx *Context, args []string) error {
+	if len(args) != 1 || !agent.ValidRequestID(args[0]) {
+		return app.NewExitError(errors.New("usage: nodex agent receipt delete <request-id> --yes --force --confirm-target <request-id>"), app.ExitUsage)
+	}
+	id := args[0]
+	if err := checkDestructive(cmdCtx, "local mutation receipt "+id, id); err != nil {
+		return err
+	}
+	store, err := agent.DefaultStore()
+	if err != nil {
+		return app.NewExitError(err, app.ExitConfig)
+	}
+	lease, err := store.Lock(id)
+	if err != nil {
+		return app.NewExitError(err, app.ExitConfig)
+	}
+	defer func() { _ = lease.Close() }()
+	receipt, err := lease.Load()
+	if err != nil {
+		return receiptReadError(id, err)
+	}
+	if err := lease.Delete(); err != nil {
+		return app.NewExitError(err, app.ExitConflict)
+	}
+	return output.WriteJSON(cmdCtx.Writer, map[string]any{"deleted": true, "request_id": id, "operation": receipt.Operation})
 }
 
 func runAgentReceiptList(_ context.Context, cmdCtx *Context, args []string) error {
@@ -315,11 +344,23 @@ func restorePath(operation string) bool {
 }
 
 func sameExecutionIdentity(receipt, current agent.ExecutionContext) bool {
-	return receipt.Profile == current.Profile && receipt.Provider == current.Provider &&
-		receipt.Endpoint == current.Endpoint && receipt.TLSCAFile == current.TLSCAFile &&
-		receipt.SSHHost == current.SSHHost && receipt.SSHUser == current.SSHUser &&
-		receipt.SSHKeyFile == current.SSHKeyFile && receipt.SSHKnownHosts == current.SSHKnownHosts &&
-		receipt.SSHInventoryHost == current.SSHInventoryHost && receipt.SSHPort == current.SSHPort
+	if receipt.Profile != current.Profile || receipt.Provider != current.Provider ||
+		receipt.Endpoint != current.Endpoint || receipt.TLSCAFile != current.TLSCAFile {
+		return false
+	}
+	// SSH settings are part of execution identity only when the recorded
+	// operation actually captured them. API-only receipts predate or omit
+	// otherwise-unused SSH profile settings and should remain reconcilable.
+	return optionalIdentityMatches(receipt.SSHHost, current.SSHHost) &&
+		optionalIdentityMatches(receipt.SSHUser, current.SSHUser) &&
+		optionalIdentityMatches(receipt.SSHKeyFile, current.SSHKeyFile) &&
+		optionalIdentityMatches(receipt.SSHKnownHosts, current.SSHKnownHosts) &&
+		optionalIdentityMatches(receipt.SSHInventoryHost, current.SSHInventoryHost) &&
+		(receipt.SSHPort == 0 || receipt.SSHPort == current.SSHPort)
+}
+
+func optionalIdentityMatches(recorded, current string) bool {
+	return recorded == "" || recorded == current
 }
 
 func receiptReadError(id string, err error) error {

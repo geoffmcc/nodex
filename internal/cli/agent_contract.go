@@ -815,6 +815,8 @@ func sideEffects(op OperationMeta) ([]string, []string) {
 		return []string{"local_agent_receipt_write"}, []string{"remote_read"}
 	case "agent receipt show", "agent receipt list":
 		return []string{"local_receipt_read", "local_receipt_directory_create_if_missing"}, []string{}
+	case "agent receipt delete":
+		return []string{"local_agent_receipt_write"}, []string{}
 	case "maintenance report":
 		return []string{"local_maintenance_receipt_read"}, []string{}
 	}

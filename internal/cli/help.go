@@ -27,6 +27,7 @@ var leafHelp = map[string]helpEntry{
 	"agent contract":          {usage: ""},
 	"agent receipt list":      {usage: "[--request-prefix <prefix>]"},
 	"agent receipt show":      {usage: "<request-id>"},
+	"agent receipt delete":    {desc: "Delete a completed local receipt", usage: "<request-id> --yes --force --confirm-target <request-id>"},
 	"agent receipt refresh":   {usage: "<request-id> --yes"},
 	"agent receipt reconcile": {usage: "<request-id> --yes"},
 	"operation list":          {usage: ""},
