@@ -22,7 +22,10 @@ func TestUploadRejectsNonRegularFile(t *testing.T) {
 	c := &Client{baseURL: "http://example.com/api2/json", client: httpclient.New()}
 
 	// Directory.
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "directory.iso")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := c.UploadContent(context.Background(), "node1", "local", dir); err == nil {
 		t.Fatal("expected error for directory upload")
 	} else if !strings.Contains(err.Error(), "not a regular file") {
@@ -343,17 +346,16 @@ func TestVolumePathRequestPath(t *testing.T) {
 // TestUploadDoesNotFollowSymlinks verifies that symlinks are rejected by
 // the regular-file check.
 func TestUploadDoesNotFollowSymlinks(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink test requires POSIX-style symlinks")
-	}
-
 	dir := t.TempDir()
-	realFile := filepath.Join(dir, "real.txt")
+	realFile := filepath.Join(dir, "real.iso")
 	if err := os.WriteFile(realFile, []byte("content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	symlink := filepath.Join(dir, "link.txt")
+	symlink := filepath.Join(dir, "link.iso")
 	if err := os.Symlink(realFile, symlink); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("Windows symlink creation is unavailable: %v", err)
+		}
 		t.Fatal(err)
 	}
 
@@ -362,8 +364,12 @@ func TestUploadDoesNotFollowSymlinks(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for symlink upload")
 	}
-	if !strings.Contains(err.Error(), "not a regular file") {
-		t.Fatalf("unexpected error for symlink: %v", err)
+}
+
+func TestOpenRegularFileNoFollowRejectsDirectory(t *testing.T) {
+	if file, err := openRegularFileNoFollow(t.TempDir()); err == nil {
+		_ = file.Close()
+		t.Fatal("opened a directory as a regular upload file")
 	}
 }
 

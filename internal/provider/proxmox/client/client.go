@@ -1589,9 +1589,19 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 		return "", fmt.Errorf("local file path is required")
 	}
 
-	info, err := os.Lstat(localPath)
+	filename := filepath.Base(localPath)
+	contentType := inferUploadContentType(filename)
+	if contentType == "" {
+		return "", fmt.Errorf("unsupported upload content type for %s (supported extensions: .iso, .img, .qcow2, .raw, .vmdk, .tar, .tar.gz, .tgz, .tar.xz, .tar.zst)", filename)
+	}
+	file, err := openRegularFileNoFollow(localPath)
 	if err != nil {
-		return "", fmt.Errorf("stat local file: %w", err)
+		return "", fmt.Errorf("open local file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("inspect opened local file: %w", err)
 	}
 	if !info.Mode().IsRegular() {
 		return "", fmt.Errorf("%s is not a regular file (symlinks, directories, and special files are not supported)", localPath)
@@ -1599,17 +1609,6 @@ func (c *Client) UploadContent(ctx context.Context, node, storage, localPath str
 	if info.Size() > DefaultMaxUploadSize {
 		return "", fmt.Errorf("%s size %d exceeds maximum upload size %d", localPath, info.Size(), DefaultMaxUploadSize)
 	}
-
-	filename := filepath.Base(localPath)
-	contentType := inferUploadContentType(filename)
-	if contentType == "" {
-		return "", fmt.Errorf("unsupported upload content type for %s (supported extensions: .iso, .img, .qcow2, .raw, .vmdk, .tar, .tar.gz, .tgz, .tar.xz, .tar.zst)", filename)
-	}
-	file, err := os.Open(localPath) // #nosec G304 -- localPath validated by os.Lstat + IsRegular above.
-	if err != nil {
-		return "", fmt.Errorf("open local file: %w", err)
-	}
-	defer func() { _ = file.Close() }()
 	if strings.HasSuffix(strings.ToLower(filename), ".img") {
 		filename, err = normalizeDiskImageFilename(file, filename)
 		if err != nil {
