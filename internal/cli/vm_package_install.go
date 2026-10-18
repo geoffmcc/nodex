@@ -68,15 +68,16 @@ func runVMPackageInstall(ctx context.Context, cmdCtx *Context, args []string) er
 }
 
 func installVMPackages(ctx context.Context, executor domain.VMGuestAgentExecutor, node string, vmid int, packages []string) (bool, error) {
-	if _, _, err := runVMGuestCommand(ctx, executor, node, vmid, []string{"/usr/bin/test", "-x", "/usr/bin/apt-get"}); err != nil {
+	if _, err := runVMGuestCommand(ctx, executor, node, vmid, []string{"/usr/bin/test", "-x", "/usr/bin/apt-get"}); err != nil {
 		return false, fmt.Errorf("VM %s/%d package installation preflight failed: %w", node, vmid, err)
 	}
-	if _, _, err := runVMGuestCommand(ctx, executor, node, vmid, []string{"/usr/bin/apt-get", "-qq", "-o", "DPkg::Lock::Timeout=120", "update"}); err != nil {
+	if _, err := runVMGuestCommand(ctx, executor, node, vmid, []string{"/usr/bin/apt-get", "-qq", "-o", "DPkg::Lock::Timeout=120", "update"}); err != nil {
 		return false, packageInstallPartialError(node, vmid, "APT metadata refresh", err)
 	}
-	simulationArgs := []string{"/usr/bin/apt-get", "-s", "--no-remove", "-o", "DPkg::Lock::Timeout=120", "install", "--"}
+	simulationArgs := make([]string, 0, 7+len(packages))
+	simulationArgs = append(simulationArgs, "/usr/bin/apt-get", "-s", "--no-remove", "-o", "DPkg::Lock::Timeout=120", "install", "--")
 	simulationArgs = append(simulationArgs, packages...)
-	simulation, _, err := runVMGuestCommand(ctx, executor, node, vmid, simulationArgs)
+	simulation, err := runVMGuestCommand(ctx, executor, node, vmid, simulationArgs)
 	if err != nil {
 		return false, packageInstallPartialError(node, vmid, "APT install simulation", err)
 	}
@@ -92,15 +93,16 @@ func installVMPackages(ctx context.Context, executor domain.VMGuestAgentExecutor
 			break
 		}
 	}
-	installArgs := []string{"/usr/bin/env", "DEBIAN_FRONTEND=noninteractive", "/usr/bin/apt-get", "-qq", "-y", "--no-remove", "-o", "DPkg::Lock::Timeout=120", "install", "--"}
+	installArgs := make([]string, 0, 10+len(packages))
+	installArgs = append(installArgs, "/usr/bin/env", "DEBIAN_FRONTEND=noninteractive", "/usr/bin/apt-get", "-qq", "-y", "--no-remove", "-o", "DPkg::Lock::Timeout=120", "install", "--")
 	installArgs = append(installArgs, packages...)
-	_, _, err = runVMGuestCommand(ctx, executor, node, vmid, installArgs)
+	_, err = runVMGuestCommand(ctx, executor, node, vmid, installArgs)
 	if err != nil {
 		return false, packageInstallPartialError(node, vmid, "APT install", err)
 	}
 	for _, packageName := range packages {
 		verifyArgs := []string{"/usr/bin/dpkg-query", "-W", "-f=${Status}\n", "--", packageName}
-		verified, _, verifyErr := runVMGuestCommand(ctx, executor, node, vmid, verifyArgs)
+		verified, verifyErr := runVMGuestCommand(ctx, executor, node, vmid, verifyArgs)
 		if verifyErr != nil || !strings.Contains(verified, "install ok installed") {
 			if verifyErr == nil {
 				verifyErr = fmt.Errorf("package state did not confirm installed")
@@ -111,13 +113,13 @@ func installVMPackages(ctx context.Context, executor domain.VMGuestAgentExecutor
 	return changed, nil
 }
 
-func runVMGuestCommand(ctx context.Context, executor domain.VMGuestAgentExecutor, node string, vmid int, argv []string) (string, string, error) {
+func runVMGuestCommand(ctx context.Context, executor domain.VMGuestAgentExecutor, node string, vmid int, argv []string) (string, error) {
 	pid, err := executor.VMGuestExec(ctx, node, vmid, argv)
 	if err != nil {
-		return "", "", app.NewExitError(fmt.Errorf("QEMU Guest Agent command submission outcome is unknown: %w", err), app.ExitAmbiguousOutcome)
+		return "", app.NewExitError(fmt.Errorf("QEMU Guest Agent command submission outcome is unknown: %w", err), app.ExitAmbiguousOutcome)
 	}
 	if pid <= 0 {
-		return "", "", app.NewExitError(fmt.Errorf("QEMU Guest Agent returned no valid process ID; process outcome is unknown"), app.ExitAmbiguousOutcome)
+		return "", app.NewExitError(fmt.Errorf("QEMU Guest Agent returned no valid process ID; process outcome is unknown"), app.ExitAmbiguousOutcome)
 	}
 	deadline := time.NewTimer(vmGuestExecMaxWait)
 	defer deadline.Stop()
@@ -125,28 +127,28 @@ func runVMGuestCommand(ctx context.Context, executor domain.VMGuestAgentExecutor
 	for {
 		status, statusErr := executor.VMGuestExecStatus(ctx, node, vmid, pid)
 		if statusErr != nil {
-			return "", "", app.NewExitError(fmt.Errorf("QEMU Guest Agent process %d outcome is unknown; do not resubmit automatically: %w", pid, statusErr), app.ExitAmbiguousOutcome)
+			return "", app.NewExitError(fmt.Errorf("QEMU Guest Agent process %d outcome is unknown; do not resubmit automatically: %w", pid, statusErr), app.ExitAmbiguousOutcome)
 		}
 		if status == nil {
-			return "", "", app.NewExitError(fmt.Errorf("QEMU Guest Agent returned no status for process %d; outcome is unknown", pid), app.ExitAmbiguousOutcome)
+			return "", app.NewExitError(fmt.Errorf("QEMU Guest Agent returned no status for process %d; outcome is unknown", pid), app.ExitAmbiguousOutcome)
 		}
 		if status.Exited {
 			if status.ExitCode == nil {
-				return "", "", app.NewExitError(fmt.Errorf("QEMU Guest Agent process %d exited without an exit code; outcome is unknown", pid), app.ExitAmbiguousOutcome)
+				return "", app.NewExitError(fmt.Errorf("QEMU Guest Agent process %d exited without an exit code; outcome is unknown", pid), app.ExitAmbiguousOutcome)
 			}
 			if *status.ExitCode != 0 {
-				return status.Stdout, status.Stderr, fmt.Errorf("guest process exited with code %d", *status.ExitCode)
+				return status.Stdout, fmt.Errorf("guest process exited with code %d", *status.ExitCode)
 			}
-			return status.Stdout, status.Stderr, nil
+			return status.Stdout, nil
 		}
 		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return "", "", app.NewExitError(fmt.Errorf("QEMU Guest Agent process %d may still be running after local cancellation; outcome is unknown", pid), app.ExitAmbiguousOutcome)
+			return "", app.NewExitError(fmt.Errorf("QEMU Guest Agent process %d may still be running after local cancellation; outcome is unknown", pid), app.ExitAmbiguousOutcome)
 		case <-deadline.C:
 			timer.Stop()
-			return "", "", app.NewExitError(fmt.Errorf("QEMU Guest Agent process %d may still be running after the 20 minute wait limit; outcome is unknown", pid), app.ExitAmbiguousOutcome)
+			return "", app.NewExitError(fmt.Errorf("QEMU Guest Agent process %d may still be running after the 20 minute wait limit; outcome is unknown", pid), app.ExitAmbiguousOutcome)
 		case <-timer.C:
 		}
 		if interval < vmGuestExecMaxPoll/2 {
