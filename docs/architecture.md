@@ -400,6 +400,11 @@ Resolution order for a profile without explicit `credential_ref`:
 1. Environment variables for the profile
 2. Same-name file credential
 
+The file fallback is used only when the environment backend reports that no
+credential values were supplied. Partial or invalid environment credentials,
+and existing unreadable/invalid credential files, stop resolution with an
+error; they never cause NodeX to select another identity silently.
+
 Profiles with an explicit `credential_ref` resolve only that reference.
 
 Proxmox API token credentials use `token_id` and `token_secret`. Password credentials use `username` and `password`.

@@ -2,6 +2,7 @@ package credentials
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,32 +35,55 @@ func NewResolver(credDir string) *Resolver {
 	}
 }
 
-// Resolve loads credentials for a profile using its credential_ref.
-// credential_ref format: "backend:profile" or just "profile" (defaults to file).
-// Falls back through env and stdin if the primary backend fails.
+// Resolve loads credentials from an explicit credential_ref when present.
+// Without a reference, it tries environment credentials and then the same-name
+// file backend, but only treats an absent environment value as eligible for
+// fallback. It never prompts; interactive credential entry is handled by the
+// CLI's explicit credential workflow.
 func (r *Resolver) Resolve(ctx context.Context, profile, credentialRef string) (*domain.Credentials, error) {
 	if credentialRef != "" {
 		return r.resolveFromRef(ctx, profile, credentialRef)
 	}
+	if err := ValidateName(profile); err != nil {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: profile name: %w", app.ErrCredential, err),
+			app.ExitCredential,
+		)
+	}
 
-	// Try env first (NODEX_PROFILE_TOKEN pattern).
+	// Try environment credentials first. Continue to file credentials only
+	// when the environment backend reports that no credential was supplied;
+	// malformed partial environment values must not silently select a stale,
+	// potentially more privileged file identity.
 	if creds, err := r.backends["env"].Get(ctx, profile); err == nil {
 		return creds, nil
+	} else if !errors.Is(err, ErrNoEnvironmentCredentials) {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: environment backend: %w", app.ErrCredential, err),
+			app.ExitCredential,
+		)
 	}
 
 	// Try file backend.
 	credPath := filepath.Join(r.credDir, profile+".json")
-	if _, err := os.Stat(credPath); err == nil {
-		if err := ValidateName(profile); err != nil {
-			return nil, app.NewExitError(fmt.Errorf("%w: %w", app.ErrCredential, err), app.ExitCredential)
+	if _, err := os.Lstat(credPath); err == nil {
+		creds, err := r.backends["file"].Get(ctx, profile)
+		if err != nil {
+			return nil, app.NewExitError(
+				fmt.Errorf("%w: file backend: %w", app.ErrCredential, err),
+				app.ExitCredential,
+			)
 		}
-		if creds, err := r.backends["file"].Get(ctx, profile); err == nil {
-			return creds, nil
-		}
+		return creds, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, app.NewExitError(
+			fmt.Errorf("%w: inspect file credential: %w", app.ErrCredential, err),
+			app.ExitCredential,
+		)
 	}
 
 	return nil, app.NewExitError(
-		fmt.Errorf("%w: no credentials found for profile %q (set credential_ref in profile or use NODEX_<PROFILE>_TOKEN env var)",
+		fmt.Errorf("%w: no credentials found for profile %q (set credential_ref in profile, or set NODEX_<PROFILE>_TOKEN_ID and NODEX_<PROFILE>_TOKEN_SECRET)",
 			app.ErrCredential, profile),
 		app.ExitCredential,
 	)
