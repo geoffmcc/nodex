@@ -14,6 +14,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
+	"github.com/geoffmcc/nodex/internal/redact"
 )
 
 func runNodeList(ctx context.Context, cmdCtx *Context, args []string) error {
@@ -850,14 +851,23 @@ func writeConfig(cmdCtx *Context, config map[string]interface{}) error {
 	case output.FormatYAML:
 		return output.WriteYAML(cmdCtx.Writer, config)
 	default:
-		keys := make([]string, 0, len(config))
-		for k := range config {
+		safeConfig := map[string]interface{}{}
+		if config != nil {
+			sanitized := redact.Sanitize(config)
+			var ok bool
+			safeConfig, ok = sanitized.(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("sanitize VM/container config: unexpected result type %T", sanitized)
+			}
+		}
+		keys := make([]string, 0, len(safeConfig))
+		for k := range safeConfig {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		rows := make([][]string, 0, len(keys))
 		for _, k := range keys {
-			rows = append(rows, []string{strings.ToUpper(k), fmt.Sprintf("%v", config[k])})
+			rows = append(rows, []string{strings.ToUpper(k), fmt.Sprintf("%v", safeConfig[k])})
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}

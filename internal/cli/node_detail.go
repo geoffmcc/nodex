@@ -387,16 +387,23 @@ func writeNodeSubscription(cmdCtx *Context, sub *domain.NodeSubscription) error 
 	if sub == nil {
 		sub = &domain.NodeSubscription{}
 	}
+	// Proxmox returns the subscription key when the caller is permitted to see
+	// it. The key grants access to the enterprise repository, so expose whether
+	// one is set without writing its value to terminal or machine output.
+	safeSub := *sub
+	if safeSub.Key != "" {
+		safeSub.Key = "[REDACTED]"
+	}
 	switch cmdCtx.Opts.Output {
 	case output.FormatJSON:
-		return output.WriteJSON(cmdCtx.Writer, sub)
+		return output.WriteJSON(cmdCtx.Writer, safeSub)
 	case output.FormatYAML:
-		return output.WriteYAML(cmdCtx.Writer, sub)
+		return output.WriteYAML(cmdCtx.Writer, safeSub)
 	default:
 		rows := [][]string{
-			{"STATUS", sub.Status},
-			{"KEY", sub.Key},
-			{"EXPIRES", sub.Expires},
+			{"STATUS", safeSub.Status},
+			{"KEY", safeSub.Key},
+			{"EXPIRES", safeSub.Expires},
 		}
 		return output.WriteTable(cmdCtx.Writer, []string{"FIELD", "VALUE"}, rows)
 	}
