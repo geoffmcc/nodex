@@ -221,7 +221,7 @@ func MigrateCompletedLegacy(path string) (string, int, error) {
 		if !backupInfo.Mode().IsRegular() {
 			return "", 0, fmt.Errorf("legacy ledger backup must be a regular file")
 		}
-		prior, readErr := os.ReadFile(backup)
+		prior, readErr := os.ReadFile(backup) // #nosec G304 -- backup is a fixed sibling of the validated default ledger and Lstat requires a regular file before its contents are compared.
 		if readErr != nil {
 			return "", 0, fmt.Errorf("read legacy ledger backup: %w", readErr)
 		}
