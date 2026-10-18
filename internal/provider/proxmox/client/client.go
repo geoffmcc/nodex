@@ -2612,8 +2612,8 @@ func (c *Client) DeleteFirewallGroup(ctx context.Context, name string) error {
 // UpdateFirewallOptions updates firewall options via PUT /cluster/firewall/options.
 func (c *Client) UpdateFirewallOptions(ctx context.Context, opts FirewallOptionsUpdateRequest) error {
 	body := url.Values{}
-	if opts.Enable != 0 {
-		body.Set("enable", strconv.Itoa(opts.Enable))
+	if opts.Enable != nil {
+		body.Set("enable", strconv.Itoa(*opts.Enable))
 	}
 	if opts.PolicyIn != "" {
 		body.Set("policy_in", opts.PolicyIn)
@@ -2621,14 +2621,11 @@ func (c *Client) UpdateFirewallOptions(ctx context.Context, opts FirewallOptions
 	if opts.PolicyOut != "" {
 		body.Set("policy_out", opts.PolicyOut)
 	}
-	if opts.LogInDrop != 0 {
-		body.Set("log_in_drop", strconv.Itoa(opts.LogInDrop))
-	}
 	if opts.LogRateLimit != "" {
 		body.Set("log_ratelimit", opts.LogRateLimit)
 	}
-	if opts.NFConntrack != 0 {
-		body.Set("nf_conntrack_max", strconv.Itoa(opts.NFConntrack))
+	if opts.NFConntrack != nil {
+		body.Set("nf_conntrack_max", strconv.Itoa(*opts.NFConntrack))
 	}
 	if opts.Digest != "" {
 		body.Set("digest", opts.Digest)

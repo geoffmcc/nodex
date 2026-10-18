@@ -2957,7 +2957,6 @@ func (p *Provider) UpdateFirewallOptions(ctx context.Context, opts domain.Firewa
 		Enable:       opts.Enable,
 		PolicyIn:     opts.PolicyIn,
 		PolicyOut:    opts.PolicyOut,
-		LogInDrop:    opts.LogInDrop,
 		LogRateLimit: opts.LogRateLimit,
 		NFConntrack:  opts.NFConntrack,
 		Digest:       opts.Digest,

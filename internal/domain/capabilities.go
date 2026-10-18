@@ -809,12 +809,11 @@ type FirewallRuleCreateInput struct {
 
 // FirewallOptionsUpdateInput holds the fields for updating firewall options.
 type FirewallOptionsUpdateInput struct {
-	Enable       int
+	Enable       *int
 	PolicyIn     string
 	PolicyOut    string
-	LogInDrop    int
 	LogRateLimit string
-	NFConntrack  int
+	NFConntrack  *int
 	Digest       string
 }
 

@@ -1668,12 +1668,11 @@ type FirewallGroupCreateRequest struct {
 
 // FirewallOptionsUpdateRequest is the body for PUT /cluster/firewall/options.
 type FirewallOptionsUpdateRequest struct {
-	Enable       int    `json:"enable,omitempty"`
+	Enable       *int   `json:"enable,omitempty"`
 	PolicyIn     string `json:"policy_in,omitempty"`
 	PolicyOut    string `json:"policy_out,omitempty"`
-	LogInDrop    int    `json:"log_in_drop,omitempty"`
 	LogRateLimit string `json:"log_ratelimit,omitempty"`
-	NFConntrack  int    `json:"nf_conntrack_max,omitempty"`
+	NFConntrack  *int   `json:"nf_conntrack_max,omitempty"`
 	Digest       string `json:"digest,omitempty"`
 }
 

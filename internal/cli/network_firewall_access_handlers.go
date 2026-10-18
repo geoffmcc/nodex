@@ -858,7 +858,7 @@ func runFirewallGroupDelete(ctx context.Context, cmdCtx *Context, args []string)
 func runFirewallOptionsUpdate(ctx context.Context, cmdCtx *Context, args []string) error {
 	if len(args) == 0 {
 		return app.NewExitError(fmt.Errorf(
-			"usage: nodex firewall options update enable=<0|1> [policy_in=<a>] [policy_out=<a>] [log_in_drop=<0|1>] [log_ratelimit=<s>] [nf_conntrack_max=<n>] [digest=<s>]"),
+			"usage: nodex firewall options update enable=<0|1> [policy_in=<a>] [policy_out=<a>] [log_ratelimit=<s>] [nf_conntrack_max=<n>] [digest=<s>]"),
 			app.ExitUsage)
 	}
 
@@ -876,17 +876,11 @@ func runFirewallOptionsUpdate(ctx context.Context, cmdCtx *Context, args []strin
 			if err != nil {
 				return app.NewExitError(fmt.Errorf("invalid enable value: %s", val), app.ExitUsage)
 			}
-			opts.Enable = v
+			opts.Enable = &v
 		case "policy_in":
 			opts.PolicyIn = val
 		case "policy_out":
 			opts.PolicyOut = val
-		case "log_in_drop":
-			v, err := strconv.Atoi(val)
-			if err != nil {
-				return app.NewExitError(fmt.Errorf("invalid log_in_drop value: %s", val), app.ExitUsage)
-			}
-			opts.LogInDrop = v
 		case "log_ratelimit":
 			opts.LogRateLimit = val
 		case "nf_conntrack_max":
@@ -894,7 +888,7 @@ func runFirewallOptionsUpdate(ctx context.Context, cmdCtx *Context, args []strin
 			if err != nil {
 				return app.NewExitError(fmt.Errorf("invalid nf_conntrack_max value: %s", val), app.ExitUsage)
 			}
-			opts.NFConntrack = v
+			opts.NFConntrack = &v
 		case "digest":
 			opts.Digest = val
 		default:
