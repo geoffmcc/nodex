@@ -597,7 +597,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ~~~~
 
 
-The following additional notices come from the Go 1.27.2 toolchain used for releases. Standard-library vendored modules are distinct from the application modules above. File notices are preserved as source comments. This is a conservative package-source inventory; some routines may be removed by the linker.
+The following additional notices come from the Go 1.27.3 toolchain used for releases. Standard-library vendored modules are distinct from the application modules above. File notices are preserved as source comments. This is a conservative package-source inventory; some routines may be removed by the linker.
 
 ### Go PATENTS
 
