@@ -130,7 +130,7 @@ func inspectDedicatedSSHKey(path string) (string, bool, error) {
 		return "", false, err
 	}
 	if !dir.IsDir() || dir.Mode()&os.ModeSymlink != 0 {
-		return "", false, fmt.Errorf("Nodex SSH directory must be a real directory")
+		return "", false, fmt.Errorf("nodex SSH directory must be a real directory")
 	}
 	if err := credentials.CheckSecretDirectory(filepath.Dir(path)); err != nil {
 		return "", false, fmt.Errorf("unsafe Nodex SSH directory: %w", err)
@@ -142,7 +142,7 @@ func inspectDedicatedSSHKey(path string) (string, bool, error) {
 			return "", false, fmt.Errorf("incomplete Nodex SSH identity: %w", err)
 		}
 		if !info.Mode().IsRegular() {
-			return "", false, fmt.Errorf("Nodex SSH key files must be regular files")
+			return "", false, fmt.Errorf("nodex SSH key files must be regular files")
 		}
 	}
 	if err := credentials.CheckSecretFilePermissions(path); err != nil {
@@ -160,7 +160,7 @@ func inspectDedicatedSSHKey(path string) (string, bool, error) {
 	}
 	if len(private) == 1<<20 {
 		clear(private)
-		return "", false, fmt.Errorf("Nodex SSH key exceeds size limit")
+		return "", false, fmt.Errorf("nodex SSH key exceeds size limit")
 	}
 	defer clear(private)
 	parsed, err := ssh.ParseRawPrivateKey(private)
@@ -173,7 +173,7 @@ func inspectDedicatedSSHKey(path string) (string, bool, error) {
 	} else {
 		key, ok := parsed.(*ed25519.PrivateKey)
 		if !ok {
-			return "", false, fmt.Errorf("Nodex SSH identity must be Ed25519")
+			return "", false, fmt.Errorf("nodex SSH identity must be Ed25519")
 		}
 		public, err = ssh.NewPublicKey(key.Public())
 		if err != nil {
@@ -181,15 +181,15 @@ func inspectDedicatedSSHKey(path string) (string, bool, error) {
 		}
 	}
 	if public == nil || public.Type() != ssh.KeyAlgoED25519 {
-		return "", false, fmt.Errorf("Nodex SSH identity must be Ed25519")
+		return "", false, fmt.Errorf("nodex SSH identity must be Ed25519")
 	}
-	data, err := os.ReadFile(path + ".pub")
+	data, err := os.ReadFile(path + ".pub") // #nosec G304 -- fixed public-key filename in the validated private Nodex identity directory; no arbitrary provider path.
 	if err != nil {
 		return "", false, err
 	}
 	published, _, _, rest, err := ssh.ParseAuthorizedKey(data)
 	if err != nil || len(bytes.TrimSpace(rest)) != 0 || !bytes.Equal(published.Marshal(), public.Marshal()) {
-		return "", false, fmt.Errorf("Nodex SSH public key does not match private key")
+		return "", false, fmt.Errorf("nodex SSH public key does not match private key")
 	}
 	return ssh.FingerprintSHA256(public), true, nil
 }

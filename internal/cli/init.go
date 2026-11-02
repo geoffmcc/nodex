@@ -28,7 +28,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		return app.NewExitError(err, app.ExitUsage)
 	}
 	reader := bufio.NewReader(cmdCtx.Stdin)
-	ask := func(label string) string { value, _ := setupPrompt(reader, cmdCtx.ErrW, label); return value }
+	ask := func() string { value, _ := setupPrompt(reader, cmdCtx.ErrW, ""); return value }
 	// Check if config already exists.
 	path, err := config.ConfigPath()
 	if err != nil {
@@ -44,7 +44,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "Config already exists at %s\n", path)
 		fmt.Fprint(cmdCtx.ErrW, "Overwrite? [y/N] ")
-		answer := ask("")
+		answer := ask()
 		if !strings.EqualFold(answer, "y") && !strings.EqualFold(answer, "yes") {
 			fmt.Fprintln(cmdCtx.ErrW, "Aborted.")
 			return nil
@@ -55,7 +55,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 
 	if !cmdCtx.Opts.NonInteractive {
 		fmt.Fprintf(cmdCtx.ErrW, "Provider (%s) [proxmox]: ", strings.Join(config.KnownProviders(), "|"))
-		provider := ask("")
+		provider := ask()
 		if provider == "" {
 			provider = config.ProviderProxmox
 		}
@@ -69,7 +69,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 
 		fmt.Fprint(cmdCtx.ErrW, "Endpoint URL: ")
-		endpoint := ask("")
+		endpoint := ask()
 		if endpoint == "" {
 			return app.NewExitError(
 				fmt.Errorf("endpoint is required"),
@@ -78,7 +78,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 
 		fmt.Fprint(cmdCtx.ErrW, "Credential reference (e.g. file:default): ")
-		credRef := ask("")
+		credRef := ask()
 		if credRef != "" {
 			if _, _, err := credentials.ParseCredentialRefStrict(credRef); err != nil {
 				return app.NewExitError(fmt.Errorf("invalid credential reference: %w", err), app.ExitUsage)
@@ -86,7 +86,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 
 		fmt.Fprint(cmdCtx.ErrW, "Profile name [default]: ")
-		name := ask("")
+		name := ask()
 		if name == "" {
 			name = "default"
 		}
@@ -131,17 +131,4 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 	}
 
 	return nil
-}
-
-func prompt() string {
-	reader := bufio.NewReader(os.Stdin)
-	line, _ := reader.ReadString('\n')
-	return strings.TrimSpace(line)
-}
-
-func confirm() bool {
-	reader := bufio.NewReader(os.Stdin)
-	line, _ := reader.ReadString('\n')
-	line = strings.TrimSpace(strings.ToLower(line))
-	return line == "y" || line == "yes"
 }
