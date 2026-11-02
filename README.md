@@ -100,7 +100,7 @@ If you already have a Go toolchain, you can install directly:
 go install github.com/geoffmcc/nodex/cmd/nodex@v0.4.2
 ```
 
-Go 1.27.0 or newer is required to build from source; CI and release builds use Go 1.27.2. This is a pre-1.0 project and the command surface may change, so pin an exact version if you depend on it. Replace `v0.4.2` with the version you have reviewed.
+Go 1.27.0 or newer is required to build from source; CI and release builds use Go 1.27.3. This is a pre-1.0 project and the command surface may change, so pin an exact version if you depend on it. Replace `v0.4.2` with the version you have reviewed.
 
 ### Connect to Proxmox
 
@@ -248,7 +248,7 @@ Fleet-maintenance commands additionally require Ansible and explicitly enrolled
 Linux hosts; neither is needed for normal PVE/PBS CLI usage. Monitoring checks
 require explicit target configuration and are run on demand.
 
-Go 1.27.0 or newer is needed only to build from source (CI and release builds use Go 1.27.2). The prebuilt binaries need no toolchain.
+Go 1.27.0 or newer is needed only to build from source (CI and release builds use Go 1.27.3). The prebuilt binaries need no toolchain.
 
 CI builds and tests on Ubuntu, macOS (Apple Silicon and Intel), and Windows.
 
