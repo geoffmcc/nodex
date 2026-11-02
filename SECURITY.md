@@ -167,3 +167,16 @@ Nodex is a local CLI and cannot protect against:
 **In scope:** The Nodex CLI, local configuration and credential handling, Proxmox provider request handling, output redaction and sanitization, safety authorization, CI workflow configuration, and documentation that affects security decisions.
 
 **Out of scope unless explicitly authorized:** Testing against a live Proxmox server that you do not own, denial-of-service testing against third-party infrastructure, social engineering, and disclosure of unrelated secrets.
+
+## Dedicated onboarding SSH keys
+
+`init` and `setup` can create a dedicated Ed25519 OpenSSH key in the Nodex
+configuration directory's `ssh` subdirectory. Creation is opt-in; unattended
+creation additionally requires explicit consent to an unencrypted key.
+Interactive passphrases are read without echo from a terminal and confirmed.
+Existing identities are validated without overwriting; symlinked, incomplete,
+unsafe, or mismatched pairs fail closed. Private files use the same platform
+access-control validation as credential files. Creation never enrolls a host,
+installs authorized keys, or modifies SSH host trust. A process interruption
+can leave an incomplete pair; inspect and recover that identity manually
+rather than expecting initialization to replace it.

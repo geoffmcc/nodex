@@ -103,14 +103,15 @@ Create the configuration file.
 ```bash
 nodex init
 nodex --non-interactive init
+nodex --non-interactive init --generate-ssh-key --ssh-key-no-passphrase
 ```
 
 Interactive mode prompts for provider, endpoint, credential reference, and profile name. Non-interactive mode creates a minimal configuration with a `default` profile using provider `proxmox` and no endpoint. If the configuration file already exists, interactive mode asks before overwriting.
 
 ### `nodex setup`
 
-Run guided secure setup for a provider profile. Interactive mode prompts only
-for non-secret configuration values. Secrets are never accepted as command-line
+Run guided secure setup for a provider profile. Interactive mode prompts for configuration values and optionally for an SSH key
+passphrase through a terminal without echo. Secrets are never accepted as command-line
 arguments; use a credential reference to an existing `file`, `keyring`, or
 environment credential.
 
@@ -127,6 +128,14 @@ and endpoint are explicitly supplied. Configuration is written atomically.
 `--check` runs read-only connectivity, API-version, capability, and supported
 permission diagnostics before the profile is written; a failed preflight does
 not modify the configuration. Use `--force` to replace an existing profile.
+
+Both commands offer a dedicated SSH identity interactively. Use
+`--generate-ssh-key` to request creation explicitly and
+`--ssh-key-no-passphrase` to explicitly permit an unencrypted key in unattended
+runs. `nodex setup --generate-ssh-key` alone creates/checks the key without
+changing provider configuration. Existing keys are never overwritten. See
+[dedicated SSH identity](configuration.md#dedicated-ssh-identity) for paths,
+passphrase handling, output metadata, exit codes, and host-enrollment steps.
 
 ### `nodex certification`
 

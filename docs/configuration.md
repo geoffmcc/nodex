@@ -21,6 +21,50 @@ permission diagnostics. `nodex profile diagnose-permissions <name>` can run
 the same diagnostics later; unavailable checks are reported as `unsupported`
 or `unknown`, not as success.
 
+
+### Dedicated SSH identity
+
+Interactive `nodex init` and `nodex setup` check for Nodex's dedicated Ed25519
+SSH identity and offer to create it when missing. The private key is stored at
+`<Nodex configuration directory>/ssh/id_ed25519`, with its OpenSSH public key
+at `id_ed25519.pub`. On Unix the directory is mode 0700 and private key mode
+0600; platform secret-file access checks also apply. Existing keys are
+validated and preserved, including passphrase-protected keys. Incomplete,
+unsafe, or mismatched pairs are rejected rather than replaced.
+
+For an existing installation, create/check the key without changing profiles:
+
+```sh
+nodex setup --generate-ssh-key
+```
+
+Passphrase protection is the interactive default. Passphrases are read twice
+from a terminal without echo, never from flags or environment variables. An
+empty passphrase is rejected. Choose `n` at the protection prompt only when
+an unencrypted automation key is intentional. For unattended provisioning:
+
+```sh
+nodex --non-interactive init --generate-ssh-key --ssh-key-no-passphrase
+# Or, without initializing/replacing configuration:
+nodex --non-interactive setup --generate-ssh-key --ssh-key-no-passphrase
+```
+
+Non-interactive commands never generate keys implicitly.
+`--ssh-key-no-passphrase` requires `--generate-ssh-key`; an existing validated
+key is always reused, regardless of these flags. Key-only setup supports
+JSON/YAML metadata (`ssh_key_file`, `public_key_file`, `fingerprint`); onboarding
+guidance goes to stderr. Key errors use exit code 4, invalid flags or missing
+unattended consent use exit code 2. A failed subsequent configuration write
+may leave a successfully generated key; rerun setup to reuse it.
+
+Creation needs neither Ansible nor `ssh-keygen` and does not install a key on
+any remote host, enroll inventory, change profiles' SSH settings, or trust
+host fingerprints. Authorize the public key on each selected host and verify
+its SSH host fingerprint out of band. Set `ssh_user` and `ssh_key_file` in the
+relevant profile or inventory entry (and `known_hosts_file` for inventory).
+Profiles use `~/.ssh/known_hosts`. Load protected keys into `ssh-agent` for
+Ansible's unattended connections. API-token-only PVE/PBS access needs no SSH key.
+
 ## Schema Versions
 
 Nodex reads schema versions 1 and 2. New configurations are written as

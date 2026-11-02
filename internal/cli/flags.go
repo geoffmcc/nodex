@@ -45,12 +45,13 @@ func (fs flagSet) requiresInlineValue(name string) bool {
 // "pbs snapshot list") or dispatch sub-operations registered in
 // knownDispatchCommands.
 var handlerFlags = map[string]flagSet{
+	"init":   {exact: []string{"--generate-ssh-key", "--ssh-key-no-passphrase"}},
 	"status": {exact: []string{"--watch", "--interval"}},
 	"setup": {
 		exact: []string{
 			"--provider", "--profile", "--endpoint", "--credential-ref",
 			"--ca-file", "--check", "--token", "--token-id", "--token-secret",
-			"--password", "--secret",
+			"--password", "--secret", "--generate-ssh-key", "--ssh-key-no-passphrase",
 		},
 	},
 	"log": {exact: []string{"--last", "--grep", "--follow"}},

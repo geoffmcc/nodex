@@ -494,7 +494,7 @@ func handlerFlagDefinition(path, name string) AgentFlag {
 	case "--interval":
 		spec.Format, spec.Default = "duration", "5s"
 		spec.ValueSyntax = "Go duration from 1s to 5m; requires --watch (unavailable in agent mode)"
-	case "--check", "--running", "--errors", "--follow", "--remove-credential", "--propagate":
+	case "--generate-ssh-key", "--ssh-key-no-passphrase", "--check", "--running", "--errors", "--follow", "--remove-credential", "--propagate":
 		spec.Type = "boolean"
 	case "--batch-size", "--vmid":
 		spec.Type, spec.Minimum, spec.ValueSyntax = "integer", 1, "minimum 1"

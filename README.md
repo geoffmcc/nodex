@@ -102,6 +102,16 @@ go install github.com/geoffmcc/nodex/cmd/nodex@v0.4.2
 
 Go 1.27.0 or newer is required to build from source; CI and release builds use Go 1.27.3. This is a pre-1.0 project and the command surface may change, so pin an exact version if you depend on it. Replace `v0.4.2` with the version you have reviewed.
 
+### SSH operations
+
+Interactive `nodex init` and `nodex setup` offer a dedicated Ed25519 SSH key.
+Existing installations can run `nodex setup --generate-ssh-key` without changing
+profiles. Passphrase protection is the default; unattended unencrypted creation
+requires `--non-interactive --generate-ssh-key --ssh-key-no-passphrase`.
+Keys are preserved on reruns. Authorizing the public key on hosts, verifying
+host fingerprints, and enrolling inventory are separate steps. See the
+[SSH identity setup](docs/configuration.md#dedicated-ssh-identity).
+
 ### Connect to Proxmox
 
 Create a minimal configuration:
