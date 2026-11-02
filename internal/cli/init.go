@@ -13,9 +13,22 @@ import (
 )
 
 func runInit(_ context.Context, cmdCtx *Context, args []string) error {
-	if len(args) != 0 {
-		return app.NewExitError(fmt.Errorf("usage: nodex init"), app.ExitUsage)
+	var keyOpts sshKeyOptions
+	for _, arg := range args {
+		switch arg {
+		case "--generate-ssh-key":
+			keyOpts.generate = true
+		case "--ssh-key-no-passphrase":
+			keyOpts.noPassphrase = true
+		default:
+			return app.NewExitError(fmt.Errorf("usage: nodex init [--generate-ssh-key] [--ssh-key-no-passphrase]"), app.ExitUsage)
+		}
 	}
+	if err := keyOpts.validate(); err != nil {
+		return app.NewExitError(err, app.ExitUsage)
+	}
+	reader := bufio.NewReader(cmdCtx.Stdin)
+	ask := func(label string) string { value, _ := setupPrompt(reader, cmdCtx.ErrW, label); return value }
 	// Check if config already exists.
 	path, err := config.ConfigPath()
 	if err != nil {
@@ -31,7 +44,8 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 		fmt.Fprintf(cmdCtx.ErrW, "Config already exists at %s\n", path)
 		fmt.Fprint(cmdCtx.ErrW, "Overwrite? [y/N] ")
-		if !confirm() {
+		answer := ask("")
+		if !strings.EqualFold(answer, "y") && !strings.EqualFold(answer, "yes") {
 			fmt.Fprintln(cmdCtx.ErrW, "Aborted.")
 			return nil
 		}
@@ -41,7 +55,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 
 	if !cmdCtx.Opts.NonInteractive {
 		fmt.Fprintf(cmdCtx.ErrW, "Provider (%s) [proxmox]: ", strings.Join(config.KnownProviders(), "|"))
-		provider := prompt()
+		provider := ask("")
 		if provider == "" {
 			provider = config.ProviderProxmox
 		}
@@ -55,7 +69,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 
 		fmt.Fprint(cmdCtx.ErrW, "Endpoint URL: ")
-		endpoint := prompt()
+		endpoint := ask("")
 		if endpoint == "" {
 			return app.NewExitError(
 				fmt.Errorf("endpoint is required"),
@@ -64,7 +78,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 
 		fmt.Fprint(cmdCtx.ErrW, "Credential reference (e.g. file:default): ")
-		credRef := prompt()
+		credRef := ask("")
 		if credRef != "" {
 			if _, _, err := credentials.ParseCredentialRefStrict(credRef); err != nil {
 				return app.NewExitError(fmt.Errorf("invalid credential reference: %w", err), app.ExitUsage)
@@ -72,7 +86,7 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		}
 
 		fmt.Fprint(cmdCtx.ErrW, "Profile name [default]: ")
-		name := prompt()
+		name := ask("")
 		if name == "" {
 			name = "default"
 		}
@@ -101,6 +115,10 @@ func runInit(_ context.Context, cmdCtx *Context, args []string) error {
 		cfg.Profiles["default"] = config.Profile{
 			Provider: config.ProviderProxmox,
 		}
+	}
+
+	if err := setupSSHKey(cmdCtx, reader, keyOpts); err != nil {
+		return err
 	}
 
 	if err := config.Write(cfg); err != nil {

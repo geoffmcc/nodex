@@ -193,3 +193,12 @@ func CredentialFilePath(dir, name string) (string, error) {
 	}
 	return filepath.Join(dir, name+".json"), nil
 }
+
+// CheckSecretDirectory validates ownership, access controls, and ancestors.
+func CheckSecretDirectory(path string) error { return checkCredentialDirectory(path) }
+
+// OpenSecretFile opens a regular secret file without following links and validates its access controls.
+func OpenSecretFile(path string) (*os.File, error) { return openCredentialFile(path) }
+
+// ProtectSecretFile restricts an open file to the current user before secret data is written.
+func ProtectSecretFile(f *os.File) error { return protectCredentialFile(f) }

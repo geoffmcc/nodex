@@ -17,6 +17,7 @@ import (
 
 type setupInput struct {
 	provider, profile, endpoint, credentialRef, caFile string
+	keyOptions                                         sshKeyOptions
 	check                                              bool
 }
 
@@ -25,8 +26,31 @@ func runSetup(ctx context.Context, cmdCtx *Context, args []string) error {
 	if err != nil {
 		return app.NewExitError(err, app.ExitUsage)
 	}
+	reader := bufio.NewReader(cmdCtx.Stdin)
+	if in.keyOptions.generate && in.provider == "" && in.profile == "" && in.endpoint == "" && in.credentialRef == "" && in.caFile == "" && !in.check {
+		if err := setupSSHKey(cmdCtx, reader, in.keyOptions); err != nil {
+			return err
+		}
+		if cmdCtx.Opts.Quiet {
+			return nil
+		}
+		path, _ := dedicatedSSHKeyPath()
+		fingerprint, _, err := inspectDedicatedSSHKey(path)
+		if err != nil {
+			return app.NewExitError(err, app.ExitCredential)
+		}
+		result := map[string]string{"ssh_key_file": path, "public_key_file": path + ".pub", "fingerprint": fingerprint}
+		switch cmdCtx.Opts.Output {
+		case output.FormatJSON:
+			return output.WriteJSON(cmdCtx.Writer, result)
+		case output.FormatYAML:
+			return output.WriteYAML(cmdCtx.Writer, result)
+		default:
+			return nil
+		}
+	}
 	if !cmdCtx.Opts.NonInteractive {
-		if err := promptSetup(cmdCtx, &in); err != nil {
+		if err := promptSetup(cmdCtx, reader, &in); err != nil {
 			return app.NewExitError(err, app.ExitUsage)
 		}
 	} else if in.provider == "" || in.profile == "" || in.endpoint == "" {
@@ -74,6 +98,9 @@ func runSetup(ctx context.Context, cmdCtx *Context, args []string) error {
 		}
 	} else if !os.IsNotExist(statErr) {
 		return app.NewExitError(fmt.Errorf("inspect config: %w", statErr), app.ExitConfig)
+	}
+	if err := setupSSHKey(cmdCtx, reader, in.keyOptions); err != nil {
+		return err
 	}
 	if err := writeSetupProfile(profile, in.profile); err != nil {
 		return err
@@ -137,9 +164,17 @@ func writeSetupProfile(profile config.Profile, name string) error {
 
 func parseSetupArgs(args []string) (setupInput, error) {
 	var in setupInput
-	usage := fmt.Errorf("usage: nodex setup [--provider name] [--profile name] [--endpoint https://host:port] [--credential-ref backend:name] [--ca-file path] [--check]")
+	usage := fmt.Errorf("usage: nodex setup [--provider name] [--profile name] [--endpoint https://host:port] [--credential-ref backend:name] [--ca-file path] [--check] [--generate-ssh-key] [--ssh-key-no-passphrase]")
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		if arg == "--generate-ssh-key" {
+			in.keyOptions.generate = true
+			continue
+		}
+		if arg == "--ssh-key-no-passphrase" {
+			in.keyOptions.noPassphrase = true
+			continue
+		}
 		if arg == "--check" {
 			in.check = true
 			continue
@@ -170,11 +205,10 @@ func parseSetupArgs(args []string) (setupInput, error) {
 			return in, usage
 		}
 	}
-	return in, nil
+	return in, in.keyOptions.validate()
 }
 
-func promptSetup(cmdCtx *Context, in *setupInput) error {
-	reader := bufio.NewReader(cmdCtx.Stdin)
+func promptSetup(cmdCtx *Context, reader *bufio.Reader, in *setupInput) error {
 	var err error
 	if in.provider == "" {
 		in.provider, err = setupPrompt(reader, cmdCtx.ErrW, "Provider (proxmox|pbs) [proxmox]: ")

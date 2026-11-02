@@ -33,8 +33,8 @@ var leafHelp = map[string]helpEntry{
 	"operation list":          {usage: ""},
 	"operation describe":      {usage: "<operation path or canonical ID>"},
 	// Lifecycle / configuration leaves (tree-registered).
-	"init":                         {usage: ""},
-	"setup":                        {usage: "[--provider name] [--profile name] [--endpoint https://host:port] [--credential-ref backend:name] [--ca-file path] [--check]", examples: []string{"--provider proxmox --endpoint https://nodex.local:8006"}},
+	"init":                         {usage: "[--generate-ssh-key] [--ssh-key-no-passphrase]"},
+	"setup":                        {usage: "[--provider name] [--profile name] [--endpoint https://host:port] [--credential-ref backend:name] [--ca-file path] [--check] [--generate-ssh-key] [--ssh-key-no-passphrase]", examples: []string{"--provider proxmox --endpoint https://nodex.local:8006"}},
 	"completion":                   {usage: "<bash|zsh|fish|powershell>"},
 	"version":                      {usage: ""},
 	"version parse":                {usage: "<version>", examples: []string{"8.2.4"}},

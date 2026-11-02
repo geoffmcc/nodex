@@ -113,7 +113,12 @@ human approved the action.
 .TP
 .B profile, provider, setup, init
 Configure and diagnose local provider profiles and credentials. See
-docs/configuration.md.
+docs/configuration.md. Interactive init/setup offer a dedicated Ed25519 SSH key.
+Use --generate-ssh-key to request creation; unattended creation also requires
+--ssh-key-no-passphrase. Existing identities are preserved. Running
+nodex setup --generate-ssh-key alone leaves provider profiles unchanged.
+Passphrases are entered through a terminal without echo. Public-key enrollment
+and SSH host-fingerprint verification remain explicit separate steps.
 .TP
 .B node, vm, container, storage, task, status, cluster, event, log
 Inspect and operate Proxmox VE resources, tasks and host/cluster state.
