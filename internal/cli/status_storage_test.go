@@ -56,6 +56,11 @@ func TestStatusStorageGrouping(t *testing.T) {
 	if err := writeStatusStorage(&human, overview); err != nil {
 		t.Fatal(err)
 	}
+	for _, want := range []string{"Configured backend: directory /var/lib/vz\n\n", "Configured backend: LVM thinpool pve/data\n\n", "[available]\n\n  Disk inventory:"} {
+		if !strings.Contains(human.String(), want) {
+			t.Fatalf("storage blocks missing separation %q:\n%s", want, human.String())
+		}
+	}
 	for _, want := range []string{"pbs-shutdown", "pbs-nightly", "node/pbs ", "namespace: nightly", "verified configured aliases/views", "Configured backend: directory /var/lib/vz", "Configured backend: LVM thinpool pve/data", "Disk inventory: 1 device, 64.0 GiB (pools unmapped)", "Storage capacities may overlap; do not add them"} {
 		if !strings.Contains(human.String(), want) {
 			t.Fatalf("missing %q:\n%s", want, human.String())

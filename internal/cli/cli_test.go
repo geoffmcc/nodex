@@ -7,6 +7,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -551,6 +552,9 @@ func isolateConfigAndHome(t *testing.T) (dir, home string) {
 	dir, err = filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("resolve temporary test directory: %v", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatalf("make temporary test directory private: %v", err)
 	}
 	home = filepath.Join(dir, "home")
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "xdg"))

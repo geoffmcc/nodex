@@ -336,6 +336,12 @@ func renderStatusWatch(profile string, v statusWatchView, width, height int) str
 	}
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
 	maxLines := max(0, height-2)
+	// Reclaim visual spacing before hiding status information on short screens.
+	for i := len(lines) - 1; i >= 0 && len(lines) > maxLines; i-- {
+		if lines[i] == "" {
+			lines = append(lines[:i], lines[i+1:]...)
+		}
+	}
 	truncated := len(lines) > maxLines
 	if truncated {
 		lines = lines[:maxLines]

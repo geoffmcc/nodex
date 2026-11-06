@@ -157,12 +157,19 @@ func writeStatusStorage(w io.Writer, overview *statusOverview) error {
 		}
 	}
 	printed := make(map[string]bool)
+	printedEntry := false
 	for _, entry := range overview.Storage {
 		group, grouped := groupByID[entry.CapacityGroup]
-		if grouped && len(group.Members) > 1 {
-			if printed[group.ID] {
-				continue
+		if grouped && len(group.Members) > 1 && printed[group.ID] {
+			continue
+		}
+		if printedEntry {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
 			}
+		}
+		printedEntry = true
+		if grouped && len(group.Members) > 1 {
 			printed[group.ID] = true
 			label := "Shared storage (verified node views)"
 			if group.Scope == "pbs_datastore" {
@@ -187,6 +194,11 @@ func writeStatusStorage(w io.Writer, overview *statusOverview) error {
 				}
 			}
 		} else if err := writeStatusStorageEntry(w, entry, "  ", true); err != nil {
+			return err
+		}
+	}
+	if printedEntry && overview.DiskInventory != nil {
+		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
 	}
