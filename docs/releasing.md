@@ -19,6 +19,23 @@ to vendor mode. Binary archives include `LICENSE`, `THIRD_PARTY_LICENSES.md`, an
 
 ## Validate Locally
 
+Before creating a tag, check that `main` is the commit to release, both CodeQL
+analyses are current for that commit, and no high or critical code-scanning
+alerts remain open on `main`:
+
+```bash
+python3 scripts/check_release_security.py --expected-commit "$(git rev-parse HEAD)"
+```
+
+This needs authenticated `gh` access with code-scanning read permission. A
+missing or stale analysis, unavailable API, or open high/critical security
+alert blocks the check. The release workflow repeats it before building; a tag
+push must target the current `main`. This check does not prevent someone from
+creating a tag, so run it **before** tagging to avoid consuming a version.
+For an existing-tag recovery dispatch, the gate still checks current `main`, but
+does not require the historical tag to equal it. This is not a security review
+of historical tagged source.
+
 Use the pinned GoReleaser version from `.github/workflows/release.yml` and run:
 
 ```bash

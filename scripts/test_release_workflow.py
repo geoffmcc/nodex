@@ -108,6 +108,30 @@ class ReleaseWorkflowTests(unittest.TestCase):
                              identity)
             self.assertNotIn("--certificate-identity-regexp", arguments)
 
+    def test_security_gate_checks_tag_push_and_allows_historical_recovery(self):
+        with tempfile.TemporaryDirectory(prefix="nodex-security-gate-fixture-") as directory:
+            root = Path(directory)
+            git = root / "git"
+            git.write_text('#!/bin/sh\nif [ "$1" = show ]; then printf "# policy\\n"; '
+                           'elif [ "$1" = rev-parse ]; then printf "%s\\n" "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; '
+                           'else exit 1; fi\n')
+            git.chmod(0o755)
+            python = root / "python3"
+            python.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+            python.chmod(0o755)
+            for event in ("push", "workflow_dispatch"):
+                with self.subTest(event=event):
+                    result, _ = self.shell("Check release security baseline", {
+                        "WORKFLOW_COMMIT": "b" * 40, "RUNNER_TEMP": directory,
+                        "GITHUB_EVENT_NAME": event, "GITHUB_REPOSITORY": "geoffmcc/nodex",
+                    }, path=directory)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    args = result.stdout.splitlines()
+                    self.assertIn("--repo", args)
+                    self.assertEqual("--expected-commit" in args, event == "push")
+                    if event == "push":
+                        self.assertEqual(args[args.index("--expected-commit") + 1], "a" * 40)
+
 
 if __name__ == "__main__":
     unittest.main()
