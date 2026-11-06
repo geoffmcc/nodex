@@ -415,8 +415,19 @@ func TestStatusGuestInventoryShowsNameNumberAndState(t *testing.T) {
 			t.Fatalf("missing %q:\n%s", want, text)
 		}
 	}
+	for _, want := range []string{"Storage:\n\n", "Guests:\n\n  VMs", "102  db-vm  stopped  [node-b]\n\n  Containers"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing section spacing %q:\n%s", want, text)
+		}
+	}
 	s.RecentTasks = []domain.Task{{Node: "node-a", Type: "qmstart", State: "running"}}
 	frame := renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: "healthy", Color: true}, 120, 80)
+	plainFrame := output.SanitizeTerminal(frame)
+	for _, want := range []string{"Storage:\n\n", "Guests:\n\n  VMs", "102  db-vm  stopped  [node-b]\n\n  Containers"} {
+		if !strings.Contains(plainFrame, want) {
+			t.Fatalf("watch frame missing section spacing %q:\n%s", want, plainFrame)
+		}
+	}
 	storageAt = strings.Index(frame, "Storage:")
 	guestsAt = strings.Index(frame, "Guests:")
 	tasksAt := strings.Index(frame, "Active/recent tasks")

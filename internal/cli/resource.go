@@ -1455,10 +1455,13 @@ func writeStatusTable(w io.Writer, overview *statusOverview) error {
 	if err := writeStatusStorage(w, overview); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(w, "\nGuests:"); err != nil {
+	if _, err := fmt.Fprint(w, "\nGuests:\n\n"); err != nil {
 		return err
 	}
 	if err := writeStatusGuestInventory(w, "  ", "VMs", overview.Sections["vms"], overview.VMs, overview.VMDetails, overview.Nodes > 1); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
 		return err
 	}
 	if err := writeStatusGuestInventory(w, "  ", "Containers", overview.Sections["containers"], overview.Containers, overview.ContainerDetails, overview.Nodes > 1); err != nil {

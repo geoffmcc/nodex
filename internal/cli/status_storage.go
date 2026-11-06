@@ -143,7 +143,7 @@ func writeStatusStorage(w io.Writer, overview *statusOverview) error {
 	if capacity == nil && len(overview.Storage) == 0 {
 		return nil
 	}
-	if _, err := fmt.Fprintln(w, "\nStorage:"); err != nil {
+	if _, err := fmt.Fprint(w, "\nStorage:\n\n"); err != nil {
 		return err
 	}
 	if capacity != nil && capacity.State != "available" {
