@@ -68,6 +68,16 @@ func readWatchKey(ctx context.Context, in *os.File) (byte, error) {
 		if record.VirtualKeyCode == 'C' && record.ControlKeyState&0xC != 0 {
 			return 3, nil
 		}
+		switch record.VirtualKeyCode {
+		case 0x26:
+			return watchKeyUp, nil
+		case 0x28:
+			return watchKeyDown, nil
+		case 0x21:
+			return watchKeyPageUp, nil
+		case 0x22:
+			return watchKeyPageDown, nil
+		}
 		if record.UnicodeChar > 0 && record.UnicodeChar < 128 {
 			return byte(record.UnicodeChar), nil
 		}

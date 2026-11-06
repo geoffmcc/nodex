@@ -9,6 +9,10 @@ import (
 )
 
 func writeStatusGuestInventory(w io.Writer, indent, label, sectionState string, total int, guests []statusGuest, showNode bool) error {
+	return writeStatusGuestInventoryLimit(w, indent, label, sectionState, total, guests, showNode, 10)
+}
+
+func writeStatusGuestInventoryLimit(w io.Writer, indent, label, sectionState string, total int, guests []statusGuest, showNode bool, maxRows int) error {
 	if sectionState == "" {
 		sectionState = "unsupported"
 	}
@@ -20,7 +24,9 @@ func writeStatusGuestInventory(w io.Writer, indent, label, sectionState string, 
 		_, err := fmt.Fprintf(w, "%s%s: none\n", indent, label)
 		return err
 	}
-	const maxRows = 10
+	if maxRows <= 0 {
+		maxRows = len(guests)
+	}
 	shown := min(len(guests), maxRows)
 	if _, err := fmt.Fprintf(w, "%s%s (showing %d of %d):\n", indent, label, shown, total); err != nil {
 		return err

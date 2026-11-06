@@ -180,9 +180,11 @@ refreshes back off up to 60s (longer configured intervals remain unchanged).
 --timeout bounds a collection cycle, capped at 5m. Unavailable sections and
 stale cached readings are explicit; collection time does not prove source freshness.
 Watch includes a sample of up to five tasks from each of the first eight nodes.
-Press q to quit or Ctrl+C to interrupt; terminal state is restored.
+Use arrow keys, Page Up/Down, or j/k to scroll. The health and refresh header
+stays visible. Press q to quit or Ctrl+C to interrupt; terminal state is restored.
 Watch rejects --all, --agent, --non-interactive, JSON/YAML and redirected streams.
-Small terminals clip content; use one-shot JSON for full inventory values.
+Very long lines are clipped to the terminal width. A 1 MiB watch display limit
+is reported when reached; use list commands or one-shot JSON for full values.
 .PP
 Taskless template conversion checks configuration up to seven times with bounded
 backoff and cancellation. Receipt refresh/reconcile can re-observe completed

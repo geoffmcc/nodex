@@ -115,9 +115,60 @@ type statusWatchView struct {
 	Color       bool
 }
 
-// A single collector runs synchronously. A separate cancellable input reader
-// handles q/Ctrl+C even during a slow request; it is joined before restoring the
-// terminal. There is no ticker backlog, overlapping refresh, or unbounded history.
+const (
+	watchKeyUp byte = 0x80 + iota
+	watchKeyDown
+	watchKeyPageUp
+	watchKeyPageDown
+)
+
+// decodeWatchKey recognizes common terminal escape sequences as well as the
+// native keys translated by the Windows console reader.
+type watchKeyDecoder struct{ state byte }
+
+func (d *watchKeyDecoder) feed(key byte) byte {
+	if key == 27 {
+		d.state = 1
+		return 0
+	}
+	switch d.state {
+	case 1:
+		if key == '[' || key == 'O' {
+			d.state = 2
+			return 0
+		}
+	case 2:
+		switch key {
+		case 'A':
+			d.state = 0
+			return watchKeyUp
+		case 'B':
+			d.state = 0
+			return watchKeyDown
+		case '5', '6':
+			d.state = key
+			return 0
+		}
+	case '5', '6':
+		state := d.state
+		d.state = 0
+		if key == '~' {
+			if state == '5' {
+				return watchKeyPageUp
+			}
+			return watchKeyPageDown
+		}
+		return 0
+	}
+	if d.state != 0 {
+		d.state = 0
+		return 0
+	}
+	return key
+}
+
+// One collector runs at a time while input and resize events remain responsive.
+// Both collector and input reader are joined before restoring the terminal.
 func watchStatus(parent context.Context, terminal watchTerminal, profile string, color bool, interval, timeout time.Duration, collect func(context.Context) *statusOverview) (result error) {
 	defer func() { result = errors.Join(result, terminal.End()) }()
 	if err := terminal.Begin(); err != nil {
@@ -125,8 +176,10 @@ func watchStatus(parent context.Context, terminal watchTerminal, profile string,
 	}
 	ctx, cancel := context.WithCancel(parent)
 	inputResult := make(chan error, 1)
+	keys := make(chan byte, 32)
 	go func() {
 		defer cancel()
+		var decoder watchKeyDecoder
 		for {
 			key, err := terminal.ReadKey(ctx)
 			if err != nil {
@@ -144,16 +197,56 @@ func watchStatus(parent context.Context, terminal watchTerminal, profile string,
 				inputResult <- app.NewExitError(fmt.Errorf("interrupted"), app.ExitInterrupted)
 				return
 			}
+			key = decoder.feed(key)
+			switch key {
+			case watchKeyUp, watchKeyDown, watchKeyPageUp, watchKeyPageDown, 'j', 'k':
+				select {
+				case keys <- key:
+				default:
+					// Never let a burst of movement keys delay quit.
+				}
+			}
 		}
 	}()
 	defer func() { cancel(); result = errors.Join(result, <-inputResult) }()
 	view := statusWatchView{Health: "unknown", NextDelay: interval, Color: color}
+	offset := 0
+	lastWidth, lastHeight := 0, 0
 	draw := func() error {
 		width, height, err := terminal.Size()
 		if err != nil {
 			return err
 		}
-		return terminal.Draw(renderStatusWatch(profile, view, width, height))
+		lastWidth, lastHeight = width, height
+		frame, clamped := renderStatusWatchAt(profile, view, width, height, offset)
+		offset = clamped
+		return terminal.Draw(frame)
+	}
+	scroll := func(key byte) error {
+		page := max(1, min(lastHeight, 100)-4)
+		switch key {
+		case watchKeyUp, 'k':
+			offset--
+		case watchKeyDown, 'j':
+			offset++
+		case watchKeyPageUp:
+			offset -= page
+		case watchKeyPageDown:
+			offset += page
+		}
+		return draw()
+	}
+	resize := time.NewTicker(250 * time.Millisecond)
+	defer resize.Stop()
+	redrawIfResized := func() error {
+		w, h, err := terminal.Size()
+		if err != nil {
+			return err
+		}
+		if w != lastWidth || h != lastHeight {
+			return draw()
+		}
+		return nil
 	}
 	failures := 0
 	for ctx.Err() == nil {
@@ -163,7 +256,32 @@ func watchStatus(parent context.Context, terminal watchTerminal, profile string,
 			return err
 		}
 		cycle, cancelCycle := context.WithTimeout(ctx, timeout)
-		next := collect(cycle)
+		collected := make(chan *statusOverview, 1)
+		go func() { collected <- collect(cycle) }()
+		var next *statusOverview
+		waiting := true
+		for waiting {
+			select {
+			case next = <-collected:
+				waiting = false
+			case key := <-keys:
+				if err := scroll(key); err != nil {
+					cancelCycle()
+					<-collected
+					return err
+				}
+			case <-resize.C:
+				if err := redrawIfResized(); err != nil {
+					cancelCycle()
+					<-collected
+					return err
+				}
+			case <-ctx.Done():
+				cancelCycle()
+				<-collected
+				return parent.Err()
+			}
+		}
 		timedOut := cycle.Err() != nil
 		cancelCycle()
 		if ctx.Err() != nil {
@@ -203,10 +321,25 @@ func watchStatus(parent context.Context, terminal watchTerminal, profile string,
 			return err
 		}
 		timer := time.NewTimer(view.NextDelay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
+		waiting = true
+		for waiting {
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				waiting = false
+			case <-timer.C:
+				waiting = false
+			case key := <-keys:
+				if err := scroll(key); err != nil {
+					timer.Stop()
+					return err
+				}
+			case <-resize.C:
+				if err := redrawIfResized(); err != nil {
+					timer.Stop()
+					return err
+				}
+			}
 		}
 	}
 	if parent.Err() != nil {
@@ -267,13 +400,19 @@ func guestStates(guests []statusGuest) map[string]string {
 
 // A bounded buffer prevents large inventories from generating an unbounded
 // terminal frame. Structured one-shot output still exposes the full inventory.
-type watchBuffer struct{ bytes.Buffer }
+type watchBuffer struct {
+	bytes.Buffer
+	truncated bool
+}
 
 func (b *watchBuffer) WriteString(s string) (int, error) { return b.Write([]byte(s)) }
 
 func (b *watchBuffer) Write(p []byte) (int, error) {
 	n := len(p)
-	remaining := 64*1024 - b.Len()
+	remaining := 1024*1024 - b.Len()
+	if len(p) > remaining {
+		b.truncated = true
+	}
 	if remaining > 0 {
 		if len(p) > remaining {
 			p = p[:remaining]
@@ -284,6 +423,11 @@ func (b *watchBuffer) Write(p []byte) (int, error) {
 }
 
 func renderStatusWatch(profile string, v statusWatchView, width, height int) string {
+	frame, _ := renderStatusWatchAt(profile, v, width, height, 0)
+	return frame
+}
+
+func renderStatusWatchAt(profile string, v statusWatchView, width, height, offset int) (string, int) {
 	width = max(1, min(width, 240))
 	height = max(1, min(height, 100))
 	var buf watchBuffer
@@ -293,6 +437,21 @@ func renderStatusWatch(profile string, v statusWatchView, width, height int) str
 	}
 	if v.Refreshing {
 		state += " / refreshing"
+	}
+	if v.Snapshot != nil && len(v.Snapshot.Warnings) > 0 {
+		state += fmt.Sprintf(" / %d warning(s)", len(v.Snapshot.Warnings))
+	}
+	if v.Snapshot != nil {
+		alerts := 0
+		for _, task := range v.Snapshot.RecentTasks {
+			status := strings.TrimSpace(task.Status)
+			if strings.EqualFold(task.State, "stopped") && status != "" && !strings.EqualFold(status, "OK") {
+				alerts++
+			}
+		}
+		if alerts > 0 {
+			state += fmt.Sprintf(" / %d sampled task alert(s)", alerts)
+		}
 	}
 	fmt.Fprintf(&buf, "NodeX | %s | %s\n", watchText(profile), state)
 	last := "never"
@@ -318,7 +477,7 @@ func renderStatusWatch(profile string, v statusWatchView, width, height int) str
 			fmt.Fprintf(&buf, "%s=%s", watchText(n.Name), watchText(n.Status))
 		}
 		fmt.Fprintln(&buf)
-		_ = writeStatus(&Context{Writer: output.NewSanitizingWriter(&buf), Opts: Options{Output: output.FormatTable}}, s)
+		_ = writeStatusTableWithGuestLimit(output.NewSanitizingWriter(&buf), s, 0)
 		if s.Sections["tasks"] != "" {
 			fmt.Fprintln(&buf, "\nActive/recent tasks (sample, up to 5 per node):")
 			for _, task := range s.RecentTasks {
@@ -334,32 +493,34 @@ func renderStatusWatch(profile string, v statusWatchView, width, height int) str
 			}
 		}
 	}
-	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	maxLines := max(0, height-2)
-	// Reclaim visual spacing before hiding status information on short screens.
-	for i := len(lines) - 1; i >= 0 && len(lines) > maxLines; i-- {
-		if lines[i] == "" {
-			lines = append(lines[:i], lines[i+1:]...)
-		}
+	if buf.truncated {
+		_, _ = buf.Buffer.WriteString("\n[Output limit reached; use list commands or status --output json.]\n")
 	}
-	truncated := len(lines) > maxLines
-	if truncated {
-		lines = lines[:maxLines]
-	}
+	all := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	headerCount := min(2, max(0, height-2), len(all))
+	header, body := all[:headerCount], all[headerCount:]
+	rows := max(0, height-headerCount-1)
+	offset = max(0, min(offset, max(0, len(body)-rows)))
+	end := min(len(body), offset+rows)
+	lines := append([]string{}, header...)
+	lines = append(lines, body[offset:end]...)
 	footer := "q: quit | Ctrl+C: interrupt | read-only"
-	if truncated {
-		footer = "q: quit | more: use status --output json"
+	if len(body) > rows {
+		footer = fmt.Sprintf("q: quit | lines %d-%d/%d | arrows/j/k/PgUp/PgDn", offset+1, end, len(body))
+	}
+	if buf.truncated {
+		footer = "q: quit | output limit reached | scroll for details"
 	}
 	lines = append(lines, footer)
 	for i, line := range lines {
 		line = watchText(line)
-		line = statusColorText(line, v.Color)
 		if len(line) > width-1 {
 			line = line[:width-1]
 		}
+		line = statusColorText(line, v.Color)
 		lines[i] = line + "\x1b[K"
 	}
-	return "\x1b[H" + strings.Join(lines, "\r\n") + "\x1b[J"
+	return "\x1b[H" + strings.Join(lines, "\r\n") + "\x1b[J", offset
 }
 
 // ASCII framing has predictable cell width on Windows, Unix and SSH. No
