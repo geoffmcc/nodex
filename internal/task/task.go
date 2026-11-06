@@ -4,7 +4,6 @@ package task
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -66,12 +65,11 @@ func ParseUPID(raw string) (*UPID, error) {
 		if node == "" {
 			return nil, fmt.Errorf("invalid UPID: empty node in %q", raw)
 		}
-		pid, err := parseHex(parts[1])
+		// Parse directly at the platform int width so converting to PID cannot
+		// truncate on 32-bit builds.
+		pid, err := strconv.ParseInt(parts[1], 16, strconv.IntSize)
 		if err != nil {
 			return nil, fmt.Errorf("invalid UPID: cannot parse PID %q: %w", parts[1], err)
-		}
-		if pid < int64(math.MinInt) || pid > int64(math.MaxInt) {
-			return nil, fmt.Errorf("invalid UPID: PID %q is outside the platform integer range", parts[1])
 		}
 		var pstart int64
 		if len(parts) > 2 && parts[2] != "" {
