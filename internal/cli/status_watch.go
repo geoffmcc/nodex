@@ -504,12 +504,12 @@ func renderStatusWatchAt(profile string, v statusWatchView, width, height, offse
 	end := min(len(body), offset+rows)
 	lines := append([]string{}, header...)
 	lines = append(lines, body[offset:end]...)
-	footer := "q: quit | Ctrl+C: interrupt | read-only"
+	footer := "q: quit | read-only | Ctrl+C: interrupt"
 	if len(body) > rows {
-		footer = fmt.Sprintf("q: quit | lines %d-%d/%d | arrows/j/k/PgUp/PgDn", offset+1, end, len(body))
+		footer = fmt.Sprintf("q: quit | read-only | lines %d-%d/%d | arrows/j/k/PgUp/PgDn", offset+1, end, len(body))
 	}
 	if buf.truncated {
-		footer = "q: quit | output limit reached | scroll for details"
+		footer = "q: quit | read-only | output limit reached | scroll for details"
 	}
 	lines = append(lines, footer)
 	for i, line := range lines {

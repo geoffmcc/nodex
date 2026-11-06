@@ -548,7 +548,7 @@ func TestStatusWatchScrollClampsAndKeepsHeader(t *testing.T) {
 	first, _ := renderStatusWatchAt("lab", view, 120, 12, 0)
 	last, pos := renderStatusWatchAt("lab", view, 120, 12, 10000)
 	plain := output.SanitizeTerminal(last)
-	for _, want := range []string{"NodeX | lab | DEGRADED", "1 warning(s)", "1 sampled task alert(s)", "Last successful refresh:", "vm-30", "lines "} {
+	for _, want := range []string{"NodeX | lab | DEGRADED", "1 warning(s)", "1 sampled task alert(s)", "Last successful refresh:", "vm-30", "read-only", "lines "} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("scrolled view missing %q:\n%s", want, plain)
 		}
