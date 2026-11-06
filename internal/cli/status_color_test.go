@@ -81,6 +81,18 @@ func TestStatusColorTextColorsGuestStateWithoutColoringName(t *testing.T) {
 	}
 }
 
+func TestStatusColorTextPreservesGuestRows(t *testing.T) {
+	for _, plain := range []string{
+		"  101  api-vm  running  [node-a]",
+		"  101  api-vm  running  [node-a]\n  102  db-vm  stopped\n",
+	} {
+		styled := statusColorText(plain, true)
+		if got := output.SanitizeTerminal(styled); got != plain {
+			t.Fatalf("colored guest rows changed text: got %q, want %q", got, plain)
+		}
+	}
+}
+
 func TestStatusColorTextColorsTaskWarningsYellow(t *testing.T) {
 	plain := "  pve-nodex-lab  vzstart  CT 9911  completed  WARNINGS: 1  WARN: Systemd 259 detected. You may need to enable nesting."
 	styled := statusColorText(plain, true)

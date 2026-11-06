@@ -38,7 +38,7 @@ func statusColorText(text string, enabled bool) string {
 			if color := colorForStatus(state); color != "" {
 				body = body[:start] + color + body[start:end] + "\x1b[0m" + body[end:]
 			}
-			lines[i] = body + strings.TrimPrefix(line, body)
+			lines[i] = body + strings.TrimPrefix(line, strings.TrimSuffix(line, "\n"))
 			continue
 		}
 		for _, rule := range statusColorRules {
