@@ -103,16 +103,17 @@ type watchTerminal interface {
 }
 
 type statusWatchView struct {
-	Snapshot    *statusOverview
-	Previous    *statusOverview
-	Attempt     time.Time
-	LastSuccess time.Time
-	Health      string
-	Stale       bool
-	Refreshing  bool
-	Changes     string
-	NextDelay   time.Duration
-	Color       bool
+	Snapshot     *statusOverview
+	Previous     *statusOverview
+	Attempt      time.Time
+	LastSuccess  time.Time
+	Health       string
+	HealthDetail string
+	Stale        bool
+	Refreshing   bool
+	Changes      string
+	NextDelay    time.Duration
+	Color        bool
 }
 
 const (
@@ -299,8 +300,9 @@ func watchStatus(parent context.Context, terminal watchTerminal, profile string,
 			failures++
 		}
 		view.Health = "unreachable"
+		view.HealthDetail = "refresh failed"
 		if next != nil {
-			view.Health = statusHealth(next)
+			view.Health, view.HealthDetail = statusHealthDetail(next)
 		}
 		// Keep the last snapshot only on a completely failed attempt. Partial
 		// snapshots expose current per-section failures rather than stale zeros.
@@ -315,6 +317,7 @@ func watchStatus(parent context.Context, terminal watchTerminal, profile string,
 				view.Health = "degraded"
 			}
 			view.Stale = view.Snapshot != nil
+			view.HealthDetail = "refresh timed out"
 		}
 		view.NextDelay = statusPollDelay(interval, failures)
 		if err := draw(); err != nil {
@@ -438,6 +441,9 @@ func renderStatusWatchAt(profile string, v statusWatchView, width, height, offse
 	if v.Refreshing {
 		state += " / refreshing"
 	}
+	if v.HealthDetail != "" {
+		state += " (" + watchText(v.HealthDetail) + ")"
+	}
 	if v.Snapshot != nil && len(v.Snapshot.Warnings) > 0 {
 		state += fmt.Sprintf(" / %d warning(s)", len(v.Snapshot.Warnings))
 	}
@@ -464,6 +470,9 @@ func renderStatusWatchAt(profile string, v statusWatchView, width, height, offse
 	}
 	if v.Changes != "" {
 		fmt.Fprintf(&buf, "Changed: %s\n", v.Changes)
+	} else if v.Snapshot != nil {
+		// Keep the viewport stable when the transient change notice clears.
+		fmt.Fprintln(&buf)
 	}
 	if v.Snapshot == nil {
 		fmt.Fprintln(&buf, "Waiting for a usable snapshot...")
@@ -504,9 +513,15 @@ func renderStatusWatchAt(profile string, v statusWatchView, width, height, offse
 	end := min(len(body), offset+rows)
 	lines := append([]string{}, header...)
 	lines = append(lines, body[offset:end]...)
-	footer := "q: quit | read-only | Ctrl+C: interrupt"
-	if len(body) > rows {
-		footer = fmt.Sprintf("q: quit | read-only | lines %d-%d/%d | arrows/j/k/PgUp/PgDn", offset+1, end, len(body))
+	start := 0
+	if end > offset {
+		start = offset + 1
+	}
+	footer := fmt.Sprintf("q: quit | read-only | lines %d-%d/%d", start, end, len(body))
+	if len(body) <= rows {
+		footer += " | all visible"
+	} else {
+		footer += " | arrows/j/k/PgUp/PgDn"
 	}
 	if buf.truncated {
 		footer = "q: quit | read-only | output limit reached | scroll for details"

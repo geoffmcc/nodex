@@ -157,6 +157,11 @@ func summarizeTaskWarningLines(lines []domain.TaskLogLine) string {
 }
 
 func statusHealth(s *statusOverview) string {
+	health, _ := statusHealthDetail(s)
+	return health
+}
+
+func statusHealthDetail(s *statusOverview) (string, string) {
 	available, unavailable, unsupported := 0, 0, 0
 	for _, section := range []string{"nodes", "vms", "containers", "storage", "cluster", "quorum"} {
 		switch s.Sections[section] {
@@ -169,44 +174,47 @@ func statusHealth(s *statusOverview) string {
 		}
 	}
 	if available == 0 && unavailable > 0 {
-		return "unreachable"
+		return "unreachable", "core sections unavailable"
 	}
 	if unavailable > 0 {
-		return "degraded"
+		return "degraded", "core section unavailable"
 	}
 	for _, n := range s.NodesDetail {
 		if n.Status != "online" {
-			return "degraded"
+			return "degraded", "node offline or unknown"
 		}
 	}
 	if s.QuorumKnown && s.Quorum == 0 {
-		return "degraded"
+		return "degraded", "quorum lost"
 	}
 	for _, entry := range s.Storage {
 		if !statusStorageMetricsAvailable(entry) {
-			return "degraded"
+			return "degraded", "storage capacity unavailable"
 		}
 	}
 	if s.StorageCapacity != nil {
 		for _, g := range s.StorageCapacity.Groups {
 			if g.Metrics == nil {
-				return "degraded"
+				return "degraded", "shared storage metrics unavailable or conflicting"
 			}
 		}
 	}
-	if s.Sections["tasks"] == "unavailable" || (!s.Standalone && s.Sections["ha"] == "unavailable") {
-		return "degraded"
+	if s.Sections["tasks"] == "unavailable" {
+		return "degraded", "task sample unavailable"
+	}
+	if !s.Standalone && s.Sections["ha"] == "unavailable" {
+		return "degraded", "HA unavailable"
 	}
 	if unsupported > 0 || s.Nodes == 0 || s.VMsUnknown > 0 || s.CTsUnknown > 0 {
-		return "unknown"
+		return "unknown", "incomplete inventory"
 	}
 	if !s.Standalone && (s.HA == nil || !s.HA.QuorumKnown) {
-		return "unknown"
+		return "unknown", "HA quorum unknown"
 	}
 	if !s.Standalone && s.HA.Quorum == 0 {
-		return "degraded"
+		return "degraded", "HA quorum lost"
 	}
-	return "healthy"
+	return "healthy", ""
 }
 
 // A successful refresh can report degraded health (e.g. an offline node).

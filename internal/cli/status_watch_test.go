@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -563,6 +564,50 @@ func TestStatusWatchScrollClampsAndKeepsHeader(t *testing.T) {
 	}
 }
 
+func TestStatusWatchLineRangeStableAcrossRefresh(t *testing.T) {
+	s := healthyWatchSnapshot()
+	s.VMs = 5
+	for i := 1; i <= 5; i++ {
+		s.VMDetails = append(s.VMDetails, statusGuest{ID: fmt.Sprintf("node/%d", i), Name: fmt.Sprintf("vm-%d", i), Status: "running"})
+	}
+	view := statusWatchView{Snapshot: s, Health: "healthy", Changes: "VM counts"}
+	lineRange := regexp.MustCompile(`lines (\d+)-(\d+)/(\d+)`)
+	withChange, _ := renderStatusWatchAt("lab", view, 120, 80, 0)
+	before := lineRange.FindStringSubmatch(output.SanitizeTerminal(withChange))
+	view.Refreshing, view.Changes = true, ""
+	refreshing, _ := renderStatusWatchAt("lab", view, 120, 80, 0)
+	during := lineRange.FindStringSubmatch(output.SanitizeTerminal(refreshing))
+	if len(before) != 4 || len(during) != 4 || before[3] != during[3] {
+		t.Fatalf("line range changed when refresh cleared the change notice: before %q, during %q", before, during)
+	}
+}
+
+func TestStatusHealthDetailExplainsDegradation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		modify func(*statusOverview)
+		want   string
+	}{
+		{"section", func(s *statusOverview) { s.Sections["storage"] = "unavailable" }, "core section unavailable"},
+		{"node", func(s *statusOverview) { s.NodesDetail[0].Status = "offline" }, "node offline or unknown"},
+		{"quorum", func(s *statusOverview) { s.QuorumKnown = true; s.Quorum = 0 }, "quorum lost"},
+		{"tasks", func(s *statusOverview) { s.Sections["tasks"] = "unavailable" }, "task sample unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := healthyWatchSnapshot()
+			tc.modify(s)
+			health, detail := statusHealthDetail(s)
+			if health != "degraded" || detail != tc.want {
+				t.Fatalf("health=%q detail=%q", health, detail)
+			}
+			frame := output.SanitizeTerminal(renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: health, HealthDetail: detail}, 120, 24))
+			if !strings.Contains(frame, detail) {
+				t.Fatalf("missing health detail:\n%s", frame)
+			}
+		})
+	}
+}
+
 func TestWatchKeyDecoder(t *testing.T) {
 	for _, tc := range []struct {
 		input string
@@ -587,12 +632,12 @@ func TestStatusWatchScrollsWhileRefreshing(t *testing.T) {
 	scrolled := false
 	f.onDraw = func(frame string) {
 		plain := output.SanitizeTerminal(frame)
-		if strings.Contains(plain, "vm-01") && strings.Contains(plain, "refreshing") && !started {
+		if strings.Contains(plain, "VMs (showing 30 of 30)") && strings.Contains(plain, "refreshing") && !started {
 			started = true
 			for _, b := range []byte("\x1b[6~") {
 				f.keys <- b
 			}
-		} else if started && strings.Contains(plain, "vm-09") && !scrolled {
+		} else if started && strings.Contains(plain, "vm-08") && !scrolled {
 			scrolled = true
 			f.keys <- 'q'
 		}
