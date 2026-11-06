@@ -1,0 +1,9 @@
+# Synthetic test credentials and redaction examples in historical commits.
+af1f9ffcb8fd89ea8b09fb49c8cefe5f67f8c017:internal/cli/guest_config_preview_test.go:generic-api-key:13
+af1f9ffcb8fd89ea8b09fb49c8cefe5f67f8c017:internal/cli/guest_config_preview_test.go:generic-api-key:31
+af1f9ffcb8fd89ea8b09fb49c8cefe5f67f8c017:internal/cli/guest_config_preview_test.go:generic-api-key:81
+af1f9ffcb8fd89ea8b09fb49c8cefe5f67f8c017:internal/cli/guest_config_preview_test.go:generic-api-key:83
+9281f9aeafed7ebc5c81e71bbe114d93715ade18:internal/redact/redact.go:generic-api-key:357
+9281f9aeafed7ebc5c81e71bbe114d93715ade18:internal/redact/redact_test.go:generic-api-key:855
+9281f9aeafed7ebc5c81e71bbe114d93715ade18:internal/redact/redact_test.go:generic-api-key:859
+b7d32fb142a8599c9f09d524d5924f40d56ae3d4:internal/redact/redact_test.go:generic-api-key:47

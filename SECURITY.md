@@ -16,7 +16,7 @@ Nodex is pre-1.0. Versioned releases are published on [GitHub Releases](https://
 
 ## Vulnerability Reporting
 
-Please report suspected vulnerabilities privately to the repository maintainer instead of opening a public issue with exploit details or secrets. If no private channel is available, open a public GitHub issue with only a minimal, non-sensitive summary and ask for a private coordination channel.
+Please use GitHub's **Report a vulnerability** option on the repository's Security page to report suspected vulnerabilities privately. If it is unavailable, contact the maintainer privately; if no private channel is available, open a public GitHub issue with only a minimal, non-sensitive summary and ask for a private coordination channel. Do not post exploit details or secrets in public issues.
 
 Include the affected commit or version, a concise impact description, and safe reproduction steps using local test fixtures where possible.
 
