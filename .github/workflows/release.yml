@@ -25,6 +25,7 @@ permissions:
   contents: write
   id-token: write
   attestations: write
+  security-events: read
 
 # One release per tag. Without this, a tag push and a manual re-run can
 # race and both try to create a release for the same tag.
@@ -85,6 +86,19 @@ jobs:
             exit 1
           fi
           echo "Verified $TAG -> $head"
+      - name: Check release security baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          # Use the executing workflow's policy even when recovering an older tag.
+          git show "${WORKFLOW_COMMIT}:scripts/check_release_security.py" > "$RUNNER_TEMP/nodex-release-security.py"
+          expected=()
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            expected=(--expected-commit "$(git rev-parse HEAD)")
+          fi
+          python3 "$RUNNER_TEMP/nodex-release-security.py" --repo "$GITHUB_REPOSITORY" "${expected[@]}"
       # Bind verification to the exact workflow ref. A branch dispatch can
       # recover a failed pipeline without changing the original source tag.
       - name: Resolve expected signer identity
