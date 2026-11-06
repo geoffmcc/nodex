@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -94,6 +95,39 @@ func TestParseUPIDRejectsMalformedPID(t *testing.T) {
 	_, err := ParseUPID("UPID:pve1:nothex")
 	if err == nil {
 		t.Fatal("expected error for non-hex PID")
+	}
+}
+
+func TestParseUPIDHexPIDFitsPlatformInt(t *testing.T) {
+	for _, tc := range []struct {
+		pid       string
+		want      int64
+		validOn32 bool
+	}{
+		{"7fffffff", 2147483647, true},
+		{"80000000", 2147483648, false},
+		{"-80000000", -2147483648, true},
+		{"-80000001", -2147483649, false},
+		{"7fffffffffffffff", 9223372036854775807, false},
+	} {
+		t.Run(tc.pid, func(t *testing.T) {
+			u, err := ParseUPID("UPID:node:" + tc.pid + ":80000000")
+			if strconv.IntSize == 32 && !tc.validOn32 {
+				if err == nil {
+					t.Fatalf("PID %s must be rejected on 32-bit platforms", tc.pid)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if int64(u.PID) != tc.want || u.PStart != 2147483648 {
+				t.Fatalf("PID = %d, PStart = %d", u.PID, u.PStart)
+			}
+		})
+	}
+	if _, err := ParseUPID("UPID:node:8000000000000000"); err == nil {
+		t.Fatal("PID above signed 64-bit range was accepted")
 	}
 }
 

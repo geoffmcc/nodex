@@ -70,6 +70,9 @@ func ParseUPID(raw string) (*UPID, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid UPID: cannot parse PID %q: %w", parts[1], err)
 		}
+		if pid < int64(math.MinInt) || pid > int64(math.MaxInt) {
+			return nil, fmt.Errorf("invalid UPID: PID %q is outside the platform integer range", parts[1])
+		}
 		var pstart int64
 		if len(parts) > 2 && parts[2] != "" {
 			// parts[2] may contain additional colon-separated fields; extract just the hex.
