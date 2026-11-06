@@ -155,6 +155,10 @@ func TestStatusWatchRunsAndRestoresInPTY(t *testing.T) {
 	go func() {
 		done <- watchStatus(ctx, terminal, "nodex-test-lab", true, time.Hour, time.Second, func(context.Context) *statusOverview {
 			s := healthyWatchSnapshot()
+			s.VMs = 30
+			for i := 1; i <= 30; i++ {
+				s.VMDetails = append(s.VMDetails, statusGuest{ID: fmt.Sprintf("node/%d", i), Name: fmt.Sprintf("vm-%02d", i), Status: "running"})
+			}
 			s.Containers = 1
 			s.ContainerDetails = []statusGuest{{ID: "node/100", Name: "CT100", Node: "node", Status: "running"}}
 			return s
@@ -164,10 +168,22 @@ func TestStatusWatchRunsAndRestoresInPTY(t *testing.T) {
 	readCtx, stopRead := context.WithTimeout(t.Context(), 2*time.Second)
 	defer stopRead()
 	var captured strings.Builder
-	for !strings.Contains(captured.String(), "CT100") {
+	for !strings.Contains(captured.String(), "vm-01") {
 		ch, err := readWatchKey(readCtx, master)
 		if err != nil {
 			t.Fatal("watch did not draw guest inventory in PTY", err)
+		}
+		captured.WriteByte(ch)
+	}
+	for range 3 {
+		if _, err := master.Write([]byte("\x1b[6~")); err != nil {
+			t.Fatal("send page down key", err)
+		}
+	}
+	for !strings.Contains(captured.String(), "CT100") {
+		ch, err := readWatchKey(readCtx, master)
+		if err != nil {
+			t.Fatal("watch did not scroll to container in PTY", err)
 		}
 		captured.WriteByte(ch)
 	}

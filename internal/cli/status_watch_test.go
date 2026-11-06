@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -78,6 +79,7 @@ type fakeWatchTerminal struct {
 	frames                                       []string
 	onDraw                                       func(string)
 	reading                                      atomic.Int32
+	width, height                                int
 }
 
 func (f *fakeWatchTerminal) Begin() error { f.begin++; return f.beginErr }
@@ -101,7 +103,12 @@ func (f *fakeWatchTerminal) ReadKey(ctx context.Context) (byte, error) {
 		return 0, ctx.Err()
 	}
 }
-func (f *fakeWatchTerminal) Size() (int, int, error) { return 120, 80, f.sizeErr }
+func (f *fakeWatchTerminal) Size() (int, int, error) {
+	if f.width > 0 && f.height > 0 {
+		return f.width, f.height, f.sizeErr
+	}
+	return 120, 80, f.sizeErr
+}
 func (f *fakeWatchTerminal) Draw(s string) error {
 	f.frames = append(f.frames, s)
 	if f.onDraw != nil {
@@ -273,14 +280,14 @@ func TestStatusWatchBoundedSanitizedFrames(t *testing.T) {
 		}
 	}
 	var b watchBuffer
-	_, _ = io.WriteString(&b, strings.Repeat("a", 100000))
-	_, _ = b.Write([]byte(strings.Repeat("b", 100000)))
-	if b.Len() != 64*1024 {
+	_, _ = io.WriteString(&b, strings.Repeat("a", 1000000))
+	_, _ = b.Write([]byte(strings.Repeat("b", 1000000)))
+	if b.Len() != 1024*1024 || !b.truncated {
 		t.Fatal("unbounded frame buffer", b.Len())
 	}
 }
 
-func TestStatusWatchShowsBoundedGuestInventory(t *testing.T) {
+func TestStatusWatchShowsAllGuestInventory(t *testing.T) {
 	s := healthyWatchSnapshot()
 	s.VMs = 12
 	s.VMsRunning = 12
@@ -288,13 +295,10 @@ func TestStatusWatchShowsBoundedGuestInventory(t *testing.T) {
 		s.VMDetails = append(s.VMDetails, statusGuest{ID: fmt.Sprintf("node/%d", i+1), Name: fmt.Sprintf("vm-%02d", i+1), Node: "node", Status: "running"})
 	}
 	frame := output.SanitizeTerminal(renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: "healthy"}, 120, 40))
-	for _, want := range []string{"VMs (showing 10 of 12)", "  1  vm-01  running", "... 2 more"} {
+	for _, want := range []string{"VMs (showing 12 of 12)", "  1  vm-01  running", "  12  vm-12  running"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("watch frame missing %q:\n%s", want, frame)
 		}
-	}
-	if strings.Contains(frame, "vm-11") {
-		t.Fatalf("watch frame exceeded the guest row limit:\n%s", frame)
 	}
 	colorFrame := renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: "healthy", Color: true}, 120, 40)
 	if !strings.Contains(colorFrame, "\x1b[32mrunning\x1b[0m") || !strings.Contains(colorFrame, "\x1b[32mHEALTHY\x1b[0m") {
@@ -415,8 +419,19 @@ func TestStatusGuestInventoryShowsNameNumberAndState(t *testing.T) {
 			t.Fatalf("missing %q:\n%s", want, text)
 		}
 	}
+	for _, want := range []string{"Storage:\n\n", "Guests:\n\n  VMs", "102  db-vm  stopped  [node-b]\n\n  Containers"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing section spacing %q:\n%s", want, text)
+		}
+	}
 	s.RecentTasks = []domain.Task{{Node: "node-a", Type: "qmstart", State: "running"}}
 	frame := renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: "healthy", Color: true}, 120, 80)
+	plainFrame := output.SanitizeTerminal(frame)
+	for _, want := range []string{"Storage:\n\n", "Guests:\n\n  VMs", "102  db-vm  stopped  [node-b]\n\n  Containers"} {
+		if !strings.Contains(plainFrame, want) {
+			t.Fatalf("watch frame missing section spacing %q:\n%s", want, plainFrame)
+		}
+	}
 	storageAt = strings.Index(frame, "Storage:")
 	guestsAt = strings.Index(frame, "Guests:")
 	tasksAt := strings.Index(frame, "Active/recent tasks")
@@ -500,7 +515,7 @@ func TestStatusWatchIncludesCachedTaskWarningDetail(t *testing.T) {
 	}
 }
 
-func TestStatusWatchKeepsGuestRowsVisibleAtStandardHeight(t *testing.T) {
+func TestStatusWatchGuestRowsAccessibleAtStandardHeight(t *testing.T) {
 	s := healthyWatchSnapshot()
 	s.StorageCapacity = &statusStorageCapacity{State: "available"}
 	s.Storage = []statusStorage{
@@ -510,11 +525,169 @@ func TestStatusWatchKeepsGuestRowsVisibleAtStandardHeight(t *testing.T) {
 	s.DiskInventory = &statusDiskInventory{State: "available", Nodes: 1, NodesReported: 1, DeviceCount: 1, TotalBytes: 68719476736, TotalHuman: "64.0 GiB"}
 	s.Containers = 1
 	s.ContainerDetails = []statusGuest{{ID: "node/100", Name: "CT100", Node: "node", Status: "running"}}
-	frame := output.SanitizeTerminal(renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: "healthy"}, 80, 24))
+	raw, offset := renderStatusWatchAt("lab", statusWatchView{Snapshot: s, Health: "healthy"}, 80, 24, 1000)
+	frame := output.SanitizeTerminal(raw)
+	if offset == 0 {
+		t.Fatal("expected scrollable content")
+	}
 	for _, want := range []string{"Guests:", "VMs: none", "Containers (showing 1 of 1):", "100  CT100  running"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("standard-height watch hid %q:\n%s", want, frame)
 		}
+	}
+}
+
+func TestStatusWatchScrollClampsAndKeepsHeader(t *testing.T) {
+	s := healthyWatchSnapshot()
+	s.VMs = 30
+	for i := 1; i <= 30; i++ {
+		s.VMDetails = append(s.VMDetails, statusGuest{ID: fmt.Sprintf("node/%d", i), Name: fmt.Sprintf("vm-%02d", i), Status: "running"})
+	}
+	view := statusWatchView{Snapshot: s, Health: "degraded"}
+	s.Warnings = []string{"storage unavailable"}
+	s.RecentTasks = []domain.Task{{State: "stopped", Status: "WARNINGS: 1"}, {State: "running"}, {State: "stopped", Status: "OK"}}
+	first, _ := renderStatusWatchAt("lab", view, 120, 12, 0)
+	last, pos := renderStatusWatchAt("lab", view, 120, 12, 10000)
+	plain := output.SanitizeTerminal(last)
+	for _, want := range []string{"NodeX | lab | DEGRADED", "1 warning(s)", "1 sampled task alert(s)", "Last successful refresh:", "vm-30", "read-only", "lines "} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("scrolled view missing %q:\n%s", want, plain)
+		}
+	}
+	if pos <= 0 || strings.Contains(output.SanitizeTerminal(first), "vm-30") {
+		t.Fatal("scroll did not move the viewport")
+	}
+	view.Snapshot = healthyWatchSnapshot()
+	_, pos = renderStatusWatchAt("lab", view, 120, 80, pos)
+	if pos != 0 {
+		t.Fatalf("scroll offset not clamped after content shrank: %d", pos)
+	}
+}
+
+func TestStatusWatchLineRangeStableAcrossRefresh(t *testing.T) {
+	s := healthyWatchSnapshot()
+	s.VMs = 5
+	for i := 1; i <= 5; i++ {
+		s.VMDetails = append(s.VMDetails, statusGuest{ID: fmt.Sprintf("node/%d", i), Name: fmt.Sprintf("vm-%d", i), Status: "running"})
+	}
+	view := statusWatchView{Snapshot: s, Health: "healthy", Changes: "VM counts"}
+	lineRange := regexp.MustCompile(`lines (\d+)-(\d+)/(\d+)`)
+	withChange, _ := renderStatusWatchAt("lab", view, 120, 80, 0)
+	before := lineRange.FindStringSubmatch(output.SanitizeTerminal(withChange))
+	view.Refreshing, view.Changes = true, ""
+	refreshing, _ := renderStatusWatchAt("lab", view, 120, 80, 0)
+	during := lineRange.FindStringSubmatch(output.SanitizeTerminal(refreshing))
+	if len(before) != 4 || len(during) != 4 || before[3] != during[3] {
+		t.Fatalf("line range changed when refresh cleared the change notice: before %q, during %q", before, during)
+	}
+}
+
+func TestStatusHealthDetailExplainsDegradation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		modify func(*statusOverview)
+		want   string
+	}{
+		{"section", func(s *statusOverview) { s.Sections["storage"] = "unavailable" }, "core section unavailable"},
+		{"node", func(s *statusOverview) { s.NodesDetail[0].Status = "offline" }, "node offline or unknown"},
+		{"quorum", func(s *statusOverview) { s.QuorumKnown = true; s.Quorum = 0 }, "quorum lost"},
+		{"tasks", func(s *statusOverview) { s.Sections["tasks"] = "unavailable" }, "task sample unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := healthyWatchSnapshot()
+			tc.modify(s)
+			health, detail := statusHealthDetail(s)
+			if health != "degraded" || detail != tc.want {
+				t.Fatalf("health=%q detail=%q", health, detail)
+			}
+			frame := output.SanitizeTerminal(renderStatusWatch("lab", statusWatchView{Snapshot: s, Health: health, HealthDetail: detail}, 120, 24))
+			if !strings.Contains(frame, detail) {
+				t.Fatalf("missing health detail:\n%s", frame)
+			}
+		})
+	}
+}
+
+func TestWatchKeyDecoder(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		want  byte
+	}{
+		{"\x1b[A", watchKeyUp}, {"\x1b[B", watchKeyDown}, {"\x1b[5~", watchKeyPageUp}, {"\x1b[6~", watchKeyPageDown}, {"\x1bOA", watchKeyUp}, {"j", 'j'},
+	} {
+		var d watchKeyDecoder
+		var got byte
+		for i := range len(tc.input) {
+			got = d.feed(tc.input[i])
+		}
+		if got != tc.want {
+			t.Errorf("decode %q = %d, want %d", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestStatusWatchScrollsWhileRefreshing(t *testing.T) {
+	f := &fakeWatchTerminal{keys: make(chan byte, 16), width: 120, height: 12}
+	started := false
+	scrolled := false
+	f.onDraw = func(frame string) {
+		plain := output.SanitizeTerminal(frame)
+		if strings.Contains(plain, "VMs (showing 30 of 30)") && strings.Contains(plain, "refreshing") && !started {
+			started = true
+			for _, b := range []byte("\x1b[6~") {
+				f.keys <- b
+			}
+		} else if started && strings.Contains(plain, "vm-08") && !scrolled {
+			scrolled = true
+			f.keys <- 'q'
+		}
+	}
+	s := healthyWatchSnapshot()
+	s.VMs = 30
+	for i := 1; i <= 30; i++ {
+		s.VMDetails = append(s.VMDetails, statusGuest{ID: fmt.Sprintf("node/%d", i), Name: fmt.Sprintf("vm-%02d", i), Status: "running"})
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	calls := 0
+	if err := watchStatus(ctx, f, "lab", false, 10*time.Millisecond, time.Second, func(ctx context.Context) *statusOverview {
+		calls++
+		if calls > 1 {
+			<-ctx.Done()
+			return nil
+		}
+		return s
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !started || !scrolled || f.end != 1 {
+		t.Fatalf("scroll=%v started=%v terminal restored=%d", scrolled, started, f.end)
+	}
+}
+
+func TestStatusWatchRedrawsAfterResize(t *testing.T) {
+	f := &fakeWatchTerminal{keys: make(chan byte, 1), width: 80, height: 24}
+	resized, redrawn := false, false
+	f.onDraw = func(frame string) {
+		plain := output.SanitizeTerminal(frame)
+		if !resized && strings.Contains(plain, "Cluster: lab") {
+			resized = true
+			f.height = 8
+		} else if resized && !redrawn {
+			redrawn = true
+			if got := len(strings.Split(plain, "\n")); got > 8 {
+				t.Errorf("resized frame has %d lines", got)
+			}
+			f.keys <- 'q'
+		}
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	if err := watchStatus(ctx, f, "lab", false, time.Hour, time.Second, func(context.Context) *statusOverview { return healthyWatchSnapshot() }); err != nil {
+		t.Fatal(err)
+	}
+	if !redrawn {
+		t.Fatal("terminal resize did not cause a redraw")
 	}
 }
 

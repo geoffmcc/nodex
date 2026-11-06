@@ -122,6 +122,38 @@ func statusStorageMetricsAvailable(s statusStorage) bool {
 		s.Total > 0 && s.Used >= 0 && s.Used <= s.Total && s.Avail >= 0 && s.Avail <= s.Total
 }
 
+// PBS aliases can report the same datastore at slightly different instants.
+// Keep exact metrics separate, but do not treat a small usage delta as a
+// degraded health signal. Capacity totals and availability must still agree.
+const statusPBSUsageTolerance = int64(64 * 1024)
+
+func statusPBSMinorDifference(group statusCapacityGroup, entries []statusStorage) bool {
+	if group.Scope != "pbs_datastore" || group.MetricsState != "conflicting_views" || group.Metrics != nil || len(group.Members) < 2 || group.ID == "" {
+		return false
+	}
+	var total, minUsed, maxUsed, minAvail, maxAvail int64
+	for i, index := range group.Members {
+		if index < 0 || index >= len(entries) {
+			return false
+		}
+		e := entries[index]
+		if e.CapacityGroup != group.ID || e.Identity == nil || e.Identity.Key != group.ID || e.Identity.Scope != "pbs_datastore" || !statusStorageMetricsAvailable(e) {
+			return false
+		}
+		if i == 0 {
+			total, minUsed, maxUsed, minAvail, maxAvail = e.Total, e.Used, e.Used, e.Avail, e.Avail
+			continue
+		}
+		if e.Total != total {
+			return false
+		}
+		minUsed, maxUsed = min(minUsed, e.Used), max(maxUsed, e.Used)
+		minAvail, maxAvail = min(minAvail, e.Avail), max(maxAvail, e.Avail)
+	}
+	limit := min(statusPBSUsageTolerance, total/10000)
+	return maxUsed-minUsed <= limit && maxAvail-minAvail <= limit
+}
+
 func statusStorageUsage(s statusStorage) string {
 	if !statusStorageMetricsAvailable(s) {
 		return "capacity unavailable (per-entry values retained in structured output)"
@@ -143,7 +175,7 @@ func writeStatusStorage(w io.Writer, overview *statusOverview) error {
 	if capacity == nil && len(overview.Storage) == 0 {
 		return nil
 	}
-	if _, err := fmt.Fprintln(w, "\nStorage:"); err != nil {
+	if _, err := fmt.Fprint(w, "\nStorage:\n\n"); err != nil {
 		return err
 	}
 	if capacity != nil && capacity.State != "available" {
@@ -183,7 +215,11 @@ func writeStatusStorage(w io.Writer, overview *statusOverview) error {
 					return err
 				}
 			} else {
-				if _, err := fmt.Fprintf(w, "    %s; per-entry metrics only\n", group.MetricsState); err != nil {
+				label := group.MetricsState
+				if statusPBSMinorDifference(group, overview.Storage) {
+					label = "capacity views differ slightly (within 64 KiB)"
+				}
+				if _, err := fmt.Fprintf(w, "    %s; per-entry metrics only\n", label); err != nil {
 					return err
 				}
 			}

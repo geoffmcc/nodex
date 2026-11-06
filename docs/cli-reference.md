@@ -620,9 +620,21 @@ Each delay starts after collection finishes, so slow requests never overlap or
 queue refreshes. Failed/incomplete refreshes double the delay up to 60 seconds
 (configured intervals above 60 seconds stay unchanged). Recovery resets it.
 `--timeout` bounds each collection cycle, defaults to 30 seconds and is capped
-at five minutes in watch mode. Terminal dimensions are checked each refresh;
-small screens clip content. Display text uses ASCII with other characters
-replaced by `?`; one-shot structured output preserves full values.
+at five minutes in watch mode. Use the arrow keys, Page Up/Down, or `j`/`k` to
+scroll; the health and refresh header stays visible. The footer shows the visible
+line range when there is more content. Resizing adjusts the viewport, and refreshes
+preserve the scroll position where possible. Very long lines are clipped to the
+terminal width. Watch renders the guest inventory subject to a 1 MiB display
+buffer; if that limit is reached it explicitly directs users to list commands or
+one-shot JSON. Display text uses ASCII with other characters replaced by `?`;
+one-shot structured output preserves full values.
+
+For watch health only, available PBS datastore aliases with the same total
+capacity may differ in used or available bytes by up to 64 KiB and 0.01% of the
+total without making health degraded. The watch header and storage section still
+indicate the difference; JSON/YAML retain the exact per-entry values and mark the
+group `conflicting_views`, without inventing a single group metric. Unavailable
+views, different totals, and larger discrepancies still degrade health.
 
 Watch and one-shot status use the same storage and overview collector. Watch also
 requests a task sample: the first eight nodes sorted by name, at most five tasks

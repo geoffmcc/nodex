@@ -1422,6 +1422,10 @@ func writeStatus(cmdCtx *Context, overview *statusOverview) error {
 }
 
 func writeStatusTable(w io.Writer, overview *statusOverview) error {
+	return writeStatusTableWithGuestLimit(w, overview, 10)
+}
+
+func writeStatusTableWithGuestLimit(w io.Writer, overview *statusOverview, guestLimit int) error {
 	fmt.Fprintf(w, "Cluster: %s  Version: %s  Nodes: ", overview.Cluster, overview.Version)
 	if state := overview.Sections["nodes"]; state != "" && state != "available" {
 		fmt.Fprint(w, state)
@@ -1455,13 +1459,16 @@ func writeStatusTable(w io.Writer, overview *statusOverview) error {
 	if err := writeStatusStorage(w, overview); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintln(w, "\nGuests:"); err != nil {
+	if _, err := fmt.Fprint(w, "\nGuests:\n\n"); err != nil {
 		return err
 	}
-	if err := writeStatusGuestInventory(w, "  ", "VMs", overview.Sections["vms"], overview.VMs, overview.VMDetails, overview.Nodes > 1); err != nil {
+	if err := writeStatusGuestInventoryLimit(w, "  ", "VMs", overview.Sections["vms"], overview.VMs, overview.VMDetails, overview.Nodes > 1, guestLimit); err != nil {
 		return err
 	}
-	if err := writeStatusGuestInventory(w, "  ", "Containers", overview.Sections["containers"], overview.Containers, overview.ContainerDetails, overview.Nodes > 1); err != nil {
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if err := writeStatusGuestInventoryLimit(w, "  ", "Containers", overview.Sections["containers"], overview.Containers, overview.ContainerDetails, overview.Nodes > 1, guestLimit); err != nil {
 		return err
 	}
 	return nil
