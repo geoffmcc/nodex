@@ -72,6 +72,7 @@ jobs:
           # the tagged commit.
           ref: ${{ steps.release.outputs.tag }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Verify checkout matches tag
         env:
           TAG: ${{ steps.release.outputs.tag }}
@@ -99,6 +100,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27.3"
+          cache: false
       - name: Record Go version
         id: go-version
         run: echo "version=$(go version)" >> "$GITHUB_OUTPUT"
