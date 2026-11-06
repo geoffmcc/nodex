@@ -447,6 +447,14 @@ func renderStatusWatchAt(profile string, v statusWatchView, width, height, offse
 	if v.Snapshot != nil && len(v.Snapshot.Warnings) > 0 {
 		state += fmt.Sprintf(" / %d warning(s)", len(v.Snapshot.Warnings))
 	}
+	if v.Snapshot != nil && v.Snapshot.StorageCapacity != nil {
+		for _, group := range v.Snapshot.StorageCapacity.Groups {
+			if statusPBSMinorDifference(group, v.Snapshot.Storage) {
+				state += " / PBS views differ slightly"
+				break
+			}
+		}
+	}
 	if v.Snapshot != nil {
 		alerts := 0
 		for _, task := range v.Snapshot.RecentTasks {

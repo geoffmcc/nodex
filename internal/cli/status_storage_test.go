@@ -135,6 +135,81 @@ func TestStatusStorageUncertainMetrics(t *testing.T) {
 	}
 }
 
+func TestStatusPBSMinorDifferencesDoNotDegradeHealth(t *testing.T) {
+	const total = int64(1024 * 1024 * 1024)
+	for _, tc := range []struct {
+		name        string
+		change      func(*domain.Storage)
+		wantHealthy bool
+	}{
+		{"observed 4 KiB", func(s *domain.Storage) { s.Used += 4096; s.Avail -= 4096 }, true},
+		{"threshold", func(s *domain.Storage) { s.Used += 65536; s.Avail -= 65536 }, true},
+		{"above threshold", func(s *domain.Storage) { s.Used += 65537; s.Avail -= 65537 }, false},
+		{"different total", func(s *domain.Storage) { s.Total++ }, false},
+		{"unavailable view", func(s *domain.Storage) { s.Status = "unknown" }, false},
+		{"other storage scope", func(s *domain.Storage) { s.Used++; s.CapacityIdentity.Scope = "shared_storage" }, false},
+		{"mixed storage scopes", func(s *domain.Storage) { s.Used++; s.CapacityIdentity.Scope = "shared_storage" }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := []domain.Storage{capacityFixture("a", "same"), capacityFixture("b", "same")}
+			for i := range rows {
+				rows[i].Total = total
+				rows[i].Used = total / 4
+				rows[i].Avail = total * 3 / 4
+			}
+			tc.change(&rows[1])
+			if tc.name == "other storage scope" {
+				rows[0].CapacityIdentity.Scope = "shared_storage"
+			}
+			entries, capacity := buildStatusStorage(rows, "available", time.Now())
+			snapshot := healthyWatchSnapshot()
+			snapshot.Storage, snapshot.StorageCapacity = entries, capacity
+			health, _ := statusHealthDetail(snapshot)
+			if (health == "healthy") != tc.wantHealthy {
+				t.Fatalf("health = %q, capacity = %+v", health, capacity)
+			}
+			if capacity.Groups[0].Metrics != nil {
+				t.Fatal("conflicting values must never be presented as a single metric")
+			}
+			if tc.wantHealthy {
+				if capacity.Groups[0].MetricsState != "conflicting_views" {
+					t.Fatal("structured conflict was lost")
+				}
+				var human bytes.Buffer
+				if err := writeStatusStorage(&human, snapshot); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(human.String(), "capacity views differ slightly (within 64 KiB); per-entry metrics only") {
+					t.Fatal(human.String())
+				}
+				frame := output.SanitizeTerminal(renderStatusWatch("lab", statusWatchView{Snapshot: snapshot, Health: health}, 120, 40))
+				if !strings.Contains(frame, "PBS views differ slightly") {
+					t.Fatalf("missing watch indicator:\n%s", frame)
+				}
+			}
+		})
+	}
+	rows := []domain.Storage{capacityFixture("a", "same"), capacityFixture("b", "same")}
+	for i := range rows {
+		rows[i].Total = 1024 * 1024
+		rows[i].Used = 100000
+		rows[i].Avail = 900000
+	}
+	rows[1].Used += 1024
+	entries, capacity := buildStatusStorage(rows, "available", time.Now())
+	if statusPBSMinorDifference(capacity.Groups[0], entries) {
+		t.Fatal("large relative difference on a small datastore was accepted")
+	}
+	entries[1].Used = entries[0].Used + 50
+	if !statusPBSMinorDifference(capacity.Groups[0], entries) {
+		t.Fatal("small difference on a small datastore was rejected")
+	}
+	capacity.Groups[0].Members = append(capacity.Groups[0].Members, len(entries))
+	if statusPBSMinorDifference(capacity.Groups[0], entries) {
+		t.Fatal("invalid member index was accepted")
+	}
+}
+
 type failingStorageProvider struct{ bareProvider }
 
 func (*failingStorageProvider) Storage(context.Context) ([]domain.Storage, error) {

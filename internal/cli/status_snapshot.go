@@ -194,7 +194,7 @@ func statusHealthDetail(s *statusOverview) (string, string) {
 	}
 	if s.StorageCapacity != nil {
 		for _, g := range s.StorageCapacity.Groups {
-			if g.Metrics == nil {
+			if g.Metrics == nil && !statusPBSMinorDifference(g, s.Storage) {
 				return "degraded", "shared storage metrics unavailable or conflicting"
 			}
 		}

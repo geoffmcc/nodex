@@ -629,6 +629,13 @@ buffer; if that limit is reached it explicitly directs users to list commands or
 one-shot JSON. Display text uses ASCII with other characters replaced by `?`;
 one-shot structured output preserves full values.
 
+For watch health only, available PBS datastore aliases with the same total
+capacity may differ in used or available bytes by up to 64 KiB and 0.01% of the
+total without making health degraded. The watch header and storage section still
+indicate the difference; JSON/YAML retain the exact per-entry values and mark the
+group `conflicting_views`, without inventing a single group metric. Unavailable
+views, different totals, and larger discrepancies still degrade health.
+
 Watch and one-shot status use the same storage and overview collector. Watch also
 requests a task sample: the first eight nodes sorted by name, at most five tasks
 per node, running tasks first then most recently started. Offline nodes are
