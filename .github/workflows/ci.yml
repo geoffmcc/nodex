@@ -27,12 +27,14 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
-      - name: Install Ansible Core
-        run: python -m pip install ansible-core==2.22.0
       - name: Test Nodex callback with Ansible
         env:
           NODEX_REQUIRE_ANSIBLE: "1"
-        run: go test ./internal/ansible -run '^TestAnsibleCallbackIntegration$' -count=1 -v
+        run: |
+          umask 022
+          python -m venv "$RUNNER_TEMP/nodex-ansible"
+          "$RUNNER_TEMP/nodex-ansible/bin/python" -m pip install ansible-core==2.22.0
+          PATH="$RUNNER_TEMP/nodex-ansible/bin:$PATH" go test ./internal/ansible -run '^TestAnsibleCallbackIntegration$' -count=1 -v
 
   security-boundary-integration:
     # These tests exercise actual Ansible/OpenSSH behavior against disposable
