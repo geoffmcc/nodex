@@ -15,6 +15,27 @@ permissions:
   contents: read
 
 jobs:
+  ansible-python-314:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - name: Test Nodex callback with Ansible
+        env:
+          NODEX_REQUIRE_ANSIBLE: "1"
+        run: |
+          umask 022
+          python -m venv "$RUNNER_TEMP/nodex-ansible"
+          "$RUNNER_TEMP/nodex-ansible/bin/python" -m pip install ansible-core==2.22.0
+          PATH="$RUNNER_TEMP/nodex-ansible/bin:$PATH" go test ./internal/ansible -run '^TestAnsibleCallbackIntegration$' -count=1 -v
+
   security-boundary-integration:
     # These tests exercise actual Ansible/OpenSSH behavior against disposable
     # localhost fixtures. Only the runner gets these test dependencies; no
