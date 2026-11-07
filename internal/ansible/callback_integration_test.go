@@ -18,6 +18,9 @@ func TestAnsibleCallbackIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal("ansible-playbook is required for this integration check")
 	}
+	if err := checkExecutableSafety(executable); err != nil {
+		t.Fatalf("unsafe ansible-playbook executable: %v", err)
+	}
 	dir := t.TempDir()
 	callbackDir := filepath.Join(dir, "callbacks")
 	if err := os.Mkdir(callbackDir, 0o700); err != nil {
@@ -35,7 +38,7 @@ func TestAnsibleCallbackIntegration(t *testing.T) {
 	if err := os.WriteFile(config, []byte("[defaults]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(executable, "-i", "localhost,", "-c", "local", playbook)
+	cmd := exec.Command(executable, "-i", "localhost,", "-c", "local", playbook) // #nosec G204 -- executable is checked above; arguments are test-controlled
 	cmd.Env = append(os.Environ(), "ANSIBLE_CONFIG="+config, "ANSIBLE_STDOUT_CALLBACK=nodex_json", "ANSIBLE_CALLBACK_PLUGINS="+callbackDir, "ANSIBLE_LOCAL_TEMP="+filepath.Join(dir, "tmp"), "ANSIBLE_NOCOLOR=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
