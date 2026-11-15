@@ -67,6 +67,40 @@ and provenance before publication.
 Source archives use committed files. Commit the intended changes before a
 snapshot build; uncommitted source changes are not included by `git archive`.
 
+## Updating dependency notices
+
+Dependabot groups related `golang.org/x/*` updates, but it does not update
+`THIRD_PARTY_LICENSES.md`. A Go module update may also change transitive
+versions, so review the full module graph rather than only the PR title.
+
+For every changed production module, inspect the exact new module source
+(`go mod download -json module@version` reports its local directory). Compare
+its license and patent texts with the existing inventory and check its used
+source directories for nested licenses or notices. Update the inventory's
+version headings and any changed texts; add or remove entries when the set of
+production modules changes. Do not update headings alone without reviewing the
+underlying notices. For Go toolchain changes, review the included Go and
+standard-library vendor notices as well.
+
+To check the resulting inventory against the vendored production modules
+without adding a vendor directory to the checkout, run:
+
+```bash
+vendor_dir=$(mktemp -d)
+go mod vendor -o "$vendor_dir/vendor"
+python3 - "$vendor_dir/vendor/modules.txt" <<'PYCODE'
+import sys
+from pathlib import Path
+from scripts.verify_release import verify_vendor_license_coverage
+verify_vendor_license_coverage(Path(sys.argv[1]), Path("THIRD_PARTY_LICENSES.md"))
+print("Vendored module versions match the license inventory.")
+PYCODE
+```
+
+Remove the temporary directory when finished. This check verifies module
+coverage and versions; it does not verify the legal text or find nested notices.
+The full snapshot verification above remains necessary before release.
+
 ## Verify Artifacts
 
 Verify `checksums.txt` with `sha256sum -c checksums.txt` (or the platform

@@ -5,6 +5,15 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      golang-x-version-updates:
+        applies-to: version-updates
+        patterns:
+          - "golang.org/x/*"
+      golang-x-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "golang.org/x/*"
   - package-ecosystem: github-actions
     directory: /
     schedule:
