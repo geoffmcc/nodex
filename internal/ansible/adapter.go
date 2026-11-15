@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/geoffmcc/nodex/internal/execsafe"
 	"github.com/geoffmcc/nodex/internal/output"
 	"github.com/geoffmcc/nodex/internal/redact"
 )
@@ -99,27 +100,10 @@ func Detect(ctx context.Context) (*Detection, error) {
 }
 
 // checkExecutableSafety rejects executables that are world-writable or that
-// live in world-writable directories without the sticky bit.
+// live in world-writable directories without the sticky bit. The shared check
+// keeps the Ansible and OpenSSH process boundaries under the same rule.
 func checkExecutableSafety(path string) error {
-	if runtime.GOOS == "windows" {
-		return nil // Unix permission bits are not meaningful here.
-	}
-	fi, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("stat %s: %w", path, err)
-	}
-	if fi.Mode().Perm()&0o002 != 0 {
-		return fmt.Errorf("refusing world-writable executable %s", path)
-	}
-	dir := filepath.Dir(path)
-	di, err := os.Stat(dir)
-	if err != nil {
-		return fmt.Errorf("stat %s: %w", dir, err)
-	}
-	if di.Mode().Perm()&0o002 != 0 && di.Mode()&os.ModeSticky == 0 {
-		return fmt.Errorf("refusing executable in world-writable directory %s", dir)
-	}
-	return nil
+	return execsafe.Check(path)
 }
 
 func firstLine(s string) string {

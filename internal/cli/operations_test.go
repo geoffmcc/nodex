@@ -32,6 +32,43 @@ func TestPBSDatastoreCreateIsAdvertisedAsConfirmedMutation(t *testing.T) {
 	}
 }
 
+func TestConfirmationExemptOnlyCoversLocalConfigurationCommands(t *testing.T) {
+	want := map[string]bool{
+		"init": true, "setup": true,
+		"profile add": true, "profile use": true, "profile remove": true,
+		"profile import": true, "profile set-credentials": true,
+	}
+	for _, op := range Operations() {
+		if op.ConfirmationExempt != want[op.Path] {
+			t.Errorf("%q ConfirmationExempt = %v, want %v", op.Path, op.ConfirmationExempt, want[op.Path])
+		}
+	}
+}
+
+func TestConfirmationExemptOperationsDoNotAdvertiseYesGate(t *testing.T) {
+	op := LookupOperation("profile add")
+	if op == nil {
+		t.Fatal("profile add is missing from operation registry")
+	}
+	contract := describeOperation(*op, false)
+	if len(contract.Confirmation) != 1 || !strings.Contains(contract.Confirmation[0], "none") {
+		t.Fatalf("profile add confirmation = %v, want an explicit no-gate entry", contract.Confirmation)
+	}
+	for _, flag := range operationFlags(op.Path, leafHelp[op.Path].usage, requiresRemoteProfile(*op)) {
+		if flag.Name == "--yes" && flag.Required {
+			t.Fatal("profile add still advertises a required --yes flag")
+		}
+	}
+
+	remote := LookupOperation("vm start")
+	if remote == nil {
+		t.Fatal("vm start is missing from operation registry")
+	}
+	if got := describeOperation(*remote, false).Confirmation; len(got) == 0 || got[0] != "--yes" {
+		t.Fatalf("vm start confirmation = %v, want --yes", got)
+	}
+}
+
 func TestOperations_EveryMutationHasTierAboveObservation(t *testing.T) {
 	for _, op := range MutationOperations() {
 		if op.SafetyTier == safety.TierObservation {

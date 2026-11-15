@@ -94,7 +94,13 @@ must not cause automatic repetition. Receipt refresh/reconcile also enforce
 their declared Tier 1 acknowledgement for local receipt writes; their provider
 observations remain read-only and never resubmit an infrastructure request.
 
-All mutation commands are protected by a five-tier safety model:
+Remote mutation commands are protected by a five-tier safety model. Local
+configuration commands (`init`, `setup`, `profile add`, `profile use`,
+`profile remove`, `profile import`, `profile set-credentials`) are recorded as
+reversible for risk reporting but do not require `--yes`: they edit a file
+owned by the invoking local account, so a flag gate would not change the trust
+boundary, and the documented non-interactive provisioning flows depend on them
+working without one. `nodex operation describe` reports that distinction.
 
 | Tier | Name | Gate |
 |------|------|------|

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -578,6 +579,13 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		}
 	}
 
+	// A download writes a local file even though the provider side is a read.
+	// It is registered as Tier 1, so honor that acknowledgement before
+	// touching the provider or the destination.
+	if err := checkReversible(cmdCtx, fmt.Sprintf("download %s/%s/%s to %s", node, storage, volumeID, cleaned)); err != nil {
+		return err
+	}
+
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -627,21 +635,9 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		return fmt.Errorf("close temporary file: %w", err)
 	}
 
-	// On Windows, os.Rename fails if the target exists and is open, so remove target first.
-	if cmdCtx.Opts.Force {
-		if info, err := os.Lstat(cleaned); err == nil {
-			if info.Mode().IsRegular() {
-				if err := os.Remove(cleaned); err != nil {
-					cleanupTmp()
-					return fmt.Errorf("remove existing file %s: %w", cleaned, err)
-				}
-			}
-		}
-	}
-
-	if err := os.Rename(tmpPath, cleaned); err != nil {
+	if err := finalizeDownload(tmpPath, cleaned, cmdCtx.Opts.Force); err != nil {
 		cleanupTmp()
-		return fmt.Errorf("finalize download: %w", err)
+		return err
 	}
 
 	var sizeBytes int64
@@ -655,6 +651,27 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		Destination: cleaned,
 		SizeBytes:   sizeBytes,
 	})
+}
+
+// finalizeDownload commits a fully written temporary file to its destination.
+//
+// On Unix, os.Rename atomically replaces an existing file, so the previous
+// destination remains intact until the new file is committed. Removing it
+// first would lose the only copy if the rename then failed. Windows rename
+// does not replace an existing destination, so only there is the target
+// removed first when --force authorized an overwrite.
+func finalizeDownload(tmpPath, dest string, force bool) error {
+	if force && runtime.GOOS == "windows" {
+		if info, err := os.Lstat(dest); err == nil && info.Mode().IsRegular() {
+			if err := os.Remove(dest); err != nil {
+				return fmt.Errorf("remove existing file %s: %w", dest, err)
+			}
+		}
+	}
+	if err := os.Rename(tmpPath, dest); err != nil {
+		return fmt.Errorf("finalize download: %w", err)
+	}
+	return nil
 }
 
 // configureStorageDownloadSSH uses an explicitly profile-bound PVE inventory

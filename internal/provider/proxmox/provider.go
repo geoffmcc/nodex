@@ -16,6 +16,7 @@ import (
 	"github.com/geoffmcc/nodex/internal/app"
 	"github.com/geoffmcc/nodex/internal/credentials"
 	"github.com/geoffmcc/nodex/internal/domain"
+	"github.com/geoffmcc/nodex/internal/execsafe"
 	"github.com/geoffmcc/nodex/internal/provider"
 	"github.com/geoffmcc/nodex/internal/provider/proxmox/client"
 	"github.com/geoffmcc/nodex/internal/transport/httpclient"
@@ -196,11 +197,11 @@ func (p *Provider) clusterInitSSH(ctx context.Context, params domain.ClusterInit
 		}
 	}
 	args := buildClusterInitSSHArgs(p.sshHost, p.sshUser, p.sshKeyFile, p.sshPort, knownHosts, params.Name, params.BindAddress)
-	sshPath, err := exec.LookPath("ssh")
+	sshPath, err := execsafe.LookPath("ssh")
 	if err != nil {
-		return fmt.Errorf("cluster init requires the OpenSSH client: %w", err)
+		return fmt.Errorf("cluster init requires a safe OpenSSH client: %w", err)
 	}
-	// #nosec G204 -- OpenSSH is resolved with LookPath; operands are validated and the remote command is shell-quoted.
+	// #nosec G204 -- OpenSSH is resolved with LookPath and validated by execsafe; operands are validated and the remote command is shell-quoted.
 	cmd := exec.CommandContext(ctx, sshPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -252,11 +253,11 @@ func (p *Provider) ClusterJoin(ctx context.Context, params domain.ClusterJoinPar
 		}
 	}
 	args := buildClusterJoinSSHArgs(p.sshHost, p.sshUser, p.sshKeyFile, p.sshPort, knownHosts, params.NodeAddress, params.Fingerprint, os.Getenv("SSH_AUTH_SOCK") != "")
-	sshPath, err := exec.LookPath("ssh")
+	sshPath, err := execsafe.LookPath("ssh")
 	if err != nil {
-		return "", fmt.Errorf("cluster join requires the OpenSSH client: %w", err)
+		return "", fmt.Errorf("cluster join requires a safe OpenSSH client: %w", err)
 	}
-	// #nosec G204 -- OpenSSH is resolved with LookPath; operands are validated and the remote command is shell-quoted.
+	// #nosec G204 -- OpenSSH is resolved with LookPath and validated by execsafe; operands are validated and the remote command is shell-quoted.
 	cmd := exec.CommandContext(ctx, sshPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
