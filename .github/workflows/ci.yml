@@ -61,6 +61,7 @@ jobs:
           -count=1
 
   build:
+    name: build (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
