@@ -51,6 +51,16 @@ func (f *fakePVE) Containers(context.Context) ([]domain.Container, error) { retu
 func (f *fakePVE) Tasks(_ context.Context, node string) ([]domain.Task, error) {
 	return f.tasks, f.tasksErr
 }
+func (f *fakePVE) BackupTaskHistory(context.Context, string) ([]domain.Backup, error) {
+	if f.tasksErr != nil {
+		return nil, f.tasksErr
+	}
+	out := make([]domain.Backup, 0, len(f.tasks))
+	for _, task := range f.tasks {
+		out = append(out, domain.Backup{UPID: task.UPID, Type: task.Type, Status: task.Status, EndTime: task.EndTime})
+	}
+	return out, nil
+}
 func (f *fakePVE) Task(context.Context, string, string) (*domain.Task, error) {
 	return nil, errors.New("not implemented")
 }
@@ -380,6 +390,15 @@ func TestFailedPVEVzdumpWarns(t *testing.T) {
 
 // A vzdump that finished with "WARNINGS: n" succeeded. Reporting it as a failed
 // backup would contradict both the task poller and agent receipt refresh.
+func TestIncompletePVEBackupHistoryNeverHealthy(t *testing.T) {
+	pve, pbs := healthyFakes()
+	pve.tasksErr = errors.New("backup task history incomplete")
+	res := run(t, pve, pbs, nil)
+	if c := findCheck(t, res, "pve_failed_backup_tasks"); c.Status == StatusHealthy {
+		t.Fatalf("incomplete history reported healthy: %+v", c)
+	}
+}
+
 func TestWarnedVzdumpIsNotReportedAsFailedBackup(t *testing.T) {
 	pve, pbs := healthyFakes()
 	pve.tasks = []domain.Task{

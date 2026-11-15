@@ -132,6 +132,13 @@ type BackupInspector interface {
 	Backups(ctx context.Context, node string) ([]Backup, error)
 }
 
+// BackupTaskHistoryInspector returns a complete, bounded backup-task history.
+// If completeness cannot be established, it returns an error rather than a
+// partial result that could be mistaken for a healthy history.
+type BackupTaskHistoryInspector interface {
+	BackupTaskHistory(ctx context.Context, node string) ([]Backup, error)
+}
+
 // FirewallInspector provides cluster-level firewall rule listing.
 type FirewallInspector interface {
 	FirewallRules(ctx context.Context) ([]FirewallRule, error)

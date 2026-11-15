@@ -615,6 +615,39 @@ func (c *Client) GetBackupStatus(ctx context.Context, node string) ([]BackupStat
 	return result, nil
 }
 
+// GetBackupTaskHistory fetches all retained backup tasks, subject to a hard
+// bound. A full bound is an error because older tasks may still be relevant.
+func (c *Client) GetBackupTaskHistory(ctx context.Context, node string) ([]BackupStatusItem, error) {
+	if node == "" {
+		return nil, fmt.Errorf("node name is required")
+	}
+	const pageSize, maxPages = 100, 10
+	var items []BackupStatusItem
+	seen := make(map[string]bool)
+	for page := 0; page < maxPages; page++ {
+		var resp BackupStatusResponse
+		query := url.Values{"typefilter": {"vzdump"}, "start": {strconv.Itoa(page * pageSize)}, "limit": {strconv.Itoa(pageSize)}}
+		path := "/nodes/" + url.PathEscape(node) + "/tasks?" + query.Encode()
+		if err := c.get(ctx, path, &resp); err != nil {
+			return nil, err
+		}
+		for _, item := range resp.Data {
+			if item.Type == "vzdump" {
+				if item.UPID == "" || seen[item.UPID] {
+					return nil, fmt.Errorf("backup task history contains a missing or duplicate task ID; completeness cannot be established")
+				}
+				seen[item.UPID] = true
+				item.Node = node
+				items = append(items, item)
+			}
+		}
+		if len(resp.Data) < pageSize {
+			return items, nil
+		}
+	}
+	return nil, fmt.Errorf("backup task history exceeds %d entries; completeness cannot be established", pageSize*maxPages)
+}
+
 // GetFirewallRules returns cluster firewall rules.
 func (c *Client) GetFirewallRules(ctx context.Context) ([]FirewallRuleItem, error) {
 	var resp FirewallRuleResponse
