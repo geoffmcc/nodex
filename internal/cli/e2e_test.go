@@ -394,6 +394,9 @@ func (p *e2eMockProvider) Tasks(_ context.Context, node string) ([]domain.Task, 
 		{UPID: "UPID:e2e-node/00012346/0", Type: "qmstart", State: "running", Node: node, StartTime: 1700000005},
 	}, nil
 }
+func (p *e2eMockProvider) BackupTaskHistory(_ context.Context, node string) ([]domain.Backup, error) {
+	return []domain.Backup{{UPID: "UPID:e2e-node/00012345/0", Type: "vzdump", State: "stopped", Status: "OK", Node: node, StartTime: 1700000000, EndTime: 1700000010}}, nil
+}
 func (p *e2eMockProvider) Task(_ context.Context, node, upid string) (*domain.Task, error) {
 	status := "OK"
 	if e2eTaskFailure {

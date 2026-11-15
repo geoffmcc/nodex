@@ -1107,6 +1107,26 @@ func (p *Provider) Backups(ctx context.Context, node string) ([]domain.Backup, e
 	return result, nil
 }
 
+// BackupTaskHistory returns the complete retained backup-task history or an
+// error when the bounded scan cannot establish completeness.
+func (p *Provider) BackupTaskHistory(ctx context.Context, node string) ([]domain.Backup, error) {
+	if p.client == nil {
+		return nil, errors.New(errNotConnected)
+	}
+	items, err := p.client.GetBackupTaskHistory(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("get backup task history: %w", err)
+	}
+	result := make([]domain.Backup, 0, len(items))
+	for _, item := range items {
+		task := mapTask(client.TaskListItem{UPID: item.UPID, Type: item.Type, State: item.State,
+			StartTime: item.StartTime, EndTime: item.EndTime, Status: item.Status, ExitStatus: item.ExitStatus}, node)
+		result = append(result, domain.Backup{UPID: task.UPID, Type: task.Type, State: task.State,
+			StartTime: task.StartTime, EndTime: task.EndTime, Status: task.Status, Node: task.Node, Storage: item.Storage})
+	}
+	return result, nil
+}
+
 // FirewallRules returns cluster firewall rules.
 func (p *Provider) FirewallRules(ctx context.Context) ([]domain.FirewallRule, error) {
 	if p.client == nil {

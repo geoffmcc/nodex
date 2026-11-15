@@ -557,9 +557,9 @@ func newestUPID(tasks []domain.PBSTask) string {
 // runs inside the failed-task window.
 func (s *Service) checkPVEBackupTasks(ctx context.Context, now time.Time, retrievalError func(string, error) Check) Check {
 	ni, okNodes := s.PVE.(domain.NodeInspector)
-	ti, okTasks := s.PVE.(domain.TaskInspector)
+	ti, okTasks := s.PVE.(domain.BackupTaskHistoryInspector)
 	if !okNodes || !okTasks {
-		return Check{Name: "pve_failed_backup_tasks", Status: StatusUnsupported, Detail: "provider does not expose node tasks"}
+		return Check{Name: "pve_failed_backup_tasks", Status: StatusUnsupported, Detail: "provider does not expose complete backup task history"}
 	}
 	nodes, err := ni.Nodes(ctx)
 	if err != nil {
@@ -568,7 +568,7 @@ func (s *Service) checkPVEBackupTasks(ctx context.Context, now time.Time, retrie
 	cutoff := now.Add(-failedTaskWindow).Unix()
 	var failures []string
 	for _, n := range nodes {
-		tasks, err := ti.Tasks(ctx, n.Name)
+		tasks, err := ti.BackupTaskHistory(ctx, n.Name)
 		if err != nil {
 			return retrievalError("pve_failed_backup_tasks", err)
 		}

@@ -67,6 +67,26 @@ func TestContainerConfigEnrichmentFillsRestoredInventoryGaps(t *testing.T) {
 	}
 }
 
+func TestContainerListPrefersConfiguredDiskSize(t *testing.T) {
+	p := &containerOSProbe{read: func(_ context.Context, _ string, vmid int) (map[string]interface{}, error) {
+		if vmid == 201 {
+			return nil, errors.New("permission denied")
+		}
+		return map[string]interface{}{"rootfs": "local-lvm:vm-200-disk-0,size=4G", "ostype": "debian"}, nil
+	}}
+	containers := []domain.Container{
+		{ID: "node/200", Disk: 4143677440},
+		{ID: "node/201", Disk: 4143677440},
+	}
+	enrichContainerConfig(t.Context(), p, containers, false)
+	if containers[0].Disk != 4*1024*1024*1024 {
+		t.Fatalf("configured disk size = %d, want 4 GiB", containers[0].Disk)
+	}
+	if containers[1].Disk != 4143677440 {
+		t.Fatalf("fallback disk size = %d, want aggregate value", containers[1].Disk)
+	}
+}
+
 func TestParseContainerRootfsSize(t *testing.T) {
 	tests := []struct {
 		value string

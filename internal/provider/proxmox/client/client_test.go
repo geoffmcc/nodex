@@ -1073,6 +1073,61 @@ func TestGetCephOSDsDecodesStringIDs(t *testing.T) {
 	}
 }
 
+func TestGetBackupStatusFiltersBeforeServerPagination(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/tasks" || r.URL.Query().Get("typefilter") != "vzdump" {
+			t.Errorf("request = %s, want backup-filtered task request", r.URL.String())
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"upid":"backup-1","type":"vzdump","status":"OK"},{"upid":"other-1","type":"qmstart"}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	tasks, err := c.GetBackupStatus(context.Background(), "proxmox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 || tasks[0].UPID != "backup-1" || tasks[0].Node != "proxmox" {
+		t.Fatalf("backup tasks = %+v", tasks)
+	}
+}
+
+func TestBackupTaskHistoryPaginatesAndFailsClosedAtLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		alwaysFull bool
+	}{{"second page", false}, {"history limit", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("typefilter") != "vzdump" || r.URL.Query().Get("limit") != "100" {
+					t.Errorf("unexpected query: %s", r.URL.RawQuery)
+				}
+				start := r.URL.Query().Get("start")
+				count := 100
+				if !tc.alwaysFull && start != "0" {
+					count = 1
+				}
+				items := make([]map[string]string, count)
+				for i := range items {
+					items[i] = map[string]string{"type": "vzdump", "upid": fmt.Sprintf("%s-%d", start, i)}
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": items})
+			}))
+			defer s.Close()
+			c := &Client{baseURL: s.URL, client: httpclient.New()}
+			tasks, err := c.GetBackupTaskHistory(context.Background(), "pve")
+			if tc.alwaysFull {
+				if err == nil || tasks != nil {
+					t.Fatalf("incomplete history = %d items, %v", len(tasks), err)
+				}
+			} else if err != nil || len(tasks) != 101 || tasks[100].UPID != "100-0" {
+				t.Fatalf("history = %d items, %v", len(tasks), err)
+			}
+		})
+	}
+}
+
 func TestGetTasksDecodesTaskList(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/nodes/proxmox/tasks" {

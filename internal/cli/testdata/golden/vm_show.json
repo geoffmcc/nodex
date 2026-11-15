@@ -4,9 +4,9 @@
   "status": "running",
   "node": "e2e-node",
   "cpu": 2,
-  "memory": 1024,
+  "memory": 1073741824,
   "disk": 2048,
-  "memory_human": "1.0 KiB",
+  "memory_human": "1.0 GiB",
   "disk_human": "2.0 KiB",
   "qmpstatus": "running"
 }
