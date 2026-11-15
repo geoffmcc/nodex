@@ -23,7 +23,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
@@ -47,7 +47,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
       - name: Install disposable-runner integration tools
         run: |
           sudo apt-get update
@@ -61,11 +61,12 @@ jobs:
           -count=1
 
   build:
+    name: build (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-15, macos-15-intel, windows-latest]
-        go: ["1.27.3"]
+        go: ["1.27.4"]
 
     runs-on: ${{ matrix.os }}
 
@@ -126,7 +127,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
       - name: Install GoReleaser
         run: go install github.com/goreleaser/goreleaser/v2@v2.10.0
       - name: Install Syft
@@ -160,7 +161,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
       # actionlint silently skips its shellcheck integration when shellcheck
       # is absent. Fail loudly instead, so a runner image change cannot
       # quietly reduce coverage on the release workflow.
@@ -182,12 +183,12 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.3"
+          go-version: "1.27.4"
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.13.2
           args: --new-from-rev=${{ github.event.pull_request.base.sha || github.event.before }}
         # Only this analyzer uses Go 1.27.1 for export-data compatibility;
-        # builds, tests, vulnerability scans, and releases use Go 1.27.3.
+        # builds, tests, vulnerability scans, and releases use Go 1.27.4.
         env:
           GOTOOLCHAIN: go1.27.1
