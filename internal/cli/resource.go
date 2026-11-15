@@ -465,7 +465,10 @@ func enrichContainerConfig(ctx context.Context, inspector domain.ContainerInspec
 		if memory, ok := cfg["memory"]; ok && (refresh || container.Memory == 0) {
 			container.Memory = toInt64(memory) * 1024 * 1024
 		}
-		if disk := parseContainerRootfsSize(cfg["rootfs"]); disk > 0 && (refresh || container.Disk == 0) {
+		// The aggregate maxdisk for a running container can describe the
+		// filesystem's usable size, rather than its configured volume limit.
+		// Prefer the config value when this read succeeds, as show already does.
+		if disk := parseContainerRootfsSize(cfg["rootfs"]); disk > 0 {
 			container.Disk = disk
 		}
 		if osType, ok := cfg["ostype"].(string); ok && osType != "" && (refresh || container.OS == "") {
