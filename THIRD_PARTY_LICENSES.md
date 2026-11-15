@@ -216,7 +216,7 @@ SOFTWARE.
 // limitations under the License.
 ~~~~
 
-## golang.org/x/crypto v0.58.0
+## golang.org/x/crypto v0.59.0
 
 ### LICENSE
 
