@@ -8,11 +8,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/atomicwrite"
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
@@ -640,6 +640,9 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		return err
 	}
 
+	// A successful no-replace commit may leave the temporary hard link.
+	_ = os.Remove(tmpPath)
+
 	var sizeBytes int64
 	if info, statErr := os.Stat(cleaned); statErr == nil {
 		sizeBytes = info.Size()
@@ -653,22 +656,9 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 	})
 }
 
-// finalizeDownload commits a fully written temporary file to its destination.
-//
-// On Unix, os.Rename atomically replaces an existing file, so the previous
-// destination remains intact until the new file is committed. Removing it
-// first would lose the only copy if the rename then failed. Windows rename
-// does not replace an existing destination, so only there is the target
-// removed first when --force authorized an overwrite.
+// finalizeDownload commits a streamed temporary file without deleting the destination.
 func finalizeDownload(tmpPath, dest string, force bool) error {
-	if force && runtime.GOOS == "windows" {
-		if info, err := os.Lstat(dest); err == nil && info.Mode().IsRegular() {
-			if err := os.Remove(dest); err != nil {
-				return fmt.Errorf("remove existing file %s: %w", dest, err)
-			}
-		}
-	}
-	if err := os.Rename(tmpPath, dest); err != nil {
+	if err := atomicwrite.Commit(tmpPath, dest, force); err != nil {
 		return fmt.Errorf("finalize download: %w", err)
 	}
 	return nil

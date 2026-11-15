@@ -142,8 +142,14 @@ Use the narrowest permissions possible. Create purpose-scoped API tokens rather 
 Storage upload and download operations involve file system access:
 
 - **Upload.** Files are streamed to the provider using `io.Pipe`. No whole-file buffering in memory.
-- **Download.** Content is written to a temporary file and renamed into place with `os.Rename`. The `--overwrite` flag is required to overwrite an existing file. Partial downloads are cleaned up on error.
+- **Download.** Content is streamed to a temporary file in the destination directory. Without `--force`, an atomic create-if-absent commit refuses a destination that appears during transfer; with `--force`, replacement does not pre-delete the original. The filesystem must support hard links for a no-replace commit. Partial downloads are cleaned up on error.
 - **Symlinks.** Upload operations should verify file paths. Nodex treats upload paths as explicit user input.
+
+## Local executable and configuration trust
+
+Nodex resolves external tools using the operator's `PATH`. On Unix, `execsafe` requires an absolute resolved path, a regular executable file that is not world-writable, and an immediate parent directory that is not world-writable unless sticky. These checks do not establish ownership, check group writability or ancestor directories, validate executable contents, or prevent a change after checking. On Windows it checks that the resolved path is absolute and exists; it does not validate ACLs. Use a trusted `PATH` and protect executables and every directory in their paths from untrusted writers on both platforms.
+
+Keep each user's Nodex configuration directory private to that user, including its parent directories and any configured overrides. Other users able to change configuration, credential files, or executable search paths can influence Nodex behavior. File permissions and validation do not replace that boundary.
 
 ## Output Redaction
 
