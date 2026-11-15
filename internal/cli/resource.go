@@ -259,8 +259,62 @@ func runVMShow(ctx context.Context, cmdCtx *Context, args []string) error {
 		return app.NotFoundError("VM %q", args[0])
 	}
 	enrichVMRuntimeStatus(ctx, prov, cmdCtx, &vm)
+	enrichVMConfig(ctx, vi, &vm)
 	return writeVM(cmdCtx, vm)
 }
+
+// enrichVMConfig refreshes unambiguous configured limits after aggregate
+// inventory has been read. Proxmox aggregate values can lag recent updates.
+func enrichVMConfig(ctx context.Context, inspector domain.VMInspector, vm *domain.VM) {
+	node, vmid, err := parseNodeVMID(vm.ID)
+	if err != nil {
+		return
+	}
+	cfg, err := inspector.VMConfig(ctx, node, vmid)
+	if err != nil {
+		return
+	}
+	if memory := toInt64(cfg["memory"]); memory > 0 && memory <= (1<<63-1)/(1024*1024) {
+		vm.Memory = memory * 1024 * 1024
+	}
+	cores := toInt64(cfg["cores"])
+	sockets := int64(1)
+	if raw, present := cfg["sockets"]; present {
+		if text, ok := raw.(string); ok {
+			sockets, _ = strconv.ParseInt(text, 10, 64)
+		} else {
+			sockets = toInt64(raw)
+		}
+	}
+	if cores > 0 && sockets > 0 && cores <= int64(^uint(0)>>1)/sockets {
+		vm.CPU = int(cores * sockets)
+	}
+	// A single attached data disk has an unambiguous configured size. For
+	// multiple disks, absent sizes, or unrecognized descriptors, preserve the
+	// aggregate value rather than guessing what its disk figure represents.
+	var disk int64
+	count := 0
+	for key, value := range cfg {
+		if !vmDataDiskKey.MatchString(key) {
+			continue
+		}
+		desc, ok := value.(string)
+		if !ok {
+			count++
+			continue
+		}
+		if strings.Contains(desc, "media=cdrom") {
+			continue
+		}
+		count++
+		disk = parseContainerRootfsSize(desc)
+	}
+	if count == 1 && disk > 0 {
+		vm.Disk = disk
+	}
+}
+
+var vmDataDiskKey = regexp.MustCompile(`^(scsi|sata|virtio|ide)[0-9]+$`)
 
 // enrichVMRuntimeStatus refreshes one VM from the authoritative per-guest read
 // when the provider exposes it.
