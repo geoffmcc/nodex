@@ -1073,6 +1073,26 @@ func TestGetCephOSDsDecodesStringIDs(t *testing.T) {
 	}
 }
 
+func TestGetBackupStatusFiltersBeforeServerPagination(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/nodes/proxmox/tasks" || r.URL.Query().Get("typefilter") != "vzdump" {
+			t.Errorf("request = %s, want backup-filtered task request", r.URL.String())
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"data":[{"upid":"backup-1","type":"vzdump","status":"OK"},{"upid":"other-1","type":"qmstart"}]}`)
+	}))
+	defer s.Close()
+	c := &Client{baseURL: s.URL, client: httpclient.New()}
+	tasks, err := c.GetBackupStatus(context.Background(), "proxmox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 || tasks[0].UPID != "backup-1" || tasks[0].Node != "proxmox" {
+		t.Fatalf("backup tasks = %+v", tasks)
+	}
+}
+
 func TestGetTasksDecodesTaskList(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/nodes/proxmox/tasks" {

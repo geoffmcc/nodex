@@ -598,7 +598,9 @@ func (c *Client) GetBackupStatus(ctx context.Context, node string) ([]BackupStat
 		return nil, fmt.Errorf("node name is required")
 	}
 	var resp BackupStatusResponse
-	path := "/nodes/" + url.PathEscape(node) + "/tasks"
+	// Apply the filter on the server before its default task-page limit;
+	// filtering the first unfiltered page can hide all backup tasks.
+	path := "/nodes/" + url.PathEscape(node) + "/tasks?typefilter=vzdump"
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, err
 	}
