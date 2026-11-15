@@ -220,7 +220,7 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 	for i := range flags {
 		switch flags[i].Name {
 		case "--yes":
-			flags[i].Required = op.SafetyTier >= safety.TierReversible
+			flags[i].Required = op.SafetyTier >= safety.TierReversible && !op.ConfirmationExempt
 		case "--force":
 			flags[i].Required = op.SafetyTier >= safety.TierDisruptive
 		case "--confirm-target":
@@ -243,7 +243,9 @@ func describeOperation(op OperationMeta, detailed bool) OperationContract {
 	localEffects, remoteEffects := sideEffects(op)
 	supported, unsupportedWhy, interactive := agentModeSupport(op)
 	confirmation := []string{}
-	if op.SafetyTier >= safety.TierReversible {
+	if op.ConfirmationExempt {
+		confirmation = append(confirmation, "none (local configuration write by the invoking account)")
+	} else if op.SafetyTier >= safety.TierReversible {
 		confirmation = append(confirmation, "--yes")
 	}
 	if op.SafetyTier >= safety.TierDisruptive {

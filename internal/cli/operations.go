@@ -102,6 +102,15 @@ type OperationMeta struct {
 	// RequiresExpert is true when --expert is required (Tier 4).
 	RequiresExpert bool
 
+	// ConfirmationExempt marks a local configuration operation that is
+	// classified reversible for risk reporting but does not enforce a --yes
+	// gate. These commands write a file the invoking local account already
+	// owns, so a flag ceremony would not move the trust boundary; adding one
+	// would also break the documented non-interactive init/setup flows.
+	// The contract and safety matrix must not advertise a gate that does not
+	// exist.
+	ConfirmationExempt bool
+
 	// Waitable is true when --wait is supported for task polling.
 	Waitable bool
 
@@ -164,13 +173,14 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "init", Description: "Initialize nodex configuration",
 		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
-		OutputModes: []string{"table"}, HandlerFunc: "runInit",
+		ConfirmationExempt: true,
+		OutputModes:        []string{"table"}, HandlerFunc: "runInit",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "setup", Description: "Guided secure provider setup",
 		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
-		SecuritySensitivity: SecCredentials,
-		OutputModes:         []string{"table", "json", "yaml"}, HandlerFunc: "runSetup",
+		SecuritySensitivity: SecCredentials, ConfirmationExempt: true,
+		OutputModes: []string{"table", "json", "yaml"}, HandlerFunc: "runSetup",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "completion", Description: "Generate shell completion scripts",
@@ -190,7 +200,8 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "profile add", Description: "Add a new profile",
 		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
-		OutputModes: []string{"table"}, HandlerFunc: "runProfileAdd",
+		ConfirmationExempt: true,
+		OutputModes:        []string{"table"}, HandlerFunc: "runProfileAdd",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "profile list", Description: "List all profiles",
@@ -205,13 +216,14 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "profile set-credentials", Description: "Set profile credentials",
 		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
-		SecuritySensitivity: SecCredentials,
-		OutputModes:         []string{"table"}, HandlerFunc: "runProfileSetCredentials",
+		SecuritySensitivity: SecCredentials, ConfirmationExempt: true,
+		OutputModes: []string{"table"}, HandlerFunc: "runProfileSetCredentials",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "profile use", Description: "Set the current profile",
 		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
-		OutputModes: []string{"table"}, HandlerFunc: "runProfileUse",
+		ConfirmationExempt: true,
+		OutputModes:        []string{"table"}, HandlerFunc: "runProfileUse",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "profile current", Description: "Show the current profile",
@@ -231,7 +243,8 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "profile remove", Description: "Remove a profile",
 		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
-		OutputModes: []string{"table"}, HandlerFunc: "runProfileRemove",
+		ConfirmationExempt: true,
+		OutputModes:        []string{"table"}, HandlerFunc: "runProfileRemove",
 	})
 	ops = append(ops, OperationMeta{
 		Path: "profile export", Description: "Export a profile (sanitized)",
@@ -241,7 +254,8 @@ func buildRegistry() []OperationMeta {
 	ops = append(ops, OperationMeta{
 		Path: "profile import", Description: "Import a profile from stdin into an initialized NodeX config (run `nodex init` first)",
 		Inspection: false, Scope: ScopeProfile, SafetyTier: safety.TierReversible,
-		OutputModes: []string{"table"}, HandlerFunc: "runProfileImport",
+		ConfirmationExempt: true,
+		OutputModes:        []string{"table"}, HandlerFunc: "runProfileImport",
 	})
 
 	// --- provider ---

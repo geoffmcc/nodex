@@ -12,6 +12,7 @@
 package atomicwrite
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -142,31 +143,91 @@ func WriteStream(dest string, src io.Reader, overwrite bool, dirPerm, filePerm o
 	return nil
 }
 
-// replaceFile handles the rename and overwrite logic.
-func replaceFile(tmpPath, dest string, overwrite bool) error {
-	if overwrite {
-		info, err := os.Lstat(dest)
-		if err == nil {
-			if !info.Mode().IsRegular() {
-				return fmt.Errorf("atomic write: destination %s exists and is not a regular file", dest)
-			}
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("atomic write: stat destination: %w", err)
-		}
-	} else {
-		// When overwriting is not allowed, check for existence.
-		if info, err := os.Lstat(dest); err == nil {
-			if info.Mode().IsRegular() {
-				return fmt.Errorf("%w: %s already exists (use overwrite to replace)", os.ErrExist, dest)
-			}
-			return fmt.Errorf("%w: %s exists and is not a regular file", os.ErrExist, dest)
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("atomic write: stat destination: %w", err)
-		}
+// Commit publishes an already-written temporary file at dest.
+//
+// It is the commit step of the temp-file + rename pattern for callers that
+// stream or otherwise produce the temporary file themselves (for example a
+// download written directly to disk). tmpPath must be on the same filesystem
+// as dest, normally in the same directory.
+//
+// With overwrite false the destination is never replaced. Creating the
+// destination link is atomic, so a destination created after
+// the caller's own pre-flight check is refused rather than clobbered. This
+// matters for commands whose --force decision is made before a potentially
+// long transfer.
+//
+// On failure dest is left untouched and tmpPath is left in place for the
+// caller to clean up. After a successful no-replace commit, removal of the
+// temporary link is best effort; callers may clean it up again.
+func Commit(tmpPath, dest string, overwrite bool) error {
+	if tmpPath == "" || dest == "" {
+		return fmt.Errorf("atomic write: commit requires both source and destination paths")
 	}
+	if filepath.Dir(filepath.Clean(tmpPath)) != filepath.Dir(filepath.Clean(dest)) {
+		return fmt.Errorf("atomic write: temporary file %s and destination %s must share a directory", tmpPath, dest)
+	}
+	if err := checkDestination(dest, overwrite); err != nil {
+		return err
+	}
+	if err := commitFile(tmpPath, dest, overwrite); err != nil {
+		return destError(dest, fmt.Errorf("atomic write: commit destination: %w", err))
+	}
+	return nil
+}
 
+// replaceFile handles the rename and overwrite logic for WriteFile and
+// WriteStream.
+func replaceFile(tmpPath, dest string, overwrite bool) error {
+	if err := checkDestination(dest, overwrite); err != nil {
+		return err
+	}
 	if err := platformRename(tmpPath, dest, overwrite); err != nil {
 		return fmt.Errorf("atomic write: rename to destination: %w", err)
 	}
+	return nil
+}
+
+// checkDestination rejects destinations that cannot be replaced safely. The
+// check provides an early error; Commit also enforces no-replace atomically.
+func checkDestination(dest string, overwrite bool) error {
+	info, err := os.Lstat(dest)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("atomic write: stat destination: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		if overwrite {
+			return fmt.Errorf("atomic write: destination %s exists and is not a regular file", dest)
+		}
+		return fmt.Errorf("%w: %s exists and is not a regular file", os.ErrExist, dest)
+	}
+	if !overwrite {
+		return fmt.Errorf("%w: %s already exists (use overwrite to replace)", os.ErrExist, dest)
+	}
+	return nil
+}
+
+// destError adds an actionable message when the atomic no-replace commit lost
+// a race with another writer. The wrapped error still matches os.ErrExist.
+func destError(dest string, err error) error {
+	if errors.Is(err, os.ErrExist) {
+		return fmt.Errorf("%w: %s already exists (use overwrite to replace)", os.ErrExist, dest)
+	}
+	return err
+}
+
+// commitFile uses a hard link as an atomic create-if-absent operation. The
+// temporary file and destination share a directory, hence a filesystem.
+func commitFile(tmpPath, dest string, overwrite bool) error {
+	if overwrite {
+		return platformRename(tmpPath, dest, true)
+	}
+	if err := os.Link(tmpPath, dest); err != nil {
+		return err
+	}
+	// The destination is committed. Cleanup failure must not report a failed commit.
+	_ = os.Remove(tmpPath)
 	return nil
 }

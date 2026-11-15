@@ -20,6 +20,33 @@ their DACL is safe on Windows, but the file backend is not application-encrypted
 delivery method; limit API-token privileges and lifetime; protect the operator
 account; never put secrets in command arguments or committed files.
 
+### Local configuration store trust
+
+**Risk:** `config.yaml` is written atomically with mode `0600`, but unlike
+file-backed credentials it is not checked for directory/file ownership, mode,
+or symlinked ancestors when read. A local process that can write the config
+directory can change endpoints, SSH host/user/key paths, inventories, or the
+selected profile without a Nodex confirmation. Local configuration commands
+are also intentionally not gated by `--yes`; they rely on the local account
+boundary.
+
+**Mitigation:** Keep the config directory private to the operator account
+(`~/.config/nodex` or the platform equivalent), do not share it with other
+users, and review endpoint/SSH/inventory changes before running mutations.
+Prefer an isolated automation account for unattended use.
+
+### Local destination path changes
+
+**Risk:** `pathvalidate` rejects a non-regular destination and a symlinked
+direct parent, but it does not lock the path or inspect every ancestor.
+A local attacker who can modify an ancestor directory can redirect a storage
+download between validation and the final rename. Rename itself replaces a
+symlink rather than following it on Unix, so the remaining window is limited
+to changing directory components.
+
+**Mitigation:** Write downloads only into a directory the invoking account
+controls exclusively, and avoid shared or attacker-writable destination trees.
+
 ### Provider identity and truthful state
 
 **Risk:** General PVE/PBS profiles rely on standard system/custom CA trust and

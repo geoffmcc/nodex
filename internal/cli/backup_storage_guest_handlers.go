@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/geoffmcc/nodex/internal/app"
+	"github.com/geoffmcc/nodex/internal/atomicwrite"
 	"github.com/geoffmcc/nodex/internal/config"
 	"github.com/geoffmcc/nodex/internal/domain"
 	"github.com/geoffmcc/nodex/internal/output"
@@ -578,6 +579,13 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		}
 	}
 
+	// A download writes a local file even though the provider side is a read.
+	// It is registered as Tier 1, so honor that acknowledgement before
+	// touching the provider or the destination.
+	if err := checkReversible(cmdCtx, fmt.Sprintf("download %s/%s/%s to %s", node, storage, volumeID, cleaned)); err != nil {
+		return err
+	}
+
 	prov, cleanup, err := connectProfile(ctx, cmdCtx, cmdCtx.Opts.Profile)
 	if err != nil {
 		return err
@@ -627,22 +635,13 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		return fmt.Errorf("close temporary file: %w", err)
 	}
 
-	// On Windows, os.Rename fails if the target exists and is open, so remove target first.
-	if cmdCtx.Opts.Force {
-		if info, err := os.Lstat(cleaned); err == nil {
-			if info.Mode().IsRegular() {
-				if err := os.Remove(cleaned); err != nil {
-					cleanupTmp()
-					return fmt.Errorf("remove existing file %s: %w", cleaned, err)
-				}
-			}
-		}
+	if err := finalizeDownload(tmpPath, cleaned, cmdCtx.Opts.Force); err != nil {
+		cleanupTmp()
+		return err
 	}
 
-	if err := os.Rename(tmpPath, cleaned); err != nil {
-		cleanupTmp()
-		return fmt.Errorf("finalize download: %w", err)
-	}
+	// A successful no-replace commit may leave the temporary hard link.
+	_ = os.Remove(tmpPath)
 
 	var sizeBytes int64
 	if info, statErr := os.Stat(cleaned); statErr == nil {
@@ -655,6 +654,14 @@ func runStorageDownload(ctx context.Context, cmdCtx *Context, args []string) err
 		Destination: cleaned,
 		SizeBytes:   sizeBytes,
 	})
+}
+
+// finalizeDownload commits a streamed temporary file without deleting the destination.
+func finalizeDownload(tmpPath, dest string, force bool) error {
+	if err := atomicwrite.Commit(tmpPath, dest, force); err != nil {
+		return fmt.Errorf("finalize download: %w", err)
+	}
+	return nil
 }
 
 // configureStorageDownloadSSH uses an explicitly profile-bound PVE inventory

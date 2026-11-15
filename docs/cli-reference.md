@@ -82,6 +82,8 @@ Every mutation command is classified into one of these tiers:
 
 Non-interactive sessions fail closed when confirmation is required and flags are not provided.
 
+Local configuration commands (`init`, `setup`, and `profile add/use/remove/import/set-credentials`) are classified as reversible for risk reporting but do not require a confirmation flag: they write configuration owned by the invoking local account. `nodex operation describe` reports this explicitly.
+
 ## Commands
 
 ### `nodex version`

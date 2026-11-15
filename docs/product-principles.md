@@ -83,6 +83,8 @@ Nodex uses a five-tier safety classification:
 
 Non-interactive mode fails closed when confirmation is required and flags are not provided.
 
+Local configuration commands (`init`, `setup`, and `profile add/use/remove/import/set-credentials`) are tracked as reversible for risk reporting but do not require `--yes`; they edit configuration owned by the same local account and must remain usable in non-interactive provisioning.
+
 ## Provider Model
 
 - **Proxmox-first.** The primary providers are Proxmox VE and Proxmox Backup Server, each with a provider-native API client. Capabilities are checked against their actual API contracts.
