@@ -3,7 +3,7 @@ module github.com/geoffmcc/nodex
 go 1.27.0
 
 require (
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/pkg/sftp v1.13.12
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.59.0
